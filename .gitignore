@@ -1,0 +1,58 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### 민감정보 / 로컬 설정 (커밋 금지) ###
+.env
+.env.*
+application-local.yaml
+application-local.yml
+application-local.properties
+application-secret.yaml
+application-secret.yml
+application-secret.properties
+*.p12
+*.pem
+*.key
+
+### 로그 ###
+*.log
+/logs/
+
+### OS 잡파일 ###
+.DS_Store
+Thumbs.db
