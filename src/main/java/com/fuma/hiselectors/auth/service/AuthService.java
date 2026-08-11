@@ -4,12 +4,12 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.auth.dto.LoginRequest;
 import com.fuma.hiselectors.auth.dto.TokenResponse;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +51,6 @@ public class AuthService {
     }
 
     private BusinessException unauthorized() {
-        return new BusinessException(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다.");
+        return new BusinessException(ErrorCode.LOGIN_FAILED);
     }
 }
