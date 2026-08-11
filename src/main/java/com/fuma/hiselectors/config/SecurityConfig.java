@@ -34,6 +34,7 @@ public class SecurityConfig {
             "/actuator/health",
             "/error",
             "/api/auth/**",   // 로그인
+            "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",   // Swagger UI / OpenAPI 문서
     };
 
     @Bean
