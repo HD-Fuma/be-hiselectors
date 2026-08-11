@@ -28,4 +28,14 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET}
-  access-token-validity-seconds: ${JWT_EXPIRE_SECONDS:3600}   # 1시간 (민감정보 아님, 기본값 유지)
+  access-token-validity-seconds: ${JWT_EXPIRE_SECONDS:3600}
+
+youtube:
+  oauth:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${YOUTUBE_REDIRECT_URI:http://localhost:8080/api/youtube/oauth/callback}
+    frontend-redirect-uri: ${YOUTUBE_FRONTEND_REDIRECT_URI:http://localhost:3000/mypage}
+    # youtube.readonly: 채널 조회 / email: 인증한 구글 계정 이메일을 users.email 과 대조
+    scope: openid email https://www.googleapis.com/auth/youtube.readonly
+    state-validity-seconds: 300

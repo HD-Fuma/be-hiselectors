@@ -29,11 +29,13 @@ public class SecurityConfig {
     private static final String[] PUBLIC_ENDPOINTS = {
             "/",
             "/index.html",           // 루트(/)가 forward 되는 대상 → 반드시 허용
+            "/youtube-test.html",    // OAuth 흐름 수동 테스트용 정적 페이지
             "/favicon.ico",
             "/css/**", "/js/**", "/images/**",   // 정적 리소스
             "/actuator/health",
             "/error",
             "/api/auth/**",   // 로그인
+            "/api/youtube/oauth/callback",   // 구글이 JWT 없이 호출하는 OAuth 콜백
             "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",   // Swagger UI / OpenAPI 문서
     };
 
