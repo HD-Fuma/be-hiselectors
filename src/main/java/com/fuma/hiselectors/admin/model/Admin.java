@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -33,4 +34,13 @@ public class Admin extends BaseTimeEntity {
 
     @Column(length = 20)
     private String role;
+
+
+    @Builder
+    private Admin(String loginId, String password, String name, String role) {
+        this.loginId = loginId;
+        this.password = password;
+        this.name = name;
+        this.role = role;
+    }
 }

@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -36,4 +37,15 @@ public class Selector extends BaseTimeEntity {
 
     @Column(name = "selectors_nickname", length = 20)
     private String selectorsNickname;
+
+
+    @Builder
+    private Selector(Long applicationId, Long userId, String selectorsRoleId,
+                     String selectorsCode, String selectorsNickname) {
+        this.applicationId = applicationId;
+        this.userId = userId;
+        this.selectorsRoleId = selectorsRoleId;
+        this.selectorsCode = selectorsCode;
+        this.selectorsNickname = selectorsNickname;
+    }
 }

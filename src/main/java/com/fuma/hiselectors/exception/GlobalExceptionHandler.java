@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -59,6 +60,25 @@ public class GlobalExceptionHandler {
         ErrorResponse body = ErrorResponse.of(
                 status.value(), status.getReasonPhrase(), "요청한 리소스를 찾을 수 없습니다.", request.getRequestURI());
         return ResponseEntity.status(status).body(body);
+    }
+
+    // 잘못된 HTTP 메서드(예: POST 전용 경로를 GET으로 호출) -> 405
+    // 어떤 메서드가 허용되는지 응답 메시지 + Allow 헤더로 알려준다.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException e, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.METHOD_NOT_ALLOWED;
+        String supported = (e.getSupportedHttpMethods() != null)
+                ? e.getSupportedHttpMethods().toString()
+                : "없음";
+        String message = "지원하지 않는 메서드입니다: " + e.getMethod() + " (허용: " + supported + ")";
+        ErrorResponse body = ErrorResponse.of(
+                status.value(), status.getReasonPhrase(), message, request.getRequestURI());
+        return ResponseEntity.status(status)
+                .allow(e.getSupportedHttpMethods() != null
+                        ? e.getSupportedHttpMethods().toArray(new org.springframework.http.HttpMethod[0])
+                        : new org.springframework.http.HttpMethod[0])
+                .body(body);
     }
 
     // 예상치 못한 에러 -> 500

@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -45,4 +46,17 @@ public class User extends BaseTimeEntity {
 
     @Column(length = 20)
     private String phone;
+
+    // id는 DB auto_increment, createdAt/updatedAt은 Auditing이 채우므로 빌더에서 제외.
+    @Builder
+    private User(String hiId, String hiPassword, String name,
+                 LocalDate birthDate, String gender, String email, String phone) {
+        this.hiId = hiId;
+        this.hiPassword = hiPassword;
+        this.name = name;
+        this.birthDate = birthDate;
+        this.gender = gender;
+        this.email = email;
+        this.phone = phone;
+    }
 }
