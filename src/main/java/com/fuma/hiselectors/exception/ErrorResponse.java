@@ -1,19 +1,29 @@
 package com.fuma.hiselectors.exception;
 
 import java.time.LocalDateTime;
-
-
-//공통 에러 응답 포맷
+import org.springframework.http.HttpStatus;
 
 public record ErrorResponse(
         LocalDateTime timestamp,
+        String code,
         int status,
         String error,
         String message,
         String path
 ) {
 
-    public static ErrorResponse of(int status, String error, String message, String path) {
-        return new ErrorResponse(LocalDateTime.now(), status, error, message, path);
+    public static ErrorResponse of(ErrorCode errorCode, String path) {
+        return of(errorCode, errorCode.getMessage(), path);
+    }
+
+    public static ErrorResponse of(ErrorCode errorCode, String message, String path) {
+        HttpStatus status = errorCode.getStatus();
+        return new ErrorResponse(
+                LocalDateTime.now(),
+                errorCode.name(),
+                status.value(),
+                status.getReasonPhrase(),
+                message,
+                path);
     }
 }

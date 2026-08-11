@@ -1,0 +1,20 @@
+package com.fuma.hiselectors.auth.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "로그인 응답 (JWT 토큰)")
+public record TokenResponse(
+        @Schema(description = "발급된 JWT 액세스 토큰", example = "eyJhbGciOiJIUzUxMiJ9...")
+        String accessToken,
+        @Schema(description = "토큰 타입", example = "Bearer")
+        String tokenType,
+        @Schema(description = "로그인 아이디", example = "hiadmin")
+        String loginId,
+        @Schema(description = "권한 (USER / ADMIN)", example = "ADMIN")
+        String role
+) {
+
+    public static TokenResponse of(String accessToken, String loginId, String role) {
+        return new TokenResponse(accessToken, "Bearer", loginId, role);
+    }
+}
