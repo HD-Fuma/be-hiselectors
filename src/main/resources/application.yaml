@@ -2,6 +2,12 @@ spring:
   application:
     name: hiselectors
 
+  # 커스텀 JWT 인증을 쓰므로 스프링의 기본 인메모리 유저 자동설정을 끈다.
+  # (안 끄면 "Using generated security password..." 경고가 매번 출력됨)
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
@@ -19,3 +25,7 @@ spring:
       hibernate:
         format_sql: true
     open-in-view: false
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity-seconds: ${JWT_EXPIRE_SECONDS:3600}   # 1시간 (민감정보 아님, 기본값 유지)

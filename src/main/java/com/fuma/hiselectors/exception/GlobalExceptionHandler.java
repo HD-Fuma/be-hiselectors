@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 
 @RestControllerAdvice
@@ -49,6 +50,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).body(body);
     }
 
+
+    // 존재하지 않는 경로(매칭되는 핸들러 없음) -> 404
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(
+            NoResourceFoundException e, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        ErrorResponse body = ErrorResponse.of(
+                status.value(), status.getReasonPhrase(), "요청한 리소스를 찾을 수 없습니다.", request.getRequestURI());
+        return ResponseEntity.status(status).body(body);
+    }
 
     // 예상치 못한 에러 -> 500
     @ExceptionHandler(Exception.class)
