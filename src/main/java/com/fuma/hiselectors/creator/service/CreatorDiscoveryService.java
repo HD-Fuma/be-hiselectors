@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.creator.service;
 
+import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.model.CreatorPool;
@@ -60,20 +61,20 @@ public class CreatorDiscoveryService {
      * {@code findCategoryShares} 쿼리만 고치고 이 메서드를 다시 돌리면 되며,
      * API 를 재호출할 필요가 없다.
      *
-     * @return 새로 정해진 카테고리 코드. 발굴 출처가 없으면 null (기존 값 유지)
+     * @return 재산출 결과. 발굴 출처가 없으면 기존 카테고리를 그대로 담아 돌려준다
      */
     @Transactional
-    public String refreshRepresentativeCategory(Long creatorPoolId) {
+    public CategoryRefreshResponse refreshRepresentativeCategory(Long creatorPoolId) {
         CreatorPool creator = getCreator(creatorPoolId);
 
         List<CategoryShare> shares = discoverySourceRepository.findCategoryShares(creatorPoolId);
         if (shares.isEmpty()) {
-            return null;
+            return CategoryRefreshResponse.unchanged(creator.getCategory());
         }
 
         String topCategory = shares.getFirst().categoryCode();
         creator.changeCategory(topCategory);
-        return topCategory;
+        return CategoryRefreshResponse.refreshed(topCategory);
     }
 
     private CreatorPool getCreator(Long creatorPoolId) {

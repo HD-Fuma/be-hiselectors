@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.creator.controller;
 
+import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
@@ -89,14 +90,13 @@ public class CreatorAdminController {
             description = "발굴 출처를 다시 집계해 조회수 비중이 가장 큰 카테고리로 갱신한다. "
                     + "산출 규칙을 바꾼 뒤 재수집 없이 반영할 때 쓴다.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "재산출 성공 (발굴 출처가 없으면 본문 없음)"),
+            @ApiResponse(responseCode = "200", description = "재산출 성공. 발굴 출처가 없으면 changed=false"),
             @ApiResponse(responseCode = "404", description = "크리에이터 없음", content = @Content)
     })
     @PostMapping("/{creatorPoolId}/category/refresh")
-    public ResponseEntity<String> refreshCategory(@PathVariable Long creatorPoolId) {
-        String category = creatorDiscoveryService.refreshRepresentativeCategory(creatorPoolId);
-        return category == null
-                ? ResponseEntity.noContent().build()
-                : ResponseEntity.ok(category);
+    public ResponseEntity<CategoryRefreshResponse> refreshCategory(
+            @PathVariable Long creatorPoolId) {
+        return ResponseEntity.ok(
+                creatorDiscoveryService.refreshRepresentativeCategory(creatorPoolId));
     }
 }

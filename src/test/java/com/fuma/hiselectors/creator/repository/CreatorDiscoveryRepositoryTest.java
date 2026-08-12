@@ -120,6 +120,85 @@ class CreatorDiscoveryRepositoryTest {
     }
 
     @Test
+    @DisplayName("신뢰도가 같으면 최신 핸들로 교체한다 — 크리에이터가 계정을 바꾼 경우")
+    void refreshReplacesHandleOnEqualConfidence() {
+        CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");
+        CreatorDiscoveryInfo info = infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(creator)
+                .igHandle("old_handle")
+                .igConfidence(new BigDecimal("0.95"))
+                .build());
+        em.flush();
+
+        // 채널 설명의 인스타 계정이 바뀌었고 이번에도 URL(0.95) 로 찾았다
+        info.refresh(0, null, "new_handle", new BigDecimal("0.95"));
+        em.flush();
+        em.clear();
+
+        CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
+        assertThat(found.getIgHandle()).isEqualTo("new_handle");
+    }
+
+    @Test
+    @DisplayName("기존 신뢰도가 없으면 새 핸들로 교체한다")
+    void refreshReplacesWhenExistingConfidenceIsNull() {
+        CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");
+        CreatorDiscoveryInfo info = infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(creator)
+                .igHandle("unknown_source")   // 신뢰도 미상
+                .build());
+        em.flush();
+
+        info.refresh(0, null, "from_url", new BigDecimal("0.95"));
+        em.flush();
+        em.clear();
+
+        CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
+        assertThat(found.getIgHandle()).isEqualTo("from_url");
+        assertThat(found.getIgConfidence()).isEqualByComparingTo("0.95");
+    }
+
+    @Test
+    @DisplayName("새 신뢰도를 모르면 기존 핸들을 유지한다")
+    void refreshKeepsHandleWhenNewConfidenceIsNull() {
+        CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");
+        CreatorDiscoveryInfo info = infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(creator)
+                .igHandle("fitgpt_daily")
+                .igConfidence(new BigDecimal("0.95"))
+                .build());
+        em.flush();
+
+        info.refresh(0, null, "no_confidence", null);
+        em.flush();
+        em.clear();
+
+        CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
+        assertThat(found.getIgHandle()).isEqualTo("fitgpt_daily");
+    }
+
+    @Test
+    @DisplayName("이번 수집에서 핸들을 못 찾으면 기존 값을 유지한다")
+    void refreshKeepsHandleWhenNotFound() {
+        CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");
+        CreatorDiscoveryInfo info = infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(creator)
+                .igHandle("fitgpt_daily")
+                .igConfidence(new BigDecimal("0.95"))
+                .build());
+        em.flush();
+
+        info.refresh(3, "공식(설명)", null, null);
+        em.flush();
+        em.clear();
+
+        CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
+        assertThat(found.getIgHandle()).isEqualTo("fitgpt_daily");
+        // 브랜드 신호는 매번 최신 값으로 갱신된다
+        assertThat(found.getBrandScore()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("같은 계정·키워드 조합의 발굴 출처를 찾아낸다")
     void findSourceByCreatorAndKeyword() {
         CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");

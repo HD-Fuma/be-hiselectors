@@ -81,11 +81,39 @@ public class CreatorDiscoveryInfo extends BaseTimeEntity {
                         String igHandle, BigDecimal igConfidence) {
         this.brandScore = brandScore;
         this.brandHits = brandHits;
-        // 이미 신뢰도 높은 핸들이 있으면 낮은 값으로 덮어쓰지 않는다
-        if (igHandle != null && igConfidence != null
-                && (this.igConfidence == null || this.igConfidence.compareTo(igConfidence) < 0)) {
+
+        if (shouldReplaceHandle(igHandle, igConfidence)) {
             this.igHandle = igHandle;
             this.igConfidence = igConfidence;
         }
+    }
+
+    /**
+     * 인스타 핸들 교체 정책.
+     *
+     * <ul>
+     *   <li>못 찾았으면 기존 값을 유지한다. 이번 수집에서 설명이 잘렸을 수도 있다.</li>
+     *   <li>기존에 없었으면 채운다.</li>
+     *   <li>신뢰도가 더 높으면 교체한다. URL(0.95) 이 단순 멘션(0.35) 을 이긴다.</li>
+     *   <li><b>신뢰도가 같으면 교체한다.</b> 크리에이터가 채널 설명의 계정을 바꾼 경우이므로
+     *       최신 값을 따라야 한다. 같다고 유지하면 옛 핸들이 영영 남는다.</li>
+     *   <li>신뢰도가 더 낮으면 유지한다. 확실한 값을 불확실한 값으로 덮지 않는다.</li>
+     *   <li>새 신뢰도를 모르면(null) 유지한다. 기존 값과 우열을 가릴 수 없다.</li>
+     * </ul>
+     */
+    private boolean shouldReplaceHandle(String igHandle, BigDecimal igConfidence) {
+        if (igHandle == null) {
+            return false;
+        }
+        if (this.igHandle == null) {
+            return true;
+        }
+        if (igConfidence == null) {
+            return false;
+        }
+        if (this.igConfidence == null) {
+            return true;
+        }
+        return this.igConfidence.compareTo(igConfidence) <= 0;
     }
 }
