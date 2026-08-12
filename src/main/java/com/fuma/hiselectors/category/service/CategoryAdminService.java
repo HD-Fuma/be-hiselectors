@@ -11,6 +11,7 @@ import com.fuma.hiselectors.category.model.Category;
 import com.fuma.hiselectors.category.model.DiscoveryKeyword;
 import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
+import com.fuma.hiselectors.creator.repository.CreatorDiscoverySourceRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ public class CategoryAdminService {
 
     private final CategoryRepository categoryRepository;
     private final DiscoveryKeywordRepository keywordRepository;
+    private final CreatorDiscoverySourceRepository discoverySourceRepository;
 
     public List<CategoryResponse> findAll() {
         return categoryRepository.findAllByOrderByDisplayOrderAscIdAsc().stream()
@@ -81,10 +83,24 @@ public class CategoryAdminService {
         return CategoryResponse.from(category);
     }
 
-    /** 하위 키워드도 함께 삭제된다 (cascade + orphanRemoval). */
+    /**
+     * 하위 키워드도 함께 삭제된다 (cascade + orphanRemoval).
+     *
+     * <p>단, 이 카테고리의 키워드로 발굴된 이력이 있으면 삭제할 수 없다.
+     * {@code creator_discovery_source} 가 키워드를 참조하고 있어 DB 제약에 걸리고,
+     * 무엇보다 발굴 출처를 잃으면 대표 카테고리를 다시 계산할 수 없게 된다.
+     * 발굴에서만 빼려면 {@code enabled = false} 로 비활성화한다.
+     */
     @Transactional
     public void delete(Long categoryId) {
-        categoryRepository.delete(getCategory(categoryId));
+        Category category = getCategory(categoryId);
+
+        if (discoverySourceRepository.existsByKeywordCategoryId(categoryId)) {
+            throw new BusinessException(ErrorCode.CATEGORY_IN_USE,
+                    "'" + category.getName() + "' 카테고리의 키워드로 발굴된 이력이 있어 삭제할 수 없습니다. "
+                            + "발굴 대상에서 빼려면 비활성화하세요.");
+        }
+        categoryRepository.delete(category);
     }
 
     @Transactional
@@ -111,10 +127,18 @@ public class CategoryAdminService {
         return KeywordResponse.from(keyword);
     }
 
+    /** 이 키워드로 발굴된 이력이 있으면 삭제할 수 없다. 비활성화를 사용한다. */
     @Transactional
     public void removeKeyword(Long categoryId, Long keywordId) {
         Category category = getCategory(categoryId);
-        category.removeKeyword(getKeyword(categoryId, keywordId));
+        DiscoveryKeyword keyword = getKeyword(categoryId, keywordId);
+
+        if (discoverySourceRepository.existsByKeywordId(keywordId)) {
+            throw new BusinessException(ErrorCode.KEYWORD_IN_USE,
+                    "'" + keyword.getKeyword() + "' 키워드로 발굴된 이력이 있어 삭제할 수 없습니다. "
+                            + "발굴 대상에서 빼려면 비활성화하세요.");
+        }
+        category.removeKeyword(keyword);
     }
 
     /**
