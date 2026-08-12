@@ -58,6 +58,9 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
 
     @Override
     public List<DiscoveredChannel> discoverByKeyword(String keyword, int maxResults) {
+        // 싱글턴 컴포넌트이므로 이전 실행의 사용량이 다음 응답에 누적되지 않게 초기화한다.
+        consumedQuota = 0;
+
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
