@@ -45,6 +45,8 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
+    // 테스트 실행 시에만 classpath 에 올라간다. 운영 jar 에는 포함되지 않음.
+    testRuntimeOnly 'com.h2database:h2'
 
 }
 
