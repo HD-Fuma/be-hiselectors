@@ -14,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -64,7 +65,9 @@ public class CreatorDiscoverySource extends BaseTimeEntity {
     @Column(name = "view_share", precision = 6, scale = 5)
     private BigDecimal viewShare;
 
-    // 최초 발굴 일시는 BaseTimeEntity 의 createdAt, 마지막 재발굴은 updatedAt 이다.
+    /** 기존 RDS 의 NOT NULL 컬럼. 최초 발굴 시각이며 이후 갱신하지 않는다. */
+    @Column(name = "discovered_at", nullable = false, updatable = false)
+    private LocalDateTime discoveredAt;
 
     @Builder
     private CreatorDiscoverySource(CreatorPool creatorPool, DiscoveryKeyword keyword,
@@ -72,6 +75,7 @@ public class CreatorDiscoverySource extends BaseTimeEntity {
         this.creatorPool = creatorPool;
         this.keyword = keyword;
         this.viewShare = viewShare;
+        this.discoveredAt = LocalDateTime.now();
     }
 
     /** 같은 키워드로 다시 발굴됐을 때 비중을 갱신한다. */

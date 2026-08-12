@@ -11,6 +11,7 @@ import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -63,8 +64,9 @@ public class CreatorDiscoveryInfo extends BaseTimeEntity {
     @Column(name = "ig_confidence", precision = 3, scale = 2)
     private BigDecimal igConfidence;
 
-    // 최초 발굴 일시는 BaseTimeEntity 의 createdAt, 마지막 갱신은 updatedAt 이다.
-    // 같은 의미의 컬럼을 따로 두면 두 값이 어긋났을 때 어느 쪽이 기준인지 모호해진다.
+    /** 기존 RDS 의 NOT NULL 컬럼. 최초 발굴 시각이며 이후 갱신하지 않는다. */
+    @Column(name = "discovered_at", nullable = false, updatable = false)
+    private LocalDateTime discoveredAt;
 
     @Builder
     private CreatorDiscoveryInfo(CreatorPool creatorPool, Integer brandScore, String brandHits,
@@ -74,6 +76,7 @@ public class CreatorDiscoveryInfo extends BaseTimeEntity {
         this.brandHits = brandHits;
         this.igHandle = igHandle;
         this.igConfidence = igConfidence;
+        this.discoveredAt = LocalDateTime.now();
     }
 
     /** 같은 채널이 다시 발굴됐을 때 판정 근거를 갱신한다. */
