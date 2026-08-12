@@ -36,6 +36,10 @@ out/
 ### VS Code ###
 .vscode/
 
+### Postman local workspace ###
+/postman/
+/.postman/
+
 ### 민감정보 / 로컬 설정 (커밋 금지) ###
 .env
 .env.*
@@ -52,6 +56,13 @@ application-secret.properties
 ### 로그 ###
 *.log
 /logs/
+
+### Local test databases ###
+*.db
+*.sqlite
+*.sqlite3
+*.mv.db
+*.trace.db
 
 ### OS 잡파일 ###
 .DS_Store

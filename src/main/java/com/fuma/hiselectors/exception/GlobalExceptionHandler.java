@@ -5,6 +5,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -44,6 +45,15 @@ public class GlobalExceptionHandler {
                 : ErrorCode.INVALID_INPUT.getMessage();
         ErrorCode code = ErrorCode.INVALID_INPUT;
         ErrorResponse body = ErrorResponse.of(code, message, request.getRequestURI());
+        return ResponseEntity.status(code.getStatus()).body(body);
+    }
+
+    // JSON 문법 오류 또는 Enum 등 요청 타입 변환 실패 -> 400
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(
+            HttpMessageNotReadableException e, HttpServletRequest request) {
+        ErrorCode code = ErrorCode.INVALID_INPUT;
+        ErrorResponse body = ErrorResponse.of(code, request.getRequestURI());
         return ResponseEntity.status(code.getStatus()).body(body);
     }
 
