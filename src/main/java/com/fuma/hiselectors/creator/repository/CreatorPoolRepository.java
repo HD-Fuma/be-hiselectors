@@ -1,8 +1,15 @@
 package com.fuma.hiselectors.creator.repository;
 
+import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.model.CreatorPool;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> {
 
@@ -23,4 +30,49 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     /** 화면 조회용. 소프트 삭제된 계정은 제외한다. */
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
+
+    /**
+     * 발굴된 크리에이터 목록. 조건이 null 이면 그 조건은 적용하지 않는다.
+     *
+     * <p>수집 시점에 거르지 않고 전부 저장해 두었으므로, 브랜드 계정이나 구독자 미달
+     * 계정을 빼는 일은 전적으로 여기서 한다. 기준이 틀렸다고 판단되면 파라미터만
+     * 바꿔서 다시 조회하면 되고, 재수집은 필요 없다.
+     *
+     * <p>발굴 정보가 없는 계정(수동 등록 등)도 나오도록 left join 을 쓴다.
+     * 다만 브랜드·신뢰도 조건을 걸면 그 계정들은 자연히 빠진다.
+     */
+    @Query(value = """
+            select new com.fuma.hiselectors.creator.dto.CreatorSummary(
+                       c.id, c.snsCode, c.accountId, c.creatorName,
+                       c.followerCount, c.engagementRate, c.lastContentAt, c.category,
+                       i.brandScore, i.igHandle, i.igConfidence)
+            from CreatorPool c
+            left join CreatorDiscoveryInfo i on i.creatorPool = c
+            where c.deleted = false
+              and (:categoryCode is null or c.category = :categoryCode)
+              and (:snsCode is null or c.snsCode = :snsCode)
+              and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxBrandScore is null or coalesce(i.brandScore, 0) <= :maxBrandScore)
+              and (:minIgConfidence is null or i.igConfidence >= :minIgConfidence)
+              and (:activeAfter is null or c.lastContentAt >= :activeAfter)
+            """,
+            countQuery = """
+            select count(c)
+            from CreatorPool c
+            left join CreatorDiscoveryInfo i on i.creatorPool = c
+            where c.deleted = false
+              and (:categoryCode is null or c.category = :categoryCode)
+              and (:snsCode is null or c.snsCode = :snsCode)
+              and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxBrandScore is null or coalesce(i.brandScore, 0) <= :maxBrandScore)
+              and (:minIgConfidence is null or i.igConfidence >= :minIgConfidence)
+              and (:activeAfter is null or c.lastContentAt >= :activeAfter)
+            """)
+    Page<CreatorSummary> search(@Param("categoryCode") String categoryCode,
+                                @Param("snsCode") String snsCode,
+                                @Param("minFollower") Long minFollower,
+                                @Param("maxBrandScore") Integer maxBrandScore,
+                                @Param("minIgConfidence") BigDecimal minIgConfidence,
+                                @Param("activeAfter") LocalDateTime activeAfter,
+                                Pageable pageable);
 }

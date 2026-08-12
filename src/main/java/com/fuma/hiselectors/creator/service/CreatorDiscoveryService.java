@@ -1,0 +1,83 @@
+package com.fuma.hiselectors.creator.service;
+
+import com.fuma.hiselectors.creator.dto.CategoryShare;
+import com.fuma.hiselectors.creator.dto.CreatorSummary;
+import com.fuma.hiselectors.creator.model.CreatorPool;
+import com.fuma.hiselectors.creator.repository.CreatorDiscoverySourceRepository;
+import com.fuma.hiselectors.creator.repository.CreatorPoolRepository;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 발굴된 크리에이터 조회와 대표 카테고리 산출.
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class CreatorDiscoveryService {
+
+    private final CreatorPoolRepository creatorPoolRepository;
+    private final CreatorDiscoverySourceRepository discoverySourceRepository;
+
+    /**
+     * 조건에 맞는 발굴 크리에이터를 조회한다. null 인 조건은 적용하지 않는다.
+     *
+     * @param activeWithinDays 최근 N일 안에 활동한 계정만. null 이면 제한 없음
+     */
+    public Page<CreatorSummary> search(String categoryCode, String snsCode,
+                                       Long minFollower, Integer maxBrandScore,
+                                       BigDecimal minIgConfidence, Integer activeWithinDays,
+                                       Pageable pageable) {
+        LocalDateTime activeAfter = activeWithinDays == null
+                ? null
+                : LocalDateTime.now().minusDays(activeWithinDays);
+
+        return creatorPoolRepository.search(categoryCode, snsCode, minFollower,
+                maxBrandScore, minIgConfidence, activeAfter, pageable);
+    }
+
+    /** 이 계정이 어떤 카테고리에서 얼마나 걸렸는지. 대표 카테고리 판정 근거. */
+    public List<CategoryShare> findCategoryShares(Long creatorPoolId) {
+        getCreator(creatorPoolId);
+        return discoverySourceRepository.findCategoryShares(creatorPoolId);
+    }
+
+    /**
+     * 발굴 출처를 집계해 대표 카테고리를 다시 정한다.
+     *
+     * <p>조회수 비중 합이 가장 큰 카테고리를 고른다. 뷰티 크리에이터가 홈트 영상
+     * 하나로 피트니스에 걸려도, 그 영상의 조회수 비중이 낮으면 뷰티로 남는다.
+     *
+     * <p>발굴 파이프라인이 한 계정의 수집을 마친 뒤 호출한다. 규칙을 바꾸고 싶으면
+     * {@code findCategoryShares} 쿼리만 고치고 이 메서드를 다시 돌리면 되며,
+     * API 를 재호출할 필요가 없다.
+     *
+     * @return 새로 정해진 카테고리 코드. 발굴 출처가 없으면 null (기존 값 유지)
+     */
+    @Transactional
+    public String refreshRepresentativeCategory(Long creatorPoolId) {
+        CreatorPool creator = getCreator(creatorPoolId);
+
+        List<CategoryShare> shares = discoverySourceRepository.findCategoryShares(creatorPoolId);
+        if (shares.isEmpty()) {
+            return null;
+        }
+
+        String topCategory = shares.getFirst().categoryCode();
+        creator.changeCategory(topCategory);
+        return topCategory;
+    }
+
+    private CreatorPool getCreator(Long creatorPoolId) {
+        return creatorPoolRepository.findById(creatorPoolId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CREATOR_NOT_FOUND));
+    }
+}
