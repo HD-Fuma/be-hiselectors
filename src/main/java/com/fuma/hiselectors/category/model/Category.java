@@ -54,10 +54,6 @@ public class Category extends BaseTimeEntity {
     @Column(nullable = false, length = 50)
     private String name;
 
-    /** 화면에서 뱃지 색으로 쓸 값. {@code #rrggbb}. 없어도 된다. */
-    @Column(length = 7)
-    private String color;
-
     /** 화면 노출 순서. 작을수록 앞. */
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
@@ -71,22 +67,18 @@ public class Category extends BaseTimeEntity {
 
     // id는 DB auto_increment, createdAt/updatedAt은 Auditing이 채우므로 빌더에서 제외.
     @Builder
-    private Category(String code, String name, String color,
+    private Category(String code, String name,
                      Integer displayOrder, Boolean enabled) {
         this.code = code;
         this.name = name;
-        this.color = color;
         this.displayOrder = displayOrder == null ? 0 : displayOrder;
         this.enabled = enabled == null || enabled;
     }
 
     /** null 인 필드는 변경하지 않는다 (부분 수정). 코드는 바꿀 수 없다. */
-    public void update(String name, String color, Integer displayOrder, Boolean enabled) {
+    public void update(String name, Integer displayOrder, Boolean enabled) {
         if (name != null) {
             this.name = name;
-        }
-        if (color != null) {
-            this.color = color;
         }
         if (displayOrder != null) {
             this.displayOrder = displayOrder;

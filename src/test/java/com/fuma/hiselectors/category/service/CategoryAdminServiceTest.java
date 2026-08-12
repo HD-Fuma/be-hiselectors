@@ -46,7 +46,6 @@ class CategoryAdminServiceTest {
         beauty = Category.builder()
                 .code("BEAUTY")
                 .name("뷰티")
-                .color("#d6497f")
                 .displayOrder(0)
                 .build();
     }
@@ -55,7 +54,7 @@ class CategoryAdminServiceTest {
     @DisplayName("카테고리를 생성한다")
     void createCategory() {
         CategoryCreateRequest request =
-                new CategoryCreateRequest("BEAUTY", "뷰티", "#d6497f", 0);
+                new CategoryCreateRequest("BEAUTY", "뷰티", 0);
         when(categoryRepository.existsByCode("BEAUTY")).thenReturn(false);
         when(categoryRepository.existsByName("뷰티")).thenReturn(false);
         when(categoryRepository.save(any(Category.class)))
@@ -65,7 +64,6 @@ class CategoryAdminServiceTest {
 
         assertThat(response.code()).isEqualTo("BEAUTY");
         assertThat(response.name()).isEqualTo("뷰티");
-        assertThat(response.color()).isEqualTo("#d6497f");
         assertThat(response.displayOrder()).isZero();
         assertThat(response.enabled()).isTrue();
         assertThat(response.keywords()).isEmpty();
@@ -76,7 +74,7 @@ class CategoryAdminServiceTest {
     @DisplayName("이미 존재하는 카테고리 코드는 등록할 수 없다")
     void createCategoryWithDuplicatedCode() {
         CategoryCreateRequest request =
-                new CategoryCreateRequest("BEAUTY", "뷰티", "#d6497f", 0);
+                new CategoryCreateRequest("BEAUTY", "뷰티", 0);
         when(categoryRepository.existsByCode("BEAUTY")).thenReturn(true);
 
         assertThatThrownBy(() -> categoryAdminService.create(request))
@@ -90,7 +88,7 @@ class CategoryAdminServiceTest {
     @DisplayName("이미 존재하는 카테고리 이름은 등록할 수 없다")
     void createCategoryWithDuplicatedName() {
         CategoryCreateRequest request =
-                new CategoryCreateRequest("BEAUTY", "뷰티", "#d6497f", 0);
+                new CategoryCreateRequest("BEAUTY", "뷰티", 0);
         when(categoryRepository.existsByCode("BEAUTY")).thenReturn(false);
         when(categoryRepository.existsByName("뷰티")).thenReturn(true);
 

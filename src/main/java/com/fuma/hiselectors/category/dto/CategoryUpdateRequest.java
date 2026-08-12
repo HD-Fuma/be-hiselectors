@@ -9,11 +9,8 @@ public record CategoryUpdateRequest(
 
         @Schema(description = "화면에 보여줄 이름", example = "뷰티")
         @Size(max = 50, message = "카테고리명은 50자를 넘을 수 없습니다.")
+        @Pattern(regexp = ".*\\S.*", message = "카테고리명은 공백일 수 없습니다.")
         String name,
-
-        @Schema(description = "화면 뱃지 색 (#rrggbb)", example = "#d6497f")
-        @Pattern(regexp = "^#[0-9a-fA-F]{6}$", message = "색상은 #rrggbb 형식이어야 합니다.")
-        String color,
 
         @Schema(description = "화면 노출 순서") Integer displayOrder,
 

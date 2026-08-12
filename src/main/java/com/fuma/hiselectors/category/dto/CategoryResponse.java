@@ -12,7 +12,6 @@ public record CategoryResponse(
         @Schema(description = "카테고리 ID") Long id,
         @Schema(description = "카테고리 코드", example = "BEAUTY") String code,
         @Schema(description = "카테고리명", example = "뷰티") String name,
-        @Schema(description = "화면 뱃지 색") String color,
         @Schema(description = "화면 노출 순서") int displayOrder,
         @Schema(description = "발굴 대상 여부") boolean enabled,
         @Schema(description = "하위 발굴 키워드") List<KeywordResponse> keywords
@@ -33,7 +32,6 @@ public record CategoryResponse(
                 category.getId(),
                 category.getCode(),
                 category.getName(),
-                category.getColor(),
                 category.getDisplayOrder(),
                 category.isEnabled(),
                 keywords

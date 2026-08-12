@@ -61,7 +61,6 @@ public class CategoryAdminService {
         Category created = categoryRepository.save(Category.builder()
                 .code(code)
                 .name(name)
-                .color(request.color())
                 .displayOrder(request.displayOrder())
                 .build());
 
@@ -78,7 +77,7 @@ public class CategoryAdminService {
                     "이미 존재하는 카테고리명입니다: " + name);
         }
 
-        category.update(name, request.color(), request.displayOrder(), request.enabled());
+        category.update(name, request.displayOrder(), request.enabled());
         return CategoryResponse.from(category);
     }
 
