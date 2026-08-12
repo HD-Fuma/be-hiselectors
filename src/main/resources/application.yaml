@@ -40,6 +40,10 @@ youtube:
     redirect-uri: ${YOUTUBE_REDIRECT_URI:http://localhost:3000/youtube/callback}
     scope: https://www.googleapis.com/auth/youtube.readonly
 
+  # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
+  discovery:
+    api-key: ${YOUTUBE_API_KEY:}
+
 instagram:
   oauth:
     client-id: ${INSTAGRAM_CLIENT_ID:}

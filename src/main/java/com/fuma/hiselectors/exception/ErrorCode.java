@@ -48,7 +48,11 @@ public enum ErrorCode {
     KEYWORD_IN_USE(HttpStatus.CONFLICT, "발굴 이력이 있어 삭제할 수 없습니다. 비활성화를 사용하세요."),
 
     // --- 크리에이터 ---
-    CREATOR_NOT_FOUND(HttpStatus.NOT_FOUND, "크리에이터를 찾을 수 없습니다.");
+    CREATOR_NOT_FOUND(HttpStatus.NOT_FOUND, "크리에이터를 찾을 수 없습니다."),
+
+    // --- 발굴 실행 ---
+    YOUTUBE_API_KEY_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "YouTube API 키가 설정되지 않았습니다."),
+    YOUTUBE_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "YouTube API 호출에 실패했습니다. 쿼터 초과 여부를 확인하세요.");
 
     private final HttpStatus status;
     private final String message;
