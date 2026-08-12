@@ -35,7 +35,6 @@ public class SecurityConfig {
             "/actuator/health",
             "/error",
             "/api/auth/**",   // 로그인
-            "/api/youtube/oauth/callback",   // 구글이 JWT 없이 호출하는 OAuth 콜백
             "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",   // Swagger UI / OpenAPI 문서
     };
 

@@ -47,7 +47,6 @@ public class User extends BaseTimeEntity {
     @Column(length = 20)
     private String phone;
 
-    // id는 DB auto_increment, createdAt/updatedAt은 Auditing이 채우므로 빌더에서 제외.
     @Builder
     private User(String hiId, String hiPassword, String name,
                  LocalDate birthDate, String gender, String email, String phone) {

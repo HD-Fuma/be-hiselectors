@@ -23,11 +23,13 @@
 </head>
 <body>
     <h1>유튜브 채널 소유 인증 테스트</h1>
+    <p class="muted">이 페이지는 테스트용 프론트 역할을 겸합니다. 구글 콜백(redirect_uri)을
+        <code>http://localhost:8080/youtube-test.html</code> 로 두고 구글 콘솔에도 등록하세요.</p>
 
-    <!-- 결과: 콜백에서 이 페이지로 리다이렉트될 때 표시 -->
     <section id="resultSection" style="display:none;">
         <strong>인증 결과</strong>
         <p id="resultMsg"></p>
+        <pre id="resultJson" style="display:none;"></pre>
     </section>
 
     <!-- 1) 로그인해서 JWT 발급 -->
@@ -52,25 +54,9 @@
     <script>
         const TOKEN_KEY = 'hi_access_token';
 
-        // --- 페이지 로드 시: 콜백 결과 표시 + 저장된 토큰 복원 ---
         window.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(location.search);
-            const status = params.get('youtube');
-            if (status) {
-                const box = document.getElementById('resultSection');
-                const msg = document.getElementById('resultMsg');
-                box.style.display = 'block';
-                if (status === 'success') {
-                    const channel = params.get('channel') || '(채널명 없음)';
-                    msg.innerHTML = '<span class="ok">✅ 인증 성공!</span> 연동된 채널: <b>' + escapeHtml(channel) + '</b>';
-                } else {
-                    const reason = params.get('reason') || 'unknown';
-                    msg.innerHTML = '<span class="err">❌ 인증 실패</span> — 사유: <code>' + escapeHtml(reason) + '</code>';
-                }
-                // 쿼리스트링 정리 (새로고침 시 결과 반복 표시 방지)
-                history.replaceState(null, '', location.pathname);
-            }
             restoreToken();
+            handleCallbackIfPresent();
         });
 
         function restoreToken() {
@@ -107,6 +93,7 @@
             }
         }
 
+        // 2. 인증 시작: authorize 로 구글 URL 받아 이동
         async function connectYoutube() {
             const token = sessionStorage.getItem(TOKEN_KEY);
             if (!token) { alert('먼저 로그인하세요.'); return; }
@@ -116,15 +103,63 @@
                 });
                 if (!res.ok) { alert('인증 URL 발급 실패 (' + res.status + ')'); return; }
                 const data = await res.json();
-                // 구글 동의 화면으로 이동
                 location.href = data.authorizationUrl;
             } catch (e) {
                 alert('요청 오류: ' + e.message);
             }
         }
 
+        // 구글이 이 페이지로 code/state 를 붙여 돌려보내면 verify 호출
+        async function handleCallbackIfPresent() {
+            const params = new URLSearchParams(location.search);
+            const error = params.get('error');
+            const code = params.get('code');
+            const state = params.get('state');
+            if (!error && !code) return; // 콜백 아님
+
+            const box = document.getElementById('resultSection');
+            const msg = document.getElementById('resultMsg');
+            const jsonBox = document.getElementById('resultJson');
+            box.style.display = 'block';
+            history.replaceState(null, '', location.pathname); // 쿼리 정리
+
+            if (error) {
+                msg.innerHTML = '<span class="err">❌ 구글 동의 거부/오류</span> — ' + escapeHtml(error);
+                return;
+            }
+
+            const token = sessionStorage.getItem(TOKEN_KEY);
+            if (!token) {
+                msg.innerHTML = '<span class="err">토큰이 없습니다.</span> 로그인 후 다시 시도하세요.';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/youtube/oauth/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({ code, state })
+                });
+                const data = await res.json();
+                jsonBox.style.display = 'block';
+                jsonBox.textContent = JSON.stringify(data, null, 2);
+                if (res.ok) {
+                    msg.innerHTML = '<span class="ok">✅ 인증 성공!</span> 채널: <b>'
+                        + escapeHtml(data.channelTitle || '(이름 없음)') + '</b>';
+                } else {
+                    msg.innerHTML = '<span class="err">❌ 인증 실패 (' + res.status + ')</span> — '
+                        + escapeHtml((data && (data.message || data.code)) || '오류');
+                }
+            } catch (e) {
+                msg.innerHTML = '<span class="err">검증 요청 오류</span> — ' + escapeHtml(e.message);
+            }
+        }
+
         function escapeHtml(s) {
-            return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+            return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
         }
     </script>
 </body>

@@ -17,14 +17,10 @@ public enum ErrorCode {
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 
-    // --- 유저 ---
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
-
     // --- 유튜브 OAuth ---
     YOUTUBE_STATE_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 인증 요청입니다."),
     YOUTUBE_OAUTH_FAILED(HttpStatus.BAD_GATEWAY, "유튜브 인증 처리 중 오류가 발생했습니다."),
     YOUTUBE_CHANNEL_NOT_FOUND(HttpStatus.NOT_FOUND, "연결된 유튜브 채널을 찾을 수 없습니다."),
-    YOUTUBE_EMAIL_MISMATCH(HttpStatus.FORBIDDEN, "인증한 구글 계정 이메일이 회원 이메일과 일치하지 않습니다."),
 
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터를 찾을 수 없습니다.");
