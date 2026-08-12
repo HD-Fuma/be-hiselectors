@@ -7,7 +7,6 @@ public record InstagramOAuthProperties(
         String clientId,
         String clientSecret,
         String redirectUri,
-        String scope,
-        long stateValiditySeconds
+        String scope
 ) {
 }

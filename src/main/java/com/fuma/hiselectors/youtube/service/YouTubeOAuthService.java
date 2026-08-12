@@ -6,6 +6,7 @@ import com.fuma.hiselectors.youtube.config.YouTubeOAuthProperties;
 import com.fuma.hiselectors.youtube.dto.GoogleTokenResponse;
 import com.fuma.hiselectors.youtube.dto.YouTubeChannelListResponse;
 import com.fuma.hiselectors.youtube.dto.YouTubeVerifyResponse;
+import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -22,14 +23,15 @@ public class YouTubeOAuthService {
             "https://www.googleapis.com/youtube/v3/channels";
 
     private final YouTubeOAuthProperties properties;
-    private final YouTubeOAuthStateProvider stateProvider;
+    private final OAuthStateProvider stateProvider;
     private final RestClient restClient;
 
     public YouTubeOAuthService(YouTubeOAuthProperties properties,
-                               YouTubeOAuthStateProvider stateProvider) {
+                               OAuthStateProvider stateProvider,
+                               RestClient oauthRestClient) {
         this.properties = properties;
         this.stateProvider = stateProvider;
-        this.restClient = RestClient.create();
+        this.restClient = oauthRestClient;
     }
 
     public String buildAuthorizationUrl(String hiId) {

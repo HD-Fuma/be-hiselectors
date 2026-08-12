@@ -7,7 +7,6 @@ public record YouTubeOAuthProperties(
         String clientId,
         String clientSecret,
         String redirectUri,
-        String scope,
-        long stateValiditySeconds
+        String scope
 ) {
 }
