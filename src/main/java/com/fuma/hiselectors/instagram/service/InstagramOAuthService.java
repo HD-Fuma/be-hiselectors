@@ -6,9 +6,8 @@ import com.fuma.hiselectors.instagram.config.InstagramOAuthProperties;
 import com.fuma.hiselectors.instagram.dto.InstagramProfileResponse;
 import com.fuma.hiselectors.instagram.dto.InstagramTokenResponse;
 import com.fuma.hiselectors.instagram.dto.InstagramVerifyResponse;
-import java.time.Duration;
+import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -23,18 +22,15 @@ public class InstagramOAuthService {
     private static final String INSTAGRAM_ME_URI = "https://graph.instagram.com/me";
 
     private final InstagramOAuthProperties properties;
-    private final InstagramOAuthStateProvider stateProvider;
+    private final OAuthStateProvider stateProvider;
     private final RestClient restClient;
 
     public InstagramOAuthService(InstagramOAuthProperties properties,
-                                 InstagramOAuthStateProvider stateProvider) {
+                                 OAuthStateProvider stateProvider,
+                                 RestClient oauthRestClient) {
         this.properties = properties;
         this.stateProvider = stateProvider;
-        // 외부(Instagram/Meta) API 지연으로 톰캣 스레드가 무한 대기하는 것을 막기 위해 타임아웃 지정
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(3));
-        factory.setReadTimeout(Duration.ofSeconds(5));
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        this.restClient = oauthRestClient;
     }
 
     public String buildAuthorizationUrl(String hiId) {

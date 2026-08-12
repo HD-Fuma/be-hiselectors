@@ -1,6 +1,5 @@
-package com.fuma.hiselectors.youtube.service;
+package com.fuma.hiselectors.oauth;
 
-import com.fuma.hiselectors.youtube.config.YouTubeOAuthProperties;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -11,25 +10,24 @@ import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-
 @Component
-public class YouTubeOAuthStateProvider {
+public class OAuthStateProvider {
 
     private final SecretKey key;
     private final long validityMillis;
 
-    public YouTubeOAuthStateProvider(
+    public OAuthStateProvider(
             @Value("${jwt.secret}") String secret,
-            YouTubeOAuthProperties properties) {
+            @Value("${oauth.state-validity-seconds:300}") long stateValiditySeconds) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.validityMillis = properties.stateValiditySeconds() * 1000;
+        this.validityMillis = stateValiditySeconds * 1000;
     }
 
     public String create(String hiId) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(hiId)
-                .id(UUID.randomUUID().toString()) // nonce (일회성 식별자)
+                .id(UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + validityMillis))
                 .signWith(key)

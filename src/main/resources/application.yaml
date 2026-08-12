@@ -39,7 +39,6 @@ youtube:
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: ${YOUTUBE_REDIRECT_URI:http://localhost:3000/youtube/callback}
     scope: https://www.googleapis.com/auth/youtube.readonly
-    state-validity-seconds: 300
 
 instagram:
   oauth:
@@ -47,4 +46,7 @@ instagram:
     client-secret: ${INSTAGRAM_CLIENT_SECRET:}
     redirect-uri: ${INSTAGRAM_REDIRECT_URI}
     scope: instagram_business_basic
-    state-validity-seconds: 300
+
+# OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
+oauth:
+  state-validity-seconds: 300
