@@ -31,11 +31,12 @@ public class SecurityConfig {
             "/index.html",           // 루트(/)가 forward 되는 대상 → 반드시 허용
             "/youtube-test.html",    // OAuth 흐름 수동 테스트용 정적 페이지
             "/favicon.ico",
-            "/css/**", "/js/**", "/images/**",   // 정적 리소스
+            "/css/**", "/js/**", "/images/**",
             "/actuator/health",
             "/error",
-            "/api/auth/**",   // 로그인
-            "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",   // Swagger UI / OpenAPI 문서
+            "/api/auth/**",
+            "/api/purchases/**",
+            "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",
     };
 
     @Bean
@@ -50,8 +51,8 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")  // 관리자 전용
-                        .anyRequest().authenticated()                       // 나머지는 로그인 필요
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider),
                         UsernamePasswordAuthenticationFilter.class);
