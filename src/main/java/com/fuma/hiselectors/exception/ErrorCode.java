@@ -11,7 +11,6 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 HTTP 메서드입니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
-
     // --- 인증 / 인가 ---
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
@@ -23,7 +22,14 @@ public enum ErrorCode {
     YOUTUBE_CHANNEL_NOT_FOUND(HttpStatus.NOT_FOUND, "연결된 유튜브 채널을 찾을 수 없습니다."),
 
     // --- 도메인 (예시) ---
-    SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터를 찾을 수 없습니다.");
+    SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터를 찾을 수 없습니다."),
+
+    // --- 발굴 카테고리 / 키워드 ---
+    CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."),
+    CATEGORY_CODE_DUPLICATED(HttpStatus.CONFLICT, "이미 존재하는 카테고리 코드입니다."),
+    CATEGORY_NAME_DUPLICATED(HttpStatus.CONFLICT, "이미 존재하는 카테고리 이름입니다."),
+    KEYWORD_NOT_FOUND(HttpStatus.NOT_FOUND, "발굴 키워드를 찾을 수 없습니다."),
+    KEYWORD_DUPLICATED(HttpStatus.CONFLICT, "이미 등록된 발굴 키워드입니다.");
 
     private final HttpStatus status;
     private final String message;
