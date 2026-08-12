@@ -52,6 +52,6 @@ public class Product extends BaseTimeEntity {
     }
 
     public boolean isAvailableForSale() {
-        return status == ProductStatus.AVAILABLE;
+        return status == ProductStatus.ON_SALE;
     }
 }

@@ -43,7 +43,7 @@ class PurchaseHistoryTest {
         return PurchaseHistory.builder()
                 .orderNo("ORDER-1")
                 .userId(1L)
-                .selectorId(2L)
+                .selectorsId(2L)
                 .productId(3L)
                 .quantity(2)
                 .regularUnitPrice(new BigDecimal("10000"))

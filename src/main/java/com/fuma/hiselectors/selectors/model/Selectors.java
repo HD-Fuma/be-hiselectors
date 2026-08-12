@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "selectors")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Selector extends BaseTimeEntity {
+public class Selectors extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,8 +40,8 @@ public class Selector extends BaseTimeEntity {
 
 
     @Builder
-    private Selector(Long applicationId, Long userId, String selectorsRoleId,
-                     String selectorsCode, String selectorsNickname) {
+    private Selectors(Long applicationId, Long userId, String selectorsRoleId,
+                      String selectorsCode, String selectorsNickname) {
         this.applicationId = applicationId;
         this.userId = userId;
         this.selectorsRoleId = selectorsRoleId;

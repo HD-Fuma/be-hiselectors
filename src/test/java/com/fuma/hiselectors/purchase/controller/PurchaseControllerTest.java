@@ -43,9 +43,8 @@ class PurchaseControllerTest {
 
         String body = """
                 {
-                  "orderNo": "ORDER-1",
                   "buyerUserId": 1,
-                  "selectorCode": "SELECTOR-1",
+                  "selectorsCode": "SELECTOR-1",
                   "productCode": "PRODUCT-1",
                   "quantity": 2
                 }
@@ -67,9 +66,8 @@ class PurchaseControllerTest {
     void rejectsInvalidPurchaseRequest() throws Exception {
         String body = """
                 {
-                  "orderNo": "",
                   "buyerUserId": 1,
-                  "selectorCode": "SELECTOR-1",
+                  "selectorsCode": "SELECTOR-1",
                   "productCode": "PRODUCT-1",
                   "quantity": 0
                 }
@@ -92,7 +90,6 @@ class PurchaseControllerTest {
 
         String body = """
                 {
-                  "orderNo": "ORDER-2",
                   "buyerUserId": 1,
                   "productCode": "PRODUCT-1",
                   "quantity": 1

@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.product.model;
 
 public enum ProductStatus {
-    AVAILABLE,
-    UNAVAILABLE
+    ON_SALE,
+    SOLD_OUT,
+    SALE_STOPPED
 }

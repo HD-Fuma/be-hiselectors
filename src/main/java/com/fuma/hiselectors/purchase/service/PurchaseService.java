@@ -9,11 +9,12 @@ import com.fuma.hiselectors.purchase.dto.PurchaseResponse;
 import com.fuma.hiselectors.purchase.model.PurchaseHistory;
 import com.fuma.hiselectors.purchase.model.PurchaseProcessingResult;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
-import com.fuma.hiselectors.selectors.model.Selector;
-import com.fuma.hiselectors.selectors.repository.SelectorRepository;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +27,7 @@ public class PurchaseService {
 
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final UserRepository userRepository;
-    private final SelectorRepository selectorRepository;
+    private final SelectorsRepository selectorsRepository;
     private final ProductRepository productRepository;
 
     @Transactional
@@ -39,7 +40,7 @@ public class PurchaseService {
             throw new BusinessException(ErrorCode.PURCHASE_USER_NOT_FOUND);
         }
 
-        Long selectorId = findSelectorId(request.selectorCode());
+        Long selectorsId = findSelectorsId(request.selectorsCode());
         Product product = productRepository.findByProductCode(request.productCode())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
@@ -48,53 +49,44 @@ public class PurchaseService {
         }
         validateProductPrice(product);
 
-        return purchaseHistoryRepository.findByOrderNoAndProductIdForUpdate(
-                        request.orderNo(), product.getId())
-                .map(existing -> handleExistingPurchase(existing, request, selectorId))
-                .orElseGet(() -> createPurchase(request, selectorId, product));
+        return createPurchase(request, selectorsId, product);
     }
 
-    private Long findSelectorId(String selectorCode) {
-        if (!StringUtils.hasText(selectorCode)) {
+    private Long findSelectorsId(String selectorsCode) {
+        if (!StringUtils.hasText(selectorsCode)) {
             return null;
         }
-        Selector selector = selectorRepository.findBySelectorsCode(selectorCode)
+        Selectors selectors = selectorsRepository.findBySelectorsCode(selectorsCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-        return selector.getId();
+        return selectors.getId();
     }
 
     private PurchaseResponse createPurchase(
-            PurchaseRequest request, Long selectorId, Product product) {
+            PurchaseRequest request, Long selectorsId, Product product) {
         BigDecimal quantity = BigDecimal.valueOf(request.quantity());
         BigDecimal discountAmount = product.getRegularPrice()
                 .subtract(product.getSalePrice())
                 .multiply(quantity);
         BigDecimal paidAmount = product.getSalePrice().multiply(quantity);
 
+        LocalDateTime purchasedAt = LocalDateTime.now();
         PurchaseHistory purchaseHistory = PurchaseHistory.builder()
-                .orderNo(request.orderNo())
+                .orderNo("TMP-" + UUID.randomUUID())
                 .userId(request.buyerUserId())
-                .selectorId(selectorId)
+                .selectorsId(selectorsId)
                 .productId(product.getId())
                 .quantity(request.quantity())
                 .regularUnitPrice(product.getRegularPrice())
                 .saleUnitPrice(product.getSalePrice())
                 .discountAmount(discountAmount)
                 .paidAmount(paidAmount)
-                .purchasedAt(LocalDateTime.now())
+                .purchasedAt(purchasedAt)
                 .build();
 
-        PurchaseHistory saved = purchaseHistoryRepository.save(purchaseHistory);
+        PurchaseHistory saved = purchaseHistoryRepository.saveAndFlush(purchaseHistory);
+        String orderNo = "ORD" + purchasedAt.getYear() + String.format("%05d", saved.getId());
+        saved.assignOrderNumber(orderNo);
         return PurchaseResponse.of(saved, PurchaseProcessingResult.CREATED);
-    }
-
-    private PurchaseResponse handleExistingPurchase(
-            PurchaseHistory existing, PurchaseRequest request, Long selectorId) {
-        if (existing.hasSamePurchaseIdentity(
-                request.buyerUserId(), selectorId, request.quantity())) {
-            return PurchaseResponse.of(existing, PurchaseProcessingResult.ALREADY_PROCESSED);
-        }
-        throw new BusinessException(ErrorCode.PURCHASE_CONFLICT);
     }
 
     private void validateProductPrice(Product product) {

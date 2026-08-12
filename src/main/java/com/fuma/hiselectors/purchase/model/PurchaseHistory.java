@@ -47,8 +47,8 @@ public class PurchaseHistory extends BaseTimeEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "selector_id")
-    private Long selectorId;
+    @Column(name = "selectors_id")
+    private Long selectorsId;
 
     @Column(name = "product_id", nullable = false)
     private Long productId;
@@ -69,7 +69,7 @@ public class PurchaseHistory extends BaseTimeEntity {
     private BigDecimal paidAmount;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
+    @Column(name = "order_status", nullable = false, length = 30)
     private PurchaseStatus status;
 
     @Column(name = "purchased_at", nullable = false)
@@ -79,13 +79,13 @@ public class PurchaseHistory extends BaseTimeEntity {
     private LocalDateTime confirmedAt;
 
     @Builder
-    private PurchaseHistory(String orderNo, Long userId, Long selectorId, Long productId,
+    private PurchaseHistory(String orderNo, Long userId, Long selectorsId, Long productId,
                             Integer quantity, BigDecimal regularUnitPrice, BigDecimal saleUnitPrice,
                             BigDecimal discountAmount, BigDecimal paidAmount,
                             LocalDateTime purchasedAt) {
         this.orderNo = orderNo;
         this.userId = userId;
-        this.selectorId = selectorId;
+        this.selectorsId = selectorsId;
         this.productId = productId;
         this.quantity = quantity;
         this.regularUnitPrice = regularUnitPrice;
@@ -107,9 +107,13 @@ public class PurchaseHistory extends BaseTimeEntity {
         }
     }
 
-    public boolean hasSamePurchaseIdentity(Long userId, Long selectorId, Integer quantity) {
+    public void assignOrderNumber(String orderNo) {
+        this.orderNo = orderNo;
+    }
+
+    public boolean hasSamePurchaseIdentity(Long userId, Long selectorsId, Integer quantity) {
         return this.userId.equals(userId)
-                && java.util.Objects.equals(this.selectorId, selectorId)
+                && java.util.Objects.equals(this.selectorsId, selectorsId)
                 && this.quantity.equals(quantity);
     }
 }
