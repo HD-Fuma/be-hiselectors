@@ -35,7 +35,9 @@ public class ApplicationController {
             @ApiResponse(responseCode = "400", description = "요청 값 검증 실패(동의 미체크 포함)",
                     content = @Content),
             @ApiResponse(responseCode = "401", description = "로그인 필요", content = @Content),
-            @ApiResponse(responseCode = "404", description = "지원자 없음", content = @Content)
+            @ApiResponse(responseCode = "404", description = "지원자 없음", content = @Content),
+            @ApiResponse(responseCode = "409",
+                    description = "모집 중인 기수 없음 또는 이미 해당 기수에 지원함", content = @Content)
     })
     @PostMapping
     public ResponseEntity<ApplicationResponse> create(
