@@ -1,9 +1,9 @@
-package com.fuma.hiselectors.youtube.controller;
+package com.fuma.hiselectors.oauth.youtube.controller;
 
-import com.fuma.hiselectors.youtube.dto.YouTubeAuthUrlResponse;
-import com.fuma.hiselectors.youtube.dto.YouTubeVerifyRequest;
-import com.fuma.hiselectors.youtube.dto.YouTubeVerifyResponse;
-import com.fuma.hiselectors.youtube.service.YouTubeOAuthService;
+import com.fuma.hiselectors.oauth.youtube.dto.YouTubeAuthUrlResponse;
+import com.fuma.hiselectors.oauth.youtube.dto.YouTubeVerifyRequest;
+import com.fuma.hiselectors.oauth.youtube.dto.YouTubeVerifyResponse;
+import com.fuma.hiselectors.oauth.youtube.service.YouTubeOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;

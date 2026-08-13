@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.instagram.dto;
+package com.fuma.hiselectors.oauth.instagram.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;

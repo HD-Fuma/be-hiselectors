@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.instagram.dto;
+package com.fuma.hiselectors.oauth.instagram.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

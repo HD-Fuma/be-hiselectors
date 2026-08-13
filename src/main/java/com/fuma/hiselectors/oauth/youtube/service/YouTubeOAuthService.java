@@ -1,11 +1,11 @@
-package com.fuma.hiselectors.youtube.service;
+package com.fuma.hiselectors.oauth.youtube.service;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.youtube.config.YouTubeOAuthProperties;
-import com.fuma.hiselectors.youtube.dto.GoogleTokenResponse;
-import com.fuma.hiselectors.youtube.dto.YouTubeChannelListResponse;
-import com.fuma.hiselectors.youtube.dto.YouTubeVerifyResponse;
+import com.fuma.hiselectors.oauth.youtube.config.YouTubeOAuthProperties;
+import com.fuma.hiselectors.oauth.youtube.dto.GoogleTokenResponse;
+import com.fuma.hiselectors.oauth.youtube.dto.YouTubeChannelListResponse;
+import com.fuma.hiselectors.oauth.youtube.dto.YouTubeVerifyResponse;
 import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;

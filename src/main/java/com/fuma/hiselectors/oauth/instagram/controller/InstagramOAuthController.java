@@ -1,9 +1,9 @@
-package com.fuma.hiselectors.instagram.controller;
+package com.fuma.hiselectors.oauth.instagram.controller;
 
-import com.fuma.hiselectors.instagram.dto.InstagramAuthUrlResponse;
-import com.fuma.hiselectors.instagram.dto.InstagramVerifyRequest;
-import com.fuma.hiselectors.instagram.dto.InstagramVerifyResponse;
-import com.fuma.hiselectors.instagram.service.InstagramOAuthService;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramAuthUrlResponse;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyRequest;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyResponse;
+import com.fuma.hiselectors.oauth.instagram.service.InstagramOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;

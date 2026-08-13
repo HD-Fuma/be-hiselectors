@@ -1,9 +1,9 @@
-package com.fuma.hiselectors.instagram.config;
+package com.fuma.hiselectors.oauth.youtube.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-@ConfigurationProperties(prefix = "instagram.oauth")
-public record InstagramOAuthProperties(
+@ConfigurationProperties(prefix = "youtube.oauth")
+public record YouTubeOAuthProperties(
         String clientId,
         String clientSecret,
         String redirectUri,
