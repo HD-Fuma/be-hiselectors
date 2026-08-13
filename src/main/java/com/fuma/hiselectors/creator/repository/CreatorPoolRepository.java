@@ -38,7 +38,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             select new com.fuma.hiselectors.creator.dto.InfluenceCandidate(
                        c.id, c.snsCode, c.accountId, c.creatorName,
                        c.followerCount, c.engagementRate, c.lastContentAt, c.category,
-                       c.createdAt)
+                       c.createdAt, c.updatedAt)
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false
@@ -58,7 +58,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             select new com.fuma.hiselectors.creator.dto.InfluenceCandidate(
                        c.id, c.snsCode, c.accountId, c.creatorName,
                        c.followerCount, c.engagementRate, c.lastContentAt, c.category,
-                       c.createdAt)
+                       c.createdAt, c.updatedAt)
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false

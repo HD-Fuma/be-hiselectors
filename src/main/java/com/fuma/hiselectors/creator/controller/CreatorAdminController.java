@@ -109,9 +109,9 @@ public class CreatorAdminController {
     }
 
     @Operation(summary = "카테고리별 일일 리포트 생성 후보 조회",
-            description = "최근 활동 계정을 동일 카테고리·동일 플랫폼 안에서 백분위 평가한다. "
-                    + "플랫폼별 상위 N% 중 기준일에 처음 등록된 계정만 합친 뒤, "
-                    + "카테고리의 일일 최대 인원만 반환한다. 실제 리포트 생성은 하지 않는다.")
+            description = "최근 활동 계정을 플랫폼별로 백분위 평가한다. 그 점수를 이용해 "
+                    + "기준일에 발굴·갱신된 계정끼리 다시 정렬하고, 당일 대상 중 상위 N%에 "
+                    + "카테고리 일일 최대 인원을 적용한다. 실제 리포트 생성은 하지 않는다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "400", description = "요청 값 오류", content = @Content)
@@ -120,7 +120,8 @@ public class CreatorAdminController {
     public ResponseEntity<DailyReportCandidatesResponse> findDailyReportCandidates(
             @Parameter(description = "카테고리 코드", example = "BEAUTY", required = true)
             @RequestParam String categoryCode,
-            @Parameter(description = "플랫폼별 상위 비율 (1~100)", example = "10")
+            @Parameter(description = "당일 발굴·갱신 대상 중 선정할 상위 비율 (1~100)",
+                    example = "10")
             @RequestParam(defaultValue = "10")
             @Min(1) @Max(100) int topPercent,
             @Parameter(description = "최근 N일 안에 콘텐츠가 있는 계정만 비교 (1~3650)",
