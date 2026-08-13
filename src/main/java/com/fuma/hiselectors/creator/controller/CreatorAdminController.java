@@ -3,6 +3,9 @@ package com.fuma.hiselectors.creator.controller;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
+import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
+import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
+import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -11,12 +14,14 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CreatorAdminController {
 
     private final CreatorDiscoveryService creatorDiscoveryService;
+    private final CreatorInfluenceService creatorInfluenceService;
 
     @Operation(summary = "발굴 크리에이터 목록 조회",
             description = "발굴 결과는 걸러내지 않고 모두 저장하므로, 브랜드 계정이나 구독자 미달 "
@@ -71,6 +77,56 @@ public class CreatorAdminController {
         return ResponseEntity.ok(creatorDiscoveryService.search(
                 categoryCode, snsCode, minFollower, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
+    }
+
+    @Operation(summary = "카테고리·플랫폼별 영향력 상위 N% 조회",
+            description = "같은 카테고리·플랫폼의 최근 활동 계정을 대상으로 팔로워 40%, "
+                    + "ER 40%, 최근성 20%의 백분위 점수를 계산한다. 브랜드 신호 점수가 "
+                    + "2 이상인 계정은 후보에서 제외한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "요청 값 오류", content = @Content)
+    })
+    @GetMapping("/top-percent")
+    public ResponseEntity<TopPercentInfluenceResponse> findTopPercent(
+            @Parameter(description = "카테고리 코드", example = "BEAUTY", required = true)
+            @RequestParam String categoryCode,
+            @Parameter(description = "SNS 코드", example = "YOUTUBE", required = true)
+            @RequestParam String snsCode,
+            @Parameter(description = "상위 비율 (1~100)", example = "10", required = true)
+            @RequestParam int topPercent,
+            @Parameter(description = "최근 N일 안에 콘텐츠가 있는 계정만 후보로 포함 (1~3650)",
+                    example = "90")
+            @RequestParam(defaultValue = "90") int activeWithinDays) {
+        return ResponseEntity.ok(
+                creatorInfluenceService.findTopPercent(
+                        categoryCode, snsCode, topPercent, activeWithinDays));
+    }
+
+    @Operation(summary = "카테고리별 일일 리포트 생성 후보 조회",
+            description = "최근 활동 계정을 동일 카테고리·동일 플랫폼 안에서 백분위 평가한다. "
+                    + "플랫폼별 상위 N% 중 기준일에 처음 등록된 계정만 합친 뒤, "
+                    + "카테고리의 일일 최대 인원만 반환한다. 실제 리포트 생성은 하지 않는다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "요청 값 오류", content = @Content)
+    })
+    @GetMapping("/daily-report-candidates")
+    public ResponseEntity<DailyReportCandidatesResponse> findDailyReportCandidates(
+            @Parameter(description = "카테고리 코드", example = "BEAUTY", required = true)
+            @RequestParam String categoryCode,
+            @Parameter(description = "플랫폼별 상위 비율 (1~100)", example = "10")
+            @RequestParam(defaultValue = "10") int topPercent,
+            @Parameter(description = "최근 N일 안에 콘텐츠가 있는 계정만 비교 (1~3650)",
+                    example = "90")
+            @RequestParam(defaultValue = "90") int activeWithinDays,
+            @Parameter(description = "카테고리당 하루 최대 선정 인원 (1~100)", example = "5")
+            @RequestParam(defaultValue = "5") int dailyLimit,
+            @Parameter(description = "선정 기준일. 생략하면 한국 시간 오늘", example = "2026-08-13")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate selectionDate) {
+        return ResponseEntity.ok(creatorInfluenceService.findDailyReportCandidates(
+                categoryCode, topPercent, activeWithinDays, dailyLimit, selectionDate));
     }
 
     @Operation(summary = "카테고리별 발굴 비중 조회",
