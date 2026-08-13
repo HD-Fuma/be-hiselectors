@@ -42,6 +42,9 @@ youtube:
 
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
+    api-key: ${youtube.collection.api-key}
+
+  collection:
     api-key: ${YOUTUBE_API_KEY:}
 
 instagram:
