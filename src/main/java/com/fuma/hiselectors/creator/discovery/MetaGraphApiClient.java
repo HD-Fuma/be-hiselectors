@@ -7,6 +7,7 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import java.net.URI;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -23,6 +24,8 @@ public class MetaGraphApiClient {
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9._]{1,30}");
     private static final Pattern ERROR_CODE_PATTERN =
             Pattern.compile("\\\"code\\\"\\s*:\\s*(\\d+)");
+    private static final Pattern ERROR_SUBCODE_PATTERN =
+            Pattern.compile("\\\"error_subcode\\\"\\s*:\\s*(\\d+)");
     private static final Pattern ERROR_MESSAGE_PATTERN =
             Pattern.compile("\\\"message\\\"\\s*:\\s*\\\"([^\\\"]*)");
 
@@ -50,7 +53,6 @@ public class MetaGraphApiClient {
                 .fromUriString(properties.baseUrlOrDefault())
                 .pathSegment(properties.apiVersionOrDefault(), properties.igUserId())
                 .queryParam("fields", fields)
-                .queryParam("access_token", properties.accessToken())
                 .build()
                 .encode()
                 .toUri();
@@ -58,6 +60,7 @@ public class MetaGraphApiClient {
         try {
             InstagramBusinessDiscoveryResponse response = restClient.get()
                     .uri(uri)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.accessToken())
                     .retrieve()
                     .body(InstagramBusinessDiscoveryResponse.class);
 
@@ -106,13 +109,11 @@ public class MetaGraphApiClient {
     /** 조회 불가능한 프로필 오류와 토큰·권한·요청 구성 오류를 구분한다. */
     private ErrorCode errorCodeFor(String responseBody) {
         String code = extract(ERROR_CODE_PATTERN, responseBody);
-        String message = safeErrorMessage(responseBody).toLowerCase();
+        String subcode = extract(ERROR_SUBCODE_PATTERN, responseBody);
 
-        boolean unavailableAccount = "10".equals(code)
-                || message.contains("not an instagram business")
-                || message.contains("cannot be found")
-                || message.contains("does not exist")
-                || message.contains("unsupported get request");
+        // Graph API v26.0에서 business_discovery 대상이 프로 계정이 아닐 때의 서명.
+        // code=10은 권한 오류이므로 계정 없음으로 오인하지 않는다.
+        boolean unavailableAccount = "110".equals(code) && "2207013".equals(subcode);
 
         return unavailableAccount
                 ? ErrorCode.INSTAGRAM_DISCOVERY_ACCOUNT_NOT_FOUND

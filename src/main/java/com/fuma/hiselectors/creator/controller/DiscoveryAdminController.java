@@ -62,10 +62,13 @@ public class DiscoveryAdminController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Instagram 발굴 및 저장 성공"),
             @ApiResponse(responseCode = "404",
-                    description = "YouTube 크리에이터 또는 Instagram 사용자명 없음",
+                    description = "YouTube 크리에이터, Instagram 사용자명 또는 조회 가능 계정 없음",
+                    content = @Content),
+            @ApiResponse(responseCode = "500",
+                    description = "Meta Graph API 설정 누락",
                     content = @Content),
             @ApiResponse(responseCode = "502",
-                    description = "Meta Graph API 호출 실패 또는 조회 불가 계정",
+                    description = "Meta Graph API 호출 실패",
                     content = @Content)
     })
     @PostMapping("/creators/{youtubeCreatorId}/instagram")

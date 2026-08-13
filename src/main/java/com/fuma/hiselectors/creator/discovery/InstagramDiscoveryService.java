@@ -17,6 +17,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** YouTube에서 추출한 Instagram 사용자명을 Meta로 조회해 별도 크리에이터로 저장한다. */
@@ -51,13 +52,21 @@ public class InstagramDiscoveryService {
                 discovered.followersCount(), discovered.media());
         LocalDateTime lastContentAt = lastContentAt(discovered);
 
-        return Objects.requireNonNull(transactionTemplate.execute(status -> persist(
-                youtubeCreatorId,
-                sourceCreator.getCategory(),
-                discovered,
-                engagementRate,
-                lastContentAt
-        )));
+        try {
+            return Objects.requireNonNull(transactionTemplate.execute(status -> persist(
+                    youtubeCreatorId,
+                    sourceCreator.getCategory(),
+                    discovered,
+                    engagementRate,
+                    lastContentAt
+            )));
+        } catch (DataIntegrityViolationException e) {
+            // 같은 계정이 동시에 최초 발굴되면 DB 유니크 제약에서 한 요청만 성공한다.
+            // 실패한 요청은 승리한 행을 다시 읽어 정상적인 갱신 결과로 반환한다.
+            return Objects.requireNonNull(transactionTemplate.execute(status ->
+                    updateAfterConcurrentInsert(
+                            youtubeCreatorId, discovered, engagementRate, lastContentAt)));
+        }
     }
 
     private InstagramDiscoveryResult persist(
@@ -68,23 +77,35 @@ public class InstagramDiscoveryService {
             LocalDateTime lastContentAt) {
 
         String username = discovered.username();
+        String instagramId = discovered.id();
+        if (instagramId == null || instagramId.isBlank()) {
+            throw new BusinessException(ErrorCode.INSTAGRAM_DISCOVERY_ACCOUNT_NOT_FOUND);
+        }
         CreatorPool creator = creatorPoolRepository
-                .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_INSTAGRAM, username)
+                .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_INSTAGRAM, instagramId)
+                // 이 기능 도입 전 username을 account_id로 저장한 행은 즉시 이전한다.
+                .or(() -> creatorPoolRepository
+                        .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                                SNS_CODE_INSTAGRAM, username))
                 .orElse(null);
 
         boolean created = creator == null;
         if (created) {
-            creator = creatorPoolRepository.save(CreatorPool.builder()
+            creator = creatorPoolRepository.saveAndFlush(CreatorPool.builder()
                     .snsCode(SNS_CODE_INSTAGRAM)
-                    .accountId(username)
-                    .creatorName(displayName(discovered))
+                    .accountId(instagramId)
+                    .creatorName(username)
                     .followerCount(discovered.followersCount())
                     .lastContentAt(lastContentAt)
                     .engagementRate(engagementRate)
                     .category(sourceCategory)
                     .build());
         } else {
-            creator.updateMetrics(discovered.followersCount(), engagementRate, lastContentAt);
+            if (!instagramId.equals(creator.getAccountId())) {
+                creator.migrateAccountId(instagramId);
+            }
+            creator.updateProfile(username, discovered.followersCount(),
+                    engagementRate, lastContentAt);
             if (creator.isDeleted()) {
                 creator.restore();
             }
@@ -102,10 +123,30 @@ public class InstagramDiscoveryService {
         );
     }
 
-    private String displayName(BusinessDiscovery discovered) {
-        return discovered.name() == null || discovered.name().isBlank()
-                ? discovered.username()
-                : discovered.name();
+    private InstagramDiscoveryResult updateAfterConcurrentInsert(
+            Long sourceCreatorId,
+            BusinessDiscovery discovered,
+            BigDecimal engagementRate,
+            LocalDateTime lastContentAt) {
+        CreatorPool creator = creatorPoolRepository
+                .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                        SNS_CODE_INSTAGRAM, discovered.id())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        creator.updateProfile(discovered.username(), discovered.followersCount(),
+                engagementRate, lastContentAt);
+        if (creator.isDeleted()) {
+            creator.restore();
+        }
+        return new InstagramDiscoveryResult(
+                sourceCreatorId,
+                creator.getId(),
+                discovered.username(),
+                false,
+                discovered.followersCount(),
+                discovered.mediaCount(),
+                engagementRate,
+                lastContentAt
+        );
     }
 
     private LocalDateTime lastContentAt(BusinessDiscovery discovered) {

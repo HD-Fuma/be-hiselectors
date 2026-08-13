@@ -33,6 +33,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class InstagramDiscoveryServiceTest {
@@ -67,19 +68,23 @@ class InstagramDiscoveryServiceTest {
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "17841400602400210"))
+                .thenReturn(Optional.empty());
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                 "INSTAGRAM", "nike"))
                 .thenReturn(Optional.empty());
-        when(creatorPoolRepository.save(any(CreatorPool.class))).thenReturn(savedInstagram);
+        when(creatorPoolRepository.saveAndFlush(any(CreatorPool.class)))
+                .thenReturn(savedInstagram);
         when(savedInstagram.getId()).thenReturn(20L);
 
         InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
 
         ArgumentCaptor<CreatorPool> captor = ArgumentCaptor.forClass(CreatorPool.class);
-        verify(creatorPoolRepository).save(captor.capture());
+        verify(creatorPoolRepository).saveAndFlush(captor.capture());
         CreatorPool instagram = captor.getValue();
         assertThat(instagram.getSnsCode()).isEqualTo("INSTAGRAM");
-        assertThat(instagram.getAccountId()).isEqualTo("nike");
-        assertThat(instagram.getCreatorName()).isEqualTo("Nike");
+        assertThat(instagram.getAccountId()).isEqualTo("17841400602400210");
+        assertThat(instagram.getCreatorName()).isEqualTo("nike");
         assertThat(instagram.getCategory()).isEqualTo("BEAUTY");
         assertThat(instagram.getFollowerCount()).isEqualTo(291_530_362L);
         assertThat(instagram.getEngagementRate()).isEqualByComparingTo("0.04");
@@ -105,21 +110,55 @@ class InstagramDiscoveryServiceTest {
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                "INSTAGRAM", "nike"))
+                "INSTAGRAM", "17841400602400210"))
                 .thenReturn(Optional.of(existing));
         when(existing.getId()).thenReturn(20L);
+        when(existing.getAccountId()).thenReturn("17841400602400210");
         when(existing.isDeleted()).thenReturn(true);
 
         InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
 
-        verify(existing).updateMetrics(
+        verify(existing).updateProfile(
+                "nike",
                 291_530_362L,
                 new BigDecimal("0.04"),
                 LocalDateTime.of(2026, 8, 12, 2, 0, 58)
         );
         verify(existing).restore();
-        verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
+        verify(creatorPoolRepository, never()).saveAndFlush(any(CreatorPool.class));
         assertThat(result.created()).isFalse();
+    }
+
+    @Test
+    void 동시_최초_저장_충돌이_나면_이미_생긴_계정을_갱신한다() {
+        CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
+        CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
+        CreatorPool winner = mock(CreatorPool.class);
+        BusinessDiscovery discovered = discoveredAccount();
+
+        when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
+        when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
+        when(info.getIgHandle()).thenReturn("nike");
+        when(metaGraphApiClient.discover("nike")).thenReturn(discovered);
+        when(engagementCalculator.calculate(291_530_362L, discovered.media()))
+                .thenReturn(new BigDecimal("0.04"));
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "17841400602400210"))
+                .thenReturn(Optional.empty(), Optional.of(winner));
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "nike"))
+                .thenReturn(Optional.empty());
+        when(creatorPoolRepository.saveAndFlush(any(CreatorPool.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate"));
+        when(winner.getId()).thenReturn(20L);
+
+        InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
+
+        verify(winner).updateProfile(
+                "nike", 291_530_362L, new BigDecimal("0.04"),
+                LocalDateTime.of(2026, 8, 12, 2, 0, 58));
+        assertThat(result.created()).isFalse();
+        assertThat(result.instagramCreatorId()).isEqualTo(20L);
     }
 
     @Test
