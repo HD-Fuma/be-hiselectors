@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
+import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -34,7 +35,7 @@ class DiscoveryAdminControllerTest {
                         discoveryPipelineService,
                         instagramDiscoveryService
                 ))
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }
 
@@ -55,13 +56,14 @@ class DiscoveryAdminControllerTest {
 
         mockMvc.perform(post("/api/admin/discovery/creators/10/instagram"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sourceCreatorId").value(10))
-                .andExpect(jsonPath("$.instagramCreatorId").value(20))
-                .andExpect(jsonPath("$.username").value("nike"))
-                .andExpect(jsonPath("$.created").value(true))
-                .andExpect(jsonPath("$.followerCount").value(291_530_362))
-                .andExpect(jsonPath("$.mediaCount").value(1_668))
-                .andExpect(jsonPath("$.engagementRate").value(0.04));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.sourceCreatorId").value(10))
+                .andExpect(jsonPath("$.data.instagramCreatorId").value(20))
+                .andExpect(jsonPath("$.data.username").value("nike"))
+                .andExpect(jsonPath("$.data.created").value(true))
+                .andExpect(jsonPath("$.data.followerCount").value(291_530_362))
+                .andExpect(jsonPath("$.data.mediaCount").value(1_668))
+                .andExpect(jsonPath("$.data.engagementRate").value(0.04));
 
         verify(instagramDiscoveryService).discoverFromYoutubeCreator(10L);
     }

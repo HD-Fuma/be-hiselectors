@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.purchase.dto.PurchaseResponse;
 import com.fuma.hiselectors.purchase.model.PurchaseProcessingResult;
@@ -29,7 +30,7 @@ class PurchaseControllerTest {
         purchaseService = org.mockito.Mockito.mock(PurchaseService.class);
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new PurchaseController(purchaseService))
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }
 
@@ -54,12 +55,13 @@ class PurchaseControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("PURCHASED"))
-                .andExpect(jsonPath("$.regularUnitPrice").value(10000))
-                .andExpect(jsonPath("$.saleUnitPrice").value(8000))
-                .andExpect(jsonPath("$.discountAmount").value(4000))
-                .andExpect(jsonPath("$.paidAmount").value(16000))
-                .andExpect(jsonPath("$.processingResult").value("CREATED"));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("PURCHASED"))
+                .andExpect(jsonPath("$.data.regularUnitPrice").value(10000))
+                .andExpect(jsonPath("$.data.saleUnitPrice").value(8000))
+                .andExpect(jsonPath("$.data.discountAmount").value(4000))
+                .andExpect(jsonPath("$.data.paidAmount").value(16000))
+                .andExpect(jsonPath("$.data.processingResult").value("CREATED"));
     }
 
     @Test
@@ -100,6 +102,7 @@ class PurchaseControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.processingResult").value("CREATED"));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.processingResult").value("CREATED"));
     }
 }
