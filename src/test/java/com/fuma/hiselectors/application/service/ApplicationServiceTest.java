@@ -39,7 +39,7 @@ class ApplicationServiceTest {
 
     private void stubActiveGeneration() {
         when(generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         any(), any(), any()))
                 .thenReturn(Optional.of(Generation.builder().generationName("1기").build()));
     }
@@ -79,7 +79,7 @@ class ApplicationServiceTest {
         when(userRepository.findByHiId("hi-user"))
                 .thenReturn(Optional.of(User.builder().hiId("hi-user").build()));
         when(generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         any(), any(), any()))
                 .thenReturn(Optional.empty());
 

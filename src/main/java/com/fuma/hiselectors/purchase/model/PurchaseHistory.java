@@ -69,7 +69,7 @@ public class PurchaseHistory extends BaseTimeEntity {
     private BigDecimal paidAmount;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "order_status", nullable = false, length = 30)
+    @Column(name = "status", nullable = false, length = 20)
     private PurchaseStatus status;
 
     @Column(name = "purchased_at", nullable = false)

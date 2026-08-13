@@ -1,0 +1,115 @@
+package com.fuma.hiselectors.notification.service;
+
+import com.fuma.hiselectors.notification.model.NotificationType;
+import org.springframework.stereotype.Component;
+
+@Component
+// 문구 생성기: 알림 목적별 제목·본문·버튼 이름 결정
+public class NotificationMessageFactory {
+
+    public MessageText create(NotificationType type, String name, String detail) {
+        return switch (type) {
+            case SELECTION_APPROVED -> selectionApproved(name);
+            case SELECTION_REJECTED -> selectionRejected(name, detail);
+            case CONTENT_EDIT_REQUEST -> contentEditRequest(name, detail);
+            case CONTENT_EDIT_DONE -> contentEditDone(name);
+            case DEAD_LINK_NOTICE -> deadLinkNotice(name, detail);
+            case SETTLEMENT_MISSING -> settlementMissing(name);
+            case ACTIVITY_GUIDE -> activityGuide(name, detail);
+        };
+    }
+
+    private MessageText selectionApproved(String name) {
+        return new MessageText(
+                "[셀렉터스 가입 승인 안내]",
+                name + "님, 셀렉터스 가입 심사가 완료되었습니다.\n\n"
+                        + "심사 결과, 셀렉터스로 최종 선정되었습니다.\n\n"
+                        + "이제 셀렉터스 활동을 시작하실 수 있습니다. "
+                        + "활동 전 가이드와 유의사항을 확인해 주세요.",
+                "활동 가이드 확인하기"
+        );
+    }
+
+    private MessageText selectionRejected(String name, String detail) {
+        return new MessageText(
+                "[셀렉터스 가입 반려 안내]",
+                name + "님, 셀렉터스 가입 심사가 완료되었습니다.\n\n"
+                        + "내부 기준에 따라 검토한 결과, "
+                        + "아쉽게도 이번 신청 건은 승인되지 않았습니다."
+                        + suffix(detail)
+                        + "\n\n앞으로 콘텐츠 활동을 지속해 주신다면 "
+                        + "추후 다시 지원하셨을 때 긍정적으로 검토하겠습니다.\n\n"
+                        + "셀렉터스 서비스에 관심을 가지고 신청해주셔서 감사합니다.",
+                "더현대Hi 바로가기"
+        );
+    }
+
+    private MessageText contentEditRequest(String name, String detail) {
+        return new MessageText(
+                "[셀렉터스 콘텐츠 수정 요청 안내]",
+                name + "님이 등록하신 콘텐츠 검수 결과, "
+                        + "수정이 필요한 사항이 확인되었습니다."
+                        + suffix(detail)
+                        + "\n\n내용을 확인하신 후 콘텐츠를 수정해 주세요. "
+                        + "수정된 콘텐츠는 다시 검수됩니다.",
+                "콘텐츠 확인하기"
+        );
+    }
+
+    private MessageText contentEditDone(String name) {
+        return new MessageText(
+                "[셀렉터스 콘텐츠 수정 확인 안내]",
+                name + "님이 수정하신 콘텐츠의 재검수가 완료되었습니다.\n\n"
+                        + "요청드린 수정 사항이 정상적으로 반영된 것을 확인했습니다.\n\n"
+                        + "해당 콘텐츠는 현재 정상 상태로 처리되었습니다.\n\n"
+                        + "협조해 주셔서 감사합니다.",
+                "콘텐츠 확인하기"
+        );
+    }
+
+    private MessageText deadLinkNotice(String name, String detail) {
+        return new MessageText(
+                "[셀렉터스 링크 확인 요청]",
+                name + "님이 등록한 셀렉터스 콘텐츠에서 "
+                        + "정상적으로 연결되지 않는 링크가 확인되었습니다."
+                        + suffix(detail)
+                        + "\n\n해당 링크를 확인하신 후 정상적인 셀렉터스 링크로 수정해 주세요.\n\n"
+                        + "링크가 정상적으로 연결되지 않을 경우 "
+                        + "클릭 및 구매 성과가 정상적으로 집계되지 않을 수 있습니다.",
+                "콘텐츠 확인하기"
+        );
+    }
+
+    private MessageText settlementMissing(String name) {
+        return new MessageText(
+                "[셀렉터스 정산 정보 등록 안내]",
+                name + "님, 현재 셀렉터스 정산 정보가 등록되지 않은 상태입니다.\n\n"
+                        + "정산 정보가 등록되지 않으면 발생한 수익에 대한 "
+                        + "정산이 진행되지 않습니다.\n\n"
+                        + "원활한 수익 지급을 위해 정산 정보를 등록해 주세요.\n\n"
+                        + "※ 가입 후 12개월 이상 정산 정보 미등록 또는 "
+                        + "오기재 상태가 지속될 경우 정산금이 소멸될 수 있습니다.",
+                "정산 정보 등록하기"
+        );
+    }
+
+    private MessageText activityGuide(String name, String detail) {
+        return new MessageText(
+                "[셀렉터스 활동 안내]",
+                name + "님, 셀렉터스 활동 가이드를 확인하고 활동에 참여해 주세요."
+                        + suffix(detail),
+                "활동 가이드 확인하기"
+        );
+    }
+
+    private String suffix(String detail) {
+        if (detail == null || detail.isBlank()) {
+            return "";
+        }
+
+        return "\n\n■ 상세 내용\n" + detail;
+    }
+
+    public record MessageText(String title, String description, String buttonTitle) {
+    }
+}

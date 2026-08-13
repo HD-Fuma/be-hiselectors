@@ -33,7 +33,7 @@ public class ApplicationService {
 
         LocalDateTime now = LocalDateTime.now();
         Generation generation = generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
 
