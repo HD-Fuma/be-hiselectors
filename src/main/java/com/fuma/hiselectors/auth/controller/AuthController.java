@@ -4,6 +4,8 @@ import com.fuma.hiselectors.auth.dto.LoginRequest;
 import com.fuma.hiselectors.auth.dto.TokenResponse;
 import com.fuma.hiselectors.auth.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,7 +33,11 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "아이디 또는 비밀번호 불일치", content = @io.swagger.v3.oas.annotations.media.Content)
     })
     @PostMapping("/user/login")
-    public ResponseEntity<TokenResponse> userLogin(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponse> userLogin(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(examples = @ExampleObject(
+                            value = "{\n  \"loginId\": \"hiuser1\",\n  \"password\": \"0000\"\n}")))
+            @Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.userLogin(request));
     }
 
@@ -43,7 +49,11 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "아이디 또는 비밀번호 불일치", content = @io.swagger.v3.oas.annotations.media.Content)
     })
     @PostMapping("/admin/login")
-    public ResponseEntity<TokenResponse> adminLogin(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponse> adminLogin(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(examples = @ExampleObject(
+                            value = "{\n  \"loginId\": \"admin1\",\n  \"password\": \"0000\"\n}")))
+            @Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.adminLogin(request));
     }
 }
