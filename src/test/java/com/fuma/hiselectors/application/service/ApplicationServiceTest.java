@@ -88,4 +88,18 @@ class ApplicationServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACTIVE_GENERATION_NOT_FOUND);
     }
+
+    @Test
+    void rejectsWhenAlreadyAppliedToGeneration() {
+        when(userRepository.findByHiId("hi-user"))
+                .thenReturn(Optional.of(User.builder().hiId("hi-user").build()));
+        stubActiveGeneration();
+        when(applicationRepository.existsByUserIdAndGenerationId(any(), any()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.create("hi-user", request()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.DUPLICATE_APPLICATION);
+    }
 }

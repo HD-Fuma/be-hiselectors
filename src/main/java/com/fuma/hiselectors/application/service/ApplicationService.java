@@ -37,6 +37,10 @@ public class ApplicationService {
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
 
+        if (applicationRepository.existsByUserIdAndGenerationId(user.getId(), generation.getId())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_APPLICATION);
+        }
+
         Application application = Application.builder()
                 .userId(user.getId())
                 .generationId(generation.getId())
