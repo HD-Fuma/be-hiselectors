@@ -1,0 +1,59 @@
+package com.fuma.hiselectors.selectors.model;
+
+import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.common.BaseTimeEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+@Entity
+@Table(name = "selectors_sns_account")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class SelectorsSnsAccount extends BaseTimeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "selectors_sns_account_id")
+    private Long id;
+
+    @Column(name = "selectors_id", nullable = false)
+    private Long selectorsId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sns_code", nullable = false, length = 20)
+    private SnsPlatform snsCode;
+
+    @Column(name = "account_id", nullable = false, length = 100)
+    private String accountId;
+
+    @Column(name = "follower_count")
+    private Long followerCount;
+
+    @Column(name = "last_collected_at", nullable = false)
+    private LocalDateTime lastCollectedAt;
+
+    @Builder
+    private SelectorsSnsAccount(Long selectorsId, SnsPlatform snsCode, String accountId,
+                               Long followerCount, LocalDateTime lastCollectedAt) {
+        this.selectorsId = selectorsId;
+        this.snsCode = snsCode;
+        this.accountId = accountId;
+        this.followerCount = followerCount;
+        this.lastCollectedAt = lastCollectedAt == null ? LocalDateTime.now() : lastCollectedAt;
+    }
+
+    public void completeCollection(LocalDateTime collectedAt) {
+        this.lastCollectedAt = collectedAt;
+    }
+}
