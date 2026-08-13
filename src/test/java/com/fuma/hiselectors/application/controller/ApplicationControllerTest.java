@@ -31,6 +31,9 @@ class ApplicationControllerTest {
     void rejectsWhenPrivacyConsentMissing() throws Exception {
         String body = """
                 {
+                  "snsCode": "YOUTUBE",
+                  "snsAccountId": "UC123",
+                  "followerCount": 100,
                   "privacyAgreed": false,
                   "alarmAgreed": true
                 }
@@ -47,6 +50,9 @@ class ApplicationControllerTest {
     void rejectsWhenAlarmConsentMissing() throws Exception {
         String body = """
                 {
+                  "snsCode": "YOUTUBE",
+                  "snsAccountId": "UC123",
+                  "followerCount": 100,
                   "privacyAgreed": true,
                   "alarmAgreed": false
                 }
