@@ -20,7 +20,7 @@ public class GenerationService {
     public Generation getActive() {
         LocalDateTime now = LocalDateTime.now();
         return generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
     }

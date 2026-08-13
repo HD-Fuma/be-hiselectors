@@ -35,15 +35,15 @@ public class Generation {
     private LocalDateTime endDate;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "generation_status", length = 20)
-    private GenerationStatus generationStatus;
+    @Column(name = "status", length = 20)
+    private GenerationStatus status;
 
     @Builder
     private Generation(String generationName, LocalDateTime startDate,
-                       LocalDateTime endDate, GenerationStatus generationStatus) {
+                       LocalDateTime endDate, GenerationStatus status) {
         this.generationName = generationName;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.generationStatus = generationStatus;
+        this.status = status;
     }
 }

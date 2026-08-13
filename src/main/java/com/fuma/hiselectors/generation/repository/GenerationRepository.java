@@ -10,6 +10,6 @@ public interface GenerationRepository extends JpaRepository<Generation, Long> {
 
 
     Optional<Generation>
-    findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
-            LocalDateTime startBound, LocalDateTime endBound, GenerationStatus generationStatus);
+    findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
+            LocalDateTime startBound, LocalDateTime endBound, GenerationStatus status);
 }

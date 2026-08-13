@@ -9,7 +9,7 @@ public record GenerationResponse(
         String generationName,
         LocalDateTime startDate,
         LocalDateTime endDate,
-        GenerationStatus generationStatus
+        GenerationStatus status
 ) {
 
     public static GenerationResponse from(Generation generation) {
@@ -18,7 +18,7 @@ public record GenerationResponse(
                 generation.getGenerationName(),
                 generation.getStartDate(),
                 generation.getEndDate(),
-                generation.getGenerationStatus()
+                generation.getStatus()
         );
     }
 }

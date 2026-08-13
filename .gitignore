@@ -68,3 +68,4 @@ application-secret.properties
 .DS_Store
 Thumbs.db
 /.serena/
+/.claude/
