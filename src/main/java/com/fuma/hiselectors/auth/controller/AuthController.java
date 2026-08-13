@@ -4,8 +4,11 @@ import com.fuma.hiselectors.auth.dto.LoginRequest;
 import com.fuma.hiselectors.auth.dto.TokenResponse;
 import com.fuma.hiselectors.auth.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "인증", description = "유저/관리자 로그인 및 JWT 발급")
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -31,7 +35,11 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "아이디 또는 비밀번호 불일치", content = @io.swagger.v3.oas.annotations.media.Content)
     })
     @PostMapping("/user/login")
-    public ResponseEntity<TokenResponse> userLogin(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponse> userLogin(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(examples = @ExampleObject(
+                            value = "{\n  \"loginId\": \"hiuser1\",\n  \"password\": \"0000\"\n}")))
+            @Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.userLogin(request));
     }
 
@@ -43,7 +51,11 @@ public class AuthController {
             @ApiResponse(responseCode = "401", description = "아이디 또는 비밀번호 불일치", content = @io.swagger.v3.oas.annotations.media.Content)
     })
     @PostMapping("/admin/login")
-    public ResponseEntity<TokenResponse> adminLogin(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<TokenResponse> adminLogin(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(examples = @ExampleObject(
+                            value = "{\n  \"loginId\": \"admin1\",\n  \"password\": \"0000\"\n}")))
+            @Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.adminLogin(request));
     }
 }
