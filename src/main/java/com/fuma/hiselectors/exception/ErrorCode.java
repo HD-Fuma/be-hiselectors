@@ -61,10 +61,9 @@ public enum ErrorCode {
     ),
 
     // --- 지원 ---
-    APPLICATION_USER_NOT_FOUND(
-            HttpStatus.NOT_FOUND,
-            "지원자를 찾을 수 없습니다."
-    );
+
+    APPLICATION_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "지원자를 찾을 수 없습니다."),
+    ACTIVE_GENERATION_NOT_FOUND(HttpStatus.CONFLICT, "현재 모집 중인 기수가 없어 지원할 수 없습니다.");
 
     private final HttpStatus status;
     private final String message;
