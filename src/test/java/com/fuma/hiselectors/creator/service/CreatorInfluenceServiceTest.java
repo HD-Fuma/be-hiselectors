@@ -112,12 +112,11 @@ class CreatorInfluenceServiceTest {
     void 플랫폼별_상위_퍼센트에_든_오늘_신규_후보만_카테고리_한도만큼_선정한다() {
         LocalDate selectionDate = LocalDate.of(2026, 8, 13);
         List<InfluenceCandidate> candidates = List.of(
-                candidate(1L, "YOUTUBE", 10_000L, "1.00", selectionDate.minusDays(1)),
-                candidate(2L, "YOUTUBE", 100_000L, "9.00", selectionDate),
-                candidate(3L, "YOUTUBE", 90_000L, "8.00", selectionDate),
-                candidate(4L, "INSTAGRAM", 10_000L, "1.00", selectionDate.minusDays(1)),
-                candidate(5L, "INSTAGRAM", 100_000L, "9.00", selectionDate),
-                candidate(6L, "INSTAGRAM", 90_000L, "8.00", selectionDate)
+                // Instagram은 단독 후보라 지표가 낮아도 플랫폼 내부 상위 50%다.
+                candidate(1L, "INSTAGRAM", 1_000L, "1.00", selectionDate),
+                // YouTube 상위 50%는 기존 고지표 후보가 차지한다.
+                candidate(2L, "YOUTUBE", 100_000L, "9.00", selectionDate.minusDays(1)),
+                candidate(3L, "YOUTUBE", 90_000L, "8.00", selectionDate)
         );
         InfluenceScoreCalculator realCalculator = new InfluenceScoreCalculator();
         when(creatorPoolRepository.findInfluenceCandidatesByCategory(
@@ -127,14 +126,14 @@ class CreatorInfluenceServiceTest {
                 realCalculator.rank(invocation.getArgument(0)));
 
         DailyReportCandidatesResponse result = service.findDailyReportCandidates(
-                "beauty", 100, 90, 3, selectionDate);
+                "beauty", 50, 90, 3, selectionDate);
 
         assertThat(result.categoryCode()).isEqualTo("BEAUTY");
-        assertThat(result.rankingPoolSize()).isEqualTo(6);
-        assertThat(result.discoveredTodayCount()).isEqualTo(4);
-        assertThat(result.selectedCount()).isEqualTo(3);
+        assertThat(result.rankingPoolSize()).isEqualTo(3);
+        assertThat(result.discoveredTodayCount()).isEqualTo(2);
+        assertThat(result.selectedCount()).isEqualTo(1);
         assertThat(result.creators()).extracting(creator -> creator.creatorId())
-                .containsExactly(2L, 5L, 3L);
+                .containsExactly(1L);
     }
 
     @Test
