@@ -46,8 +46,8 @@ class YoutubeContentClientTest {
     }
 
     @Test
-    @DisplayName("채널의 신규 YouTube 영상을 RawContent로 변환한다")
-    void collectNewVideos(CapturedOutput output) {
+    @DisplayName("채널의 현재 기수 YouTube 영상을 모두 RawContent로 변환한다")
+    void collectGenerationVideos(CapturedOutput output) {
         expectUploadsPlaylist();
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
@@ -87,9 +87,10 @@ class YoutubeContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
 
-        assertThat(result).singleElement().satisfies(content -> {
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).satisfies(content -> {
             assertThat(content.snsCode()).isEqualTo(SnsPlatform.YOUTUBE);
             assertThat(content.snsContentId()).isEqualTo("video-new");
             assertThat(content.contentUrl())
@@ -107,9 +108,9 @@ class YoutubeContentClientTest {
         assertThat(output)
                 .contains("platform=YOUTUBE")
                 .contains("accountId=" + CHANNEL_ID)
-                .contains("collectedAfter=2026-08-13T13:00")
+                .contains("generationStartedAt=2026-08-13T12:00")
                 .contains("fetchedCount=2")
-                .contains("newCount=1")
+                .contains("generationContentCount=2")
                 .contains("durationMs=");
         server.verify();
     }
@@ -136,7 +137,7 @@ class YoutubeContentClientTest {
     }
 
     @Test
-    @DisplayName("신규 영상이 없는 페이지에서 조회를 종료한다")
+    @DisplayName("기수 시작 전 영상만 있는 페이지에서 조회를 종료한다")
     void stopAtOldPage() {
         expectUploadsPlaylist();
         server.expect(request -> assertThat(request.getURI().getPath())

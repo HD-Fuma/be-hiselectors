@@ -70,14 +70,14 @@ public class InstagramContentClient implements ContentPlatformClient {
     }
 
     /**
-     * username의 Instagram 게시물 중 collectedAfter 이후 게시물 조회
+     * username의 Instagram 게시물 중 현재 기수 시작 시각 이후 게시물 조회
      *
      * accountId: Instagram username (숫자 ID가 아님)
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public List<RawContent> collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
+    public List<RawContent> collect(String accountId, LocalDateTime generationStartedAt) {
+        validateRequest(accountId, generationStartedAt);
 
         long startedAtNanos = System.nanoTime();
         int fetchedCount = 0;
@@ -90,10 +90,10 @@ public class InstagramContentClient implements ContentPlatformClient {
             // API가 반환한 게시글 수 합산 (로깅)
             fetchedCount += page.data() == null ? 0 : page.data().size();
 
-            // 마지막 수집 시각 이후 게시글만 RawContent로 변환
-            boolean reachedCollectedAt = addNewContents(
-                    page.data(), collectedAfter, contents);
-            if (reachedCollectedAt) {
+            // 현재 기수 시작 시각 이후 게시글을 신규·기존 여부와 관계없이 변환
+            boolean reachedBeforeGeneration = addGenerationContents(
+                    page.data(), generationStartedAt, contents);
+            if (reachedBeforeGeneration) {
                 break;
             }
 
@@ -109,24 +109,24 @@ public class InstagramContentClient implements ContentPlatformClient {
             page = requestNextPage(nextUrl);
         }
 
-        // 플랫폼, 계정, 신규 기준 시각, 조회 건수, 신규 건수, 소요 시간 기록
+        // 플랫폼, 계정, 기수 시작 시각, API 조회 건수, 기수 내 건수, 소요 시간 기록
         log.info(
-                "콘텐츠 수집 완료. platform={} accountId={} collectedAfter={} "
-                        + "fetchedCount={} newCount={} durationMs={}",
-                supports(), accountId, collectedAfter, fetchedCount, contents.size(),
+                "콘텐츠 수집 완료. platform={} accountId={} generationStartedAt={} "
+                        + "fetchedCount={} generationContentCount={} durationMs={}",
+                supports(), accountId, generationStartedAt, fetchedCount, contents.size(),
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
         return List.copyOf(contents);
     }
 
-    private void validateRequest(String username, LocalDateTime collectedAfter) {
+    private void validateRequest(String username, LocalDateTime generationStartedAt) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
         }
 
-        // username, collectedAfter가 정상인지 확인
+        // username, generationStartedAt이 정상인지 확인
         if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()
-                || collectedAfter == null) {
+                || generationStartedAt == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -186,27 +186,27 @@ public class InstagramContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addNewContents(List<Media> media, LocalDateTime collectedAfter,
-                                   List<RawContent> contents) {
+    private boolean addGenerationContents(List<Media> media, LocalDateTime generationStartedAt,
+                                          List<RawContent> contents) {
         if (media == null || media.isEmpty()) {
             return true;
         }
 
-        boolean hasNewContent = false;
+        boolean hasGenerationContent = false;
         for (Media item : media) {
             if (item == null || item.timestamp() == null) {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
             // createdAt은 DB 저장 시각이 아닌 Instagram 게시글 작성 시각
             LocalDateTime createdAt = parseTimestamp(item.timestamp());
-            if (!createdAt.isAfter(collectedAfter)) {
+            if (createdAt.isBefore(generationStartedAt)) {
                 continue;
             }
             contents.add(toRawContent(item, createdAt));
-            hasNewContent = true;
+            hasGenerationContent = true;
         }
-        // 최신순 페이지에서 신규 게시글이 없으면 이후 페이지 조회 종료
-        return !hasNewContent;
+        // 최신순 페이지의 모든 게시글이 기수 시작 전이면 이후 페이지 조회 종료
+        return !hasGenerationContent;
     }
 
     private RawContent toRawContent(Media media, LocalDateTime createdAt) {

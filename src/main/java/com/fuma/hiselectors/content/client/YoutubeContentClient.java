@@ -66,14 +66,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
     }
 
     /**
-     * channelId의 YouTube 영상 중 collectedAfter 이후 영상 조회
+     * channelId의 YouTube 영상 중 현재 기수 시작 시각 이후 영상 조회
      *
      * accountId: {@code UC...} 형식의 채널 ID
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public List<RawContent> collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
+    public List<RawContent> collect(String accountId, LocalDateTime generationStartedAt) {
+        validateRequest(accountId, generationStartedAt);
 
         long startedAtNanos = System.nanoTime();
         int fetchedCount = 0;
@@ -89,9 +89,9 @@ public class YoutubeContentClient implements ContentPlatformClient {
                     uploadsPlaylistId, pageToken);
             // 신규 여부와 관계없이 API가 반환한 영상 항목 수 합산 (로깅)
             fetchedCount += page.items() == null ? 0 : page.items().size();
-            boolean reachedCollectedAt = addNewContents(
-                    page.items(), collectedAfter, contents);
-            if (reachedCollectedAt) {
+            boolean reachedBeforeGeneration = addGenerationContents(
+                    page.items(), generationStartedAt, contents);
+            if (reachedBeforeGeneration) {
                 break;
             }
 
@@ -105,23 +105,23 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 throw new BusinessException(ErrorCode.YOUTUBE_API_CALL_FAILED);
             }
         }
-        // 플랫폼과 계정, 신규 기준 시각, 조회 건수, 신규 건수, 소요 시간 기록
+        // 플랫폼, 계정, 기수 시작 시각, API 조회 건수, 기수 내 건수, 소요 시간 기록
         log.info(
-                "콘텐츠 수집 완료. platform={} accountId={} collectedAfter={} "
-                        + "fetchedCount={} newCount={} durationMs={}",
-                supports(), accountId, collectedAfter, fetchedCount, contents.size(),
+                "콘텐츠 수집 완료. platform={} accountId={} generationStartedAt={} "
+                        + "fetchedCount={} generationContentCount={} durationMs={}",
+                supports(), accountId, generationStartedAt, fetchedCount, contents.size(),
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
         return List.copyOf(contents);
     }
 
-    private void validateRequest(String channelId, LocalDateTime collectedAfter) {
+    private void validateRequest(String channelId, LocalDateTime generationStartedAt) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // channelId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(channelId) || collectedAfter == null) {
+        // channelId, generationStartedAt이 정상인지 확인
+        if (!StringUtils.hasText(channelId) || generationStartedAt == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -179,14 +179,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addNewContents(List<Item> items, LocalDateTime collectedAfter,
-                                   List<RawContent> contents) {
+    private boolean addGenerationContents(List<Item> items, LocalDateTime generationStartedAt,
+                                          List<RawContent> contents) {
         if (items == null) {
             return false;
         }
 
         boolean hasPublishedVideo = false;
-        boolean hasNewContent = false;
+        boolean hasGenerationContent = false;
         for (Item item : items) {
             // 삭제되거나 비공개여서 필수 정보가 없는 영상 항목 제외
             if (!hasVideo(item)) {
@@ -195,14 +195,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
             hasPublishedVideo = true;
             // createdAt: YouTube 영상 공개 시각
             LocalDateTime createdAt = parseCreatedAt(item.contentDetails().videoPublishedAt());
-            if (!createdAt.isAfter(collectedAfter)) {
+            if (createdAt.isBefore(generationStartedAt)) {
                 continue;
             }
             contents.add(toRawContent(item, createdAt));
-            hasNewContent = true;
+            hasGenerationContent = true;
         }
-        // 현재 페이지의 공개 영상이 모두 수집 기준 시각 이전이면 조회 종료
-        return hasPublishedVideo && !hasNewContent;
+        // 현재 페이지의 공개 영상이 모두 기수 시작 전이면 조회 종료
+        return hasPublishedVideo && !hasGenerationContent;
     }
 
     private boolean hasVideo(Item item) {

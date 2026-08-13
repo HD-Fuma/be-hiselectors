@@ -35,7 +35,7 @@ class ContentClientSmokeTest {
 
     private static final String INSTAGRAM_USERNAME = "nike";
     private static final String YOUTUBE_CHANNEL_ID = "UCQIUpdrt5UOD2ykffc1wjBA";
-    private static final LocalDateTime COLLECTED_AFTER =
+    private static final LocalDateTime GENERATION_STARTED_AT =
             LocalDateTime.now(ZoneId.of("Asia/Seoul")).minusMonths(1);
 
     @Autowired
@@ -47,7 +47,7 @@ class ContentClientSmokeTest {
     @Test
     void collectInstagramContentsFromRealApi() {
         List<RawContent> contents = instagramContentClient.collect(
-                INSTAGRAM_USERNAME, COLLECTED_AFTER);
+                INSTAGRAM_USERNAME, GENERATION_STARTED_AT);
 
         assertRawContents(contents, SnsPlatform.INSTAGRAM);
     }
@@ -55,7 +55,7 @@ class ContentClientSmokeTest {
     @Test
     void collectYoutubeContentsFromRealApi() {
         List<RawContent> contents = youtubeContentClient.collect(
-                YOUTUBE_CHANNEL_ID, COLLECTED_AFTER);
+                YOUTUBE_CHANNEL_ID, GENERATION_STARTED_AT);
 
         assertRawContents(contents, SnsPlatform.YOUTUBE);
     }

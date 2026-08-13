@@ -47,8 +47,8 @@ class InstagramContentClientTest {
     }
 
     @Test
-    @DisplayName("Business Discovery로 신규 Instagram 콘텐츠를 조회한다")
-    void collectNewMedia(CapturedOutput output) {
+    @DisplayName("Business Discovery로 현재 기수 Instagram 콘텐츠를 모두 조회한다")
+    void collectGenerationMedia(CapturedOutput output) {
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
                             .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
@@ -78,6 +78,10 @@ class InstagramContentClientTest {
                                 },
                                 {
                                   "id": "feed-old",
+                                  "caption": "existing feed caption",
+                                  "media_type": "IMAGE",
+                                  "media_product_type": "FEED",
+                                  "media_url": "https://cdn.example.com/feed-old.jpg",
                                   "permalink": "https://www.instagram.com/p/old",
                                   "timestamp": "2026-08-13T03:00:00+0000"
                                 },
@@ -96,11 +100,11 @@ class InstagramContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+                "nike", LocalDateTime.of(2026, 8, 13, 12, 0));
 
-        assertThat(result).hasSize(2);
+        assertThat(result).hasSize(3);
         assertThat(result).extracting(RawContent::snsContentId)
-                .containsExactly("reel-new", "video-new");
+                .containsExactly("reel-new", "feed-old", "video-new");
         assertThat(result.getFirst().snsCode()).isEqualTo(SnsPlatform.INSTAGRAM);
         assertThat(result.getFirst().contentUrl())
                 .isEqualTo("https://www.instagram.com/reel/new");
@@ -112,19 +116,19 @@ class InstagramContentClientTest {
                 "reel-new",
                 RawContentMedia.MediaType.VIDEO,
                 "https://cdn.example.com/reel-new.mp4"));
-        assertThat(result.get(1).contentType()).isEqualTo(ContentType.FEED);
-        assertThat(result.get(1).contentUrl())
+        assertThat(result.get(2).contentType()).isEqualTo(ContentType.FEED);
+        assertThat(result.get(2).contentUrl())
                 .isEqualTo("https://www.instagram.com/p/video");
-        assertThat(result.get(1).media()).containsExactly(new RawContentMedia(
+        assertThat(result.get(2).media()).containsExactly(new RawContentMedia(
                 "video-new",
                 RawContentMedia.MediaType.VIDEO,
                 null));
         assertThat(output)
                 .contains("platform=INSTAGRAM")
                 .contains("accountId=nike")
-                .contains("collectedAfter=2026-08-13T13:00")
+                .contains("generationStartedAt=2026-08-13T12:00")
                 .contains("fetchedCount=3")
-                .contains("newCount=2")
+                .contains("generationContentCount=3")
                 .contains("durationMs=");
         server.verify();
     }
@@ -241,7 +245,7 @@ class InstagramContentClientTest {
     }
 
     @Test
-    @DisplayName("신규 게시물이 없는 페이지에서 조회를 종료한다")
+    @DisplayName("기수 시작 전 게시물만 있는 페이지에서 조회를 종료한다")
     void stopAtOldPage() {
         server.expect(request -> assertThat(request.getURI().getPath())
                         .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID))
