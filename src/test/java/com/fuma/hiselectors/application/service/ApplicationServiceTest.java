@@ -3,7 +3,10 @@ package com.fuma.hiselectors.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.dto.ApplicationCreateRequest;
@@ -21,6 +24,7 @@ import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ApplicationServiceTest {
 
@@ -91,15 +95,24 @@ class ApplicationServiceTest {
 
     @Test
     void rejectsWhenAlreadyAppliedToGeneration() {
-        when(userRepository.findByHiId("hi-user"))
-                .thenReturn(Optional.of(User.builder().hiId("hi-user").build()));
-        stubActiveGeneration();
-        when(applicationRepository.existsByUserIdAndGenerationId(any(), any()))
+        User user = User.builder().hiId("hi-user").build();
+        ReflectionTestUtils.setField(user, "id", 7L);
+        Generation generation = Generation.builder().generationName("2기").build();
+        ReflectionTestUtils.setField(generation, "id", 2L);
+
+        when(userRepository.findByHiId("hi-user")).thenReturn(Optional.of(user));
+        when(generationRepository
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                        any(), any(), any()))
+                .thenReturn(Optional.of(generation));
+        when(applicationRepository.existsByUserIdAndGenerationId(eq(7L), eq(2L)))
                 .thenReturn(true);
 
         assertThatThrownBy(() -> service.create("hi-user", request()))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.DUPLICATE_APPLICATION);
+
+        verify(applicationRepository, never()).save(any());
     }
 }
