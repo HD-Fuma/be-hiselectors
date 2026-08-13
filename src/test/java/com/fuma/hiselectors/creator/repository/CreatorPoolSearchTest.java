@@ -3,10 +3,12 @@ package com.fuma.hiselectors.creator.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
+import com.fuma.hiselectors.creator.dto.InfluenceCandidate;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorPool;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -92,6 +94,46 @@ class CreatorPoolSearchTest {
                 .extracting(CreatorSummary::creatorName)
                 .doesNotContain("무신사 공식채널")
                 .hasSize(3);
+    }
+
+    @Test
+    @DisplayName("영향력 후보는 카테고리·플랫폼·브랜드·최근 활동 조건을 모두 만족해야 한다")
+    void findInfluenceCandidates() {
+        save("YOUTUBE", "UC_fitness_brand", "피트니스 공식", 900_000L,
+                "FITNESS", 1, 5, null, "0.95");
+        save("INSTAGRAM", "ig_fitness", "인스타 운동", 80_000L,
+                "FITNESS", 1, 0, null, "0.95");
+        em.flush();
+        em.clear();
+
+        List<InfluenceCandidate> result = creatorPoolRepository
+                .findInfluenceCandidates(
+                        "FITNESS", "YOUTUBE", 1, LocalDateTime.now().minusDays(90));
+
+        assertThat(result).extracting(InfluenceCandidate::creatorName)
+                .containsExactlyInAnyOrder("핏지피티 홈트", "운동일기 초보")
+                .doesNotContain("헬스마스터TV", "피트니스 공식", "인스타 운동");
+    }
+
+    @Test
+    @DisplayName("일일 후보 비교 풀은 같은 카테고리의 플랫폼들을 함께 조회한다")
+    void findInfluenceCandidatesByCategory() {
+        save("YOUTUBE", "UC_fitness_brand", "피트니스 공식", 900_000L,
+                "FITNESS", 1, 5, null, "0.95");
+        save("INSTAGRAM", "ig_fitness", "인스타 운동", 80_000L,
+                "FITNESS", 1, 0, null, "0.95");
+        em.flush();
+        em.clear();
+
+        List<InfluenceCandidate> result = creatorPoolRepository
+                .findInfluenceCandidatesByCategory(
+                        "FITNESS", 1, LocalDateTime.now().minusDays(90));
+
+        assertThat(result).extracting(InfluenceCandidate::creatorName)
+                .containsExactlyInAnyOrder("핏지피티 홈트", "운동일기 초보", "인스타 운동")
+                .doesNotContain("헬스마스터TV", "피트니스 공식");
+        assertThat(result).allSatisfy(candidate ->
+                assertThat(candidate.discoveredAt()).isNotNull());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.creator.discovery;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse.BusinessDiscovery;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse.MediaItem;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
@@ -25,8 +26,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class InstagramDiscoveryService {
 
-    private static final String SNS_CODE_YOUTUBE = "YOUTUBE";
-    private static final String SNS_CODE_INSTAGRAM = "INSTAGRAM";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final MetaGraphApiClient metaGraphApiClient;
@@ -37,7 +36,7 @@ public class InstagramDiscoveryService {
 
     public InstagramDiscoveryResult discoverFromYoutubeCreator(Long youtubeCreatorId) {
         CreatorPool sourceCreator = creatorPoolRepository.findById(youtubeCreatorId)
-                .filter(creator -> SNS_CODE_YOUTUBE.equals(creator.getSnsCode()))
+                .filter(creator -> SnsPlatform.YOUTUBE.name().equals(creator.getSnsCode()))
                 .filter(creator -> !creator.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CREATOR_NOT_FOUND));
 
@@ -82,17 +81,18 @@ public class InstagramDiscoveryService {
             throw new BusinessException(ErrorCode.INSTAGRAM_DISCOVERY_ACCOUNT_NOT_FOUND);
         }
         CreatorPool creator = creatorPoolRepository
-                .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_INSTAGRAM, instagramId)
+                .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                        SnsPlatform.INSTAGRAM.name(), instagramId)
                 // 이 기능 도입 전 username을 account_id로 저장한 행은 즉시 이전한다.
                 .or(() -> creatorPoolRepository
                         .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                                SNS_CODE_INSTAGRAM, username))
+                                SnsPlatform.INSTAGRAM.name(), username))
                 .orElse(null);
 
         boolean created = creator == null;
         if (created) {
             creator = creatorPoolRepository.saveAndFlush(CreatorPool.builder()
-                    .snsCode(SNS_CODE_INSTAGRAM)
+                    .snsCode(SnsPlatform.INSTAGRAM.name())
                     .accountId(instagramId)
                     .creatorName(username)
                     .followerCount(discovered.followersCount())
@@ -130,7 +130,7 @@ public class InstagramDiscoveryService {
             LocalDateTime lastContentAt) {
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                        SNS_CODE_INSTAGRAM, discovered.id())
+                        SnsPlatform.INSTAGRAM.name(), discovered.id())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
         creator.updateProfile(discovered.username(), discovered.followersCount(),
                 engagementRate, lastContentAt);
