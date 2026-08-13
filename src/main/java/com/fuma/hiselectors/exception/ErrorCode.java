@@ -59,6 +59,22 @@ public enum ErrorCode {
             HttpStatus.BAD_GATEWAY,
             "YouTube API 호출에 실패했습니다. 쿼터 초과 여부를 확인하세요."
     ),
+    META_GRAPH_CONFIG_MISSING(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Meta Graph API 설정이 누락되었습니다."
+    ),
+    META_GRAPH_API_CALL_FAILED(
+            HttpStatus.BAD_GATEWAY,
+            "Meta Graph API 호출에 실패했습니다. 토큰과 권한을 확인하세요."
+    ),
+    INSTAGRAM_DISCOVERY_ACCOUNT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "조회 가능한 Instagram 비즈니스 계정을 찾을 수 없습니다."
+    ),
+    INSTAGRAM_HANDLE_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "YouTube 채널에서 추출된 Instagram 사용자명이 없습니다."
+    ),
 
     // --- 지원 ---
 

@@ -1,7 +1,9 @@
 package com.fuma.hiselectors.creator.controller;
 
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
+import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
+import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DiscoveryAdminController {
 
     private final DiscoveryPipelineService discoveryPipelineService;
+    private final InstagramDiscoveryService instagramDiscoveryService;
 
     @Operation(summary = "키워드로 발굴 실행",
             description = "등록된 키워드 하나로 YouTube 를 검색해 채널을 발굴하고 저장한다. "
@@ -50,5 +53,28 @@ public class DiscoveryAdminController {
 
         return ResponseEntity.ok(
                 discoveryPipelineService.runByKeyword(keywordId, maxResults));
+    }
+
+    @Operation(summary = "YouTube 크리에이터의 Instagram 계정 발굴",
+            description = "YouTube 채널 설명에서 추출해 둔 Instagram 사용자명을 Meta Graph API로 "
+                    + "조회하고, 공개 지표를 수집해 별도의 INSTAGRAM 크리에이터로 저장한다. "
+                    + "기존 Instagram 계정이면 팔로워 수·참여율·최근 활동일을 갱신한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Instagram 발굴 및 저장 성공"),
+            @ApiResponse(responseCode = "404",
+                    description = "YouTube 크리에이터 또는 Instagram 사용자명 없음",
+                    content = @Content),
+            @ApiResponse(responseCode = "502",
+                    description = "Meta Graph API 호출 실패 또는 조회 불가 계정",
+                    content = @Content)
+    })
+    @PostMapping("/creators/{youtubeCreatorId}/instagram")
+    public ResponseEntity<InstagramDiscoveryResult> discoverInstagram(
+            @Parameter(description = "Instagram 사용자명이 추출된 YouTube creator_pool ID",
+                    example = "101")
+            @PathVariable Long youtubeCreatorId) {
+
+        return ResponseEntity.ok(
+                instagramDiscoveryService.discoverFromYoutubeCreator(youtubeCreatorId));
     }
 }
