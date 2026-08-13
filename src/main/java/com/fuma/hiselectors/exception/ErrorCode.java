@@ -25,6 +25,14 @@ public enum ErrorCode {
     INSTAGRAM_STATE_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 인증 요청입니다."),
     INSTAGRAM_OAUTH_FAILED(HttpStatus.BAD_GATEWAY, "인스타그램 인증 처리 중 오류가 발생했습니다."),
     INSTAGRAM_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "연결된 인스타그램 계정을 찾을 수 없습니다."),
+    INSTAGRAM_COLLECTION_CONFIG_MISSING(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Instagram 콘텐츠 수집 설정이 누락되었습니다."
+    ),
+    INSTAGRAM_API_CALL_FAILED(
+            HttpStatus.BAD_GATEWAY,
+            "Instagram 콘텐츠 조회에 실패했습니다."
+    ),
 
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),

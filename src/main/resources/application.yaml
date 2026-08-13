@@ -51,6 +51,11 @@ instagram:
     redirect-uri: ${INSTAGRAM_REDIRECT_URI}
     scope: instagram_business_basic
 
+  collection:
+    api-version: ${META_API_VERSION:v24.0}
+    business-account-id: ${META_INSTAGRAM_BUSINESS_ACCOUNT_ID:}
+    access-token: ${META_LONG_LIVED_ACCESS_TOKEN:}
+
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:
   state-validity-seconds: 300
