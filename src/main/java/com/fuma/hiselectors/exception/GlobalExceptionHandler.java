@@ -1,14 +1,18 @@
 package com.fuma.hiselectors.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 
@@ -48,10 +52,37 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(code.getStatus()).body(body);
     }
 
+    // @Validated 메서드 파라미터 검증 실패 -> 400
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException e, HttpServletRequest request) {
+        ConstraintViolation<?> violation = e.getConstraintViolations().stream()
+                .findFirst()
+                .orElse(null);
+        String message = violation != null
+                ? violation.getPropertyPath() + ": " + violation.getMessage()
+                : ErrorCode.INVALID_INPUT.getMessage();
+        ErrorCode code = ErrorCode.INVALID_INPUT;
+        ErrorResponse body = ErrorResponse.of(code, message, request.getRequestURI());
+        return ResponseEntity.status(code.getStatus()).body(body);
+    }
+
     // JSON 문법 오류 또는 Enum 등 요청 타입 변환 실패 -> 400
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleNotReadable(
             HttpMessageNotReadableException e, HttpServletRequest request) {
+        ErrorCode code = ErrorCode.INVALID_INPUT;
+        ErrorResponse body = ErrorResponse.of(code, request.getRequestURI());
+        return ResponseEntity.status(code.getStatus()).body(body);
+    }
+
+    // 쿼리 파라미터 누락 또는 숫자/Enum 타입 변환 실패 -> 400
+    @ExceptionHandler({
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class
+    })
+    public ResponseEntity<ErrorResponse> handleRequestParameter(
+            Exception e, HttpServletRequest request) {
         ErrorCode code = ErrorCode.INVALID_INPUT;
         ErrorResponse body = ErrorResponse.of(code, request.getRequestURI());
         return ResponseEntity.status(code.getStatus()).body(body);
