@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -25,7 +26,10 @@ import lombok.NoArgsConstructor;
  * 계정 통합·동일인 판정은 하지 않는다.
  */
 @Entity
-@Table(name = "creator_pool")
+@Table(name = "creator_pool", uniqueConstraints = @UniqueConstraint(
+        name = "uk_creator_pool_sns_account",
+        columnNames = {"sns_code", "account_id"}
+))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CreatorPool extends BaseTimeEntity {
@@ -93,6 +97,22 @@ public class CreatorPool extends BaseTimeEntity {
         }
         if (lastContentAt != null) {
             this.lastContentAt = lastContentAt;
+        }
+    }
+
+    /** Instagram 사용자명 변경을 반영하면서 공개 지표도 함께 갱신한다. */
+    public void updateProfile(String creatorName, Long followerCount,
+                              BigDecimal engagementRate, LocalDateTime lastContentAt) {
+        if (creatorName != null && !creatorName.isBlank()) {
+            this.creatorName = creatorName;
+        }
+        updateMetrics(followerCount, engagementRate, lastContentAt);
+    }
+
+    /** 사용자명을 식별자로 저장했던 기존 Instagram 행을 불변 ID 기반으로 이전한다. */
+    public void migrateAccountId(String accountId) {
+        if (accountId != null && !accountId.isBlank()) {
+            this.accountId = accountId;
         }
     }
 
