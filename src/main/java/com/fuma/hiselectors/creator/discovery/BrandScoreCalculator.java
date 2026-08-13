@@ -3,6 +3,7 @@ package com.fuma.hiselectors.creator.discovery;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -56,7 +57,7 @@ public class BrandScoreCalculator {
      * @param igHandle 이미 추출된 인스타 핸들. 검사 전에 본문에서 지운다. 없으면 null
      */
     public BrandScore calculate(String channelTitle, String description, String igHandle) {
-        String title = channelTitle == null ? "" : channelTitle.toLowerCase();
+        String title = channelTitle == null ? "" : channelTitle.toLowerCase(Locale.ROOT);
 
         // 자동 생성 채널은 다른 신호를 볼 것도 없이 제외 대상이다
         if (channelTitle != null && AUTO_GENERATED.matcher(channelTitle).find()) {
@@ -65,16 +66,17 @@ public class BrandScoreCalculator {
 
         String body = description == null ? "" : description;
         body = EMAIL.matcher(body).replaceAll(" ");
-        body = ANY_URL.matcher(body).replaceAll(" ").toLowerCase();
+        body = ANY_URL.matcher(body).replaceAll(" ").toLowerCase(Locale.ROOT);
         if (igHandle != null) {
-            body = body.replace(igHandle.toLowerCase(), " ");
+            body = body.replace(igHandle.toLowerCase(Locale.ROOT), " ");
         }
 
         int score = 0;
         Set<String> hits = new LinkedHashSet<>();
 
         for (String hint : STRONG_HINTS) {
-            if (title.contains(hint) || body.contains(hint)) {
+            String normalizedHint = hint.toLowerCase(Locale.ROOT);
+            if (title.contains(normalizedHint) || body.contains(normalizedHint)) {
                 score += 2;
                 hits.add(hint);
             }
@@ -92,10 +94,11 @@ public class BrandScoreCalculator {
             }
         }
         for (String hint : WEAK_HINTS) {
-            if (title.contains(hint)) {
+            String normalizedHint = hint.toLowerCase(Locale.ROOT);
+            if (title.contains(normalizedHint)) {
                 score += 2;
                 hits.add(hint + "(채널명)");
-            } else if (body.contains(hint)) {
+            } else if (body.contains(normalizedHint)) {
                 score += 1;
                 hits.add(hint + "(설명)");
             }

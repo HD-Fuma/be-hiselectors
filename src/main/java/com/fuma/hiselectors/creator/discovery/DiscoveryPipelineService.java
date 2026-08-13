@@ -19,10 +19,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 발굴 파이프라인. 키워드 하나로 YouTube 를 검색해 채널을 찾고 DB 에 저장한다.
@@ -56,23 +57,36 @@ public class DiscoveryPipelineService {
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final CreatorDiscoverySourceRepository discoverySourceRepository;
     private final CreatorDiscoveryService creatorDiscoveryService;
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * 키워드 하나로 발굴을 실행한다. 약 102 units 를 쓴다.
      *
      * @param keywordId {@code discovery_keyword} 의 ID
      */
-    @Transactional
     public DiscoveryRunResult runByKeyword(Long keywordId, Integer maxResults) {
-        DiscoveryKeyword keyword = keywordRepository.findById(keywordId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.KEYWORD_NOT_FOUND));
+        String keywordText = keywordRepository.findById(keywordId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.KEYWORD_NOT_FOUND))
+                .getKeyword();
 
         List<DiscoveredChannel> channels =
-                youtubeClient.discoverByKeyword(keyword.getKeyword(), maxResults);
+                youtubeClient.discoverByKeyword(keywordText, maxResults);
+        int consumedQuota = youtubeClient.consumedQuota();
 
         long totalViews = channels.stream()
                 .mapToLong(DiscoveredChannel::matchedVideoViews)
                 .sum();
+
+        return Objects.requireNonNull(transactionTemplate.execute(status ->
+                persistDiscoveryResult(keywordId, channels, totalViews, consumedQuota)));
+    }
+
+    /** 외부 API 호출이 끝난 뒤 DB 변경 작업만 하나의 트랜잭션으로 처리한다. */
+    private DiscoveryRunResult persistDiscoveryResult(
+            Long keywordId, List<DiscoveredChannel> channels,
+            long totalViews, int consumedQuota) {
+        DiscoveryKeyword keyword = keywordRepository.findById(keywordId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.KEYWORD_NOT_FOUND));
 
         int created = 0;
         int updated = 0;
@@ -91,7 +105,7 @@ public class DiscoveryPipelineService {
                 keyword.getKeyword(),
                 keyword.getCategory().getCode(),
                 channels.size(), created, updated,
-                youtubeClient.consumedQuota());
+                consumedQuota);
 
         log.info("발굴 완료. {}", result);
         return result;

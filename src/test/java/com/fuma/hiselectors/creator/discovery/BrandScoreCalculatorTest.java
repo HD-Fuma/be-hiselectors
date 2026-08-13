@@ -3,6 +3,7 @@ package com.fuma.hiselectors.creator.discovery;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.creator.discovery.BrandScoreCalculator.BrandScore;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -88,5 +89,21 @@ class BrandScoreCalculatorTest {
 
         assertThat(score.score()).isZero();
         assertThat(score.isBrand()).isFalse();
+    }
+
+    @Test
+    @DisplayName("기본 로케일과 무관하게 영문 힌트를 판정한다")
+    void englishHintIsLocaleIndependent() {
+        Locale original = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr"));
+
+            BrandScore score = calculator.calculate(
+                    "OFFICIAL CHANNEL", "Creator channel", null);
+
+            assertThat(score.isBrand()).isTrue();
+        } finally {
+            Locale.setDefault(original);
+        }
     }
 }
