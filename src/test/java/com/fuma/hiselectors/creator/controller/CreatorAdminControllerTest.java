@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.controller;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,14 +14,17 @@ import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
+import jakarta.validation.Validation;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
 
 class CreatorAdminControllerTest {
 
@@ -31,8 +35,12 @@ class CreatorAdminControllerTest {
     void setUp() {
         CreatorDiscoveryService creatorDiscoveryService = mock(CreatorDiscoveryService.class);
         creatorInfluenceService = mock(CreatorInfluenceService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new CreatorAdminController(
-                        creatorDiscoveryService, creatorInfluenceService))
+        CreatorAdminController controller = new CreatorAdminController(
+                creatorDiscoveryService, creatorInfluenceService);
+        ProxyFactory proxyFactory = new ProxyFactory(controller);
+        proxyFactory.addAdvice(new MethodValidationInterceptor(
+                Validation.buildDefaultValidatorFactory().getValidator()));
+        mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }
@@ -90,18 +98,27 @@ class CreatorAdminControllerTest {
 
     @Test
     void topPercent가_범위를_벗어나면_400을_반환한다() throws Exception {
-        when(creatorInfluenceService.findTopPercent("BEAUTY", "YOUTUBE", 0, 90))
-                .thenThrow(new IllegalArgumentException(
-                        "topPercent는 1~100 사이여야 합니다."));
-
         mockMvc.perform(get("/api/admin/creators/top-percent")
                         .param("categoryCode", "BEAUTY")
                         .param("snsCode", "YOUTUBE")
                         .param("topPercent", "0"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-                .andExpect(jsonPath("$.message")
-                        .value("topPercent는 1~100 사이여야 합니다."));
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        verifyNoInteractions(creatorInfluenceService);
+    }
+
+    @Test
+    void 일일_후보_조회값이_범위를_벗어나면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/admin/creators/daily-report-candidates")
+                        .param("categoryCode", "BEAUTY")
+                        .param("topPercent", "101")
+                        .param("activeWithinDays", "0")
+                        .param("dailyLimit", "101"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        verifyNoInteractions(creatorInfluenceService);
     }
 
     @Test

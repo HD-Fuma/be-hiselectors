@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,6 +25,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/admin/creators")
 @RequiredArgsConstructor
+@Validated
 public class CreatorAdminController {
 
     private final CreatorDiscoveryService creatorDiscoveryService;
@@ -94,10 +98,11 @@ public class CreatorAdminController {
             @Parameter(description = "SNS 코드", example = "YOUTUBE", required = true)
             @RequestParam String snsCode,
             @Parameter(description = "상위 비율 (1~100)", example = "10", required = true)
-            @RequestParam int topPercent,
+            @RequestParam @Min(1) @Max(100) int topPercent,
             @Parameter(description = "최근 N일 안에 콘텐츠가 있는 계정만 후보로 포함 (1~3650)",
                     example = "90")
-            @RequestParam(defaultValue = "90") int activeWithinDays) {
+            @RequestParam(defaultValue = "90")
+            @Min(1) @Max(3_650) int activeWithinDays) {
         return ResponseEntity.ok(
                 creatorInfluenceService.findTopPercent(
                         categoryCode, snsCode, topPercent, activeWithinDays));
@@ -116,12 +121,15 @@ public class CreatorAdminController {
             @Parameter(description = "카테고리 코드", example = "BEAUTY", required = true)
             @RequestParam String categoryCode,
             @Parameter(description = "플랫폼별 상위 비율 (1~100)", example = "10")
-            @RequestParam(defaultValue = "10") int topPercent,
+            @RequestParam(defaultValue = "10")
+            @Min(1) @Max(100) int topPercent,
             @Parameter(description = "최근 N일 안에 콘텐츠가 있는 계정만 비교 (1~3650)",
                     example = "90")
-            @RequestParam(defaultValue = "90") int activeWithinDays,
+            @RequestParam(defaultValue = "90")
+            @Min(1) @Max(3_650) int activeWithinDays,
             @Parameter(description = "카테고리당 하루 최대 선정 인원 (1~100)", example = "5")
-            @RequestParam(defaultValue = "5") int dailyLimit,
+            @RequestParam(defaultValue = "5")
+            @Min(1) @Max(100) int dailyLimit,
             @Parameter(description = "선정 기준일. 생략하면 한국 시간 오늘", example = "2026-08-13")
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate selectionDate) {

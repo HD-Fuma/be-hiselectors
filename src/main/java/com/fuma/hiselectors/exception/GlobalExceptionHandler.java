@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -44,6 +46,21 @@ public class GlobalExceptionHandler {
         FieldError fieldError = e.getBindingResult().getFieldError();
         String message = (fieldError != null)
                 ? fieldError.getField() + ": " + fieldError.getDefaultMessage()
+                : ErrorCode.INVALID_INPUT.getMessage();
+        ErrorCode code = ErrorCode.INVALID_INPUT;
+        ErrorResponse body = ErrorResponse.of(code, message, request.getRequestURI());
+        return ResponseEntity.status(code.getStatus()).body(body);
+    }
+
+    // @Validated 메서드 파라미터 검증 실패 -> 400
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            ConstraintViolationException e, HttpServletRequest request) {
+        ConstraintViolation<?> violation = e.getConstraintViolations().stream()
+                .findFirst()
+                .orElse(null);
+        String message = violation != null
+                ? violation.getPropertyPath() + ": " + violation.getMessage()
                 : ErrorCode.INVALID_INPUT.getMessage();
         ErrorCode code = ErrorCode.INVALID_INPUT;
         ErrorResponse body = ErrorResponse.of(code, message, request.getRequestURI());
