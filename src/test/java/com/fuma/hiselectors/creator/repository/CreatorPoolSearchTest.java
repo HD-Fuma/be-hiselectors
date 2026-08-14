@@ -29,7 +29,7 @@ import org.springframework.context.annotation.Import;
  * 구독자 미달 계정을 빼는 일은 전적으로 이 쿼리가 담당한다.
  */
 @DataJpaTest
-@TestPropertySource(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+@Import(JpaAuditingConfig.class)
 
 class CreatorPoolSearchTest {
 
