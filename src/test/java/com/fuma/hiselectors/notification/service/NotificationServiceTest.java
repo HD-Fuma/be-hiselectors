@@ -52,7 +52,7 @@ class NotificationServiceTest {
         when(adminRepository.findByLoginId("admin")).thenReturn(Optional.of(admin));
         when(admin.getKakaoSenderConnectionId()).thenReturn(1L);
         when(recipientRepository.findByUserId(2L)).thenReturn(Optional.of(recipient));
-        when(recipient.getRecipientStatus()).thenReturn(KakaoRecipientStatus.READY);
+        when(recipient.getStatus()).thenReturn(KakaoRecipientStatus.READY);
         when(recipient.getKakaoMessageUuid()).thenReturn("uuid");
         when(recipient.getId()).thenReturn(4L);
         when(templateFactoryResolver.create(KakaoTemplateType.TEXT, command))

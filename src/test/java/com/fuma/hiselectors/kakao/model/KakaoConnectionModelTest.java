@@ -24,7 +24,7 @@ class KakaoConnectionModelTest {
 
         assertThat(connection.getAccessTokenEncrypted()).isEqualTo("new-access-token");
         assertThat(connection.getRefreshTokenEncrypted()).isEqualTo("new-refresh-token");
-        assertThat(connection.getConnectionStatus()).isEqualTo(KakaoSenderConnectionStatus.CONNECTED);
+        assertThat(connection.getStatus()).isEqualTo(KakaoSenderConnectionStatus.CONNECTED);
         assertThat(connection.toString()).doesNotContain("new-access-token", "new-refresh-token");
     }
 
@@ -38,15 +38,15 @@ class KakaoConnectionModelTest {
                 .build();
 
         recipient.markReauthRequired();
-        assertThat(recipient.getRecipientStatus()).isEqualTo(KakaoRecipientStatus.REAUTH_REQUIRED);
+        assertThat(recipient.getStatus()).isEqualTo(KakaoRecipientStatus.REAUTH_REQUIRED);
 
         recipient.updateConnection(20L, "uuid-after");
         assertThat(recipient.getKakaoUserId()).isEqualTo(20L);
         assertThat(recipient.getKakaoMessageUuid()).isEqualTo("uuid-after");
-        assertThat(recipient.getRecipientStatus()).isEqualTo(KakaoRecipientStatus.READY);
+        assertThat(recipient.getStatus()).isEqualTo(KakaoRecipientStatus.READY);
 
         recipient.deactivate();
-        assertThat(recipient.getRecipientStatus()).isEqualTo(KakaoRecipientStatus.INACTIVE);
+        assertThat(recipient.getStatus()).isEqualTo(KakaoRecipientStatus.INACTIVE);
     }
 
     private KakaoSenderConnection senderConnection(LocalDateTime now) {

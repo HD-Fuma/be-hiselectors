@@ -45,8 +45,8 @@ public class UserKakaoRecipient extends BaseTimeEntity {
     private String kakaoMessageUuid;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "recipient_status", nullable = false, length = 20)
-    private KakaoRecipientStatus recipientStatus;
+    @Column(name = "status", nullable = false, length = 20)
+    private KakaoRecipientStatus status;
 
     @Builder
     private UserKakaoRecipient(Long userId, Long kakaoUserId, String kakaoMessageUuid) {
@@ -57,14 +57,14 @@ public class UserKakaoRecipient extends BaseTimeEntity {
     public void updateConnection(Long kakaoUserId, String kakaoMessageUuid) {
         this.kakaoUserId = Objects.requireNonNull(kakaoUserId);
         this.kakaoMessageUuid = Objects.requireNonNull(kakaoMessageUuid);
-        this.recipientStatus = KakaoRecipientStatus.READY;
+        this.status = KakaoRecipientStatus.READY;
     }
 
     public void markReauthRequired() {
-        this.recipientStatus = KakaoRecipientStatus.REAUTH_REQUIRED;
+        this.status = KakaoRecipientStatus.REAUTH_REQUIRED;
     }
 
     public void deactivate() {
-        this.recipientStatus = KakaoRecipientStatus.INACTIVE;
+        this.status = KakaoRecipientStatus.INACTIVE;
     }
 }

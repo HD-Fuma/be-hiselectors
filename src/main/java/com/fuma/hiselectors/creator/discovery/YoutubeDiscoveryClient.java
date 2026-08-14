@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * 발굴용 YouTube 조회. API 키로 남의 공개 채널을 검색한다.
  *
- * <p>{@code com.fuma.hiselectors.youtube} 의 OAuth 인증과는 용도가 다르다.
+ * <p>{@code com.fuma.hiselectors.oauth.youtube} 의 OAuth 인증과는 용도가 다르다.
  * 저쪽은 사용자가 동의한 본인 채널을 확인하고, 이쪽은 동의 없이 공개 정보를 수집한다.
  * 자격증명도 사용자 토큰이 아니라 우리 API 키다.
  *

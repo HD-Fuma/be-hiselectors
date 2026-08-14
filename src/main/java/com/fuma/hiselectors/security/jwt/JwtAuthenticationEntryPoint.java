@@ -1,7 +1,7 @@
 package com.fuma.hiselectors.security.jwt;
 
+import com.fuma.hiselectors.common.ApiResult;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.exception.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -27,7 +27,7 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
 
-        ErrorResponse body = ErrorResponse.of(code, request.getRequestURI());
+        ApiResult<Void> body = ApiResult.error(code.name(), code.getMessage());
         objectMapper.writeValue(response.getWriter(), body);
     }
 }

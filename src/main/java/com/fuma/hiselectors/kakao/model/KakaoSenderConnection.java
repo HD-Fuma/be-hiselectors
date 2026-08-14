@@ -54,8 +54,8 @@ public class KakaoSenderConnection extends BaseTimeEntity {
     private LocalDateTime refreshTokenExpiresAt;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "connection_status", nullable = false, length = 20)
-    private KakaoSenderConnectionStatus connectionStatus;
+    @Column(name = "status", nullable = false, length = 20)
+    private KakaoSenderConnectionStatus status;
 
     @Builder
     private KakaoSenderConnection(Long kakaoUserId,
@@ -94,7 +94,7 @@ public class KakaoSenderConnection extends BaseTimeEntity {
                                   LocalDateTime accessTokenExpiresAt) {
         this.accessTokenEncrypted = Objects.requireNonNull(accessTokenEncrypted);
         this.accessTokenExpiresAt = Objects.requireNonNull(accessTokenExpiresAt);
-        this.connectionStatus = KakaoSenderConnectionStatus.CONNECTED;
+        this.status = KakaoSenderConnectionStatus.CONNECTED;
     }
 
     public void updateTokens(String accessTokenEncrypted,
@@ -105,10 +105,10 @@ public class KakaoSenderConnection extends BaseTimeEntity {
         this.refreshTokenEncrypted = Objects.requireNonNull(refreshTokenEncrypted);
         this.accessTokenExpiresAt = Objects.requireNonNull(accessTokenExpiresAt);
         this.refreshTokenExpiresAt = Objects.requireNonNull(refreshTokenExpiresAt);
-        this.connectionStatus = KakaoSenderConnectionStatus.CONNECTED;
+        this.status = KakaoSenderConnectionStatus.CONNECTED;
     }
 
     public void markReauthRequired() {
-        this.connectionStatus = KakaoSenderConnectionStatus.REAUTH_REQUIRED;
+        this.status = KakaoSenderConnectionStatus.REAUTH_REQUIRED;
     }
 }

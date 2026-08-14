@@ -16,12 +16,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.test.context.TestPropertySource;
 
 /**
  * 커스텀 JPQL 은 애플리케이션 기동 시점에 파싱된다. 문법이 틀리면 앱 자체가 뜨지 않으므로
  * 매핑과 쿼리를 여기서 먼저 검증한다.
  */
 @DataJpaTest
+@TestPropertySource(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 class CreatorDiscoveryRepositoryTest {
 
     @Autowired

@@ -11,6 +11,6 @@ public record KakaoSenderConnectionResponse(
 ) {
     public static KakaoSenderConnectionResponse from(KakaoSenderConnection connection) {
         return new KakaoSenderConnectionResponse(connection.getId(), connection.getKakaoUserId(),
-                connection.getSenderName(), connection.getConnectionStatus());
+                connection.getSenderName(), connection.getStatus());
     }
 }

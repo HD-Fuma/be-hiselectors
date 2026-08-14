@@ -11,6 +11,6 @@ public record KakaoRecipientConnectionResponse(
 ) {
     public static KakaoRecipientConnectionResponse from(UserKakaoRecipient recipient) {
         return new KakaoRecipientConnectionResponse(recipient.getUserId(), recipient.getKakaoUserId(),
-                recipient.getKakaoMessageUuid(), recipient.getRecipientStatus());
+                recipient.getKakaoMessageUuid(), recipient.getStatus());
     }
 }

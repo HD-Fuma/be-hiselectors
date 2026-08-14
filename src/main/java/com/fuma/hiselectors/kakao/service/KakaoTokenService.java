@@ -27,7 +27,7 @@ public class KakaoTokenService {
     @Transactional(noRollbackFor = BusinessException.class)
     public String getValidAccessToken(Long connectionId) {
         KakaoSenderConnection connection = lockedConnection(connectionId);
-        if (connection.getConnectionStatus() == KakaoSenderConnectionStatus.REAUTH_REQUIRED) {
+        if (connection.getStatus() == KakaoSenderConnectionStatus.REAUTH_REQUIRED) {
             throw new BusinessException(ErrorCode.KAKAO_SENDER_REAUTH_REQUIRED);
         }
         if (connection.getAccessTokenExpiresAt().isAfter(

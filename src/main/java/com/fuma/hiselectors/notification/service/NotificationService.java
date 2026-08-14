@@ -68,7 +68,7 @@ public class NotificationService {
         }
         UserKakaoRecipient recipient = recipientRepository.findByUserId(command.recipientUserId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
-        if (recipient.getRecipientStatus() != KakaoRecipientStatus.READY) {
+        if (recipient.getStatus() != KakaoRecipientStatus.READY) {
             throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_READY);
         }
 

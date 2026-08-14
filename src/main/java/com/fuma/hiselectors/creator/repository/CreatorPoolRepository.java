@@ -1,9 +1,11 @@
 package com.fuma.hiselectors.creator.repository;
 
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
+import com.fuma.hiselectors.creator.dto.InfluenceCandidate;
 import com.fuma.hiselectors.creator.model.CreatorPool;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,6 +32,44 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     /** 화면 조회용. 소프트 삭제된 계정은 제외한다. */
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
+
+    /** 브랜드 계정을 제외한 카테고리·플랫폼별 영향력 계산 후보. */
+    @Query("""
+            select new com.fuma.hiselectors.creator.dto.InfluenceCandidate(
+                       c.id, c.snsCode, c.accountId, c.creatorName,
+                       c.followerCount, c.engagementRate, c.lastContentAt, c.category,
+                       c.createdAt, c.updatedAt)
+            from CreatorPool c
+            left join CreatorDiscoveryInfo i on i.creatorPool = c
+            where c.deleted = false
+              and c.category = :categoryCode
+              and c.snsCode = :snsCode
+              and coalesce(i.brandScore, 0) <= :maxBrandScore
+              and c.lastContentAt >= :activeAfter
+            """)
+    List<InfluenceCandidate> findInfluenceCandidates(
+            @Param("categoryCode") String categoryCode,
+            @Param("snsCode") String snsCode,
+            @Param("maxBrandScore") Integer maxBrandScore,
+            @Param("activeAfter") LocalDateTime activeAfter);
+
+    /** 일일 리포트 후보 선정용. 한 카테고리의 플랫폼별 비교 대상을 함께 조회한다. */
+    @Query("""
+            select new com.fuma.hiselectors.creator.dto.InfluenceCandidate(
+                       c.id, c.snsCode, c.accountId, c.creatorName,
+                       c.followerCount, c.engagementRate, c.lastContentAt, c.category,
+                       c.createdAt, c.updatedAt)
+            from CreatorPool c
+            left join CreatorDiscoveryInfo i on i.creatorPool = c
+            where c.deleted = false
+              and c.category = :categoryCode
+              and coalesce(i.brandScore, 0) <= :maxBrandScore
+              and c.lastContentAt >= :activeAfter
+            """)
+    List<InfluenceCandidate> findInfluenceCandidatesByCategory(
+            @Param("categoryCode") String categoryCode,
+            @Param("maxBrandScore") Integer maxBrandScore,
+            @Param("activeAfter") LocalDateTime activeAfter);
 
     /**
      * 발굴된 크리에이터 목록. 조건이 null 이면 그 조건은 적용하지 않는다.
