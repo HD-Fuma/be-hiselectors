@@ -2,6 +2,8 @@ package com.fuma.hiselectors.creator.controller;
 
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchResult;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
 import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchResult;
@@ -34,6 +36,7 @@ public class DiscoveryAdminController {
     private final DiscoveryPipelineService discoveryPipelineService;
     private final InstagramDiscoveryService instagramDiscoveryService;
     private final YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
+    private final InstagramDiscoveryBatchService instagramDiscoveryBatchService;
 
     @Operation(summary = "YouTube 크리에이터 일괄 발굴",
             description = "관리자가 크리에이터 모집을 시작할 때 활성 키워드를 "
@@ -47,6 +50,20 @@ public class DiscoveryAdminController {
     @PostMapping("/youtube/run")
     public ResponseEntity<YoutubeDiscoveryBatchResult> runYoutubeBatch() {
         return ResponseEntity.ok(youtubeDiscoveryBatchService.run());
+    }
+
+    @Operation(summary = "Instagram 크리에이터 일괄 발굴",
+            description = "관리자가 크리에이터 모집을 시작할 때 YouTube 채널에서 추출한 "
+                    + "Instagram 사용자명을 Meta Graph API로 조회한다. "
+                    + "일부 계정이 실패해도 나머지 계정은 계속 실행한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일괄 발굴 실행 완료"),
+            @ApiResponse(responseCode = "500", description = "Meta Graph API 설정 누락",
+                    content = @Content)
+    })
+    @PostMapping("/instagram/run")
+    public ResponseEntity<InstagramDiscoveryBatchResult> runInstagramBatch() {
+        return ResponseEntity.ok(instagramDiscoveryBatchService.run());
     }
 
     @Operation(summary = "키워드로 발굴 실행",
