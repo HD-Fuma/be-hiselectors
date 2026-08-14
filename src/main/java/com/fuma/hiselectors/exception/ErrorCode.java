@@ -16,6 +16,24 @@ public enum ErrorCode {
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
 
+    // --- 카카오 OAuth / 메시지 ---
+    KAKAO_CONFIGURATION_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "카카오 연동 설정이 올바르지 않습니다."),
+    KAKAO_STATE_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 카카오 인증 요청입니다."),
+    KAKAO_OAUTH_FAILED(HttpStatus.BAD_GATEWAY, "카카오 인증 처리 중 오류가 발생했습니다."),
+    KAKAO_REQUIRED_SCOPE_MISSING(HttpStatus.FORBIDDEN, "카카오 필수 동의항목에 동의가 필요합니다."),
+    KAKAO_SENDER_NOT_CONNECTED(HttpStatus.CONFLICT, "연결된 카카오 발신 계정이 없습니다."),
+    KAKAO_SENDER_REAUTH_REQUIRED(HttpStatus.CONFLICT, "카카오 발신 계정 재인증이 필요합니다."),
+    KAKAO_TOKEN_REFRESH_FAILED(HttpStatus.BAD_GATEWAY, "카카오 토큰을 갱신할 수 없습니다."),
+    KAKAO_TOKEN_DECRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "카카오 토큰을 복호화할 수 없습니다."),
+    KAKAO_RECIPIENT_NOT_FOUND(HttpStatus.NOT_FOUND, "카카오 수신 연결 정보를 찾을 수 없습니다."),
+    KAKAO_RECIPIENT_NOT_READY(HttpStatus.CONFLICT, "카카오 메시지를 수신할 수 없는 상태입니다."),
+    KAKAO_RECIPIENT_INVALID(HttpStatus.CONFLICT, "카카오 수신자 정보가 유효하지 않아 재연결이 필요합니다."),
+    KAKAO_FRIEND_NOT_FOUND(HttpStatus.CONFLICT, "발신 계정의 친구 목록에서 사용자를 찾을 수 없습니다. 최대 10분 후 다시 시도해주세요."),
+    KAKAO_CONNECTION_DUPLICATED(HttpStatus.CONFLICT, "이미 다른 사용자와 연결된 카카오 계정 또는 UUID입니다."),
+    KAKAO_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "카카오 API 호출에 실패했습니다."),
+    KAKAO_MESSAGE_QUOTA_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "카카오 메시지 발송 한도를 초과했습니다."),
+    KAKAO_MESSAGE_SEND_FAILED(HttpStatus.BAD_GATEWAY, "카카오톡 메시지 발송에 실패했습니다."),
+
     // --- 유튜브 OAuth ---
     YOUTUBE_STATE_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 인증 요청입니다."),
     YOUTUBE_OAUTH_FAILED(HttpStatus.BAD_GATEWAY, "유튜브 인증 처리 중 오류가 발생했습니다."),

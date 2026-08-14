@@ -54,3 +54,16 @@ instagram:
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:
   state-validity-seconds: 300
+
+kakao:
+  oauth:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/kakao-test}
+    sender-scope: friends,talk_message,profile_nickname
+    recipient-scope: friends,talk_message
+  message:
+    web-url: ${KAKAO_MESSAGE_WEB_URL:http://localhost:3000}
+    mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:http://localhost:3000}
+    image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
+  token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}

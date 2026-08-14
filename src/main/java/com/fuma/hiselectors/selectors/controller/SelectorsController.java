@@ -1,5 +1,5 @@
 package com.fuma.hiselectors.selectors.controller;
 
-public class SelectorController {
+public class SelectorsController {
 
 }
