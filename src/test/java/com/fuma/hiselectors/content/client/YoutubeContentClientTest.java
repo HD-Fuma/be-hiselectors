@@ -130,6 +130,57 @@ class YoutubeContentClientTest {
     }
 
     @Test
+    @DisplayName("현재 기수 영상이 10페이지를 넘어도 마지막 페이지까지 조회한다")
+    void collectMoreThanTenPages() {
+        expectUploadsPlaylist();
+        for (int pageNumber = 1; pageNumber <= 11; pageNumber++) {
+            int currentPage = pageNumber;
+            String expectedToken = currentPage == 1 ? null : "page-" + currentPage;
+            String nextToken = currentPage == 11 ? null : "page-" + (currentPage + 1);
+            server.expect(request -> {
+                        String query = decodedQuery(request.getURI().getRawQuery());
+                        if (expectedToken == null) {
+                            assertThat(query).doesNotContain("pageToken=");
+                        } else {
+                            assertThat(query).contains("pageToken=" + expectedToken);
+                        }
+                    })
+                    .andRespond(withSuccess(
+                            playlistPage("video-" + currentPage, nextToken),
+                            MediaType.APPLICATION_JSON));
+        }
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(11);
+        assertThat(result.contents()).hasSize(11);
+        assertThat(result.contents().getLast().snsContentId()).isEqualTo("video-11");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("같은 YouTube 페이지 토큰이 반복되면 조회를 중단한다")
+    void rejectRepeatedPageToken() {
+        expectUploadsPlaylist();
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .doesNotContain("pageToken="))
+                .andRespond(withSuccess(playlistPage("first", "repeated-token"),
+                        MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("pageToken=repeated-token"))
+                .andRespond(withSuccess(playlistPage("second", "repeated-token"),
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.collect(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.YOUTUBE_API_CALL_FAILED);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("기수 시작 전 영상만 있는 페이지에서 조회를 종료한다")
     void stopAtOldPage() {
         expectUploadsPlaylist();

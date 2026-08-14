@@ -17,7 +17,9 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -42,9 +44,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
 
     private static final String VIDEO_URL = "https://www.youtube.com/watch?v=";
 
-    // 비정상적인 무한 호출 방지
     private static final int PAGE_SIZE = 50;
-    private static final int MAX_PAGES = 10;
 
     // YouTube 영상 공개 시각을 변환할 서비스 기준 시간대
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
@@ -79,9 +79,16 @@ public class YoutubeContentClient implements ContentPlatformClient {
         // 1. 채널 ID에 연결된 업로드 영상 목록 ID 조회
         String uploadsPlaylistId = requestUploadsPlaylistId(accountId);
         List<RawContent> contents = new ArrayList<>();
+        Set<String> requestedPageTokens = new HashSet<>();
         String pageToken = null;
 
-        for (int pageCount = 0; pageCount < MAX_PAGES; pageCount++) {
+        while (true) {
+            if (StringUtils.hasText(pageToken)
+                    && !requestedPageTokens.add(pageToken)) {
+                log.warn("YouTube 페이지 토큰 반복 감지");
+                throw new BusinessException(ErrorCode.YOUTUBE_API_CALL_FAILED);
+            }
+
             // 2. 실제 영상 목록 페이지 조회
             YoutubeContentResponse page = requestPlaylistPage(
                     uploadsPlaylistId, pageToken);
@@ -97,10 +104,6 @@ public class YoutubeContentClient implements ContentPlatformClient {
             pageToken = page.nextPageToken();
             if (!StringUtils.hasText(pageToken)) {
                 break;
-            }
-            if (pageCount == MAX_PAGES - 1) {
-                log.warn("YouTube 콘텐츠 수집 페이지 상한 도달. 최대페이지수={}", MAX_PAGES);
-                throw new BusinessException(ErrorCode.YOUTUBE_API_CALL_FAILED);
             }
         }
         return new CollectionResult(fetchedCount, contents);
