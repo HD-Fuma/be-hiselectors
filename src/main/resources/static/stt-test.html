@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STT 테스트</title>
+    <style>
+        :root { color-scheme: light dark; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            max-width: 760px; margin: 0 auto; padding: 24px; line-height: 1.5;
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        .sub { opacity: .65; font-size: .85rem; margin-bottom: 20px; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        label { display: block; font-size: .8rem; opacity: .8; margin-bottom: 4px; }
+        select, input {
+            padding: 8px 10px; font-size: 1rem; border: 1px solid #8886;
+            border-radius: 8px; background: transparent; color: inherit;
+        }
+        input#vid { flex: 1; min-width: 200px; }
+        button {
+            padding: 9px 18px; font-size: 1rem; border: 0; border-radius: 8px;
+            background: #4f46e5; color: #fff; cursor: pointer;
+        }
+        button:disabled { opacity: .5; cursor: default; }
+        .meta { font-size: .8rem; opacity: .7; margin: 16px 0 6px; }
+        pre {
+            white-space: pre-wrap; word-break: break-word; padding: 14px;
+            border: 1px solid #8884; border-radius: 10px; min-height: 60px;
+            background: #8881; margin: 0;
+        }
+        .err { color: #dc2626; border-color: #dc262688; }
+        .hint { font-size: .78rem; opacity: .6; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <h1>STT 테스트</h1>
+    <div class="sub">videoId 넣으면 Gemini로 자막(transcript) 추출. 저장 안 함.</div>
+
+    <div class="row">
+        <div>
+            <label for="sns">SNS</label>
+            <select id="sns">
+                <option value="YOUTUBE">YOUTUBE</option>
+                <option value="INSTAGRAM">INSTAGRAM</option>
+            </select>
+        </div>
+        <div style="flex:1">
+            <label for="vid">콘텐츠 ID (유튜브 videoId)</label>
+            <input id="vid" placeholder="예: uqVIyVablhQ" value="uqVIyVablhQ">
+        </div>
+        <button id="go">추출</button>
+    </div>
+    <div class="hint">롱폼은 수십 초 걸릴 수 있어요. INSTAGRAM은 아직 미지원(에러 반환).</div>
+
+    <div class="meta" id="meta"></div>
+    <pre id="out"></pre>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const btn = $("go"), out = $("out"), meta = $("meta");
+
+        async function run() {
+            const sns = $("sns").value;
+            const id = $("vid").value.trim();
+            if (!id) { show("콘텐츠 ID를 입력하세요.", true); return; }
+
+            btn.disabled = true;
+            out.className = "";
+            out.textContent = "";
+            meta.textContent = "분석 중…";
+            const t0 = performance.now();
+
+            try {
+                const url = `/api/stt/transcribe?snsCode=${encodeURIComponent(sns)}&snsContentId=${encodeURIComponent(id)}`;
+                const res = await fetch(url);
+                const json = await res.json();
+                const secs = ((performance.now() - t0) / 1000).toFixed(1);
+
+                if (json.success) {
+                    const text = (json.data && json.data.transcript) || "";
+                    meta.textContent = `${secs}초 · ${text.length}자` + (text ? "" : " · (말·자막 없음)");
+                    show(text || "(빈 결과 — 음성·화면자막이 없는 영상)", false);
+                } else {
+                    meta.textContent = `${secs}초 · 실패`;
+                    show(`[${json.code}] ${json.message || "오류"}`, true);
+                }
+            } catch (e) {
+                meta.textContent = "실패";
+                show("요청 실패: " + e.message, true);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function show(msg, isErr) {
+            out.className = isErr ? "err" : "";
+            out.textContent = msg;
+        }
+
+        btn.addEventListener("click", run);
+        $("vid").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+    </script>
+</body>
+</html>
