@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.creator.discovery.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -13,6 +14,8 @@ import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +34,7 @@ class YoutubeDiscoveryBatchServiceTest {
     private DiscoveryPipelineService discoveryPipelineService;
 
     @Test
-    @DisplayName("Repository가 준 순서대로 실행하고 일일 쿼터 예산을 넘기지 않는다")
+    @DisplayName("Repository가 준 순서대로 실행하고 쿼터 예산을 넘기지 않는다")
     void runInRepositoryOrderWithinQuota() {
         DiscoveryKeyword first = keyword(1L, "첫 번째");
         DiscoveryKeyword second = keyword(2L, "두 번째");
@@ -47,7 +50,7 @@ class YoutubeDiscoveryBatchServiceTest {
                 .thenReturn(result("세 번째", 0, 0, 0, 100));
 
         YoutubeDiscoveryBatchService service = service(306, 25, 10);
-        YoutubeDiscoveryBatchResult batchResult = service.runDaily();
+        YoutubeDiscoveryBatchResult batchResult = service.run();
 
         InOrder order = inOrder(discoveryPipelineService);
         order.verify(discoveryPipelineService).runByKeyword(1L, 25);
@@ -77,7 +80,7 @@ class YoutubeDiscoveryBatchServiceTest {
         when(discoveryPipelineService.runByKeyword(2L, 25))
                 .thenReturn(result("성공", 3, 2, 1, 102));
 
-        YoutubeDiscoveryBatchResult batchResult = service(204, 25, 10).runDaily();
+        YoutubeDiscoveryBatchResult batchResult = service(204, 25, 10).run();
 
         verify(discoveryPipelineService).runByKeyword(1L, 25);
         verify(discoveryPipelineService).runByKeyword(2L, 25);
@@ -97,7 +100,7 @@ class YoutubeDiscoveryBatchServiceTest {
         when(discoveryPipelineService.runByKeyword(1L, 10))
                 .thenReturn(result("첫 번째", 1, 1, 0, 102));
 
-        YoutubeDiscoveryBatchResult batchResult = service(10_000, 10, 1).runDaily();
+        YoutubeDiscoveryBatchResult batchResult = service(10_000, 10, 1).run();
 
         verify(discoveryPipelineService).runByKeyword(1L, 10);
         verify(discoveryPipelineService, never()).runByKeyword(2L, 10);
@@ -105,32 +108,30 @@ class YoutubeDiscoveryBatchServiceTest {
     }
 
     @Test
-    @DisplayName("API 키가 없으면 실제 발굴을 실행하지 않는다")
-    void skipWithoutApiKey() {
-        DiscoveryKeyword keyword = keyword(1L, "키워드");
-        when(keywordRepository.findRunnable()).thenReturn(List.of(keyword));
+    @DisplayName("API 키가 없으면 설정 오류를 반환한다")
+    void failWithoutApiKey() {
         YoutubeDiscoveryProperties withoutApiKey =
                 new YoutubeDiscoveryProperties(null, 10_000, 25);
-        YoutubeDiscoverySchedulerProperties schedule =
-                new YoutubeDiscoverySchedulerProperties(true, null, null, 10);
+        YoutubeDiscoveryBatchProperties batchProperties =
+                new YoutubeDiscoveryBatchProperties(10);
         YoutubeDiscoveryBatchService service = new YoutubeDiscoveryBatchService(
-                keywordRepository, discoveryPipelineService, withoutApiKey, schedule);
+                keywordRepository, discoveryPipelineService, withoutApiKey, batchProperties);
 
-        YoutubeDiscoveryBatchResult batchResult = service.runDaily();
-
-        verify(discoveryPipelineService, never()).runByKeyword(1L, 25);
-        assertThat(batchResult.runnableKeywords()).isEqualTo(1);
-        assertThat(batchResult.attemptedKeywords()).isZero();
+        assertThatThrownBy(service::run)
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.YOUTUBE_API_KEY_MISSING);
+        verify(keywordRepository, never()).findRunnable();
     }
 
     private YoutubeDiscoveryBatchService service(
             int dailyQuota, int maxResults, int maxKeywords) {
         YoutubeDiscoveryProperties discovery =
                 new YoutubeDiscoveryProperties("test-key", dailyQuota, maxResults);
-        YoutubeDiscoverySchedulerProperties schedule =
-                new YoutubeDiscoverySchedulerProperties(true, null, null, maxKeywords);
+        YoutubeDiscoveryBatchProperties batchProperties =
+                new YoutubeDiscoveryBatchProperties(maxKeywords);
         return new YoutubeDiscoveryBatchService(
-                keywordRepository, discoveryPipelineService, discovery, schedule);
+                keywordRepository, discoveryPipelineService, discovery, batchProperties);
     }
 
     private DiscoveryKeyword keyword(Long id, String value) {

@@ -5,12 +5,14 @@ import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-/** 활성 키워드를 순서대로 실행하면서 쿼터와 개별 실패를 관리한다. */
+/** 관리자가 발굴을 시작하면 활성 키워드를 순서대로 실행한다. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -19,21 +21,19 @@ public class YoutubeDiscoveryBatchService {
     private final DiscoveryKeywordRepository keywordRepository;
     private final DiscoveryPipelineService discoveryPipelineService;
     private final YoutubeDiscoveryProperties discoveryProperties;
-    private final YoutubeDiscoverySchedulerProperties schedulerProperties;
+    private final YoutubeDiscoveryBatchProperties batchProperties;
 
-    public YoutubeDiscoveryBatchResult runDaily() {
-        List<DiscoveryKeyword> runnableKeywords = keywordRepository.findRunnable();
-
+    public YoutubeDiscoveryBatchResult run() {
         if (!discoveryProperties.hasApiKey()) {
-            log.error("YouTube 일일 발굴 건너뜀. API 키가 설정되지 않았습니다.");
-            return YoutubeDiscoveryBatchResult.empty(runnableKeywords.size());
+            throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
+        List<DiscoveryKeyword> runnableKeywords = keywordRepository.findRunnable();
         int dailyQuota = Math.max(0, discoveryProperties.dailyQuotaOrDefault());
         int quotaKeywordLimit = dailyQuota / YoutubeDiscoveryProperties.QUOTA_PER_KEYWORD;
         int runLimit = Math.min(
                 runnableKeywords.size(),
-                Math.min(quotaKeywordLimit, schedulerProperties.maxKeywordsPerRunOrDefault()));
+                Math.min(quotaKeywordLimit, batchProperties.maxKeywordsPerRunOrDefault()));
 
         int attempted = 0;
         int succeeded = 0;
@@ -54,11 +54,11 @@ public class YoutubeDiscoveryBatchService {
                 created += result.created();
                 updated += result.updated();
 
-                log.info("YouTube 일일 발굴 키워드 성공. keywordId={}, keyword={}, quota={}",
+                log.info("YouTube 일괄 발굴 키워드 성공. keywordId={}, keyword={}, quota={}",
                         keyword.getId(), keyword.getKeyword(), result.consumedQuota());
             } catch (RuntimeException exception) {
                 failed++;
-                log.warn("YouTube 일일 발굴 키워드 실패. keywordId={}, keyword={}",
+                log.warn("YouTube 일괄 발굴 키워드 실패. keywordId={}, keyword={}",
                         keyword.getId(), keyword.getKeyword(), exception);
             }
         }
@@ -68,7 +68,7 @@ public class YoutubeDiscoveryBatchService {
                 runnableKeywords.size(), attempted, succeeded, failed,
                 reservedQuota, consumedQuota, discovered, created, updated);
 
-        log.info("YouTube 일일 발굴 종료. {}", batchResult);
+        log.info("YouTube 일괄 발굴 종료. {}", batchResult);
         return batchResult;
     }
 }

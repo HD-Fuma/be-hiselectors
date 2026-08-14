@@ -45,11 +45,7 @@ youtube:
     api-key: ${YOUTUBE_API_KEY:}
     daily-quota: ${YOUTUBE_DISCOVERY_DAILY_QUOTA:10000}
     max-results-per-keyword: ${YOUTUBE_DISCOVERY_MAX_RESULTS:25}
-    scheduler:
-      # 로컬 실행 중 실제 API 쿼터가 소모되지 않도록 명시적으로 켜야 동작한다.
-      enabled: ${YOUTUBE_DISCOVERY_SCHEDULER_ENABLED:false}
-      cron: "${YOUTUBE_DISCOVERY_SCHEDULER_CRON:0 0 2 * * *}"
-      zone: ${YOUTUBE_DISCOVERY_SCHEDULER_ZONE:Asia/Seoul}
+    batch:
       max-keywords-per-run: ${YOUTUBE_DISCOVERY_MAX_KEYWORDS:50}
 
 instagram:

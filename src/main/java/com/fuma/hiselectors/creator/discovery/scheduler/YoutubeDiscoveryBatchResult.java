@@ -1,6 +1,6 @@
 package com.fuma.hiselectors.creator.discovery.scheduler;
 
-/** 일일 YouTube 발굴 작업 전체의 실행 결과. */
+/** 관리자가 시작한 YouTube 일괄 발굴의 실행 결과. */
 public record YoutubeDiscoveryBatchResult(
         int runnableKeywords,
         int attemptedKeywords,
@@ -12,10 +12,4 @@ public record YoutubeDiscoveryBatchResult(
         int created,
         int updated
 ) {
-
-    public static YoutubeDiscoveryBatchResult empty(int runnableKeywords) {
-        return new YoutubeDiscoveryBatchResult(
-                runnableKeywords, 0, 0, 0,
-                0, 0, 0, 0, 0);
-    }
 }
