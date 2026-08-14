@@ -97,6 +97,7 @@ class CreatorAdminControllerTest {
                 .andExpect(jsonPath("$.data.rankingPoolSize").value(100))
                 .andExpect(jsonPath("$.data.discoveredTodayCount").value(8))
                 .andExpect(jsonPath("$.data.selectedCount").value(3));
+
     }
 
     @Test

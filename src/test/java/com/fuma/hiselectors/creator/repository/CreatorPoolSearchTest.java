@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.InfluenceCandidate;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
@@ -19,6 +20,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.context.annotation.Import;
 
 /**
  * 조회 조건 필터링 검증.
@@ -28,6 +30,7 @@ import org.springframework.data.domain.Pageable;
  */
 @DataJpaTest
 @TestPropertySource(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+
 class CreatorPoolSearchTest {
 
     @Autowired
@@ -136,6 +139,8 @@ class CreatorPoolSearchTest {
                 .doesNotContain("헬스마스터TV", "피트니스 공식");
         assertThat(result).allSatisfy(candidate ->
                 assertThat(candidate.discoveredAt()).isNotNull());
+        assertThat(result).allSatisfy(candidate ->
+                assertThat(candidate.updatedAt()).isNotNull());
     }
 
     @Test
