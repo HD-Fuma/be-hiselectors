@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.RestClientException;
 
 @Component
 public class KakaoMessageClient {
@@ -40,7 +40,7 @@ public class KakaoMessageClient {
             if (response == null || response.resultCode() != 0) {
                 throw new KakaoApiException(502, null, "Kakao send-me failed");
             }
-        } catch (RestClientResponseException e) {
+        } catch (RestClientException e) {
             throw oauthClient.toApiException(e);
         }
     }
@@ -59,7 +59,7 @@ public class KakaoMessageClient {
                         && !response.failureInfo().isEmpty() ? response.failureInfo().getFirst().code() : null;
                 throw new KakaoApiException(502, code, "Kakao friend message failed");
             }
-        } catch (RestClientResponseException e) {
+        } catch (RestClientException e) {
             throw oauthClient.toApiException(e);
         }
     }

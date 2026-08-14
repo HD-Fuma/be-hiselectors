@@ -4,7 +4,7 @@ import com.fuma.hiselectors.kakao.dto.KakaoFriendResponse;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Component
@@ -37,7 +37,7 @@ public class KakaoFriendClient {
                     : new KakaoFriendResponse(
                             response.elements() == null ? List.of() : response.elements(),
                             response.totalCount());
-        } catch (RestClientResponseException e) {
+        } catch (RestClientException e) {
             throw oauthClient.toApiException(e);
         }
     }

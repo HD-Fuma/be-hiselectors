@@ -120,7 +120,7 @@ public class KakaoOAuthService {
                         .build());
         recipient.updateConnection(kakaoUser.id(), matchedFriend.uuid());
         try {
-            return KakaoRecipientConnectionResponse.from(recipientRepository.save(recipient));
+            return KakaoRecipientConnectionResponse.from(recipientRepository.saveAndFlush(recipient));
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(ErrorCode.KAKAO_CONNECTION_DUPLICATED);
         }

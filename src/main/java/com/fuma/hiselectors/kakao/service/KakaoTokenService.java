@@ -72,8 +72,11 @@ public class KakaoTokenService {
                 );
             }
             return response.accessToken();
-        } catch (KakaoApiException | BusinessException e) {
-            connection.markReauthRequired();
+        } catch (KakaoApiException e) {
+            if (e.isInvalidToken()) {
+                connection.markReauthRequired();
+                throw new BusinessException(ErrorCode.KAKAO_SENDER_REAUTH_REQUIRED);
+            }
             throw new BusinessException(ErrorCode.KAKAO_TOKEN_REFRESH_FAILED);
         }
     }

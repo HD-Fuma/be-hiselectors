@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 @Component
@@ -53,7 +54,7 @@ public class KakaoOAuthClient {
                 throw new KakaoApiException(502, null, "Empty Kakao user response");
             }
             return response;
-        } catch (RestClientResponseException e) {
+        } catch (RestClientException e) {
             throw toApiException(e);
         }
     }
@@ -80,16 +81,20 @@ public class KakaoOAuthClient {
                 throw new KakaoApiException(502, null, "Empty Kakao token response");
             }
             return response;
-        } catch (RestClientResponseException e) {
+        } catch (RestClientException e) {
             throw toApiException(e);
         }
     }
 
-    public KakaoApiException toApiException(RestClientResponseException e) {
+    public KakaoApiException toApiException(RestClientException e) {
+        if (!(e instanceof RestClientResponseException responseException)) {
+            return new KakaoApiException(503, null, "Kakao API request failed");
+        }
+
         Integer code = null;
         String message = "Kakao API request failed";
         try {
-            JsonNode json = objectMapper.readTree(e.getResponseBodyAsString());
+            JsonNode json = objectMapper.readTree(responseException.getResponseBodyAsString());
             if (json.has("code")) {
                 code = json.get("code").asInt();
             }
@@ -101,6 +106,6 @@ public class KakaoOAuthClient {
         } catch (Exception ignored) {
             // 민감한 원문 응답을 로그로 남기지 않는다.
         }
-        return new KakaoApiException(e.getStatusCode().value(), code, message);
+        return new KakaoApiException(responseException.getStatusCode().value(), code, message);
     }
 }

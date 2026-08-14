@@ -30,12 +30,13 @@ public class KakaoFriendService {
             return fetchAll(accessToken);
         } catch (KakaoApiException e) {
             if (e.isInvalidToken()) {
-                return fetchAll(tokenService.forceRefresh(senderConnectionId));
+                try {
+                    return fetchAll(tokenService.forceRefresh(senderConnectionId));
+                } catch (KakaoApiException retryException) {
+                    throw translate(retryException);
+                }
             }
-            if (e.isInsufficientScope()) {
-                throw new BusinessException(ErrorCode.KAKAO_REQUIRED_SCOPE_MISSING);
-            }
-            throw new BusinessException(ErrorCode.KAKAO_API_CALL_FAILED);
+            throw translate(e);
         }
     }
 
@@ -70,5 +71,12 @@ public class KakaoFriendService {
                 return friends;
             }
         }
+    }
+
+    private BusinessException translate(KakaoApiException e) {
+        if (e.isInsufficientScope()) {
+            return new BusinessException(ErrorCode.KAKAO_REQUIRED_SCOPE_MISSING);
+        }
+        return new BusinessException(ErrorCode.KAKAO_API_CALL_FAILED);
     }
 }
