@@ -1,11 +1,11 @@
-package com.fuma.hiselectors.instagram.service;
+package com.fuma.hiselectors.oauth.instagram.service;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.instagram.config.InstagramOAuthProperties;
-import com.fuma.hiselectors.instagram.dto.InstagramProfileResponse;
-import com.fuma.hiselectors.instagram.dto.InstagramTokenResponse;
-import com.fuma.hiselectors.instagram.dto.InstagramVerifyResponse;
+import com.fuma.hiselectors.oauth.instagram.config.InstagramOAuthProperties;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramProfileResponse;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramTokenResponse;
+import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyResponse;
 import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;

@@ -16,10 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.context.annotation.Import;
 
 /**
  * 조회 조건 필터링 검증.
@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Import;
  */
 @DataJpaTest
 @Import(JpaAuditingConfig.class)
+
 class CreatorPoolSearchTest {
 
     @Autowired

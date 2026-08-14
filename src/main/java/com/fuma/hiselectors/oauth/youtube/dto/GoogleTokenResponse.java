@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.youtube.dto;
+package com.fuma.hiselectors.oauth.youtube.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;

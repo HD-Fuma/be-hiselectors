@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.creator.dto.InfluenceRankedCreator;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
@@ -41,7 +42,7 @@ class CreatorAdminControllerTest {
         proxyFactory.addAdvice(new MethodValidationInterceptor(
                 Validation.buildDefaultValidatorFactory().getValidator()));
         mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }
 
@@ -63,15 +64,16 @@ class CreatorAdminControllerTest {
                         .param("snsCode", "YOUTUBE")
                         .param("topPercent", "10"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.categoryCode").value("BEAUTY"))
-                .andExpect(jsonPath("$.snsCode").value("YOUTUBE"))
-                .andExpect(jsonPath("$.topPercent").value(10))
-                .andExpect(jsonPath("$.activeWithinDays").value(90))
-                .andExpect(jsonPath("$.totalCandidates").value(19))
-                .andExpect(jsonPath("$.selectedCount").value(2))
-                .andExpect(jsonPath("$.creators[0].rank").value(1))
-                .andExpect(jsonPath("$.creators[0].creatorId").value(113))
-                .andExpect(jsonPath("$.creators[0].influenceScore").value(92.00));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.categoryCode").value("BEAUTY"))
+                .andExpect(jsonPath("$.data.snsCode").value("YOUTUBE"))
+                .andExpect(jsonPath("$.data.topPercent").value(10))
+                .andExpect(jsonPath("$.data.activeWithinDays").value(90))
+                .andExpect(jsonPath("$.data.totalCandidates").value(19))
+                .andExpect(jsonPath("$.data.selectedCount").value(2))
+                .andExpect(jsonPath("$.data.creators[0].rank").value(1))
+                .andExpect(jsonPath("$.data.creators[0].creatorId").value(113))
+                .andExpect(jsonPath("$.data.creators[0].influenceScore").value(92.00));
 
         verify(creatorInfluenceService).findTopPercent("BEAUTY", "YOUTUBE", 10, 90);
     }
@@ -88,12 +90,14 @@ class CreatorAdminControllerTest {
                         .param("categoryCode", "BEAUTY")
                         .param("selectionDate", "2026-08-13"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.categoryCode").value("BEAUTY"))
-                .andExpect(jsonPath("$.topPercent").value(10))
-                .andExpect(jsonPath("$.dailyLimit").value(5))
-                .andExpect(jsonPath("$.rankingPoolSize").value(100))
-                .andExpect(jsonPath("$.dailyTargetCount").value(8))
-                .andExpect(jsonPath("$.selectedCount").value(3));
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.categoryCode").value("BEAUTY"))
+                .andExpect(jsonPath("$.data.topPercent").value(10))
+                .andExpect(jsonPath("$.data.dailyLimit").value(5))
+                .andExpect(jsonPath("$.data.rankingPoolSize").value(100))
+                .andExpect(jsonPath("$.data.discoveredTodayCount").value(8))
+                .andExpect(jsonPath("$.data.selectedCount").value(3));
+
     }
 
     @Test
