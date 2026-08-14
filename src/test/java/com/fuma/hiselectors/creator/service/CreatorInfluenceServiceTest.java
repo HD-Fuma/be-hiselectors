@@ -109,12 +109,10 @@ class CreatorInfluenceServiceTest {
     }
 
     @Test
-    void 플랫폼별_상위_퍼센트에_든_오늘_신규_후보만_카테고리_한도만큼_선정한다() {
+    void 오늘_발굴된_대상끼리_상위_퍼센트를_계산한다() {
         LocalDate selectionDate = LocalDate.of(2026, 8, 13);
         List<InfluenceCandidate> candidates = List.of(
-                // Instagram은 단독 후보라 지표가 낮아도 플랫폼 내부 상위 50%다.
                 candidate(1L, "INSTAGRAM", 1_000L, "1.00", selectionDate),
-                // YouTube 상위 50%는 기존 고지표 후보가 차지한다.
                 candidate(2L, "YOUTUBE", 100_000L, "9.00", selectionDate.minusDays(1)),
                 candidate(3L, "YOUTUBE", 90_000L, "8.00", selectionDate)
         );
@@ -130,19 +128,18 @@ class CreatorInfluenceServiceTest {
 
         assertThat(result.categoryCode()).isEqualTo("BEAUTY");
         assertThat(result.rankingPoolSize()).isEqualTo(3);
-        assertThat(result.discoveredTodayCount()).isEqualTo(2);
+        assertThat(result.dailyTargetCount()).isEqualTo(2);
         assertThat(result.selectedCount()).isEqualTo(1);
         assertThat(result.creators()).extracting(creator -> creator.creatorId())
                 .containsExactly(1L);
     }
 
     @Test
-    void 오늘_신규라도_플랫폼_상위_퍼센트_밖이면_선정하지_않는다() {
+    void 기존_계정보다_점수가_낮아도_오늘_대상_중_상위면_선정한다() {
         LocalDate selectionDate = LocalDate.of(2026, 8, 13);
         List<InfluenceCandidate> candidates = List.of(
                 candidate(1L, "YOUTUBE", 100_000L, "9.00", selectionDate.minusDays(1)),
-                candidate(2L, "YOUTUBE", 50_000L, "5.00", selectionDate),
-                candidate(3L, "YOUTUBE", 1_000L, "1.00", selectionDate)
+                candidate(2L, "YOUTUBE", 1_000L, "1.00", selectionDate)
         );
         InfluenceScoreCalculator realCalculator = new InfluenceScoreCalculator();
         when(creatorPoolRepository.findInfluenceCandidatesByCategory(
@@ -152,11 +149,36 @@ class CreatorInfluenceServiceTest {
                 .thenReturn(realCalculator.rank(candidates));
 
         DailyReportCandidatesResponse result = service.findDailyReportCandidates(
-                "BEAUTY", 34, 90, 5, selectionDate);
+                "BEAUTY", 10, 90, 5, selectionDate);
 
-        assertThat(result.discoveredTodayCount()).isEqualTo(2);
+        assertThat(result.dailyTargetCount()).isEqualTo(1);
+        assertThat(result.selectedCount()).isEqualTo(1);
         assertThat(result.creators()).extracting(creator -> creator.creatorId())
                 .containsExactly(2L);
+    }
+
+    @Test
+    void 오늘_지표가_갱신된_기존_계정도_일일_대상에_포함한다() {
+        LocalDate selectionDate = LocalDate.of(2026, 8, 13);
+        List<InfluenceCandidate> candidates = List.of(
+                candidate(1L, "YOUTUBE", 100_000L, "9.00",
+                        selectionDate.minusDays(10), selectionDate),
+                candidate(2L, "YOUTUBE", 50_000L, "5.00",
+                        selectionDate.minusDays(10), selectionDate.minusDays(1))
+        );
+        InfluenceScoreCalculator realCalculator = new InfluenceScoreCalculator();
+        when(creatorPoolRepository.findInfluenceCandidatesByCategory(
+                eq("BEAUTY"), eq(1), any(LocalDateTime.class)))
+                .thenReturn(candidates);
+        when(influenceScoreCalculator.rank(candidates))
+                .thenReturn(realCalculator.rank(candidates));
+
+        DailyReportCandidatesResponse result = service.findDailyReportCandidates(
+                "BEAUTY", 100, 90, 5, selectionDate);
+
+        assertThat(result.dailyTargetCount()).isEqualTo(1);
+        assertThat(result.creators()).extracting(creator -> creator.creatorId())
+                .containsExactly(1L);
     }
 
     @Test
@@ -183,6 +205,13 @@ class CreatorInfluenceServiceTest {
 
     private InfluenceCandidate candidate(long id, String snsCode, Long followers,
                                          String engagement, LocalDate discoveredDate) {
+        return candidate(id, snsCode, followers, engagement,
+                discoveredDate, discoveredDate);
+    }
+
+    private InfluenceCandidate candidate(long id, String snsCode, Long followers,
+                                         String engagement, LocalDate discoveredDate,
+                                         LocalDate updatedDate) {
         return new InfluenceCandidate(
                 id,
                 snsCode,
@@ -192,7 +221,8 @@ class CreatorInfluenceServiceTest {
                 new BigDecimal(engagement),
                 LocalDateTime.of(2026, 8, 12, 0, 0),
                 "BEAUTY",
-                discoveredDate.atTime(12, 0)
+                discoveredDate.atTime(12, 0),
+                updatedDate.atTime(12, 0)
         );
     }
 }

@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -65,8 +66,9 @@ public class CreatorInfluenceService {
     }
 
     /**
-     * 플랫폼마다 영향력 분포가 다르므로 플랫폼 안에서 먼저 상위 N%를 계산한다.
-     * 그중 기준일에 처음 등록된 계정만 합치고, 정규화된 점수로 카테고리 한도를 적용한다.
+     * 플랫폼마다 영향력 분포가 다르므로 최근 활동 계정을 플랫폼 안에서 상대 평가한다.
+     * 기준일에 발굴·갱신된 계정만 모아 점수순으로 정렬한 뒤, 그날 대상 중 상위 N%와
+     * 카테고리 한도를 차례로 적용한다.
      */
     public DailyReportCandidatesResponse findDailyReportCandidates(
             String categoryCode, int topPercent, int activeWithinDays,
@@ -92,26 +94,29 @@ public class CreatorInfluenceService {
                         && !candidate.snsCode().isBlank())
                 .collect(Collectors.groupingBy(InfluenceCandidate::snsCode));
 
-        List<InfluenceRankedCreator> qualifiedToday = new ArrayList<>();
+        Set<Long> dailyTargetIds = candidates.stream()
+                .filter(candidate -> isTouchedOn(
+                        candidate.discoveredAt(), candidate.updatedAt(), dayStart, dayEnd))
+                .map(InfluenceCandidate::creatorId)
+                .collect(Collectors.toSet());
+
+        List<InfluenceRankedCreator> scoredDailyTargets = new ArrayList<>();
         for (List<InfluenceCandidate> platformCandidates : byPlatform.values()) {
             List<InfluenceRankedCreator> ranked = influenceScoreCalculator
                     .rank(platformCandidates);
-            int platformSelectionCount = percentageCount(ranked.size(), topPercent);
             ranked.stream()
-                    .limit(platformSelectionCount)
-                    .filter(creator -> isDiscoveredOn(
-                            creator.discoveredAt(), dayStart, dayEnd))
-                    .forEach(qualifiedToday::add);
+                    .filter(creator -> dailyTargetIds.contains(creator.creatorId()))
+                    .forEach(scoredDailyTargets::add);
         }
 
-        List<InfluenceRankedCreator> selected = qualifiedToday.stream()
+        List<InfluenceRankedCreator> sortedDailyTargets = scoredDailyTargets.stream()
                 .sorted(dailyCandidateComparator())
-                .limit(dailyLimit)
                 .toList();
-        int discoveredTodayCount = (int) candidates.stream()
-                .filter(candidate -> isDiscoveredOn(
-                        candidate.discoveredAt(), dayStart, dayEnd))
-                .count();
+        int percentageLimit = percentageCount(sortedDailyTargets.size(), topPercent);
+        int selectionLimit = Math.min(percentageLimit, dailyLimit);
+        List<InfluenceRankedCreator> selected = sortedDailyTargets.stream()
+                .limit(selectionLimit)
+                .toList();
 
         return new DailyReportCandidatesResponse(
                 effectiveDate,
@@ -120,7 +125,7 @@ public class CreatorInfluenceService {
                 activeWithinDays,
                 dailyLimit,
                 candidates.size(),
-                discoveredTodayCount,
+                sortedDailyTargets.size(),
                 selected.size(),
                 List.copyOf(selected)
         );
@@ -166,12 +171,20 @@ public class CreatorInfluenceService {
         return size == 0 ? 0 : (int) ((size * (long) topPercent + 99L) / 100L);
     }
 
-    private boolean isDiscoveredOn(LocalDateTime discoveredAt,
-                                   LocalDateTime dayStart,
-                                   LocalDateTime dayEnd) {
-        return discoveredAt != null
-                && !discoveredAt.isBefore(dayStart)
-                && discoveredAt.isBefore(dayEnd);
+    private boolean isTouchedOn(LocalDateTime discoveredAt,
+                                LocalDateTime updatedAt,
+                                LocalDateTime dayStart,
+                                LocalDateTime dayEnd) {
+        return isWithin(discoveredAt, dayStart, dayEnd)
+                || isWithin(updatedAt, dayStart, dayEnd);
+    }
+
+    private boolean isWithin(LocalDateTime value,
+                             LocalDateTime dayStart,
+                             LocalDateTime dayEnd) {
+        return value != null
+                && !value.isBefore(dayStart)
+                && value.isBefore(dayEnd);
     }
 
     private Comparator<InfluenceRankedCreator> dailyCandidateComparator() {
