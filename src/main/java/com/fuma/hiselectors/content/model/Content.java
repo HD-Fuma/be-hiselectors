@@ -10,13 +10,18 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "content")
+@Table(name = "content", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uq_content_sns",
+                columnNames = {"sns_code", "sns_content_id"})
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Content extends BaseTimeEntity {
@@ -45,6 +50,9 @@ public class Content extends BaseTimeEntity {
 
     @Column(name = "last_version_no", nullable = false)
     private Long lastVersionNo;
+
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted;
 
     @Builder
     private Content(Long selectorsId, SnsPlatform snsCode, String snsContentId,
