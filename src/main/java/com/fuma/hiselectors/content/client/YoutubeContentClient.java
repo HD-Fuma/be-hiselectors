@@ -18,7 +18,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -72,10 +71,9 @@ public class YoutubeContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public List<RawContent> collect(String accountId, LocalDateTime generationStartedAt) {
+    public CollectionResult collect(String accountId, LocalDateTime generationStartedAt) {
         validateRequest(accountId, generationStartedAt);
 
-        long startedAtNanos = System.nanoTime();
         int fetchedCount = 0;
 
         // 1. 채널 ID에 연결된 업로드 영상 목록 ID 조회
@@ -101,17 +99,11 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 break;
             }
             if (pageCount == MAX_PAGES - 1) {
-                log.warn("YouTube 콘텐츠 수집 페이지 상한 도달. maxPages={}", MAX_PAGES);
+                log.warn("YouTube 콘텐츠 수집 페이지 상한 도달. 최대페이지수={}", MAX_PAGES);
                 throw new BusinessException(ErrorCode.YOUTUBE_API_CALL_FAILED);
             }
         }
-        // 플랫폼, 계정, 기수 시작 시각, API 조회 건수, 기수 내 건수, 소요 시간 기록
-        log.info(
-                "콘텐츠 수집 완료. platform={} accountId={} generationStartedAt={} "
-                        + "fetchedCount={} generationContentCount={} durationMs={}",
-                supports(), accountId, generationStartedAt, fetchedCount, contents.size(),
-                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
-        return List.copyOf(contents);
+        return new CollectionResult(fetchedCount, contents);
     }
 
     private void validateRequest(String channelId, LocalDateTime generationStartedAt) {
@@ -173,7 +165,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             }
             return response;
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("YouTube Data API 호출 실패. cause={}",
+            log.warn("YouTube Data API 호출 실패. 원인={}",
                     e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.YOUTUBE_API_CALL_FAILED);
         }
@@ -221,23 +213,27 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 videoId,
                 videoUrl,
                 ContentType.LONG_FORM,
-                caption(item),
+                texts(item),
                 createdAt,
                 // YouTube는 영상 파일 직접 주소를 제공하지 않아 mediaUrl은 null
                 List.of(new RawContentMedia(videoId, MediaType.VIDEO, null)));
     }
 
-    private String caption(Item item) {
+    private List<String> texts(Item item) {
         if (item.snippet() == null) {
-            return "";
+            return List.of();
         }
-        // 셀렉터스 콘텐츠 판별 범위 확보를 위해 제목과 설명 결합
+        // 제목과 설명을 각각 TEXT로 유지
         String title = item.snippet().title();
         String description = item.snippet().description();
-        if (!StringUtils.hasText(title)) {
-            return description == null ? "" : description;
+        List<String> texts = new ArrayList<>(2);
+        if (StringUtils.hasText(title)) {
+            texts.add(title);
         }
-        return StringUtils.hasText(description) ? title + "\n" + description : title;
+        if (StringUtils.hasText(description)) {
+            texts.add(description);
+        }
+        return texts;
     }
 
     private LocalDateTime parseCreatedAt(String publishedAt) {

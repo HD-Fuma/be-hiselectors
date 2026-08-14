@@ -19,15 +19,11 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-@ExtendWith(OutputCaptureExtension.class)
 class YoutubeContentClientTest {
 
     private static final String API_KEY = "test-api-key";
@@ -47,7 +43,7 @@ class YoutubeContentClientTest {
 
     @Test
     @DisplayName("채널의 현재 기수 YouTube 영상을 모두 RawContent로 변환한다")
-    void collectGenerationVideos(CapturedOutput output) {
+    void collectGenerationVideos() {
         expectUploadsPlaylist();
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
@@ -86,9 +82,11 @@ class YoutubeContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<RawContent> result = client.collect(
+        ContentPlatformClient.CollectionResult collection = client.collect(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
+        List<RawContent> result = collection.contents();
 
+        assertThat(collection.fetchedCount()).isEqualTo(2);
         assertThat(result).hasSize(2);
         assertThat(result.getFirst()).satisfies(content -> {
             assertThat(content.snsCode()).isEqualTo(SnsPlatform.YOUTUBE);
@@ -96,6 +94,8 @@ class YoutubeContentClientTest {
             assertThat(content.contentUrl())
                     .isEqualTo("https://www.youtube.com/watch?v=video-new");
             assertThat(content.contentType()).isEqualTo(ContentType.LONG_FORM);
+            assertThat(content.texts())
+                    .containsExactly("new video title", "new video description");
             assertThat(content.caption())
                     .isEqualTo("new video title\nnew video description");
             assertThat(content.createdAt())
@@ -105,13 +105,6 @@ class YoutubeContentClientTest {
                     RawContentMedia.MediaType.VIDEO,
                     null));
         });
-        assertThat(output)
-                .contains("platform=YOUTUBE")
-                .contains("accountId=" + CHANNEL_ID)
-                .contains("generationStartedAt=2026-08-13T12:00")
-                .contains("fetchedCount=2")
-                .contains("generationContentCount=2")
-                .contains("durationMs=");
         server.verify();
     }
 
@@ -129,7 +122,7 @@ class YoutubeContentClientTest {
                         MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -159,7 +152,7 @@ class YoutubeContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).isEmpty();
         server.verify();

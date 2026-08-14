@@ -19,13 +19,13 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 /**
@@ -44,7 +44,7 @@ public class InstagramContentClient implements ContentPlatformClient {
                     + "children{id,media_type,media_url}";
 
     // 비정상적인 무한 호출 방지
-    private static final int PAGE_SIZE = 50;
+    private static final int PAGE_SIZE = 25;
     private static final int MAX_PAGES = 10;
 
     // Meta 게시물 작성 시각을 변환할 서비스 기준 시간대
@@ -76,10 +76,9 @@ public class InstagramContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public List<RawContent> collect(String accountId, LocalDateTime generationStartedAt) {
+    public CollectionResult collect(String accountId, LocalDateTime generationStartedAt) {
         validateRequest(accountId, generationStartedAt);
 
-        long startedAtNanos = System.nanoTime();
         int fetchedCount = 0;
         List<RawContent> contents = new ArrayList<>();
 
@@ -103,19 +102,13 @@ public class InstagramContentClient implements ContentPlatformClient {
                 break;
             }
             if (pageCount == MAX_PAGES - 1) {
-                log.warn("Instagram 콘텐츠 수집 페이지 상한 도달. maxPages={}", MAX_PAGES);
+                log.warn("Instagram 콘텐츠 수집 페이지 상한 도달. 최대페이지수={}", MAX_PAGES);
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
             page = requestNextPage(nextUrl);
         }
 
-        // 플랫폼, 계정, 기수 시작 시각, API 조회 건수, 기수 내 건수, 소요 시간 기록
-        log.info(
-                "콘텐츠 수집 완료. platform={} accountId={} generationStartedAt={} "
-                        + "fetchedCount={} generationContentCount={} durationMs={}",
-                supports(), accountId, generationStartedAt, fetchedCount, contents.size(),
-                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNanos));
-        return List.copyOf(contents);
+        return new CollectionResult(fetchedCount, contents);
     }
 
     private void validateRequest(String username, LocalDateTime generationStartedAt) {
@@ -162,7 +155,7 @@ public class InstagramContentClient implements ContentPlatformClient {
         // Meta가 제공한 다음 페이지 URL의 HTTPS 스킴과 허용 호스트 검증
         if (!"https".equalsIgnoreCase(uri.getScheme())
                 || !"graph.facebook.com".equalsIgnoreCase(uri.getHost())) {
-            log.warn("Instagram 페이지네이션 URL이 허용된 호스트가 아닙니다. host={}", uri.getHost());
+            log.warn("Instagram 페이지네이션 URL이 허용된 호스트가 아닙니다. 호스트={}", uri.getHost());
             throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         }
         return request(uri, MediaPage.class);
@@ -179,8 +172,13 @@ public class InstagramContentClient implements ContentPlatformClient {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
             return response;
+        } catch (RestClientResponseException e) {
+            log.warn("Instagram Graph API 호출 실패. HTTP상태={} 응답={}",
+                    e.getStatusCode().value(),
+                    e.getResponseBodyAsString().replaceAll("[\\r\\n]+", " "));
+            throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("Instagram Graph API 호출 실패. cause={}",
+            log.warn("Instagram Graph API 호출 실패. 원인={}",
                     e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         }

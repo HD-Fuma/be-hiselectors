@@ -3,11 +3,11 @@ package com.fuma.hiselectors.content.client;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.ContentPlatformClient.CollectionResult;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -33,10 +33,10 @@ import org.springframework.test.context.ActiveProfiles;
         webEnvironment = SpringBootTest.WebEnvironment.NONE)
 class ContentClientSmokeTest {
 
-    private static final String INSTAGRAM_USERNAME = "nike";
+    private static final String INSTAGRAM_USERNAME = "y__njin_";
     private static final String YOUTUBE_CHANNEL_ID = "UCQIUpdrt5UOD2ykffc1wjBA";
-    private static final LocalDateTime GENERATION_STARTED_AT =
-            LocalDateTime.now(ZoneId.of("Asia/Seoul")).minusMonths(1);
+    private static final LocalDateTime CONTENT_COLLECTION_START_AT =
+            LocalDateTime.of(2026, 5, 1, 0, 0);
 
     @Autowired
     private InstagramContentClient instagramContentClient;
@@ -46,18 +46,18 @@ class ContentClientSmokeTest {
 
     @Test
     void collectInstagramContentsFromRealApi() {
-        List<RawContent> contents = instagramContentClient.collect(
-                INSTAGRAM_USERNAME, GENERATION_STARTED_AT);
+        CollectionResult result = instagramContentClient.collect(
+                INSTAGRAM_USERNAME, CONTENT_COLLECTION_START_AT);
 
-        assertRawContents(contents, SnsPlatform.INSTAGRAM);
+        assertRawContents(result.contents(), SnsPlatform.INSTAGRAM);
     }
 
     @Test
     void collectYoutubeContentsFromRealApi() {
-        List<RawContent> contents = youtubeContentClient.collect(
-                YOUTUBE_CHANNEL_ID, GENERATION_STARTED_AT);
+        CollectionResult result = youtubeContentClient.collect(
+                YOUTUBE_CHANNEL_ID, CONTENT_COLLECTION_START_AT);
 
-        assertRawContents(contents, SnsPlatform.YOUTUBE);
+        assertRawContents(result.contents(), SnsPlatform.YOUTUBE);
     }
 
     private void assertRawContents(List<RawContent> contents, SnsPlatform platform) {

@@ -55,6 +55,14 @@ class SelectorsContentClassifierTest {
     }
 
     @Test
+    @DisplayName("여러 TEXT에 지정 키워드가 나뉘어 있어도 판단한다")
+    void designatedKeywordsAcrossTexts() {
+        assertThat(classifier.isSelectorsContent(
+                content(List.of("더현대Hi 여름 추천", "셀렉터스 활동")),
+                SELECTORS_CODE)).isTrue();
+    }
+
+    @Test
     @DisplayName("지정 키워드 중 하나만 있으면 판단하지 않는다")
     void singleDesignatedKeyword() {
         assertThat(classifier.isSelectorsContent(
@@ -69,12 +77,16 @@ class SelectorsContentClassifierTest {
     }
 
     private RawContent content(String caption) {
+        return content(List.of(caption));
+    }
+
+    private RawContent content(List<String> texts) {
         return new RawContent(
                 SnsPlatform.INSTAGRAM,
                 "content-id",
                 "https://www.instagram.com/p/content-id",
                 ContentType.FEED,
-                caption,
+                texts,
                 LocalDateTime.of(2026, 8, 13, 12, 0),
                 List.of());
     }

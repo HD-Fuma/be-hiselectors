@@ -18,5 +18,12 @@ public interface ContentPlatformClient {
      * @param generationStartedAt 현재 기수 시작 시각
      * @return 신규·기존 여부를 판단하지 않은 현재 기수 콘텐츠
      */
-    List<RawContent> collect(String accountId, LocalDateTime generationStartedAt);
+    CollectionResult collect(String accountId, LocalDateTime generationStartedAt);
+
+    record CollectionResult(int fetchedCount, List<RawContent> contents) {
+
+        public CollectionResult {
+            contents = List.copyOf(contents);
+        }
+    }
 }

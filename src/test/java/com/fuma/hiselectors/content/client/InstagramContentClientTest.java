@@ -19,16 +19,12 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-@ExtendWith(OutputCaptureExtension.class)
 class InstagramContentClientTest {
 
     private static final String BUSINESS_ACCOUNT_ID = "test-business-account-id";
@@ -48,7 +44,7 @@ class InstagramContentClientTest {
 
     @Test
     @DisplayName("Business Discovery로 현재 기수 Instagram 콘텐츠를 모두 조회한다")
-    void collectGenerationMedia(CapturedOutput output) {
+    void collectGenerationMedia() {
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
                             .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
@@ -56,7 +52,7 @@ class InstagramContentClientTest {
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(nike)")
-                            .contains("media.limit(50)")
+                            .contains("media.limit(25)")
                             .contains("media_product_type")
                             .contains("children{id,media_type,media_url}");
                     assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
@@ -99,9 +95,11 @@ class InstagramContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<RawContent> result = client.collect(
+        ContentPlatformClient.CollectionResult collection = client.collect(
                 "nike", LocalDateTime.of(2026, 8, 13, 12, 0));
+        List<RawContent> result = collection.contents();
 
+        assertThat(collection.fetchedCount()).isEqualTo(3);
         assertThat(result).hasSize(3);
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("reel-new", "feed-old", "video-new");
@@ -109,6 +107,7 @@ class InstagramContentClientTest {
         assertThat(result.getFirst().contentUrl())
                 .isEqualTo("https://www.instagram.com/reel/new");
         assertThat(result.getFirst().contentType()).isEqualTo(ContentType.SHORT_FORM);
+        assertThat(result.getFirst().texts()).containsExactly("new reel caption");
         assertThat(result.getFirst().caption()).isEqualTo("new reel caption");
         assertThat(result.getFirst().createdAt())
                 .isEqualTo(LocalDateTime.of(2026, 8, 13, 14, 0));
@@ -123,13 +122,6 @@ class InstagramContentClientTest {
                 "video-new",
                 RawContentMedia.MediaType.VIDEO,
                 null));
-        assertThat(output)
-                .contains("platform=INSTAGRAM")
-                .contains("accountId=nike")
-                .contains("generationStartedAt=2026-08-13T12:00")
-                .contains("fetchedCount=3")
-                .contains("generationContentCount=3")
-                .contains("durationMs=");
         server.verify();
     }
 
@@ -172,7 +164,7 @@ class InstagramContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0));
+                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).singleElement().satisfies(content -> {
             assertThat(content.contentUrl())
@@ -237,7 +229,7 @@ class InstagramContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0));
+                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -266,7 +258,7 @@ class InstagramContentClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = client.collect(
-                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).isEmpty();
         server.verify();

@@ -23,8 +23,8 @@ public record RawContent(
         // FEED, SHORT_FORM, LONG_FORM ...
         ContentType contentType,
 
-        // Instagram 본문 또는 YouTube 제목과 설명
-        String caption,
+        // Instagram 본문, YouTube 제목·설명 등 TEXT 목록
+        List<String> texts,
 
         // SNS 게시 시각
         LocalDateTime createdAt,
@@ -32,4 +32,28 @@ public record RawContent(
         // 콘텐츠에 포함된 이미지와 영상 목록
         List<RawContentMedia> media
 ) {
+    public RawContent {
+        texts = texts == null ? List.of() : texts.stream()
+                .filter(text -> text != null && !text.isBlank())
+                .toList();
+        media = media == null ? List.of() : List.copyOf(media);
+    }
+
+    public RawContent(
+            SnsPlatform snsCode,
+            String snsContentId,
+            String contentUrl,
+            ContentType contentType,
+            String caption,
+            LocalDateTime createdAt,
+            List<RawContentMedia> media) {
+        this(snsCode, snsContentId, contentUrl, contentType,
+                caption == null ? List.of() : List.of(caption),
+                createdAt, media);
+    }
+
+    /** 셀렉터스 콘텐츠 판별용 전체 TEXT 결합 */
+    public String caption() {
+        return String.join("\n", texts);
+    }
 }
