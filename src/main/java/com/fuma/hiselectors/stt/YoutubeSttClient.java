@@ -17,18 +17,17 @@ public class YoutubeSttClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
 
-    private static final String SPEECH_MARKER = "===음성===";
-    private static final String CAPTION_MARKER = "===자막===";
+    private static final String STT_MARKER = "===음성===";
+    private static final String OCR_MARKER = "===자막===";
 
     private static final String PROMPT = """
             이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
+            두 항목은 독립적으로 각각 추출하며, 내용이 겹쳐도 그대로 둡니다.
             ===음성===
-            사람이 실제로 말한 내용을 한국어로 전사하세요. 그 말이 화면에 자막으로 떠 \
-            있더라도 여기(음성)에만 넣으세요. 말이 없으면 비워 두세요.
+            오디오에서 사람이 말한 내용을 한국어로 전부 전사하세요. 없으면 비워 두세요.
             ===자막===
-            음성과 무관하게 화면에 표시된 텍스트만 적으세요(영상 제목, 뉴스 자막바, \
-            상표·라벨, 그래픽 문구 등). 음성을 그대로 받아쓴 자막은 넣지 마세요. \
-            없으면 비워 두세요.""";
+            화면에 보이는 텍스트를 전부 적으세요(자막, 제목, 상표·라벨, 그래픽 문구 등). \
+            음성과 겹치더라도 그대로 적으세요. 없으면 비워 두세요.""";
 
     private final GeminiProperties properties;
     private final RestClient restClient;
@@ -82,14 +81,14 @@ public class YoutubeSttClient {
     }
 
     private SttResult parse(String text) {
-        int s = text.indexOf(SPEECH_MARKER);
-        int c = text.indexOf(CAPTION_MARKER);
+        int s = text.indexOf(STT_MARKER);
+        int c = text.indexOf(OCR_MARKER);
         if (s < 0 || c < 0 || c < s) {
             return new SttResult(text.trim(), "");
         }
-        String speech = text.substring(s + SPEECH_MARKER.length(), c).trim();
-        String caption = text.substring(c + CAPTION_MARKER.length()).trim();
-        return new SttResult(speech, caption);
+        String stt = text.substring(s + STT_MARKER.length(), c).trim();
+        String ocr = text.substring(c + OCR_MARKER.length()).trim();
+        return new SttResult(stt, ocr);
     }
 
     record GeminiResponse(List<Candidate> candidates) {

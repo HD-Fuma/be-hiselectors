@@ -77,13 +77,13 @@
 
     <div class="block">
         <div class="blabel">🎙️ 음성 (STT)</div>
-        <div class="prebox"><pre id="speech" class="clamp"></pre></div>
-        <button class="more" data-target="speech" style="display:none"></button>
+        <div class="prebox"><pre id="stt" class="clamp"></pre></div>
+        <button class="more" data-target="stt" style="display:none"></button>
     </div>
     <div class="block">
         <div class="blabel">💬 자막 (화면 텍스트)</div>
-        <div class="prebox"><pre id="caption" class="clamp"></pre></div>
-        <button class="more" data-target="caption" style="display:none"></button>
+        <div class="prebox"><pre id="ocr" class="clamp"></pre></div>
+        <button class="more" data-target="ocr" style="display:none"></button>
     </div>
 
     <script>
@@ -97,8 +97,8 @@
 
             btn.disabled = true;
             err.style.display = "none";
-            setBlock("speech", "");
-            setBlock("caption", "");
+            setBlock("stt", "");
+            setBlock("ocr", "");
             meta.textContent = "분석 중…";
             const t0 = performance.now();
 
@@ -110,10 +110,10 @@
 
                 if (json.success) {
                     const d = json.data || {};
-                    const speech = d.speech || "", caption = d.caption || "";
-                    meta.textContent = `${secs}초 · 음성 ${speech.length}자 · 자막 ${caption.length}자`;
-                    setBlock("speech", speech);
-                    setBlock("caption", caption);
+                    const stt = d.stt || "", ocr = d.ocr || "";
+                    meta.textContent = `${secs}초 · 음성 ${stt.length}자 · 자막 ${ocr.length}자`;
+                    setBlock("stt", stt);
+                    setBlock("ocr", ocr);
                 } else {
                     meta.textContent = `${secs}초 · 실패`;
                     showErr(`[${json.code}] ${json.message || "오류"}`);
