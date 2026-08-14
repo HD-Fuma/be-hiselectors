@@ -1,14 +1,12 @@
 package com.fuma.hiselectors.category.bootstrap;
 
 import com.fuma.hiselectors.category.bootstrap.DefaultDiscoveryCatalog.DefaultCategory;
-import com.fuma.hiselectors.category.bootstrap.DefaultDiscoveryCatalog.DefaultKeyword;
-import com.fuma.hiselectors.category.model.Category;
+import com.fuma.hiselectors.category.bootstrap.DefaultDiscoveryCategoryWriter.CategoryInitializationResult;
 import com.fuma.hiselectors.category.repository.CategoryRepository;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /** 더현대Hi 기반 기본 발굴 카테고리·키워드를 멱등하게 초기화한다. */
 @Slf4j
@@ -16,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DefaultDiscoveryDataService {
 
+    private final DefaultDiscoveryCategoryWriter categoryWriter;
     private final CategoryRepository categoryRepository;
 
     /**
@@ -28,55 +27,32 @@ public class DefaultDiscoveryDataService {
      *     <li>동일 이름이 다른 코드로 존재하면 관리자 데이터를 존중하고 건너뛴다.</li>
      * </ul>
      */
-    @Transactional
     public InitializationResult initialize() {
         int createdCategories = 0;
         int createdKeywords = 0;
         int skippedCategories = 0;
 
         for (DefaultCategory defaultCategory : DefaultDiscoveryCatalog.CATEGORIES) {
-            Optional<Category> foundByCode = categoryRepository.findByCode(defaultCategory.code());
-
-            if (foundByCode.isPresent()) {
-                Category existing = foundByCode.get();
-                if (!existing.isEnabled() || !existing.getKeywords().isEmpty()) {
-                    skippedCategories++;
-                    continue;
+            try {
+                CategoryInitializationResult result = categoryWriter.initialize(defaultCategory);
+                createdCategories += result.createdCategories();
+                createdKeywords += result.createdKeywords();
+                skippedCategories += result.skippedCategories();
+            } catch (DataIntegrityViolationException exception) {
+                if (!categoryRepository.existsByCode(defaultCategory.code())
+                        && !categoryRepository.existsByName(defaultCategory.name())) {
+                    throw exception;
                 }
 
-                createdKeywords += addDefaultKeywords(existing, defaultCategory);
-                categoryRepository.save(existing);
-                continue;
-            }
-
-            Optional<Category> sameName = categoryRepository.findByName(defaultCategory.name());
-            if (sameName.isPresent()) {
+                // 다른 애플리케이션 인스턴스가 같은 기본값을 먼저 커밋한 경우다.
                 skippedCategories++;
-                log.warn("기본 발굴 카테고리 '{}'와 같은 이름이 코드 '{}'로 이미 존재하여 건너뜁니다.",
-                        defaultCategory.name(), sameName.get().getCode());
-                continue;
+                log.info("기본 발굴 카테고리 '{}'는 다른 인스턴스에서 이미 초기화하여 건너뜁니다.",
+                        defaultCategory.name());
             }
-
-            Category created = Category.builder()
-                    .code(defaultCategory.code())
-                    .name(defaultCategory.name())
-                    .displayOrder(defaultCategory.displayOrder())
-                    .enabled(true)
-                    .build();
-            createdKeywords += addDefaultKeywords(created, defaultCategory);
-            categoryRepository.save(created);
-            createdCategories++;
         }
 
         return new InitializationResult(
                 createdCategories, createdKeywords, skippedCategories);
-    }
-
-    private int addDefaultKeywords(Category category, DefaultCategory defaultCategory) {
-        for (DefaultKeyword keyword : defaultCategory.keywords()) {
-            category.addKeyword(keyword.keyword(), keyword.priority());
-        }
-        return defaultCategory.keywords().size();
     }
 
     public record InitializationResult(
