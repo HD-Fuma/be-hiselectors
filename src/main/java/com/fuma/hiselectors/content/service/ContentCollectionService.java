@@ -99,7 +99,10 @@ public class ContentCollectionService {
 
         // 마지막 수집 시각 이후 콘텐츠 선별
         List<RawContent> candidates = new ArrayList<>();
-        LocalDateTime collectedAfter = account.getLastCollectedAt().withNano(0);
+        LocalDateTime lastCollectedAt = account.getLastCollectedAt();
+        LocalDateTime collectedAfter = lastCollectedAt == null
+                ? CONTENT_COLLECTION_START_AT
+                : lastCollectedAt.withNano(0);
         for (RawContent content : collectedContents) {
             validatePlatform(content, account.getSnsCode());
             if (!content.createdAt().isBefore(collectedAfter)) {
@@ -116,7 +119,7 @@ public class ContentCollectionService {
         saveAll(account.getSelectorsId(), selectorsContents, collectionStartedAt);
 
         // 모든 저장 성공 이후에만 마지막 수집 시각 갱신
-        if (collectionStartedAt.isAfter(account.getLastCollectedAt())) {
+        if (lastCollectedAt == null || collectionStartedAt.isAfter(lastCollectedAt)) {
             account.completeCollection(collectionStartedAt);
         }
         return selectorsContents.size();

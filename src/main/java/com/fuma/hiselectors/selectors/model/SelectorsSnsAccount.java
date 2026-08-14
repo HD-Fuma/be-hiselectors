@@ -40,7 +40,7 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
     @Column(name = "follower_count")
     private Long followerCount;
 
-    @Column(name = "last_collected_at", nullable = false)
+    @Column(name = "last_collected_at")
     private LocalDateTime lastCollectedAt;
 
     @Builder
@@ -50,7 +50,7 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
         this.snsCode = snsCode;
         this.accountId = accountId;
         this.followerCount = followerCount;
-        this.lastCollectedAt = lastCollectedAt == null ? LocalDateTime.now() : lastCollectedAt;
+        this.lastCollectedAt = lastCollectedAt;
     }
 
     public void completeCollection(LocalDateTime collectedAt) {

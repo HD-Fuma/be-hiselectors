@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 
-@DataJpaTest
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 class SelectorsSnsAccountRepositoryTest {
 
     @Autowired
@@ -48,16 +48,19 @@ class SelectorsSnsAccountRepositoryTest {
     }
 
     @Test
-    @DisplayName("최초 수집 시각은 SNS 계정 생성 시점으로 초기화한다")
-    void initializeLastCollectedAt() {
-        SelectorsSnsAccount saved = accountRepository.save(
+    @DisplayName("최초 수집 전에는 수집 완료 시각을 저장하지 않는다")
+    void leaveLastCollectedAtNullBeforeFirstCollection() {
+        SelectorsSnsAccount saved = accountRepository.saveAndFlush(
                 SelectorsSnsAccount.builder()
                         .selectorsId(1L)
                         .snsCode(SnsPlatform.YOUTUBE)
                         .accountId("youtube-channel")
                         .build());
 
-        assertThat(saved.getLastCollectedAt()).isNotNull();
+        entityManager.clear();
+
+        assertThat(accountRepository.findById(saved.getId()).orElseThrow()
+                .getLastCollectedAt()).isNull();
     }
 
     @Test

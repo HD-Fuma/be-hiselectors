@@ -211,10 +211,37 @@ class ContentCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("외부 API 호출이 실패하면 최종 수집 시각을 갱신하지 않는다")
+    @DisplayName("최초 수집은 기수 시작일부터 선별하고 성공 시 수집 시각을 기록한다")
+    void collectFromGenerationStartWhenLastCollectedAtIsNull() {
+        SelectorsSnsAccount snapshot = account(null);
+        SelectorsSnsAccount managedAccount = account(null);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        when(selectorsRepository.findById(SELECTORS_ID))
+                .thenReturn(Optional.of(selectors()));
+        RawContent beforeGeneration = raw(
+                "before", "RC0001", CONTENT_COLLECTION_START_AT.minusSeconds(1), List.of());
+        RawContent generationContent = raw(
+                "generation", "일반 게시글", CONTENT_COLLECTION_START_AT, List.of());
+        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+                .thenReturn(new CollectionResult(
+                        2, List.of(beforeGeneration, generationContent)));
+        when(classifier.isSelectorsContent(generationContent, SELECTORS_CODE))
+                .thenReturn(false);
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(managedAccount.getLastCollectedAt()).isNotNull();
+        verify(classifier, never()).isSelectorsContent(beforeGeneration, SELECTORS_CODE);
+        verify(classifier).isSelectorsContent(generationContent, SELECTORS_CODE);
+        verify(contentRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("최초 외부 API 호출이 실패하면 수집 완료 시각을 기록하지 않는다")
     void keepCollectionTimeWhenApiFails() {
-        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
-        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount snapshot = account(null);
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(snapshot));
         when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
                 .thenThrow(new IllegalStateException("API failure"));
@@ -223,7 +250,7 @@ class ContentCollectionServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("API failure");
 
-        assertThat(snapshot.getLastCollectedAt()).isEqualTo(lastCollectedAt);
+        assertThat(snapshot.getLastCollectedAt()).isNull();
         verifyNoInteractions(transactionTemplate, contentRepository,
                 versionRepository, mediaRepository);
     }

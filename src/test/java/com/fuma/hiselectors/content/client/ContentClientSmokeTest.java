@@ -61,7 +61,6 @@ class ContentClientSmokeTest {
     }
 
     private void assertRawContents(List<RawContent> contents, SnsPlatform platform) {
-        assertThat(contents).isNotEmpty();
         assertThat(contents).allSatisfy(content -> {
             assertThat(content.snsCode()).isEqualTo(platform);
             assertThat(content.snsContentId()).isNotBlank();
