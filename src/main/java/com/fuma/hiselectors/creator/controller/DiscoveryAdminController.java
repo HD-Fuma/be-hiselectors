@@ -4,6 +4,8 @@ import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
+import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchResult;
+import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -31,6 +33,21 @@ public class DiscoveryAdminController {
 
     private final DiscoveryPipelineService discoveryPipelineService;
     private final InstagramDiscoveryService instagramDiscoveryService;
+    private final YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
+
+    @Operation(summary = "YouTube 크리에이터 일괄 발굴",
+            description = "관리자가 크리에이터 모집을 시작할 때 활성 키워드를 "
+                    + "우선순위·마지막 실행 시각 순으로 일괄 실행한다. "
+                    + "일부 키워드가 실패해도 나머지 키워드는 계속 실행한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일괄 발굴 실행 완료"),
+            @ApiResponse(responseCode = "500", description = "YouTube API 키 설정 누락",
+                    content = @Content)
+    })
+    @PostMapping("/youtube/run")
+    public ResponseEntity<YoutubeDiscoveryBatchResult> runYoutubeBatch() {
+        return ResponseEntity.ok(youtubeDiscoveryBatchService.run());
+    }
 
     @Operation(summary = "키워드로 발굴 실행",
             description = "등록된 키워드 하나로 YouTube 를 검색해 채널을 발굴하고 저장한다. "
