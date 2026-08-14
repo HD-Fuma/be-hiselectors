@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.controller;
 
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
+import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
@@ -81,6 +82,20 @@ public class CreatorAdminController {
         return ResponseEntity.ok(creatorDiscoveryService.search(
                 categoryCode, snsCode, minFollower, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
+    }
+
+    @Operation(summary = "발굴 크리에이터 기본 상세 조회",
+            description = "크리에이터 계정 지표, 대표 카테고리, 카테고리별 발굴 비중과 "
+                    + "브랜드·Instagram 판정 근거를 함께 조회한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "크리에이터 없음", content = @Content)
+    })
+    @GetMapping("/{creatorPoolId}")
+    public ResponseEntity<CreatorDetailResponse> findDetail(
+            @Parameter(description = "크리에이터 풀 ID", example = "113", required = true)
+            @PathVariable Long creatorPoolId) {
+        return ResponseEntity.ok(creatorDiscoveryService.findDetail(creatorPoolId));
     }
 
     @Operation(summary = "카테고리·플랫폼별 영향력 상위 N% 조회",

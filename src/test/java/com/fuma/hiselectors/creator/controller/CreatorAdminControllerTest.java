@@ -9,16 +9,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fuma.hiselectors.common.ApiResultAdvice;
-import com.fuma.hiselectors.creator.dto.InfluenceRankedCreator;
+import com.fuma.hiselectors.creator.dto.CategoryShare;
+import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
+import com.fuma.hiselectors.creator.dto.InfluenceRankedCreator;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import jakarta.validation.Validation;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,12 +33,13 @@ import org.springframework.validation.beanvalidation.MethodValidationInterceptor
 
 class CreatorAdminControllerTest {
 
+    private CreatorDiscoveryService creatorDiscoveryService;
     private CreatorInfluenceService creatorInfluenceService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        CreatorDiscoveryService creatorDiscoveryService = mock(CreatorDiscoveryService.class);
+        creatorDiscoveryService = mock(CreatorDiscoveryService.class);
         creatorInfluenceService = mock(CreatorInfluenceService.class);
         CreatorAdminController controller = new CreatorAdminController(
                 creatorDiscoveryService, creatorInfluenceService);
@@ -44,6 +49,44 @@ class CreatorAdminControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
+    }
+
+    @Test
+    void 크리에이터_기본_상세정보를_조회한다() throws Exception {
+        CreatorDetailResponse response = new CreatorDetailResponse(
+                113L, "YOUTUBE", "UC113", "다예다", "creator@example.com",
+                100_000L, new BigDecimal("4.25"),
+                LocalDateTime.of(2026, 8, 12, 20, 0), "BEAUTY",
+                List.of(new CategoryShare("BEAUTY", new BigDecimal("1.00"))),
+                1, "공식(설명)", "imdayeda", new BigDecimal("0.95"),
+                LocalDateTime.of(2026, 8, 1, 10, 0),
+                LocalDateTime.of(2026, 8, 1, 10, 0),
+                LocalDateTime.of(2026, 8, 13, 11, 0));
+        when(creatorDiscoveryService.findDetail(113L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/admin/creators/113"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.id").value(113))
+                .andExpect(jsonPath("$.data.snsCode").value("YOUTUBE"))
+                .andExpect(jsonPath("$.data.creatorName").value("다예다"))
+                .andExpect(jsonPath("$.data.category").value("BEAUTY"))
+                .andExpect(jsonPath("$.data.categoryShares[0].categoryCode")
+                        .value("BEAUTY"))
+                .andExpect(jsonPath("$.data.brandScore").value(1))
+                .andExpect(jsonPath("$.data.igHandle").value("imdayeda"));
+
+        verify(creatorDiscoveryService).findDetail(113L);
+    }
+
+    @Test
+    void 존재하지_않는_크리에이터_상세조회는_404를_반환한다() throws Exception {
+        when(creatorDiscoveryService.findDetail(999L))
+                .thenThrow(new BusinessException(ErrorCode.CREATOR_NOT_FOUND));
+
+        mockMvc.perform(get("/api/admin/creators/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CREATOR_NOT_FOUND"));
     }
 
     @Test
@@ -95,7 +138,7 @@ class CreatorAdminControllerTest {
                 .andExpect(jsonPath("$.data.topPercent").value(10))
                 .andExpect(jsonPath("$.data.dailyLimit").value(5))
                 .andExpect(jsonPath("$.data.rankingPoolSize").value(100))
-                .andExpect(jsonPath("$.data.discoveredTodayCount").value(8))
+                .andExpect(jsonPath("$.data.dailyTargetCount").value(8))
                 .andExpect(jsonPath("$.data.selectedCount").value(3));
 
     }

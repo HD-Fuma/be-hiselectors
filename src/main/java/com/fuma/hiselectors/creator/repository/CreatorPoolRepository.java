@@ -15,6 +15,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> {
 
+    /** 관리자 화면 상세 조회용. 소프트 삭제된 계정은 존재하지 않는 것으로 처리한다. */
+    Optional<CreatorPool> findByIdAndDeletedFalse(Long id);
+
     /**
      * 발굴 파이프라인이 중복 저장을 피하려고 쓴다.
      *
