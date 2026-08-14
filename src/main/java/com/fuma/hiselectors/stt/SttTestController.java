@@ -1,6 +1,5 @@
 package com.fuma.hiselectors.stt;
 
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,10 +15,9 @@ public class SttTestController {
     private final SttService sttService;
 
     @GetMapping("/transcribe")
-    public ResponseEntity<Map<String, String>> transcribe(
+    public ResponseEntity<SttResult> transcribe(
             @RequestParam(defaultValue = "YOUTUBE") String snsCode,
             @RequestParam String snsContentId) {
-        return ResponseEntity.ok(
-                Map.of("transcript", sttService.transcribe(snsCode, snsContentId)));
+        return ResponseEntity.ok(sttService.transcribe(snsCode, snsContentId));
     }
 }

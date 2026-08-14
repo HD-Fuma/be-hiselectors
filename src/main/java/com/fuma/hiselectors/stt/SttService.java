@@ -12,7 +12,7 @@ public class SttService {
 
     private final YoutubeSttClient youtubeClient;
 
-    public String transcribe(String snsCode, String snsContentId) {
+    public SttResult transcribe(String snsCode, String snsContentId) {
         if (!SnsPlatform.YOUTUBE.name().equalsIgnoreCase(snsCode)) {
             throw new BusinessException(ErrorCode.STT_SNS_NOT_SUPPORTED);
         }

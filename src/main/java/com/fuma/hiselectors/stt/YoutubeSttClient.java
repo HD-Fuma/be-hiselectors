@@ -17,9 +17,18 @@ public class YoutubeSttClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
 
-    private static final String PROMPT =
-            "이 유튜브 영상의 말과 화면 자막 내용을 전부 한국어 텍스트로 옮겨 주세요. "
-            + "설명이나 해설 없이 옮긴 내용만 출력하세요. 말·자막이 전혀 없으면 빈 문자열을 출력하세요.";
+    private static final String SPEECH_MARKER = "===음성===";
+    private static final String CAPTION_MARKER = "===자막===";
+
+    private static final String PROMPT = """
+            이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
+            ===음성===
+            사람이 실제로 말한 내용을 한국어로 전사하세요. 그 말이 화면에 자막으로 떠 \
+            있더라도 여기(음성)에만 넣으세요. 말이 없으면 비워 두세요.
+            ===자막===
+            음성과 무관하게 화면에 표시된 텍스트만 적으세요(영상 제목, 뉴스 자막바, \
+            상표·라벨, 그래픽 문구 등). 음성을 그대로 받아쓴 자막은 넣지 마세요. \
+            없으면 비워 두세요.""";
 
     private final GeminiProperties properties;
     private final RestClient restClient;
@@ -29,8 +38,8 @@ public class YoutubeSttClient {
         this.restClient = RestClient.create();
     }
 
-    /** @return 영상에서 옮긴 텍스트. 말·자막이 없으면 빈 문자열. 저장하지 않는다. */
-    public String transcribe(String videoId) {
+    /** @return 음성·자막을 구분한 결과. 둘 다 없으면 빈 값. 저장하지 않는다. */
+    public SttResult transcribe(String videoId) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
@@ -42,7 +51,7 @@ public class YoutubeSttClient {
                         Map.of("text", PROMPT)))),
                 "generationConfig", Map.of("mediaResolution", "MEDIA_RESOLUTION_LOW"));
 
-        return extractText(call(body));
+        return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
@@ -60,7 +69,7 @@ public class YoutubeSttClient {
         }
     }
 
-    private String extractText(GeminiResponse r) {
+    private String rawText(GeminiResponse r) {
         if (r == null || r.candidates() == null || r.candidates().isEmpty()) {
             return "";
         }
@@ -69,7 +78,18 @@ public class YoutubeSttClient {
             return "";
         }
         String text = content.parts().get(0).text();
-        return text == null ? "" : text.trim();
+        return text == null ? "" : text;
+    }
+
+    private SttResult parse(String text) {
+        int s = text.indexOf(SPEECH_MARKER);
+        int c = text.indexOf(CAPTION_MARKER);
+        if (s < 0 || c < 0 || c < s) {
+            return new SttResult(text.trim(), "");
+        }
+        String speech = text.substring(s + SPEECH_MARKER.length(), c).trim();
+        String caption = text.substring(c + CAPTION_MARKER.length()).trim();
+        return new SttResult(speech, caption);
     }
 
     record GeminiResponse(List<Candidate> candidates) {
