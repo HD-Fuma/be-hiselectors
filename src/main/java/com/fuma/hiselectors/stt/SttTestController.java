@@ -27,6 +27,7 @@ public class SttTestController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "추출 성공"),
             @ApiResponse(responseCode = "400", description = "STT 미지원 SNS", content = @Content),
+            @ApiResponse(responseCode = "500", description = "Gemini API 키 미설정", content = @Content),
             @ApiResponse(responseCode = "502", description = "Gemini 호출 실패", content = @Content)
     })
     @GetMapping("/transcribe")

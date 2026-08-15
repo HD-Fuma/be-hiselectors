@@ -2,10 +2,12 @@ package com.fuma.hiselectors.stt;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -34,7 +36,11 @@ public class YoutubeSttClient {
 
     public YoutubeSttClient(GeminiProperties properties) {
         this.properties = properties;
-        this.restClient = RestClient.create();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        // 영상 분석은 수십 초~분까지 걸릴 수 있어 응답 제한을 넉넉히 둔다.
+        factory.setReadTimeout(Duration.ofMinutes(5));
+        this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
     /** @return 음성·자막을 구분한 결과. 둘 다 없으면 빈 값. 저장하지 않는다. */
@@ -81,14 +87,24 @@ public class YoutubeSttClient {
     }
 
     private SttResult parse(String text) {
-        int s = text.indexOf(STT_MARKER);
-        int c = text.indexOf(OCR_MARKER);
-        if (s < 0 || c < 0 || c < s) {
+        String stt = section(text, STT_MARKER, OCR_MARKER);
+        String ocr = section(text, OCR_MARKER, STT_MARKER);
+        if (stt.isEmpty() && ocr.isEmpty()
+                && text.indexOf(STT_MARKER) < 0 && text.indexOf(OCR_MARKER) < 0) {
             return new SttResult(text.trim(), "");
         }
-        String stt = text.substring(s + STT_MARKER.length(), c).trim();
-        String ocr = text.substring(c + OCR_MARKER.length()).trim();
         return new SttResult(stt, ocr);
+    }
+
+    private String section(String text, String marker, String otherMarker) {
+        int start = text.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        start += marker.length();
+        int other = text.indexOf(otherMarker);
+        int end = other > start ? other : text.length();
+        return text.substring(start, end).trim();
     }
 
     record GeminiResponse(List<Candidate> candidates) {
