@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClientException;
 public class YoutubeSttClient {
 
     private static final String ENDPOINT =
-            "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
+            "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
     private static final String STT_MARKER = "===음성===";
     private static final String OCR_MARKER = "===자막===";
@@ -54,16 +54,17 @@ public class YoutubeSttClient {
                 "contents", List.of(Map.of("parts", List.of(
                         Map.of("fileData", Map.of("fileUri", url)),
                         Map.of("text", PROMPT)))),
-                "generationConfig", Map.of("mediaResolution", "MEDIA_RESOLUTION_LOW"));
+                "generationConfig", Map.of("mediaResolution", properties.mediaResolutionOrDefault()));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault(), properties.apiKey());
+        String uri = ENDPOINT.formatted(properties.modelOrDefault());
         try {
             return restClient.post()
                     .uri(uri)
+                    .header("x-goog-api-key", properties.apiKey())  // 키를 URL 대신 헤더로(로그 유출 방지)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
@@ -76,14 +77,32 @@ public class YoutubeSttClient {
 
     private String rawText(GeminiResponse r) {
         if (r == null || r.candidates() == null || r.candidates().isEmpty()) {
+            // 후보 없음 = 안전 차단 또는 실패. 빈 성공으로 넘기지 않고 실패 처리.
+            log.warn("Gemini 응답에 후보 없음. blockReason={}", blockReason(r));
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Candidate candidate = r.candidates().get(0);
+        String finish = candidate.finishReason();
+        if (finish != null && !"STOP".equals(finish) && !"MAX_TOKENS".equals(finish)) {
+            // SAFETY, RECITATION 등 비정상 종료.
+            log.warn("Gemini 비정상 종료. finishReason={}", finish);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Content content = candidate.content();
+        if (content == null || content.parts() == null) {
             return "";
         }
-        GeminiResponse.Content content = r.candidates().get(0).content();
-        if (content == null || content.parts() == null || content.parts().isEmpty()) {
-            return "";
+        StringBuilder sb = new StringBuilder();
+        for (GeminiResponse.Part part : content.parts()) {
+            if (part.text() != null) {
+                sb.append(part.text());
+            }
         }
-        String text = content.parts().get(0).text();
-        return text == null ? "" : text;
+        return sb.toString();
+    }
+
+    private String blockReason(GeminiResponse r) {
+        return r != null && r.promptFeedback() != null ? r.promptFeedback().blockReason() : null;
     }
 
     private SttResult parse(String text) {
@@ -107,11 +126,13 @@ public class YoutubeSttClient {
         return text.substring(start, end).trim();
     }
 
-    record GeminiResponse(List<Candidate> candidates) {
-        record Candidate(Content content) { }
+    record GeminiResponse(List<Candidate> candidates, PromptFeedback promptFeedback) {
+        record Candidate(Content content, String finishReason) { }
 
         record Content(List<Part> parts) { }
 
         record Part(String text) { }
+
+        record PromptFeedback(String blockReason) { }
     }
 }
