@@ -54,7 +54,9 @@ public class YoutubeSttClient {
                 "contents", List.of(Map.of("parts", List.of(
                         Map.of("fileData", Map.of("fileUri", url)),
                         Map.of("text", PROMPT)))),
-                "generationConfig", Map.of("mediaResolution", properties.mediaResolutionOrDefault()));
+                "generationConfig", Map.of(
+                        "mediaResolution", properties.mediaResolutionApiValue(),
+                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
 
         return parse(rawText(call(body)));
     }
@@ -83,14 +85,16 @@ public class YoutubeSttClient {
         }
         GeminiResponse.Candidate candidate = r.candidates().get(0);
         String finish = candidate.finishReason();
-        if (finish != null && !"STOP".equals(finish) && !"MAX_TOKENS".equals(finish)) {
-            // SAFETY, RECITATION 등 비정상 종료.
-            log.warn("Gemini 비정상 종료. finishReason={}", finish);
+        if (finish != null && !"STOP".equals(finish)) {
+            // MAX_TOKENS(출력 잘림), SAFETY, RECITATION 등 → 불완전/차단이므로 실패.
+            // 잘린 전사를 성공으로 반환하지 않는다. 잘리면 gemini.max-output-tokens 를 올린다.
+            log.warn("Gemini 정상 종료 아님. finishReason={}", finish);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
         GeminiResponse.Content content = candidate.content();
-        if (content == null || content.parts() == null) {
-            return "";
+        if (content == null || content.parts() == null || content.parts().isEmpty()) {
+            log.warn("Gemini 응답에 콘텐츠 없음. finishReason={}", finish);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
         StringBuilder sb = new StringBuilder();
         for (GeminiResponse.Part part : content.parts()) {
