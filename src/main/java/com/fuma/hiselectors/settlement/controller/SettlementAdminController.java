@@ -62,6 +62,10 @@ public class SettlementAdminController {
     }
 
     /** 지급 연동 없이 전전월 정산 이력을 지급 완료 또는 지급 보류로 상태 변경한다. */
+    @Operation(
+            summary = "정산 지급 상태 처리",
+            description = "지급 연동 없이 전전월 활동월 정산 이력을 지급 완료 또는 지급 보류 상태로 변경합니다. "
+                    + "month를 생략하면 현재 기준 전전월을 대상으로 처리합니다.")
     @PostMapping("/payments/process")
     public ResponseEntity<SettlementPaymentResponse> processPayment(
             @RequestParam(required = false)
