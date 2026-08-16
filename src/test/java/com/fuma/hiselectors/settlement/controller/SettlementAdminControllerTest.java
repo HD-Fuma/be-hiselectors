@@ -67,7 +67,7 @@ class SettlementAdminControllerTest {
     @Test
     void processesPaymentForRequestedMonth() throws Exception {
         when(settlementPaymentService.process(YearMonth.of(2026, 6)))
-                .thenReturn(new SettlementPaymentResponse(YearMonth.of(2026, 6), 3, 2, 1, 0));
+                .thenReturn(new SettlementPaymentResponse(YearMonth.of(2026, 6), 3, 2, 1, 0, 0));
 
         mockMvc.perform(post("/api/admin/settlements/estimates/payments/process")
                         .param("month", "2026-06"))

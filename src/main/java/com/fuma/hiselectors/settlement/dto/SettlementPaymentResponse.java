@@ -8,6 +8,7 @@ public record SettlementPaymentResponse(
         int processedCount,
         int settledCount,
         int heldCount,
-        int skippedCount
+        int skippedCount,
+        int failedCount
 ) {
 }

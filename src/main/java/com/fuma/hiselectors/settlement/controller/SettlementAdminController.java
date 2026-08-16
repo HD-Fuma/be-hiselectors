@@ -47,10 +47,13 @@ public class SettlementAdminController {
     }
 
     /**
-     * 활동월에 발생해 구매확정된 이력을 기준으로 정산 이력을 생성·재계산하고, 마감 대상 월은 지급 대기 상태로 확정한다.
-     * force=true면 PAYMENT_PENDING 이력도 보정하며 PAYMENT_HOLD와 SETTLED는 보호한다.
+     * 개발·테스트용 정합성 보정 API다. 운영 지급 배치를 대체하지 않으며,
+     * 전체 기간·전체 셀렉터스 재계산이 필요할 때만 관리자가 사용한다.
      */
-    @Operation(summary = "관리자 정산 이력 재계산")
+    @Operation(
+            summary = "관리자 정산 이력 재계산 (테스트용)",
+            description = "더미 데이터 정합성 보정용 API입니다. 운영 지급 배치를 대체하지 않으며, "
+                    + "month와 selectorsId를 생략하면 전체 기간·전체 셀렉터스를 동기 재계산합니다.")
     @PostMapping("/recalculate")
     public ResponseEntity<SettlementRecalculationResponse> recalculate(
             @RequestParam(required = false)

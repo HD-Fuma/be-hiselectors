@@ -26,6 +26,17 @@ class SettlementHistoryTest {
     }
 
     @Test
+    void calculatingHistoryCannotMoveDirectlyToPaymentHold() {
+        SettlementHistory history = calculatedHistory();
+
+        assertThatThrownBy(() -> history.transitionTo(
+                SettlementStatus.PAYMENT_HOLD, LocalDateTime.now()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
+    }
+
+    @Test
     void settledHistoryCannotChangeOrRecalculate() {
         SettlementHistory history = calculatedHistory();
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());

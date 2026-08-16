@@ -2,17 +2,23 @@ package com.fuma.hiselectors.settlement.repository;
 
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SettlementHistoryRepository extends JpaRepository<SettlementHistory, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select h from SettlementHistory h where h.id = :settlementId")
+    Optional<SettlementHistory> findByIdForUpdate(@Param("settlementId") Long settlementId);
 
     Optional<SettlementHistory> findBySelectorsIdAndSettlementMonth(
             Long selectorsId, LocalDateTime settlementMonth);

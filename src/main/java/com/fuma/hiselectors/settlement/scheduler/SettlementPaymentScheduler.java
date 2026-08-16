@@ -21,8 +21,9 @@ public class SettlementPaymentScheduler {
         SettlementPaymentResponse result = settlementPaymentService
                 .processPreviousPreviousMonth();
         log.info(
-                "정산 지급 배치 완료: targetSettlementMonth={}, processed={}, settled={}, held={}",
+                "정산 지급 배치 완료: targetSettlementMonth={}, processed={}, settled={}, held={}, skipped={}, failed={}",
                 result.targetSettlementMonth(), result.processedCount(),
-                result.settledCount(), result.heldCount());
+                result.settledCount(), result.heldCount(), result.skippedCount(),
+                result.failedCount());
     }
 }

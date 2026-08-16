@@ -30,8 +30,7 @@ import lombok.NoArgsConstructor;
 public class SettlementHistory extends BaseTimeEntity {
 
     private static final Map<SettlementStatus, Set<SettlementStatus>> ALLOWED_TRANSITIONS = Map.of(
-            SettlementStatus.CALCULATING, EnumSet.of(
-                    SettlementStatus.PAYMENT_PENDING, SettlementStatus.PAYMENT_HOLD),
+            SettlementStatus.CALCULATING, EnumSet.of(SettlementStatus.PAYMENT_PENDING),
             SettlementStatus.PAYMENT_PENDING, EnumSet.of(
                     SettlementStatus.PAYMENT_HOLD, SettlementStatus.SETTLED),
             SettlementStatus.PAYMENT_HOLD, EnumSet.of(SettlementStatus.PAYMENT_PENDING),
