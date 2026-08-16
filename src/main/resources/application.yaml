@@ -22,11 +22,11 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
-    show-sql: true
+      ddl-auto: ${DDL_AUTO:validate}
+    show-sql: ${SHOW_SQL:true}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${FORMAT_SQL:true}
     open-in-view: false
 
 jwt:
@@ -67,3 +67,14 @@ kakao:
     mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:http://localhost:3000}
     image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
   token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}
+
+purchase:
+  auto-confirm:
+    cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
+
+settlement:
+  zone: ${SETTLEMENT_ZONE:Asia/Seoul}
+  estimate:
+    cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}
+  payment:
+    cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 20 * *}
