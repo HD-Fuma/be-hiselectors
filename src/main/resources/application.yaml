@@ -54,6 +54,10 @@ discovery:
   defaults:
     enabled: ${DISCOVERY_DEFAULTS_ENABLED:true}
 
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+
 instagram:
   oauth:
     client-id: ${INSTAGRAM_CLIENT_ID:}

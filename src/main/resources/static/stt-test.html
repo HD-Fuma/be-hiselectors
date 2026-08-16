@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STT 테스트</title>
+    <style>
+        :root { color-scheme: light dark; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            max-width: 760px; margin: 0 auto; padding: 24px; line-height: 1.5;
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 4px; }
+        .sub { opacity: .65; font-size: .85rem; margin-bottom: 20px; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+        label { display: block; font-size: .8rem; opacity: .8; margin-bottom: 4px; }
+        select, input {
+            padding: 8px 10px; font-size: 1rem; border: 1px solid #8886;
+            border-radius: 8px; background: transparent; color: inherit;
+        }
+        input#vid { flex: 1; min-width: 200px; }
+        button.go {
+            padding: 9px 18px; font-size: 1rem; border: 0; border-radius: 8px;
+            background: #4f46e5; color: #fff; cursor: pointer;
+        }
+        button.go:disabled { opacity: .5; cursor: default; }
+        .meta { font-size: .8rem; opacity: .7; margin: 16px 0 4px; }
+        .block { margin-top: 14px; }
+        .blabel { font-size: .8rem; font-weight: 600; opacity: .85; margin-bottom: 4px; }
+        .prebox { position: relative; }
+        pre {
+            white-space: pre-wrap; word-break: break-word; padding: 14px;
+            border: 1px solid #8884; border-radius: 10px; min-height: 48px;
+            background: #8881; margin: 0; font-size: .95rem;
+        }
+        pre.clamp { max-height: 160px; overflow: hidden; }
+        /* 접힌 상태에서 아래가 잘렸다는 페이드 힌트 */
+        pre.clamp.overflowing::after {
+            content: ""; position: absolute; left: 1px; right: 1px; bottom: 1px; height: 46px;
+            border-radius: 0 0 10px 10px;
+            background: linear-gradient(transparent, Canvas);
+        }
+        .more {
+            background: none; border: 0; color: #6366f1; cursor: pointer;
+            padding: 6px 0; font-size: .85rem; font-weight: 600;
+        }
+        .err {
+            color: #dc2626; border: 1px solid #dc262688; border-radius: 10px;
+            padding: 12px; margin-top: 14px; display: none;
+        }
+        .hint { font-size: .78rem; opacity: .6; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <h1>STT 테스트</h1>
+    <div class="sub">videoId 넣으면 Gemini로 음성·자막 추출. 저장 안 함.</div>
+
+    <div class="row">
+        <div>
+            <label for="sns">SNS</label>
+            <select id="sns">
+                <option value="YOUTUBE">YOUTUBE</option>
+                <option value="INSTAGRAM">INSTAGRAM</option>
+            </select>
+        </div>
+        <div style="flex:1">
+            <label for="vid">콘텐츠 ID (유튜브 videoId)</label>
+            <input id="vid" placeholder="예: uqVIyVablhQ" value="uqVIyVablhQ">
+        </div>
+        <button class="go" id="go">추출</button>
+    </div>
+    <div class="hint">롱폼은 수십 초 걸릴 수 있어요. INSTAGRAM은 아직 미지원(에러 반환).</div>
+
+    <div class="meta" id="meta"></div>
+    <div class="err" id="err"></div>
+
+    <div class="block">
+        <div class="blabel">🎙️ 음성 (STT)</div>
+        <div class="prebox"><pre id="stt" class="clamp"></pre></div>
+        <button class="more" data-target="stt" style="display:none"></button>
+    </div>
+    <div class="block">
+        <div class="blabel">💬 자막 (화면 텍스트)</div>
+        <div class="prebox"><pre id="ocr" class="clamp"></pre></div>
+        <button class="more" data-target="ocr" style="display:none"></button>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const btn = $("go"), meta = $("meta"), err = $("err");
+
+        async function run() {
+            const sns = $("sns").value;
+            const id = $("vid").value.trim();
+            if (!id) { showErr("콘텐츠 ID를 입력하세요."); return; }
+
+            btn.disabled = true;
+            err.style.display = "none";
+            setBlock("stt", "");
+            setBlock("ocr", "");
+            meta.textContent = "분석 중…";
+            const t0 = performance.now();
+
+            try {
+                const url = `/api/stt/transcribe?snsCode=${encodeURIComponent(sns)}&snsContentId=${encodeURIComponent(id)}`;
+                const res = await fetch(url);
+                const json = await res.json();
+                const secs = ((performance.now() - t0) / 1000).toFixed(1);
+
+                if (json.success) {
+                    const d = json.data || {};
+                    const stt = d.stt || "", ocr = d.ocr || "";
+                    meta.textContent = `${secs}초 · 음성 ${stt.length}자 · 자막 ${ocr.length}자`;
+                    setBlock("stt", stt);
+                    setBlock("ocr", ocr);
+                } else {
+                    meta.textContent = `${secs}초 · 실패`;
+                    showErr(`[${json.code}] ${json.message || "오류"}`);
+                }
+            } catch (e) {
+                meta.textContent = "실패";
+                showErr("요청 실패: " + e.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 내용 세팅 + 넘치면 '더보기' 노출
+        function setBlock(id, text) {
+            const pre = $(id);
+            pre.textContent = text || "(없음)";
+            pre.classList.add("clamp");
+            const more = document.querySelector(`.more[data-target="${id}"]`);
+            const overflowing = pre.scrollHeight > pre.clientHeight + 2;
+            pre.classList.toggle("overflowing", overflowing);
+            more.style.display = overflowing ? "block" : "none";
+            more.textContent = "더보기 ▾";
+        }
+
+        document.querySelectorAll(".more").forEach((more) => {
+            more.addEventListener("click", () => {
+                const pre = $(more.dataset.target);
+                const clamped = pre.classList.toggle("clamp");
+                pre.classList.toggle("overflowing", clamped && pre.scrollHeight > pre.clientHeight + 2);
+                more.textContent = clamped ? "더보기 ▾" : "접기 ▴";
+            });
+        });
+
+        function showErr(msg) {
+            err.textContent = msg;
+            err.style.display = "block";
+        }
+
+        btn.addEventListener("click", run);
+        $("vid").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+    </script>
+</body>
+</html>
