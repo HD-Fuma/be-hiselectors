@@ -1,0 +1,84 @@
+package com.fuma.hiselectors.settlement.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.fuma.hiselectors.config.TimeConfig;
+import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
+import com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+
+class SettlementPurchaseHistoryServiceTest {
+
+    @Test
+    void defaultsToPreviousMonthWhenMonthIsNotProvided() {
+        PurchaseHistoryRepository repository = mock(PurchaseHistoryRepository.class);
+        Clock clock = Clock.fixed(Instant.parse("2026-08-15T01:00:00Z"), TimeConfig.SEOUL_ZONE);
+        SettlementPurchaseHistoryService service = new SettlementPurchaseHistoryService(repository, clock);
+        Pageable pageable = PageRequest.of(0, 20);
+
+        when(repository.searchForSettlementAdmin(
+                3L,
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                pageable)).thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        var result = service.search(3L, null, false, pageable);
+
+        assertThat(result).isEmpty();
+        verify(repository).searchForSettlementAdmin(
+                3L,
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                pageable);
+    }
+
+    @Test
+    void usesRequestedMonthAndSelectorsFilter() {
+        PurchaseHistoryRepository repository = mock(PurchaseHistoryRepository.class);
+        SettlementPurchaseHistoryService service = new SettlementPurchaseHistoryService(
+                repository, Clock.systemUTC());
+        Pageable pageable = PageRequest.of(0, 20);
+        SettlementPurchaseHistoryResponse row = new SettlementPurchaseHistoryResponse(
+                101L, 3L, "SEL-003", "selector", 20L, "buyer", "ORDER-1", "P-1",
+                2, java.math.BigDecimal.valueOf(30000), LocalDateTime.of(2026, 6, 30, 10, 0),
+                null, com.fuma.hiselectors.purchase.model.PurchaseStatus.PURCHASED);
+
+        when(repository.searchForSettlementAdmin(
+                3L,
+                LocalDateTime.of(2026, 6, 1, 0, 0),
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                pageable)).thenReturn(new PageImpl<>(List.of(row), pageable, 1));
+
+        var result = service.search(3L, YearMonth.of(2026, 6), false, pageable);
+
+        assertThat(result.getContent()).containsExactly(row);
+    }
+
+    @Test
+    void removesMonthFilterForAllMonthsLookup() {
+        PurchaseHistoryRepository repository = mock(PurchaseHistoryRepository.class);
+        SettlementPurchaseHistoryService service = new SettlementPurchaseHistoryService(
+                repository, Clock.systemUTC());
+        Pageable pageable = PageRequest.of(0, 20);
+
+        when(repository.searchForSettlementAdmin(isNull(), isNull(), isNull(), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        service.search(null, YearMonth.of(2026, 7), true, pageable);
+
+        verify(repository).searchForSettlementAdmin(null, null, null, pageable);
+    }
+}
