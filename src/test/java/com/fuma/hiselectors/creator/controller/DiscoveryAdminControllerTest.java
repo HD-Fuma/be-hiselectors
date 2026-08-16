@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.common.ApiResultAdvice;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchResult;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchService;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
 import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchResult;
 import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchService;
@@ -27,6 +29,7 @@ class DiscoveryAdminControllerTest {
 
     private InstagramDiscoveryService instagramDiscoveryService;
     private YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
+    private InstagramDiscoveryBatchService instagramDiscoveryBatchService;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -35,17 +38,19 @@ class DiscoveryAdminControllerTest {
                 mock(DiscoveryPipelineService.class);
         instagramDiscoveryService = mock(InstagramDiscoveryService.class);
         youtubeDiscoveryBatchService = mock(YoutubeDiscoveryBatchService.class);
+        instagramDiscoveryBatchService = mock(InstagramDiscoveryBatchService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new DiscoveryAdminController(
                         discoveryPipelineService,
                         instagramDiscoveryService,
-                        youtubeDiscoveryBatchService
+                        youtubeDiscoveryBatchService,
+                        instagramDiscoveryBatchService
                 ))
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }
 
     @Test
-    void 관리자가_YouTube_일괄_발굴을_실행한다() throws Exception {
+    void runsYoutubeDiscoveryBatch() throws Exception {
         YoutubeDiscoveryBatchResult result = new YoutubeDiscoveryBatchResult(
                 5, 3, 2, 1,
                 306, 204, 20, 12, 8);
@@ -65,7 +70,26 @@ class DiscoveryAdminControllerTest {
     }
 
     @Test
-    void YouTube_크리에이터의_Instagram_발굴을_실행한다() throws Exception {
+    void runsInstagramDiscoveryBatch() throws Exception {
+        InstagramDiscoveryBatchResult result = new InstagramDiscoveryBatchResult(
+                5, 4, 1, 2, 2
+        );
+        when(instagramDiscoveryBatchService.run()).thenReturn(result);
+
+        mockMvc.perform(post("/api/admin/discovery/instagram/run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.attemptedCreators").value(5))
+                .andExpect(jsonPath("$.data.succeededCreators").value(4))
+                .andExpect(jsonPath("$.data.failedCreators").value(1))
+                .andExpect(jsonPath("$.data.createdCreators").value(2))
+                .andExpect(jsonPath("$.data.updatedCreators").value(2));
+
+        verify(instagramDiscoveryBatchService).run();
+    }
+
+    @Test
+    void discoversInstagramCreatorFromYoutubeCreator() throws Exception {
         InstagramDiscoveryResult result = new InstagramDiscoveryResult(
                 10L,
                 20L,
@@ -94,7 +118,7 @@ class DiscoveryAdminControllerTest {
     }
 
     @Test
-    void Instagram_사용자명이_없으면_404를_반환한다() throws Exception {
+    void returnsNotFoundWhenInstagramUsernameIsMissing() throws Exception {
         when(instagramDiscoveryService.discoverFromYoutubeCreator(10L))
                 .thenThrow(new BusinessException(ErrorCode.INSTAGRAM_HANDLE_NOT_FOUND));
 
