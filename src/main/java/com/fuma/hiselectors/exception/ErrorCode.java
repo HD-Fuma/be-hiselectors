@@ -98,7 +98,12 @@ public enum ErrorCode {
 
     APPLICATION_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "지원자를 찾을 수 없습니다."),
     ACTIVE_GENERATION_NOT_FOUND(HttpStatus.CONFLICT, "현재 모집 중인 기수가 없어 지원할 수 없습니다."),
-    DUPLICATE_APPLICATION(HttpStatus.CONFLICT, "이미 해당 기수에 지원했습니다.");
+    DUPLICATE_APPLICATION(HttpStatus.CONFLICT, "이미 해당 기수에 지원했습니다."),
+
+    // --- STT (Gemini) ---
+    GEMINI_API_KEY_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API 키가 설정되지 않았습니다."),
+    GEMINI_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "Gemini API 호출에 실패했습니다."),
+    STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다.");
 
     private final HttpStatus status;
     private final String message;

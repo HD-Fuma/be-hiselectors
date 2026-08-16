@@ -1,0 +1,161 @@
+package com.fuma.hiselectors.stt;
+
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+
+@Slf4j
+@Component
+public class YoutubeSttClient {
+
+    private static final String ENDPOINT =
+            "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
+
+    private static final String SUMMARY_MARKER = "===요약===";
+    private static final String STT_MARKER = "===음성===";
+    private static final String OCR_MARKER = "===자막===";
+
+    // 영상 입력 비용은 어차피 이 호출에서 낸다. 요약(생성이라 LLM 필수)만 같은 호출에 얹어
+    // output 토큰만 추가한다. 나머지 정성 필드는 transcript 위에서 도는 공용 계층에서 처리.
+    private static final String PROMPT = """
+            이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
+            세 항목은 독립적으로 각각 추출하며, 내용이 겹쳐도 그대로 둡니다.
+            ===요약===
+            영상 내용을 한국어 3~5문장으로 요약하세요. 없으면 비워 두세요.
+            ===음성===
+            오디오에서 사람이 말한 내용을 한국어로 전부 전사하세요. 없으면 비워 두세요.
+            ===자막===
+            화면에 보이는 텍스트를 전부 적으세요(자막, 제목, 상표·라벨, 그래픽 문구 등). \
+            음성과 겹치더라도 그대로 적으세요. 없으면 비워 두세요.""";
+
+    private final GeminiProperties properties;
+    private final RestClient restClient;
+
+    public YoutubeSttClient(GeminiProperties properties) {
+        this.properties = properties;
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        // 영상 분석은 수십 초~분까지 걸릴 수 있어 응답 제한을 넉넉히 둔다.
+        factory.setReadTimeout(Duration.ofMinutes(5));
+        this.restClient = RestClient.builder().requestFactory(factory).build();
+    }
+
+    /** @return 음성·자막을 구분한 결과. 둘 다 없으면 빈 값. 저장하지 않는다. */
+    public SttResult transcribe(String videoId) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
+        }
+
+        String url = "https://www.youtube.com/watch?v=" + videoId;
+        Map<String, Object> body = Map.of(
+                "contents", List.of(Map.of("parts", List.of(
+                        Map.of("fileData", Map.of("fileUri", url)),
+                        Map.of("text", PROMPT)))),
+                "generationConfig", Map.of(
+                        "mediaResolution", properties.mediaResolutionApiValue(),
+                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+
+        return parse(rawText(call(body)));
+    }
+
+    private GeminiResponse call(Map<String, Object> body) {
+        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        try {
+            return restClient.post()
+                    .uri(uri)
+                    .header("x-goog-api-key", properties.apiKey())  // 키를 URL 대신 헤더로(로그 유출 방지)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(GeminiResponse.class);
+        } catch (RestClientException e) {
+            log.warn("Gemini STT 호출 실패. model={}", properties.modelOrDefault(), e);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+    }
+
+    private String rawText(GeminiResponse r) {
+        if (r == null || r.candidates() == null || r.candidates().isEmpty()) {
+            // 후보 없음 = 안전 차단 또는 실패. 빈 성공으로 넘기지 않고 실패 처리.
+            log.warn("Gemini 응답에 후보 없음. blockReason={}", blockReason(r));
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Candidate candidate = r.candidates().get(0);
+        String finish = candidate.finishReason();
+        if (finish != null && !"STOP".equals(finish)) {
+            // MAX_TOKENS(출력 잘림), SAFETY, RECITATION 등 → 불완전/차단이므로 실패.
+            // 잘린 전사를 성공으로 반환하지 않는다. 잘리면 gemini.max-output-tokens 를 올린다.
+            log.warn("Gemini 정상 종료 아님. finishReason={}", finish);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Content content = candidate.content();
+        if (content == null || content.parts() == null || content.parts().isEmpty()) {
+            log.warn("Gemini 응답에 콘텐츠 없음. finishReason={}", finish);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (GeminiResponse.Part part : content.parts()) {
+            if (part.text() != null) {
+                sb.append(part.text());
+            }
+        }
+        return sb.toString();
+    }
+
+    private String blockReason(GeminiResponse r) {
+        return r != null && r.promptFeedback() != null ? r.promptFeedback().blockReason() : null;
+    }
+
+    private static final String[] MARKERS = { SUMMARY_MARKER, STT_MARKER, OCR_MARKER };
+
+    private SttResult parse(String text) {
+        boolean noMarkers = text.indexOf(SUMMARY_MARKER) < 0
+                && text.indexOf(STT_MARKER) < 0 && text.indexOf(OCR_MARKER) < 0;
+        if (noMarkers) {
+            // 형식 이탈 = 마커 없는 응답. 통째로 음성 자리에 넣는다(요약으로 오인 방지).
+            return new SttResult("", text.trim(), "");
+        }
+        return new SttResult(
+                section(text, SUMMARY_MARKER),
+                section(text, STT_MARKER),
+                section(text, OCR_MARKER));
+    }
+
+    /** marker 뒤부터 다음 마커(어느 것이든) 직전까지. 마커 순서가 바뀌어도 안전. */
+    private String section(String text, String marker) {
+        int start = text.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        start += marker.length();
+        int end = text.length();
+        for (String other : MARKERS) {
+            if (other.equals(marker)) {
+                continue;
+            }
+            int i = text.indexOf(other);
+            if (i >= start && i < end) {
+                end = i;
+            }
+        }
+        return text.substring(start, end).trim();
+    }
+
+    record GeminiResponse(List<Candidate> candidates, PromptFeedback promptFeedback) {
+        record Candidate(Content content, String finishReason) { }
+
+        record Content(List<Part> parts) { }
+
+        record Part(String text) { }
+
+        record PromptFeedback(String blockReason) { }
+    }
+}
