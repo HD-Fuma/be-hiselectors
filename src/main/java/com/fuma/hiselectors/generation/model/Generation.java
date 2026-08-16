@@ -46,4 +46,20 @@ public class Generation {
         this.endDate = endDate;
         this.status = status;
     }
+
+    public void update(String generationName, LocalDateTime startDate, LocalDateTime endDate) {
+        if (generationName != null) {
+            this.generationName = generationName;
+        }
+        if (startDate != null) {
+            this.startDate = startDate;
+        }
+        if (endDate != null) {
+            this.endDate = endDate;
+        }
+    }
+
+    public void changeStatus(GenerationStatus status) {
+        this.status = status;
+    }
 }
