@@ -19,12 +19,17 @@ public class YoutubeSttClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
+    private static final String SUMMARY_MARKER = "===요약===";
     private static final String STT_MARKER = "===음성===";
     private static final String OCR_MARKER = "===자막===";
 
+    // 영상 입력 비용은 어차피 이 호출에서 낸다. 요약(생성이라 LLM 필수)만 같은 호출에 얹어
+    // output 토큰만 추가한다. 나머지 정성 필드는 transcript 위에서 도는 공용 계층에서 처리.
     private static final String PROMPT = """
             이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
-            두 항목은 독립적으로 각각 추출하며, 내용이 겹쳐도 그대로 둡니다.
+            세 항목은 독립적으로 각각 추출하며, 내용이 겹쳐도 그대로 둡니다.
+            ===요약===
+            영상 내용을 한국어 3~5문장으로 요약하세요. 없으면 비워 두세요.
             ===음성===
             오디오에서 사람이 말한 내용을 한국어로 전부 전사하세요. 없으면 비워 두세요.
             ===자막===
@@ -109,24 +114,38 @@ public class YoutubeSttClient {
         return r != null && r.promptFeedback() != null ? r.promptFeedback().blockReason() : null;
     }
 
+    private static final String[] MARKERS = { SUMMARY_MARKER, STT_MARKER, OCR_MARKER };
+
     private SttResult parse(String text) {
-        String stt = section(text, STT_MARKER, OCR_MARKER);
-        String ocr = section(text, OCR_MARKER, STT_MARKER);
-        if (stt.isEmpty() && ocr.isEmpty()
-                && text.indexOf(STT_MARKER) < 0 && text.indexOf(OCR_MARKER) < 0) {
-            return new SttResult(text.trim(), "");
+        boolean noMarkers = text.indexOf(SUMMARY_MARKER) < 0
+                && text.indexOf(STT_MARKER) < 0 && text.indexOf(OCR_MARKER) < 0;
+        if (noMarkers) {
+            // 형식 이탈 = 마커 없는 응답. 통째로 음성 자리에 넣는다(요약으로 오인 방지).
+            return new SttResult("", text.trim(), "");
         }
-        return new SttResult(stt, ocr);
+        return new SttResult(
+                section(text, SUMMARY_MARKER),
+                section(text, STT_MARKER),
+                section(text, OCR_MARKER));
     }
 
-    private String section(String text, String marker, String otherMarker) {
+    /** marker 뒤부터 다음 마커(어느 것이든) 직전까지. 마커 순서가 바뀌어도 안전. */
+    private String section(String text, String marker) {
         int start = text.indexOf(marker);
         if (start < 0) {
             return "";
         }
         start += marker.length();
-        int other = text.indexOf(otherMarker);
-        int end = other > start ? other : text.length();
+        int end = text.length();
+        for (String other : MARKERS) {
+            if (other.equals(marker)) {
+                continue;
+            }
+            int i = text.indexOf(other);
+            if (i >= start && i < end) {
+                end = i;
+            }
+        }
         return text.substring(start, end).trim();
     }
 
