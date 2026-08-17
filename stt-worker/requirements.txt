@@ -1,2 +1,5 @@
-keybert
+kiwipiepy
 sentence-transformers
+transformers
+fastapi
+uvicorn

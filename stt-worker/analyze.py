@@ -1,19 +1,28 @@
-"""콘텐츠 정성 지표 중 로컬(LLM 0) 필드: 키워드 · 카테고리 · 스타일 · 톤 · 위험.
-임베딩 모델 하나로 키워드/카테고리/스타일/톤 처리(KeyBERT + zero-shot cosine),
-위험은 lexicon 스캔(아웃라이어라 임베딩 평균으론 못 잡음).
-transcript 텍스트만 입력 — YouTube(Gemini) stt+ocr+summary 든 Instagram(whisper) 든 동일."""
+"""로컬(LLM 0) 정성 필드: 키워드 · 카테고리 · 욕설혐오.
+- 키워드: kiwi 명사구 후보 → 임베딩 cosine 랭킹, 카테고리: zero-shot cosine (ko-sroberta 공유)
+- 욕설혐오: 혐오/욕설 분류 모델(kor_unsmile) — 욕설 목록을 코드에 두지 않는다
+스타일 · 톤 · 요약 · 강점 · 넓은 의미의 위험(정치/광고/건강 등)은 LLM 계층에서 처리(여기 없음).
+transcript 텍스트만 입력 — YouTube(Gemini) 든 Instagram(whisper) 든 동일."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 
-from keybert import KeyBERT
+from kiwipiepy import Kiwi
 from sentence_transformers import SentenceTransformer, util
+from transformers import pipeline
 
 import enums
 
-MODEL_NAME = "jhgan/ko-sroberta-multitask"  # 한국어 문장 임베딩
-MIN_CONFIDENCE = 0.30
+_NOUN_TAGS = {"NNG", "NNP", "SL", "SN"}  # 일반/고유명사, 외국어, 숫자
+
+MODEL_NAME = "jhgan/ko-sroberta-multitask"       # 한국어 문장 임베딩
+HATE_MODEL = "smilegate-ai/kor_unsmile"          # 한국어 혐오/욕설 다중분류
+MIN_CONFIDENCE = 0.30                            # 카테고리 zero-shot 임계
+HATE_THRESHOLD = 0.5                             # 욕설/혐오 라벨 채택 임계
+# ponytail: kor_unsmile 은 512 토큰 한계. 위험은 아웃라이어(한 구간)라 전체를 청크로 훑어
+#           라벨별 최댓값을 취한다. 청크 크기는 노브.
+CHUNK_CHARS = 300
 
 
 @lru_cache(maxsize=1)
@@ -22,64 +31,115 @@ def _model() -> SentenceTransformer:
 
 
 @lru_cache(maxsize=1)
-def _keybert() -> KeyBERT:
-    return KeyBERT(model=_model())
+def _hate():
+    return pipeline("text-classification", model=HATE_MODEL, top_k=None)
+
+
+@lru_cache(maxsize=1)
+def _kiwi() -> Kiwi:
+    return Kiwi()
+
+
+# 콘텐츠 대표 키워드로 의미 없는 초일반 명사. 필요하면 추가하는 노브.
+_STOP = {"느낌", "요즘", "정도", "오늘", "이번", "다음", "생각", "이야기", "사람", "부분", "때문", "경우"}
+
+
+def _noun_candidates(text: str) -> list[str]:
+    """단일 명사구 후보. 조사·어미 제거. kiwi가 과분할한 복합어는 원문 위치가 붙어있으면 재결합
+    (발레코어룩 등). 인접 어절을 억지로 잇는 bigram은 만들지 않는다(중복·노이즈 방지)."""
+    words: list[str] = []
+    cur, cur_end = "", -1
+    for t in _kiwi().tokenize(text):
+        if t.tag in _NOUN_TAGS or (t.tag == "XSN" and cur):  # XSN(력/성 등)은 앞 명사에 붙임
+            if cur and t.start == cur_end:   # 원문에서 붙어있음 → 복합어
+                cur += t.form
+            else:
+                if cur:
+                    words.append(cur)
+                cur = t.form
+            cur_end = t.start + len(t.form)
+        elif cur:
+            words.append(cur)
+            cur, cur_end = "", -1
+    if cur:
+        words.append(cur)
+    words = [w for w in words if len(w) >= 2 and w not in _STOP]
+    return list(dict.fromkeys(words))                        # 순서 유지·중복 제거
 
 
 def keywords(text: str, top_n: int = 8) -> list[str]:
+    """kiwi 단일 명사구 후보를 문서와의 임베딩 cosine으로 랭킹. 조사 붙은 명사도 안 잘리고,
+    억지 bigram이 없어 중복/겹침이 안 생긴다."""
     if not text.strip():
         return []
-    pairs = _keybert().extract_keywords(
-        text, keyphrase_ngram_range=(1, 2), top_n=top_n)
-    return [kw for kw, _ in pairs]
+    cands = _noun_candidates(text)
+    if not cands:
+        return []
+    doc = _model().encode(text, convert_to_tensor=True)
+    cand_emb = _model().encode(cands, convert_to_tensor=True)
+    scores = util.cos_sim(doc, cand_emb)[0]
+    order = scores.argsort(descending=True)[:top_n]
+    return [cands[int(i)] for i in order]
 
 
-def _classify(text: str, anchors: dict[str, str]) -> dict:
-    """zero-shot 최근접 라벨 + 신뢰도. 빈 입력이면 빈 라벨."""
+def category(text: str) -> dict:
+    """zero-shot 최근접 카테고리(공식 9코드). 임계 미만이면 라벨 비움(해당없음)."""
     if not text.strip():
         return {"label": "", "score": 0.0, "uncertain": True}
-    labels = list(anchors)
+    labels = list(enums.CATEGORY)
     doc = _model().encode(text, convert_to_tensor=True)
-    anc = _model().encode([anchors[l] for l in labels], convert_to_tensor=True)
+    anc = _model().encode([enums.CATEGORY[c] for c in labels], convert_to_tensor=True)
     scores = util.cos_sim(doc, anc)[0]
     i = int(scores.argmax())
     score = round(float(scores[i]), 3)
-    return {"label": labels[i], "score": score, "uncertain": score < MIN_CONFIDENCE}
+    uncertain = score < MIN_CONFIDENCE
+    return {"label": "" if uncertain else labels[i], "score": score, "uncertain": uncertain}
 
 
-def risk(text: str) -> dict:
-    """lexicon 매칭. 걸리면 needs_llm=True(크루드하니 LLM로 확인), 안 걸리면 '없음'으로 스킵."""
-    hits = {label: [t for t in terms if t in text]
-            for label, terms in enums.RISK_LEXICON.items()}
-    hits = {label: found for label, found in hits.items() if found}
-    return {"labels": list(hits), "hits": hits, "needs_llm": bool(hits)}
+def _chunks(text: str) -> list[str]:
+    return [text[i:i + CHUNK_CHARS] for i in range(0, len(text), CHUNK_CHARS)] or [""]
+
+
+def hate(text: str) -> dict:
+    """욕설·혐오 스크리닝(kor_unsmile). 전체를 청크로 훑어 라벨별 최댓값 → 임계 넘으면 '의심'.
+    최종 판정이 아니다: 이 모델은 여성/성소수자 등 '화제로 다루기만 해도' 오탐이 잦다
+    (예: 패션·섹시함 언급). 그래서 suspected 는 최종이 아니라 LLM 확인 대상.
+    또 '욕설/혐오'만 본다 — 정치/광고/건강 등 넓은 위험은 LLM 계층 몫."""
+    if not text.strip():
+        return {"labels": [], "scores": {}, "suspected": False}
+    agg: dict[str, float] = {}
+    for chunk in _chunks(text):
+        for d in _hate()(chunk, truncation=True)[0]:
+            agg[d["label"]] = max(agg.get(d["label"], 0.0), float(d["score"]))
+    hits = {label: round(s, 3) for label, s in agg.items()
+            if label != "clean" and s >= HATE_THRESHOLD}
+    # suspected → LLM이 맥락 확인해 확정/기각. 모델 단독으로 '혐오'라 단정하지 않는다.
+    return {"labels": list(hits), "scores": hits, "suspected": bool(hits)}
 
 
 def analyze(text: str) -> dict:
-    """LLM 없이 되는 5필드. 카테고리는 영상별로 뽑고 최종은 크리에이터 단위로 집계.
-    톤 uncertain / 위험 needs_llm 인 건만 상위에서 LLM 폴백."""
+    """로컬 3필드. 스타일/톤/요약/강점/넓은위험은 상위 LLM 계층에서 붙인다."""
     return {
         "keywords": keywords(text),
-        "category": _classify(text, enums.CATEGORY),
-        "content_style": _classify(text, enums.STYLE),
-        "tone": _classify(text, enums.TONE),
-        "risk": risk(text),
+        "category": category(text),
+        "hate": hate(text),
     }
 
 
 def _selfcheck() -> None:
-    text = "오늘은 신상 쿠션 파운데이션 발색이랑 지속력을 리뷰해볼게요. 언박싱부터 실사용까지."
-    out = analyze(text)
+    out = analyze("오늘은 신상 쿠션 파운데이션 발색이랑 지속력을 리뷰해볼게요. 언박싱부터 실사용까지.")
     assert out["category"]["label"] == "BEAUTY", out["category"]
-    assert out["content_style"]["label"] == "리뷰언박싱", out["content_style"]
     assert out["keywords"], "키워드가 비었음"
-    assert out["tone"]["label"], "톤 라벨이 비었음"
-    assert out["risk"]["needs_llm"] is False, "정상 텍스트인데 위험 걸림"
+    assert out["hate"]["suspected"] is False, out["hate"]
+    # 도메인 밖(뉴스) → 카테고리 라벨 비움
+    off = analyze("오늘 여덟시 뉴스를 마치겠습니다 고맙습니다")
+    assert off["category"]["label"] == "" and off["category"]["uncertain"], off["category"]
+    # 욕설/혐오 → flagged
+    bad = hate("이런 개새끼들 진짜 병신같은 소리 하고 있네")
+    assert bad["suspected"], bad
     assert analyze("")["category"]["label"] == "", "빈 입력 처리 실패"
-    # 위험 lexicon 동작 확인: 비속어 있으면 걸리고 needs_llm=True
-    bad = risk("이건 진짜 존나 별로다")
-    assert "비속어" in bad["labels"] and bad["needs_llm"], bad
     print("ok:", out)
+    print("bad:", bad)
 
 
 if __name__ == "__main__":
