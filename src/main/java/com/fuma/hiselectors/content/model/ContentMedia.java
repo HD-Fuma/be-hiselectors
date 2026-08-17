@@ -7,13 +7,13 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnTransformer;
 
 /** 콘텐츠 버전에 포함된 개별 미디어 (콘텐츠 > 콘텐츠 버전 > 콘텐츠 미디어) */
 @Entity
@@ -47,9 +47,9 @@ public class ContentMedia {
     @Column(name = "sequence_no", nullable = false)
     private Integer sequenceNo;
 
-    // TEXT: Instagram 본문, 프로필 설명, Youtube 본문, OCR/STT 추출 결과
-    @Lob
-    @Column(columnDefinition = "LONGTEXT")
+    // JSON: Instagram 본문, 프로필 설명, Youtube 본문, OCR/STT 추출 결과
+    @Column(name = "body", columnDefinition = "JSON")
+    @ColumnTransformer(read = "json_unquote(body)", write = "json_quote(?)")
     private String body;
 
     @Builder
