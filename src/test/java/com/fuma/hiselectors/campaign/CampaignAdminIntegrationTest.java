@@ -65,6 +65,9 @@ class CampaignAdminIntegrationTest {
 
     @BeforeEach
     void resetClock() {
+        campaignProductRepository.deleteAllInBatch();
+        campaignRepository.deleteAllInBatch();
+        productRepository.deleteAllInBatch();
         clock.setInstant(Instant.parse("2026-08-18T00:00:00Z"));
     }
 
@@ -221,6 +224,81 @@ class CampaignAdminIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"thumbnailUrl\":\"" + "u".repeat(401) + "\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void admin_can_search_products_for_campaign_picker() throws Exception {
+        Product codeMatch = productRepository.save(Product.builder()
+                .productCode("CODE-ALPHA").productName("여름 모자").brandName("셀렉터스")
+                .category("패션").regularPrice(new BigDecimal("50000.00"))
+                .salePrice(new BigDecimal("35000.00")).status(ProductStatus.ON_SALE)
+                .thumbnailUrl("https://example.com/thumb.jpg").detailUrl("https://example.com/detail")
+                .build());
+        productRepository.save(Product.builder()
+                .productCode("CODE-BETA").productName("겨울 모자").brandName("다른 브랜드")
+                .category("패션").regularPrice(BigDecimal.TEN).salePrice(BigDecimal.ONE)
+                .status(ProductStatus.SOLD_OUT).build());
+        for (int index = 0; index < 20; index++) {
+            productRepository.save(Product.builder()
+                    .productCode("PAGE-" + index).productName("페이지 상품 " + index)
+                    .regularPrice(BigDecimal.TEN).salePrice(BigDecimal.ONE).status(ProductStatus.ON_SALE).build());
+        }
+
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", "ALPHA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].id").value(codeMatch.getId()))
+                .andExpect(jsonPath("$.data.content[0].code").value("CODE-ALPHA"))
+                .andExpect(jsonPath("$.data.content[0].productName").value("여름 모자"))
+                .andExpect(jsonPath("$.data.content[0].brandName").value("셀렉터스"))
+                .andExpect(jsonPath("$.data.content[0].category").value("패션"))
+                .andExpect(jsonPath("$.data.content[0].regularPrice").value(50000))
+                .andExpect(jsonPath("$.data.content[0].salePrice").value(35000))
+                .andExpect(jsonPath("$.data.content[0].status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.content[0].thumbnailUrl").value("https://example.com/thumb.jpg"))
+                .andExpect(jsonPath("$.data.content[0].detailUrl").value("https://example.com/detail"));
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", "여름"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].id").value(codeMatch.getId()));
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", "BETA")
+                        .param("status", "SOLD_OUT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("SOLD_OUT"));
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.size").value(20))
+                .andExpect(jsonPath("$.data.content.length()").value(20));
+
+        mockMvc.perform(get("/api/admin/products")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("USER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void product_keyword_treats_like_wildcards_as_literals() throws Exception {
+        Product percentProduct = productRepository.save(Product.builder()
+                .productCode("CODE%LITERAL").productName("일반 상품")
+                .regularPrice(BigDecimal.TEN).salePrice(BigDecimal.ONE).status(ProductStatus.ON_SALE).build());
+        Product underscoreProduct = productRepository.save(Product.builder()
+                .productCode("NORMAL").productName("이름_LITERAL")
+                .regularPrice(BigDecimal.TEN).salePrice(BigDecimal.ONE).status(ProductStatus.ON_SALE).build());
+        productRepository.save(Product.builder()
+                .productCode("CODEXLITERAL").productName("이름XLITERAL")
+                .regularPrice(BigDecimal.TEN).salePrice(BigDecimal.ONE).status(ProductStatus.ON_SALE).build());
+
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", "%"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(percentProduct.getId()));
+        mockMvc.perform(get("/api/admin/products").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", "_"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(underscoreProduct.getId()));
     }
 
     private Long createCampaign(String title, LocalDate startDate, LocalDate endDate, List<Long> productIds)
