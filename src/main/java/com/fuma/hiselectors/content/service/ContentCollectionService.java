@@ -146,7 +146,7 @@ public class ContentCollectionService {
             versions.add(ContentVersion.builder()
                     .contentId(contents.get(index).getId())
                     .versionNo(1L)
-                    .contentHash(contentHash(rawContents.get(index).texts()))
+                    .contentHash(contentHash(rawContents.get(index)))
                     .createdAt(collectionStartedAt)
                     .build());
         }
@@ -199,15 +199,39 @@ public class ContentCollectionService {
         }
     }
 
-    private String contentHash(List<String> texts) {
+    private String contentHash(RawContent rawContent) {
         try {
-            // 현재 버전의 모든 TEXT를 순서대로 결합한 SHA-256 해시
-            byte[] text = String.join("\n", texts).getBytes(UTF_8);
+            StringBuilder canonicalContent = new StringBuilder();
+            appendHashValue(canonicalContent, "content-hash-v2");
+            appendHashValue(canonicalContent, "texts");
+            appendHashValue(canonicalContent, String.valueOf(rawContent.texts().size()));
+            for (int sequenceNo = 0; sequenceNo < rawContent.texts().size(); sequenceNo++) {
+                appendHashValue(canonicalContent, String.valueOf(sequenceNo));
+                appendHashValue(canonicalContent, rawContent.texts().get(sequenceNo));
+            }
+
+            appendHashValue(canonicalContent, "assets");
+            appendHashValue(canonicalContent, String.valueOf(rawContent.media().size()));
+            int sequenceNo = rawContent.texts().size();
+            for (RawContentMedia rawMedia : rawContent.media()) {
+                if (rawMedia.snsMediaId() == null) {
+                    throw new IllegalStateException("미디어 SNS ID는 비어 있을 수 없습니다.");
+                }
+                appendHashValue(canonicalContent, String.valueOf(sequenceNo++));
+                appendHashValue(canonicalContent, rawMedia.mediaType().name());
+                appendHashValue(canonicalContent, rawMedia.snsMediaId());
+            }
+
+            byte[] text = canonicalContent.toString().getBytes(UTF_8);
             return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256").digest(text));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", exception);
         }
+    }
+
+    private void appendHashValue(StringBuilder target, String value) {
+        target.append(value.length()).append(':').append(value);
     }
 
     private void validatePlatform(RawContent content, SnsPlatform snsCode) {

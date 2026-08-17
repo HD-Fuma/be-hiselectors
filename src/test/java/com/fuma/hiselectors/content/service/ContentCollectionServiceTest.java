@@ -149,7 +149,7 @@ class ContentCollectionServiceTest {
             assertThat(version.getContentId()).isEqualTo(100L);
             assertThat(version.getVersionNo()).isEqualTo(1L);
             assertThat(version.getContentHash()).isEqualTo(
-                    "322a58eb56f875edb5298c708020364d5f807eff6d82ed19595643918178ed72");
+                    "9db7511c084f6b395468bdd7a01bdc9fe8563d48657ea6a24c12c4c3bb442405");
             assertThat(version.getCreatedAt()).isEqualTo(managedAccount.getLastCollectedAt());
         });
         assertThat(savedMedia.get())
