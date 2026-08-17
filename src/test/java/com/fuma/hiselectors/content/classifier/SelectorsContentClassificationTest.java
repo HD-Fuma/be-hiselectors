@@ -45,6 +45,8 @@ class SelectorsContentClassificationTest {
                 () -> classification.referralCodes().add("C3"));
         assertThrows(UnsupportedOperationException.class,
                 () -> classification.matchedUrls().add("https://b.example"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> classification.evidence().add(SelectorsContentEvidence.PURCHASE_CTA));
     }
 
     @Test
@@ -104,6 +106,13 @@ class SelectorsContentClassificationTest {
     void nonSelectorsCannotExceedScoreTwo() {
         assertThrows(IllegalArgumentException.class, () -> new SelectorsContentClassification(
                 SelectorsContentDecision.NOT_SELECTORS, 3, SelectorsContentReviewTier.NONE,
+                Set.of(), List.of(), List.of(), "v1"));
+    }
+
+    @Test
+    void nonSelectorsRequiresNoReviewTier() {
+        assertThrows(IllegalArgumentException.class, () -> new SelectorsContentClassification(
+                SelectorsContentDecision.NOT_SELECTORS, 2, SelectorsContentReviewTier.NORMAL,
                 Set.of(), List.of(), List.of(), "v1"));
     }
 }
