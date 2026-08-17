@@ -7,7 +7,6 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementHistoryListResponse;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
@@ -25,39 +24,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SettlementEstimateService {
 
-    private static final int LAST_CALCULATING_DAY = 21;
-
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
-    private final SettlementCalculationWorker calculationWorker;
     private final Clock clock;
 
     public SettlementEstimateResponse getEstimate(String loginId, YearMonth requestedMonth) {
         Selectors selectors = findSelectors(loginId);
-        YearMonth settlementMonth = resolveReadableMonth(requestedMonth);
+        YearMonth activityMonth = resolveReadableMonth(requestedMonth);
         SettlementHistory history = settlementHistoryRepository
-                .findBySelectorsIdAndSettlementMonth(
-                        selectors.getId(), settlementMonth.atDay(1).atStartOfDay())
+                .findBySelectorsIdAndActivityMonth(
+                        selectors.getId(), activityMonth.atDay(1).atStartOfDay())
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.SETTLEMENT_NOT_CALCULATED));
         return SettlementEstimateResponse.of(history, selectors);
-    }
-
-    public SettlementEstimateResponse refreshPreviousMonth(String loginId) {
-        LocalDate today = LocalDate.now(clock);
-        if (today.getDayOfMonth() > LAST_CALCULATING_DAY) {
-            throw new BusinessException(ErrorCode.SETTLEMENT_PERIOD_CLOSED);
-        }
-
-        Selectors selectors = findSelectors(loginId);
-        YearMonth settlementMonth = YearMonth.from(today).minusMonths(1);
-        SettlementCalculationResult result = calculationWorker.calculate(
-                selectors.getId(),
-                settlementMonth,
-                SettlementSourceCode.USER_REFRESH,
-                false);
-        return SettlementEstimateResponse.of(result.settlementHistory(), selectors);
     }
 
     public SettlementHistoryListResponse getHistories(String loginId, Integer requestedYear) {
@@ -66,7 +46,7 @@ public class SettlementEstimateService {
         LocalDateTime startMonth = YearMonth.of(selectedYear, 1).atDay(1).atStartOfDay();
         LocalDateTime endMonth = startMonth.plusYears(1);
         List<SettlementEstimateResponse> histories = settlementHistoryRepository
-                .findAllBySelectorsIdAndSettlementMonthGreaterThanEqualAndSettlementMonthLessThanOrderBySettlementMonthDesc(
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
                         selectors.getId(), startMonth, endMonth)
                 .stream()
                 .map(history -> SettlementEstimateResponse.of(history, selectors))
@@ -91,7 +71,7 @@ public class SettlementEstimateService {
         if (resolved.isAfter(previousMonth)) {
             throw new BusinessException(
                     ErrorCode.INVALID_INPUT,
-                    "현재 월 이후의 정산 예상액은 조회할 수 없습니다.");
+                    "현재 활동월 이후의 정산 예상액은 조회할 수 없습니다.");
         }
         return resolved;
     }

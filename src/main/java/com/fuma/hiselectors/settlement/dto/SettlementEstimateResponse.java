@@ -2,25 +2,24 @@ package com.fuma.hiselectors.settlement.dto;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 
-/** 정산월은 구매가 발생한 활동월(purchased_at 기준)이다. */
 public record SettlementEstimateResponse(
         Long settlementId,
         Long selectorsId,
         String selectorsCode,
         String selectorsNickname,
+        YearMonth activityMonth,
         YearMonth settlementMonth,
+        YearMonth paymentMonth,
         Long confirmedPurchaseCount,
-        Long totalSales,
-        BigDecimal commissionRate,
-        Long estimatedCommission,
+        Long confirmedSalesAmount,
+        BigDecimal settlementRate,
+        Long settlementAmount,
         SettlementStatus status,
-        SettlementSourceCode settlementSourceCode,
         LocalDateTime calculatedAt,
         LocalDateTime updatedAt
 ) {
@@ -32,13 +31,14 @@ public record SettlementEstimateResponse(
                 selectors.getId(),
                 selectors.getSelectorsCode(),
                 selectors.getSelectorsNickname(),
-                YearMonth.from(history.getSettlementMonth()),
+                YearMonth.from(history.getActivityMonth()),
+                YearMonth.from(history.getActivityMonth()).plusMonths(1),
+                YearMonth.from(history.getActivityMonth()).plusMonths(2),
                 history.getConfirmedPurchaseCount(),
                 history.getTotalSales(),
-                history.getCommissionRate(),
-                history.getCommission(),
+                history.getSettlementRate(),
+                history.getSettlementAmount(),
                 history.getStatus(),
-                history.getSettlementSourceCode(),
                 history.getCalculatedAt(),
                 history.getUpdatedAt()
         );

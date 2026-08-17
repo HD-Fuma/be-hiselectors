@@ -28,7 +28,7 @@ public class SettlementAdminHistoryController {
     @GetMapping("/{selectorsId}/histories")
     public ResponseEntity<Page<SettlementEstimateResponse>> getHistories(
             @PathVariable Long selectorsId,
-            @PageableDefault(size = 12, sort = "settlementMonth", direction = Sort.Direction.DESC)
+            @PageableDefault(size = 12, sort = "activityMonth", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(settlementAdminService.getHistories(selectorsId, pageable));
     }
@@ -37,7 +37,7 @@ public class SettlementAdminHistoryController {
     @GetMapping("/{selectorsId}/detail")
     public ResponseEntity<SelectorSettlementDetailResponse> getDetail(
             @PathVariable Long selectorsId,
-            @PageableDefault(size = 12, sort = "settlementMonth", direction = Sort.Direction.DESC)
+            @PageableDefault(size = 12, sort = "activityMonth", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(settlementAdminService.getDetail(selectorsId, pageable));
     }

@@ -20,7 +20,6 @@ import com.fuma.hiselectors.purchase.repository.PurchaseSettlementSummary;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.math.BigDecimal;
@@ -65,38 +64,40 @@ class SettlementCalculationWorkerTest {
 
     @Test
     void calculatesAndFinalizesPreviousMonth() {
-        when(settlementHistoryRepository.findBySelectorsIdAndSettlementMonth(
+        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(
                 1L, LocalDateTime.of(2026, 7, 1, 0, 0)))
                 .thenReturn(Optional.empty());
+        PurchaseSettlementSummary purchaseSummary = summary("12345.00", 2L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 1L,
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 LocalDateTime.of(2026, 7, 1, 0, 0),
                 LocalDateTime.of(2026, 8, 1, 0, 0)))
-                .thenReturn(summary("12345.00", 2L));
+                .thenReturn(purchaseSummary);
 
         SettlementCalculationResult result = worker.calculate(
-                1L, JULY, SettlementSourceCode.DAILY_BATCH, true);
+                1L, JULY, true);
 
         SettlementHistory history = result.settlementHistory();
         assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.FINALIZED);
         assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(history.getTotalSales()).isEqualTo(12_345L);
         assertThat(history.getConfirmedPurchaseCount()).isEqualTo(2L);
-        assertThat(history.getCommissionRate()).isEqualByComparingTo("3.00");
-        assertThat(history.getCommission()).isEqualTo(370L);
+        assertThat(history.getSettlementRate()).isEqualByComparingTo("3.00");
+        assertThat(history.getSettlementAmount()).isEqualTo(370L);
     }
 
     @Test
     void rejectsFractionalWonWithoutSaving() {
-        when(settlementHistoryRepository.findBySelectorsIdAndSettlementMonth(any(), any()))
+        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(any(), any()))
                 .thenReturn(Optional.empty());
+        PurchaseSettlementSummary purchaseSummary = summary("100.50", 1L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 any(), any(), any(), any()))
-                .thenReturn(summary("100.50", 1L));
+                .thenReturn(purchaseSummary);
 
         assertThatThrownBy(() -> worker.calculate(
-                1L, JULY, SettlementSourceCode.DAILY_BATCH, false))
+                1L, JULY, false))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_SETTLEMENT_AMOUNT);
@@ -109,13 +110,13 @@ class SettlementCalculationWorkerTest {
                 1L, LocalDateTime.of(2026, 7, 1, 0, 0));
         history.updateCalculation(
                 100L, 1L, new BigDecimal("3.00"), 3L,
-                SettlementSourceCode.DAILY_BATCH, LocalDateTime.now());
+                LocalDateTime.now());
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
-        when(settlementHistoryRepository.findBySelectorsIdAndSettlementMonth(any(), any()))
+        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(any(), any()))
                 .thenReturn(Optional.of(history));
 
         SettlementCalculationResult result = worker.calculate(
-                1L, JULY, SettlementSourceCode.DAILY_BATCH, false);
+                1L, JULY, false);
 
         assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.SKIPPED);
         verifyNoInteractions(applicationRepository, purchaseHistoryRepository);
@@ -127,20 +128,21 @@ class SettlementCalculationWorkerTest {
                 1L, LocalDateTime.of(2026, 7, 1, 0, 0));
         history.updateCalculation(
                 0L, 0L, new BigDecimal("3.00"), 0L,
-                SettlementSourceCode.DAILY_BATCH, LocalDateTime.now());
+                LocalDateTime.now());
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
-        when(settlementHistoryRepository.findBySelectorsIdAndSettlementMonth(
+        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(
                 1L, LocalDateTime.of(2026, 7, 1, 0, 0)))
                 .thenReturn(Optional.of(history));
+        PurchaseSettlementSummary purchaseSummary = summary("10000.00", 1L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 1L,
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 LocalDateTime.of(2026, 7, 1, 0, 0),
                 LocalDateTime.of(2026, 8, 1, 0, 0)))
-                .thenReturn(summary("10000.00", 1L));
+                .thenReturn(purchaseSummary);
 
         SettlementCalculationResult result = worker.calculate(
-                1L, JULY, SettlementSourceCode.DAILY_BATCH, true, true);
+                1L, JULY, true, true);
 
         assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.FINALIZED);
         assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);

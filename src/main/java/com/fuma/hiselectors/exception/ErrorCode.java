@@ -58,7 +58,6 @@ public enum ErrorCode {
 
     // --- 정산 ---
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),
-    SETTLEMENT_PERIOD_CLOSED(HttpStatus.CONFLICT, "마감된 정산월은 다시 계산할 수 없습니다."),
     SETTLEMENT_RATE_SOURCE_NOT_FOUND(HttpStatus.CONFLICT, "수수료율 산정에 필요한 지원 정보를 찾을 수 없습니다."),
     INVALID_SETTLEMENT_AMOUNT(HttpStatus.CONFLICT, "정산 대상 매출에 원 단위 미만 금액이 포함되어 있습니다."),
     INVALID_SETTLEMENT_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 정산 상태 변경입니다."),

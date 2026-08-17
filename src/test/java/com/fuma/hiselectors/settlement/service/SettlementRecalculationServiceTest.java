@@ -17,7 +17,6 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,25 +39,25 @@ class SettlementRecalculationServiceTest {
         when(purchaseHistoryRepository.findEarliestPurchasedAtByStatus(
                 PurchaseStatus.PURCHASE_CONFIRMED))
                 .thenReturn(LocalDateTime.of(2026, 5, 10, 12, 0));
-        when(settlementHistoryRepository.findEarliestSettlementMonth())
+        when(settlementHistoryRepository.findEarliestActivityMonth())
                 .thenReturn(LocalDateTime.of(2026, 6, 1, 0, 0));
         when(selectorsRepository.findAllIds()).thenReturn(List.of(10L, 20L));
         when(worker.calculate(
-                anyLong(), any(YearMonth.class), eq(SettlementSourceCode.DAILY_BATCH), anyBoolean(),
+                anyLong(), any(YearMonth.class), anyBoolean(),
                 eq(false)))
                 .thenReturn(new SettlementCalculationResult(null, SettlementCalculationOutcome.CREATED));
 
         var result = service.recalculate(null, null);
 
-        assertThat(result.startMonth()).isEqualTo(YearMonth.of(2026, 5));
-        assertThat(result.endMonth()).isEqualTo(YearMonth.of(2026, 7));
+        assertThat(result.startActivityMonth()).isEqualTo(YearMonth.of(2026, 5));
+        assertThat(result.endActivityMonth()).isEqualTo(YearMonth.of(2026, 7));
         assertThat(result.selectorsCount()).isEqualTo(2);
-        assertThat(result.monthsCount()).isEqualTo(3);
+        assertThat(result.activityMonthsCount()).isEqualTo(3);
         assertThat(result.createdCount()).isEqualTo(6);
         verify(worker).calculate(
-                10L, YearMonth.of(2026, 5), SettlementSourceCode.DAILY_BATCH, true, false);
+                10L, YearMonth.of(2026, 5), true, false);
         verify(worker).calculate(
-                20L, YearMonth.of(2026, 7), SettlementSourceCode.DAILY_BATCH, false, false);
+                20L, YearMonth.of(2026, 7), false, false);
     }
 
     @Test
@@ -74,7 +73,6 @@ class SettlementRecalculationServiceTest {
         when(worker.calculate(
                 10L,
                 YearMonth.of(2026, 7),
-                SettlementSourceCode.DAILY_BATCH,
                 false,
                 false))
                 .thenReturn(new SettlementCalculationResult(null, SettlementCalculationOutcome.UPDATED));
@@ -82,7 +80,7 @@ class SettlementRecalculationServiceTest {
         var result = service.recalculate(YearMonth.of(2026, 7), 10L);
 
         assertThat(result.selectorsId()).isEqualTo(10L);
-        assertThat(result.requestedMonth()).isEqualTo(YearMonth.of(2026, 7));
+        assertThat(result.requestedActivityMonth()).isEqualTo(YearMonth.of(2026, 7));
         assertThat(result.updatedCount()).isEqualTo(1);
         assertThat(result.finalizedCount()).isZero();
     }
@@ -116,6 +114,7 @@ class SettlementRecalculationServiceTest {
                 purchaseHistoryRepository,
                 settlementHistoryRepository,
                 worker,
+                new SettlementSchedulePolicy(),
                 clock);
     }
 }

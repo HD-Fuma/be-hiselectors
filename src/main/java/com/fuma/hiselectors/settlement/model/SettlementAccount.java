@@ -7,12 +7,16 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "settlement_account")
+@Table(name = "settlement_account", uniqueConstraints = @UniqueConstraint(
+        name = "uk_settlement_account_selectors",
+        columnNames = "selectors_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SettlementAccount extends BaseTimeEntity {
@@ -42,4 +46,20 @@ public class SettlementAccount extends BaseTimeEntity {
 
     @Column(name = "is_deleted", nullable = false)
     private boolean deleted;
+
+    @Builder
+    private SettlementAccount(Long selectorsId, String bankName, String accountNumber,
+                              String accountHolder) {
+        this.selectorsId = selectorsId;
+        this.bankName = bankName;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+        this.deleted = false;
+    }
+
+    public void update(String bankName, String accountNumber, String accountHolder) {
+        this.bankName = bankName;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+    }
 }
