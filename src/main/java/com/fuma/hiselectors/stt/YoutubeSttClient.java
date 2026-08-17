@@ -1,6 +1,5 @@
 package com.fuma.hiselectors.stt;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.time.Duration;
@@ -12,6 +11,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -49,7 +49,7 @@ public class YoutubeSttClient {
               "cautions": ["브랜드 협업 시 유의점"],
               "risks": ["정치종교논란|허위과장광고|미검증건강주장|선정성|저작권|사행성 중 해당되는 것만, 없으면 빈 배열"],
               "hateConfirmed": false,
-              "collabBrands": ["영상에서 협찬·협업으로 보이는 브랜드명, 없으면 빈 배열"]
+              "collabBrands": ["협찬·협업으로 보이는 브랜드명만. 방송사·플랫폼(SBS·유튜브 등)이나 크리에이터 본인은 제외. 없으면 빈 배열"]
             }""";
 
     private final GeminiProperties properties;
