@@ -50,12 +50,12 @@ public class YoutubeSttClient {
             }""";
 
     private final GeminiProperties properties;
-    private final ObjectMapper objectMapper;
+    // 작은 분석 JSON 파싱용. 상태 없는 파서라 빈 주입 없이 직접 만든다.
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public YoutubeSttClient(GeminiProperties properties, ObjectMapper objectMapper) {
+    public YoutubeSttClient(GeminiProperties properties) {
         this.properties = properties;
-        this.objectMapper = objectMapper;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         // 영상 분석은 수십 초~분까지 걸릴 수 있어 응답 제한을 넉넉히 둔다.
