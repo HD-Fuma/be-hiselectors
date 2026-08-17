@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -29,6 +30,7 @@ import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -224,14 +226,23 @@ class ContentCollectionServiceTest {
                 "new", "RC0002", ACTIVE_GENERATION_START_AT, List.of());
         when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(2, List.of(existing, newContent)));
+        Content existingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(existing.contentUrl())
+                .contentType(existing.contentType())
+                .build();
+        ReflectionTestUtils.setField(existingContent, "id", 100L);
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM, List.of("existing", "new")))
-                .thenReturn(List.of(Content.builder()
-                        .selectorsId(SELECTORS_ID)
-                        .snsCode(SnsPlatform.INSTAGRAM)
-                        .snsContentId("existing")
-                        .contentUrl(existing.contentUrl())
-                        .contentType(existing.contentType())
+                .thenReturn(List.of(existingContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(100L)
+                        .versionNo(1L)
+                        .contentHash(contentHash(existing))
+                        .createdAt(lastCollectedAt)
                         .build()));
         when(classifier.isSelectorsContent(newContent)).thenReturn(true);
 
@@ -250,6 +261,308 @@ class ContentCollectionServiceTest {
                 .containsExactly("new");
         verify(classifier, never()).isSelectorsContent(existing);
         verify(classifier).isSelectorsContent(newContent);
+    }
+
+    @Test
+    @DisplayName("기존 콘텐츠 내용이 바뀌면 v2와 전체 미디어 스냅샷을 저장한다")
+    void saveNextVersionWhenExistingContentChanged() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent previous = raw(
+                "existing",
+                "이전 본문",
+                ACTIVE_GENERATION_START_AT,
+                List.of(new RawContentMedia(
+                        "image-1", MediaType.IMAGE,
+                        "https://cdn.example.com/image-1.jpg")));
+        RawContent changed = raw(
+                "existing",
+                List.of("수정된 본문", "추가된 본문"),
+                ACTIVE_GENERATION_START_AT,
+                List.of(
+                        new RawContentMedia(
+                                "image-2", MediaType.IMAGE,
+                                "https://cdn.example.com/image-2.jpg"),
+                        new RawContentMedia(
+                                "video-1", MediaType.VIDEO,
+                                "https://cdn.example.com/video-1.mp4")));
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(changed)));
+
+        Content existingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(changed.contentUrl())
+                .contentType(changed.contentType())
+                .build();
+        ReflectionTestUtils.setField(existingContent, "id", 100L);
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("existing")))
+                .thenReturn(List.of(existingContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(100L)
+                        .versionNo(1L)
+                        .contentHash(contentHash(previous))
+                        .createdAt(lastCollectedAt)
+                        .build()));
+
+        AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
+        AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 201L);
+            savedVersions.set(values);
+            return values;
+        });
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentMedia> values = toList(invocation.getArgument(0));
+            savedMedia.set(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(existingContent.getLastVersionNo()).isEqualTo(2L);
+        assertThat(savedVersions.get()).singleElement().satisfies(version -> {
+            assertThat(version.getContentId()).isEqualTo(100L);
+            assertThat(version.getVersionNo()).isEqualTo(2L);
+            assertThat(version.getContentHash()).isEqualTo(contentHash(changed));
+            assertThat(version.getCreatedAt()).isEqualTo(managedAccount.getLastCollectedAt());
+        });
+        assertThat(savedMedia.get())
+                .extracting(ContentMedia::getMediaType,
+                        ContentMedia::getBody,
+                        ContentMedia::getSnsMediaId,
+                        ContentMedia::getSequenceNo)
+                .containsExactly(
+                        tuple(
+                                ContentMedia.MediaType.TEXT, "수정된 본문", null, 0),
+                        tuple(
+                                ContentMedia.MediaType.TEXT, "추가된 본문", null, 1),
+                        tuple(
+                                ContentMedia.MediaType.IMAGE, null, "image-2", 2),
+                        tuple(
+                                ContentMedia.MediaType.VIDEO, null, "video-1", 3));
+        assertThat(savedMedia.get())
+                .extracting(ContentMedia::getMediaUrl)
+                .containsExactly(
+                        null,
+                        null,
+                        "https://cdn.example.com/image-2.jpg",
+                        "https://cdn.example.com/video-1.mp4");
+        verify(classifier, never()).isSelectorsContent(changed);
+        verify(instagramClient, times(1)).collect("nike", ACTIVE_GENERATION_START_AT);
+    }
+
+    @Test
+    @DisplayName("기존 콘텐츠 내용이 같으면 버전과 미디어를 저장하지 않는다")
+    void skipExistingContentWhenHashUnchanged() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent unchanged = raw(
+                "existing",
+                "같은 본문",
+                ACTIVE_GENERATION_START_AT,
+                List.of(new RawContentMedia(
+                        "image-1", MediaType.IMAGE,
+                        "https://cdn.example.com/refreshed-image-url.jpg")));
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(unchanged)));
+
+        Content existingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(unchanged.contentUrl())
+                .contentType(unchanged.contentType())
+                .build();
+        ReflectionTestUtils.setField(existingContent, "id", 100L);
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("existing")))
+                .thenReturn(List.of(existingContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(100L)
+                        .versionNo(1L)
+                        .contentHash(contentHash(unchanged))
+                        .createdAt(lastCollectedAt)
+                        .build()));
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(existingContent.getLastVersionNo()).isEqualTo(1L);
+        verifyNoInteractions(classifier);
+        verify(contentRepository, never()).saveAll(any());
+        verify(versionRepository, never()).saveAll(any());
+        verify(mediaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("기존 콘텐츠의 최신 버전이 없으면 일관성 오류가 발생한다")
+    void failWhenLatestVersionIsMissing() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent existing = raw(
+                "existing", "본문", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(existing)));
+
+        Content existingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(existing.contentUrl())
+                .contentType(existing.contentType())
+                .build();
+        ReflectionTestUtils.setField(existingContent, "id", 100L);
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("existing")))
+                .thenReturn(List.of(existingContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.collectForAccount(ACCOUNT_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage(
+                        "콘텐츠의 최신 버전을 찾을 수 없습니다. contentId=100, versionNo=1");
+
+        assertThat(existingContent.getLastVersionNo()).isEqualTo(1L);
+        assertThat(managedAccount.getLastCollectedAt()).isEqualTo(lastCollectedAt);
+        verifyNoInteractions(classifier);
+        verify(versionRepository, never()).saveAll(any());
+        verify(mediaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("한 수집 결과의 신규·변경·미변경 콘텐츠를 각각 처리한다")
+    void handleNewChangedAndUnchangedContentsTogether() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent newContent = raw(
+                "new", "신규 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent previousChanged = raw(
+                "changed", "이전 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent changed = raw(
+                "changed", "수정 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent unchanged = raw(
+                "unchanged", "동일 본문", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(
+                        3, List.of(newContent, changed, unchanged)));
+        when(classifier.isSelectorsContent(newContent)).thenReturn(true);
+
+        Content changedContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("changed")
+                .contentUrl(changed.contentUrl())
+                .contentType(changed.contentType())
+                .build();
+        Content unchangedContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("unchanged")
+                .contentUrl(unchanged.contentUrl())
+                .contentType(unchanged.contentType())
+                .build();
+        ReflectionTestUtils.setField(changedContent, "id", 101L);
+        ReflectionTestUtils.setField(unchangedContent, "id", 102L);
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("new", "changed", "unchanged")))
+                .thenReturn(List.of(changedContent, unchangedContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(101L, 102L)))
+                .thenReturn(List.of(
+                        ContentVersion.builder()
+                                .contentId(101L)
+                                .versionNo(1L)
+                                .contentHash(contentHash(previousChanged))
+                                .createdAt(lastCollectedAt)
+                                .build(),
+                        ContentVersion.builder()
+                                .contentId(102L)
+                                .versionNo(1L)
+                                .contentHash(contentHash(unchanged))
+                                .createdAt(lastCollectedAt)
+                                .build()));
+
+        AtomicReference<List<Content>> savedNewContents = new AtomicReference<>();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Content> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 200L);
+            savedNewContents.set(values);
+            return values;
+        });
+        List<ContentVersion> savedVersions = new ArrayList<>();
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            for (ContentVersion value : values) {
+                ReflectionTestUtils.setField(
+                        value, "id", 300L + savedVersions.size());
+                savedVersions.add(value);
+            }
+            return values;
+        });
+        List<ContentMedia> savedMedia = new ArrayList<>();
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentMedia> values = toList(invocation.getArgument(0));
+            savedMedia.addAll(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isEqualTo(1);
+        assertThat(savedNewContents.get())
+                .extracting(Content::getSnsContentId)
+                .containsExactly("new");
+        assertThat(changedContent.getLastVersionNo()).isEqualTo(2L);
+        assertThat(unchangedContent.getLastVersionNo()).isEqualTo(1L);
+        assertThat(savedVersions)
+                .extracting(ContentVersion::getContentId,
+                        ContentVersion::getVersionNo,
+                        ContentVersion::getContentHash)
+                .containsExactly(
+                        tuple(
+                                200L, 1L, contentHash(newContent)),
+                        tuple(
+                                101L, 2L, contentHash(changed)));
+        assertThat(savedVersions)
+                .extracting(ContentVersion::getCreatedAt)
+                .containsOnly(managedAccount.getLastCollectedAt());
+        assertThat(savedMedia)
+                .extracting(ContentMedia::getContentVersionId,
+                        ContentMedia::getBody,
+                        ContentMedia::getSequenceNo)
+                .containsExactly(
+                        tuple(300L, "신규 본문", 0),
+                        tuple(301L, "수정 본문", 0));
+        verify(classifier).isSelectorsContent(newContent);
+        verify(classifier, never()).isSelectorsContent(changed);
+        verify(classifier, never()).isSelectorsContent(unchanged);
+        verify(versionRepository, times(1))
+                .findLatestByContentIdIn(List.of(101L, 102L));
+        verify(instagramClient, times(1)).collect("nike", ACTIVE_GENERATION_START_AT);
+        verify(youtubeClient, never()).collect(any(), any());
     }
 
     @Test

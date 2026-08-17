@@ -64,4 +64,9 @@ public class Content extends BaseTimeEntity {
         this.contentType = contentType;
         this.lastVersionNo = lastVersionNo == null ? 1L : lastVersionNo;
     }
+
+    public Long advanceVersion() {
+        lastVersionNo++;
+        return lastVersionNo;
+    }
 }

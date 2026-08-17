@@ -24,9 +24,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -85,7 +87,7 @@ public class ContentCollectionService {
         return savedCount;
     }
 
-    /** RawContent에서 신규 셀렉터스 콘텐츠만 DB에 저장 */
+    /** RawContent를 신규와 기존으로 나눠 저장 및 버전 갱신 */
     private int persist(
             Long selectorsSnsAccountId,
             List<RawContent> collectedContents,
@@ -106,14 +108,25 @@ public class ContentCollectionService {
             }
         }
 
-        // DB에 저장되지 않은 콘텐츠만 셀렉터스 콘텐츠 판별
-        List<RawContent> newCandidates = excludeExistingContents(
+        // SNS 콘텐츠 ID로 신규 콘텐츠와 기존 콘텐츠 구분
+        List<Content> existingContents = findExistingContents(
                 candidates, account.getSnsCode());
+        Set<String> existingContentIds = new HashSet<>();
+        for (Content content : existingContents) {
+            existingContentIds.add(content.getSnsContentId());
+        }
+        List<RawContent> newCandidates = candidates.stream()
+                .filter(content -> !existingContentIds.contains(content.snsContentId()))
+                .toList();
+
+        // 신규 콘텐츠만 셀렉터스 콘텐츠 판별
         List<RawContent> selectorsContents = newCandidates.stream()
                 .filter(classifier::isSelectorsContent)
                 .toList();
 
-        saveAll(account.getSelectorsId(), selectorsContents, collectionStartedAt);
+        saveNewContents(account.getSelectorsId(), selectorsContents, collectionStartedAt);
+        saveChangedVersions(
+                candidates, existingContents, collectionStartedAt);
 
         // 모든 저장 성공 이후에만 마지막 수집 시각 갱신
         if (lastCollectedAt == null || collectionStartedAt.isAfter(lastCollectedAt)) {
@@ -122,27 +135,95 @@ public class ContentCollectionService {
         return selectorsContents.size();
     }
 
-    private List<RawContent> excludeExistingContents(
+    private List<Content> findExistingContents(
             List<RawContent> candidates, SnsPlatform snsCode) {
         if (candidates.isEmpty()) {
-            return candidates;
+            return List.of();
         }
 
         List<String> candidateIds = candidates.stream()
                 .map(RawContent::snsContentId)
                 .toList();
-        Set<String> existingIds = new HashSet<>();
-        for (Content content : contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                snsCode, candidateIds)) {
-            existingIds.add(content.getSnsContentId());
-        }
-
-        return candidates.stream()
-                .filter(content -> !existingIds.contains(content.snsContentId()))
-                .toList();
+        return contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                snsCode, candidateIds);
     }
 
-    private void saveAll(
+    private void saveChangedVersions(
+            List<RawContent> candidates,
+            List<Content> existingContents,
+            LocalDateTime collectionStartedAt) {
+        if (existingContents.isEmpty()) {
+            return;
+        }
+
+        Map<String, RawContent> rawContentsBySnsId = new HashMap<>();
+        for (RawContent candidate : candidates) {
+            rawContentsBySnsId.put(candidate.snsContentId(), candidate);
+        }
+        List<Content> collectedExistingContents = existingContents.stream()
+                .filter(content -> rawContentsBySnsId.containsKey(content.getSnsContentId()))
+                .toList();
+        if (collectedExistingContents.isEmpty()) {
+            return;
+        }
+
+        Map<Long, ContentVersion> latestVersionsByContentId =
+                findLatestVersions(collectedExistingContents);
+        List<ContentVersion> changedVersions = new ArrayList<>();
+        List<RawContent> changedRawContents = new ArrayList<>();
+        for (Content content : collectedExistingContents) {
+            ContentVersion latestVersion = latestVersionsByContentId.get(content.getId());
+            RawContent rawContent = rawContentsBySnsId.get(content.getSnsContentId());
+            String currentHash = contentHash(rawContent);
+            if (currentHash.equals(latestVersion.getContentHash())) {
+                continue;
+            }
+
+            changedVersions.add(ContentVersion.builder()
+                    .contentId(content.getId())
+                    .versionNo(content.advanceVersion())
+                    .contentHash(currentHash)
+                    .createdAt(collectionStartedAt)
+                    .build());
+            changedRawContents.add(rawContent);
+        }
+
+        if (changedVersions.isEmpty()) {
+            return;
+        }
+        versionRepository.saveAll(changedVersions);
+        saveMedia(changedVersions, changedRawContents);
+    }
+
+    private Map<Long, ContentVersion> findLatestVersions(List<Content> contents) {
+        List<Long> contentIds = contents.stream()
+                .map(Content::getId)
+                .toList();
+        Map<Long, ContentVersion> latestVersionsByContentId = new HashMap<>();
+        for (ContentVersion version : versionRepository.findLatestByContentIdIn(contentIds)) {
+            ContentVersion duplicate = latestVersionsByContentId.put(
+                    version.getContentId(), version);
+            if (duplicate != null) {
+                throw new IllegalStateException(
+                        "콘텐츠의 최신 버전이 중복되었습니다. contentId="
+                                + version.getContentId());
+            }
+        }
+
+        for (Content content : contents) {
+            ContentVersion latestVersion = latestVersionsByContentId.get(content.getId());
+            if (latestVersion == null
+                    || !content.getLastVersionNo().equals(latestVersion.getVersionNo())) {
+                throw new IllegalStateException(
+                        "콘텐츠의 최신 버전을 찾을 수 없습니다. contentId=" + content.getId()
+                                + ", versionNo=" + content.getLastVersionNo());
+            }
+        }
+
+        return latestVersionsByContentId;
+    }
+
+    private void saveNewContents(
             Long selectorsId,
             List<RawContent> rawContents,
             LocalDateTime collectionStartedAt) {
@@ -174,7 +255,13 @@ public class ContentCollectionService {
         }
         versionRepository.saveAll(versions);
 
-        // TEXT 본문, 이미지·영상 미디어 CDN URL 일괄 저장
+        saveMedia(versions, rawContents);
+    }
+
+    /** TEXT 본문, 이미지·영상 미디어 CDN URL 일괄 저장 */
+    private void saveMedia(
+            List<ContentVersion> versions,
+            List<RawContent> rawContents) {
         List<ContentMedia> media = new ArrayList<>();
         for (int index = 0; index < versions.size(); index++) {
             Long versionId = versions.get(index).getId();

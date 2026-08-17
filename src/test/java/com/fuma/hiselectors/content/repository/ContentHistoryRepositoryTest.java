@@ -101,6 +101,59 @@ class ContentHistoryRepositoryTest {
     }
 
     @Test
+    void findLatestVersionsForMultipleContentsInOneBatch() {
+        Content firstContent = contentRepository.save(Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("sns-content-1")
+                .contentUrl("https://www.instagram.com/p/content-1")
+                .contentType(ContentType.FEED)
+                .build());
+        Content secondContent = contentRepository.save(Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("sns-content-2")
+                .contentUrl("https://www.instagram.com/p/content-2")
+                .contentType(ContentType.FEED)
+                .build());
+        secondContent.advanceVersion();
+
+        LocalDateTime firstCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        LocalDateTime secondCollectedAt = LocalDateTime.of(2026, 8, 11, 0, 0);
+        contentVersionRepository.saveAllAndFlush(List.of(
+                ContentVersion.builder()
+                        .contentId(firstContent.getId())
+                        .versionNo(1L)
+                        .contentHash("a".repeat(64))
+                        .createdAt(firstCollectedAt)
+                        .build(),
+                ContentVersion.builder()
+                        .contentId(secondContent.getId())
+                        .versionNo(1L)
+                        .contentHash("b".repeat(64))
+                        .createdAt(firstCollectedAt)
+                        .build(),
+                ContentVersion.builder()
+                        .contentId(secondContent.getId())
+                        .versionNo(2L)
+                        .contentHash("c".repeat(64))
+                        .createdAt(secondCollectedAt)
+                        .build()));
+
+        List<ContentVersion> latestVersions =
+                contentVersionRepository.findLatestByContentIdIn(
+                        List.of(firstContent.getId(), secondContent.getId()));
+
+        assertThat(latestVersions)
+                .extracting(ContentVersion::getContentId,
+                        ContentVersion::getVersionNo,
+                        ContentVersion::getContentHash)
+                .containsExactlyInAnyOrder(
+                        tuple(firstContent.getId(), 1L, "a".repeat(64)),
+                        tuple(secondContent.getId(), 2L, "c".repeat(64)));
+    }
+
+    @Test
     void rejectDuplicateSequenceNoWithinContentVersion() {
         contentMediaRepository.saveAndFlush(ContentMedia.builder()
                 .contentVersionId(1L)
