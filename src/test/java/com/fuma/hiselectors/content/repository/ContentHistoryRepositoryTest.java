@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.content.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
@@ -13,6 +15,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 class ContentHistoryRepositoryTest {
@@ -52,15 +55,20 @@ class ContentHistoryRepositoryTest {
                         .contentVersionId(version.getId())
                         .mediaType(ContentMedia.MediaType.TEXT)
                         .body("selectors content body")
+                        .sequenceNo(0)
                         .build(),
                 ContentMedia.builder()
                         .contentVersionId(version.getId())
                         .mediaType(ContentMedia.MediaType.IMAGE)
                         .mediaUrl("https://cdn.example.com/media-1.jpg")
+                        .snsMediaId("image-1")
+                        .sequenceNo(1)
                         .build(),
                 ContentMedia.builder()
                         .contentVersionId(version.getId())
                         .mediaType(ContentMedia.MediaType.VIDEO)
+                        .snsMediaId("video-1")
+                        .sequenceNo(2)
                         .build()));
 
         contentEngagementRepository.save(ContentEngagement.builder()
@@ -76,17 +84,37 @@ class ContentHistoryRepositoryTest {
                 .get()
                 .extracting(ContentVersion::getContentHash)
                 .isEqualTo("a".repeat(64));
-        assertThat(contentMediaRepository.findAll())
-                .extracting(ContentMedia::getMediaType)
-                .containsExactlyInAnyOrder(
-                        ContentMedia.MediaType.TEXT,
-                        ContentMedia.MediaType.IMAGE,
-                        ContentMedia.MediaType.VIDEO);
+        assertThat(contentMediaRepository
+                .findByContentVersionIdOrderBySequenceNoAsc(version.getId()))
+                .extracting(ContentMedia::getSequenceNo, ContentMedia::getMediaType,
+                        ContentMedia::getSnsMediaId)
+                .containsExactly(
+                        tuple(0, ContentMedia.MediaType.TEXT, null),
+                        tuple(1, ContentMedia.MediaType.IMAGE, "image-1"),
+                        tuple(2, ContentMedia.MediaType.VIDEO, "video-1"));
         assertThat(contentEngagementRepository.findAll())
                 .singleElement()
                 .extracting(ContentEngagement::getViewCount,
                         ContentEngagement::getLikeCount,
                         ContentEngagement::getCommentCount)
                 .containsExactly(100L, 20L, 3L);
+    }
+
+    @Test
+    void rejectDuplicateSequenceNoWithinContentVersion() {
+        contentMediaRepository.saveAndFlush(ContentMedia.builder()
+                .contentVersionId(1L)
+                .mediaType(ContentMedia.MediaType.TEXT)
+                .body("first")
+                .sequenceNo(0)
+                .build());
+
+        assertThatThrownBy(() -> contentMediaRepository.saveAndFlush(ContentMedia.builder()
+                .contentVersionId(1L)
+                .mediaType(ContentMedia.MediaType.IMAGE)
+                .snsMediaId("image-1")
+                .sequenceNo(0)
+                .build()))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

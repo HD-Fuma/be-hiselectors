@@ -165,6 +165,12 @@ class ContentCollectionServiceTest {
         assertThat(savedMedia.get().get(2).getMediaUrl())
                 .isEqualTo("https://cdn.example.com/image.jpg");
         assertThat(savedMedia.get().get(3).getMediaUrl()).isNull();
+        assertThat(savedMedia.get())
+                .extracting(ContentMedia::getSequenceNo)
+                .containsExactly(0, 1, 2, 3);
+        assertThat(savedMedia.get())
+                .extracting(ContentMedia::getSnsMediaId)
+                .containsExactly(null, null, "image-1", "video-1");
         assertThat(managedAccount.getLastCollectedAt()).isAfter(lastCollectedAt);
         assertThat(output).contains(
                 "콘텐츠 수집 결과 | 플랫폼=INSTAGRAM | 계정=nike | API 조회=4건 "

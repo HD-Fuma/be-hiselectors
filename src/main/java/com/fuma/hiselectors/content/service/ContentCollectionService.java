@@ -157,25 +157,33 @@ public class ContentCollectionService {
         for (int index = 0; index < versions.size(); index++) {
             Long versionId = versions.get(index).getId();
             RawContent rawContent = rawContents.get(index);
-            addTexts(media, versionId, rawContent.texts());
-            addMedia(media, versionId, rawContent);
+            int nextSequenceNo = addTexts(media, versionId, rawContent.texts(), 0);
+            addMedia(media, versionId, rawContent, nextSequenceNo);
         }
         mediaRepository.saveAll(media);
     }
 
-    private void addTexts(
-            List<ContentMedia> target, Long versionId, List<String> texts) {
+    private int addTexts(
+            List<ContentMedia> target,
+            Long versionId,
+            List<String> texts,
+            int nextSequenceNo) {
         for (String text : texts) {
             target.add(ContentMedia.builder()
                     .contentVersionId(versionId)
                     .mediaType(ContentMedia.MediaType.TEXT)
                     .body(text)
+                    .sequenceNo(nextSequenceNo++)
                     .build());
         }
+        return nextSequenceNo;
     }
 
     private void addMedia(
-            List<ContentMedia> target, Long versionId, RawContent rawContent) {
+            List<ContentMedia> target,
+            Long versionId,
+            RawContent rawContent,
+            int nextSequenceNo) {
         for (RawContentMedia rawMedia : rawContent.media()) {
             if (rawMedia.mediaType() == RawContentMedia.MediaType.TEXT) {
                 throw new IllegalStateException(
@@ -185,6 +193,8 @@ public class ContentCollectionService {
                     .contentVersionId(versionId)
                     .mediaType(ContentMedia.MediaType.valueOf(rawMedia.mediaType().name()))
                     .mediaUrl(rawMedia.mediaUrl())
+                    .snsMediaId(rawMedia.snsMediaId())
+                    .sequenceNo(nextSequenceNo++)
                     .build());
         }
     }
