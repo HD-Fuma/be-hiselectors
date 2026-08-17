@@ -19,6 +19,12 @@ final class SelectorsUrlEvidenceExtractor {
     private static final Pattern HTTP_URL = Pattern.compile(
             "https?://[^\\s]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS
     );
+    private static final Pattern PRODUCT_PATH = Pattern.compile(
+            "^/product/([A-Za-z0-9_-]{1,100})/?$"
+    );
+    private static final Pattern REFERRAL_CODE = Pattern.compile(
+            "RC[0-9]{9}T", Pattern.CASE_INSENSITIVE
+    );
     private static final String TRAILING_PUNCTUATION = "., !;:)\'\"]}>".replace(" ", "");
 
     private SelectorsUrlEvidenceExtractor() {
@@ -30,6 +36,8 @@ final class SelectorsUrlEvidenceExtractor {
         StringBuilder masked = new StringBuilder(text);
         Set<String> matched = new TreeSet<>();
         Set<String> trusted = new TreeSet<>();
+        EnumSet<SelectorsContentEvidence> evidence = EnumSet.noneOf(SelectorsContentEvidence.class);
+        Set<String> referralCodes = new TreeSet<>();
         List<int[]> spans = new ArrayList<>();
         while (matcher.find()) {
             String candidate = stripTrailingPunctuation(matcher.group());
@@ -39,14 +47,57 @@ final class SelectorsUrlEvidenceExtractor {
             matched.add(candidate);
             if (isTrusted(candidate)) {
                 trusted.add(candidate);
+                classifyProductUrl(candidate, evidence, referralCodes);
             }
             spans.add(new int[] {matcher.start(), matcher.start() + candidate.length()});
         }
         for (int[] span : spans) {
             masked.replace(span[0], span[1], " ".repeat(span[1] - span[0]));
         }
-        return new Result(masked.toString(), Set.of(), Set.of(),
+        return new Result(masked.toString(), evidence, referralCodes,
                 List.copyOf(matched), List.copyOf(trusted));
+    }
+
+    private static void classifyProductUrl(String candidate,
+                                           Set<SelectorsContentEvidence> evidence,
+                                           Set<String> referralCodes) {
+        try {
+            URI uri = new URI(candidate);
+            String rawPath = uri.getRawPath();
+            if (rawPath == null || rawPath.indexOf('%') >= 0 || !PRODUCT_PATH.matcher(rawPath).matches()) {
+                return;
+            }
+            evidence.add(SelectorsContentEvidence.PUBLIC_PRODUCT_URL);
+
+            String rawQuery = uri.getRawQuery();
+            if (rawQuery == null) {
+                return;
+            }
+            String referralCode = null;
+            int referralNameCount = 0;
+            for (String pair : rawQuery.split("&", -1)) {
+                int equals = pair.indexOf('=');
+                String name = equals < 0 ? pair : pair.substring(0, equals);
+                if (!name.equalsIgnoreCase("ptrsRefCd")) {
+                    continue;
+                }
+                referralNameCount++;
+                if (referralNameCount > 1 || equals < 0) {
+                    continue;
+                }
+                String value = pair.substring(equals + 1);
+                if (REFERRAL_CODE.matcher(value).matches()) {
+                    referralCode = value.toUpperCase(java.util.Locale.ROOT);
+                }
+            }
+            if (referralNameCount == 1 && referralCode != null) {
+                evidence.add(SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL);
+                evidence.add(SelectorsContentEvidence.REFERRAL_CODE);
+                referralCodes.add(referralCode);
+            }
+        } catch (URISyntaxException | IllegalArgumentException ignored) {
+            // The URL was already trusted, but leave classification conservative if parsing changes.
+        }
     }
 
     private static String stripTrailingPunctuation(String candidate) {
