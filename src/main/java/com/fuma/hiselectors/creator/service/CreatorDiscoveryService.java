@@ -2,8 +2,11 @@ package com.fuma.hiselectors.creator.service;
 
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
+import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
+import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorPool;
+import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository;
 import com.fuma.hiselectors.creator.repository.CreatorDiscoverySourceRepository;
 import com.fuma.hiselectors.creator.repository.CreatorPoolRepository;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -26,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CreatorDiscoveryService {
 
     private final CreatorPoolRepository creatorPoolRepository;
+    private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final CreatorDiscoverySourceRepository discoverySourceRepository;
 
     /**
@@ -43,6 +47,17 @@ public class CreatorDiscoveryService {
 
         return creatorPoolRepository.search(categoryCode, snsCode, minFollower,
                 maxBrandScore, minIgConfidence, activeAfter, pageable);
+    }
+
+    /** 크리에이터 기본 정보와 발굴 판정 근거를 한 번에 조회한다. */
+    public CreatorDetailResponse findDetail(Long creatorPoolId) {
+        CreatorPool creator = getCreator(creatorPoolId);
+        CreatorDiscoveryInfo discoveryInfo = discoveryInfoRepository.findById(creatorPoolId)
+                .orElse(null);
+        List<CategoryShare> categoryShares =
+                discoverySourceRepository.findCategoryShares(creatorPoolId);
+
+        return CreatorDetailResponse.of(creator, discoveryInfo, categoryShares);
     }
 
     /** 이 계정이 어떤 카테고리에서 얼마나 걸렸는지. 대표 카테고리 판정 근거. */
@@ -78,7 +93,7 @@ public class CreatorDiscoveryService {
     }
 
     private CreatorPool getCreator(Long creatorPoolId) {
-        return creatorPoolRepository.findById(creatorPoolId)
+        return creatorPoolRepository.findByIdAndDeletedFalse(creatorPoolId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CREATOR_NOT_FOUND));
     }
 }

@@ -18,6 +18,9 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
     /** creator_pool.category 에 저장된 코드로 역조회할 때 쓴다. */
     Optional<Category> findByCode(String code);
 
+    /** 기본 카테고리 초기화 시 동일 이름의 다른 코드가 있는지 확인한다. */
+    Optional<Category> findByName(String name);
+
     /** 목록 조회는 키워드까지 같이 쓰므로 N+1 을 피한다. */
     @EntityGraph(attributePaths = "keywords")
     List<Category> findAllByOrderByDisplayOrderAscIdAsc();

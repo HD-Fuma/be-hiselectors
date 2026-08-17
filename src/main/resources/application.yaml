@@ -22,11 +22,11 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: ${DDL_AUTO:validate}
+    show-sql: ${SHOW_SQL:true}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${FORMAT_SQL:true}
     open-in-view: false
 
 jwt:
@@ -46,6 +46,20 @@ youtube:
 
   collection:
     api-key: ${YOUTUBE_API_KEY:}
+    daily-quota: ${YOUTUBE_DISCOVERY_DAILY_QUOTA:10000}
+    max-results-per-keyword: ${YOUTUBE_DISCOVERY_MAX_RESULTS:25}
+    batch:
+      max-keywords-per-run: ${YOUTUBE_DISCOVERY_MAX_KEYWORDS:50}
+
+# 더현대Hi 카테고리 스냅샷을 발굴 기본값으로 사용한다.
+# 기존 관리자 카테고리·키워드 설정은 덮어쓰지 않는다.
+discovery:
+  defaults:
+    enabled: ${DISCOVERY_DEFAULTS_ENABLED:true}
+
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
 
 instagram:
   oauth:
@@ -62,3 +76,33 @@ instagram:
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:
   state-validity-seconds: 300
+
+kakao:
+  oauth:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/kakao-test}
+    sender-scope: friends,talk_message,profile_nickname
+    recipient-scope: friends,talk_message
+  message:
+    web-url: ${KAKAO_MESSAGE_WEB_URL:http://localhost:3000}
+    mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:http://localhost:3000}
+    image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
+  token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}
+
+purchase:
+  auto-confirm:
+    cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
+
+settlement:
+  zone: ${SETTLEMENT_ZONE:Asia/Seoul}
+  estimate:
+    cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}
+  finalization:
+    cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
+  payment:
+    cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+  expiry:
+    cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
+  notification:
+    sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}

@@ -14,6 +14,7 @@ import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,9 +34,13 @@ public class ApplicationService {
 
         LocalDateTime now = LocalDateTime.now();
         Generation generation = generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndGenerationStatusOrderByStartDateAsc(
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
+
+        if (applicationRepository.existsByUserIdAndGenerationId(user.getId(), generation.getId())) {
+            throw new BusinessException(ErrorCode.DUPLICATE_APPLICATION);
+        }
 
         Application application = Application.builder()
                 .userId(user.getId())
@@ -50,6 +55,11 @@ public class ApplicationService {
                 .status(ApplicationStatus.PENDING)
                 .build();
 
-        return ApplicationResponse.from(applicationRepository.save(application));
+        try {
+            return ApplicationResponse.from(applicationRepository.save(application));
+        } catch (DataIntegrityViolationException e) {
+            // existsBy 체크와 save 사이 경쟁 상태: 유니크 제약 위반을 409로 변환
+            throw new BusinessException(ErrorCode.DUPLICATE_APPLICATION);
+        }
     }
 }

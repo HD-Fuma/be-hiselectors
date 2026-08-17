@@ -80,7 +80,5 @@ class SelectorsSnsAccountRepositoryTest {
 
         SelectorsSnsAccount found = accountRepository.findById(account.getId()).orElseThrow();
         assertThat(found.getLastCollectedAt()).isEqualTo(collectedAt);
-        assertThat(accountRepository.findBySelectorsIdAndSnsCode(
-                1L, SnsPlatform.YOUTUBE)).isPresent();
     }
 }

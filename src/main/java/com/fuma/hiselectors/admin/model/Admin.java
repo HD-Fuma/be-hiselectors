@@ -35,12 +35,24 @@ public class Admin extends BaseTimeEntity {
     @Column(length = 20)
     private String role;
 
+    @Column(name = "kakao_sender_connection_id")
+    private Long kakaoSenderConnectionId;
 
     @Builder
-    private Admin(String loginId, String password, String name, String role) {
+    private Admin(String loginId, String password, String name, String role,
+                  Long kakaoSenderConnectionId) {
         this.loginId = loginId;
         this.password = password;
         this.name = name;
         this.role = role;
+        this.kakaoSenderConnectionId = kakaoSenderConnectionId;
+    }
+
+    public void selectKakaoSenderConnection(Long connectionId) {
+        this.kakaoSenderConnectionId = connectionId;
+    }
+
+    public void clearKakaoSenderConnection() {
+        this.kakaoSenderConnectionId = null;
     }
 }

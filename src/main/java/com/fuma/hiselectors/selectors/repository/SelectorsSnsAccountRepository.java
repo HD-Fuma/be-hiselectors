@@ -1,6 +1,5 @@
 package com.fuma.hiselectors.selectors.repository;
 
-import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +10,6 @@ public interface SelectorsSnsAccountRepository
 
     List<SelectorsSnsAccount> findAllBySelectorsId(Long selectorsId);
 
-    Optional<SelectorsSnsAccount> findBySelectorsIdAndSnsCode(
-            Long selectorsId, SnsPlatform snsCode);
+    Optional<SelectorsSnsAccount> findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(
+            Long selectorsId);
 }

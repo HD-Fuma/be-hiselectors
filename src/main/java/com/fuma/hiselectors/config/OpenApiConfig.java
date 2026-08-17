@@ -3,7 +3,13 @@ package com.fuma.hiselectors.config;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.BooleanSchema;
+import io.swagger.v3.oas.models.media.ObjectSchema;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.media.StringSchema;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,11 +25,39 @@ public class OpenApiConfig {
                         .title("HI-Selectors API")
                         .version("v1")
                         .description("하이셀렉터스 백엔드 API 문서"))
+                .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME))
                 .components(new Components()
                         .addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
                                 .bearerFormat("JWT")
                                 .description("로그인으로 발급받은 accessToken 값만 입력 (Bearer 접두어 불필요)")));
+    }
+
+    @Bean
+    public OperationCustomizer wrapSuccessResponseInApiResult() {
+        return (operation, handlerMethod) -> {
+            if (operation.getResponses() == null) {
+                return operation;
+            }
+            operation.getResponses().forEach((status, response) -> {
+                if (!status.startsWith("2") || response.getContent() == null) {
+                    return;
+                }
+                response.getContent().forEach((mediaType, media) -> {
+                    Schema<?> data = media.getSchema();
+                    if (data == null || data.getProperties() != null
+                            && data.getProperties().containsKey("success")) {
+                        return;
+                    }
+                    media.setSchema(new ObjectSchema()
+                            .addProperty("success", new BooleanSchema()._default(true))
+                            .addProperty("code", new StringSchema().example("OK"))
+                            .addProperty("message", new StringSchema().nullable(true))
+                            .addProperty("data", data));
+                });
+            });
+            return operation;
+        };
     }
 }

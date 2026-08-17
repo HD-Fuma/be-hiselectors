@@ -5,6 +5,7 @@ import com.fuma.hiselectors.purchase.dto.PurchaseResponse;
 import com.fuma.hiselectors.purchase.model.PurchaseProcessingResult;
 import com.fuma.hiselectors.purchase.service.PurchaseService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "구매", description = "더현대 Hi 상품 구매")
+@SecurityRequirements
 @RestController
 @RequestMapping("/api/purchases")
 @RequiredArgsConstructor

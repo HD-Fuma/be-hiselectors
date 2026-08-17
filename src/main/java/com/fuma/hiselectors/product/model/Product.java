@@ -39,7 +39,7 @@ public class Product extends BaseTimeEntity {
     private BigDecimal salePrice;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "product_status_code", nullable = false, length = 20)
+    @Column(name = "status", nullable = false, length = 20)
     private ProductStatus status;
 
     @Builder

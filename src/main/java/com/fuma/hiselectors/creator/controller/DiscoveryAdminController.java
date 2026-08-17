@@ -1,7 +1,13 @@
 package com.fuma.hiselectors.creator.controller;
 
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
+import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchResult;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
+import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
+import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchResult;
+import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -28,6 +34,37 @@ import org.springframework.web.bind.annotation.RestController;
 public class DiscoveryAdminController {
 
     private final DiscoveryPipelineService discoveryPipelineService;
+    private final InstagramDiscoveryService instagramDiscoveryService;
+    private final YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
+    private final InstagramDiscoveryBatchService instagramDiscoveryBatchService;
+
+    @Operation(summary = "YouTube 크리에이터 일괄 발굴",
+            description = "관리자가 크리에이터 모집을 시작할 때 활성 키워드를 "
+                    + "우선순위·마지막 실행 시각 순으로 일괄 실행한다. "
+                    + "일부 키워드가 실패해도 나머지 키워드는 계속 실행한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일괄 발굴 실행 완료"),
+            @ApiResponse(responseCode = "500", description = "YouTube API 키 설정 누락",
+                    content = @Content)
+    })
+    @PostMapping("/youtube/run")
+    public ResponseEntity<YoutubeDiscoveryBatchResult> runYoutubeBatch() {
+        return ResponseEntity.ok(youtubeDiscoveryBatchService.run());
+    }
+
+    @Operation(summary = "Instagram 크리에이터 일괄 발굴",
+            description = "관리자가 크리에이터 모집을 시작할 때 YouTube 채널에서 추출한 "
+                    + "Instagram 사용자명을 Meta Graph API로 조회한다. "
+                    + "일부 계정이 실패해도 나머지 계정은 계속 실행한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "일괄 발굴 실행 완료"),
+            @ApiResponse(responseCode = "500", description = "Meta Graph API 설정 누락",
+                    content = @Content)
+    })
+    @PostMapping("/instagram/run")
+    public ResponseEntity<InstagramDiscoveryBatchResult> runInstagramBatch() {
+        return ResponseEntity.ok(instagramDiscoveryBatchService.run());
+    }
 
     @Operation(summary = "키워드로 발굴 실행",
             description = "등록된 키워드 하나로 YouTube 를 검색해 채널을 발굴하고 저장한다. "
@@ -50,5 +87,31 @@ public class DiscoveryAdminController {
 
         return ResponseEntity.ok(
                 discoveryPipelineService.runByKeyword(keywordId, maxResults));
+    }
+
+    @Operation(summary = "YouTube 크리에이터의 Instagram 계정 발굴",
+            description = "YouTube 채널 설명에서 추출해 둔 Instagram 사용자명을 Meta Graph API로 "
+                    + "조회하고, 공개 지표를 수집해 별도의 INSTAGRAM 크리에이터로 저장한다. "
+                    + "기존 Instagram 계정이면 팔로워 수·참여율·최근 활동일을 갱신한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Instagram 발굴 및 저장 성공"),
+            @ApiResponse(responseCode = "404",
+                    description = "YouTube 크리에이터, Instagram 사용자명 또는 조회 가능 계정 없음",
+                    content = @Content),
+            @ApiResponse(responseCode = "500",
+                    description = "Meta Graph API 설정 누락",
+                    content = @Content),
+            @ApiResponse(responseCode = "502",
+                    description = "Meta Graph API 호출 실패",
+                    content = @Content)
+    })
+    @PostMapping("/creators/{youtubeCreatorId}/instagram")
+    public ResponseEntity<InstagramDiscoveryResult> discoverInstagram(
+            @Parameter(description = "Instagram 사용자명이 추출된 YouTube creator_pool ID",
+                    example = "101")
+            @PathVariable Long youtubeCreatorId) {
+
+        return ResponseEntity.ok(
+                instagramDiscoveryService.discoverFromYoutubeCreator(youtubeCreatorId));
     }
 }
