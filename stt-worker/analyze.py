@@ -118,20 +118,25 @@ def hate(text: str) -> dict:
     return {"labels": list(hits), "scores": hits, "suspected": bool(hits)}
 
 
-def analyze(text: str) -> dict:
-    """로컬 3필드. 스타일/톤/요약/강점/넓은위험은 상위 LLM 계층에서 붙인다."""
-    return {
+def analyze(text: str, include_hate: bool = False) -> dict:
+    """로컬 필드(키워드·카테고리). 욕설혐오는 Instagram 등 LLM을 안 태우는 소스에서만 필요해
+    include_hate=True 일 때만 kor_unsmile을 돌린다. YouTube는 Gemini insight의 hateConfirmed를
+    쓰므로 여기서 중복 실행하지 않는다."""
+    result = {
         "keywords": keywords(text),
         "category": category(text),
-        "hate": hate(text),
     }
+    if include_hate:
+        result["hate"] = hate(text)
+    return result
 
 
 def _selfcheck() -> None:
     out = analyze("오늘은 신상 쿠션 파운데이션 발색이랑 지속력을 리뷰해볼게요. 언박싱부터 실사용까지.")
     assert out["category"]["label"] == "BEAUTY", out["category"]
     assert out["keywords"], "키워드가 비었음"
-    assert out["hate"]["suspected"] is False, out["hate"]
+    assert "hate" not in out, "기본은 욕설혐오 안 돌려야 함"
+    assert analyze("정상 텍스트", include_hate=True)["hate"]["suspected"] is False, "opt-in hate 실패"
     # 도메인 밖(뉴스) → 카테고리 라벨 비움
     off = analyze("오늘 여덟시 뉴스를 마치겠습니다 고맙습니다")
     assert off["category"]["label"] == "" and off["category"]["uncertain"], off["category"]

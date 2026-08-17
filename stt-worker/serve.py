@@ -17,11 +17,12 @@ _PAGE = Path(__file__).with_name("test.html")
 
 class AnalyzeRequest(BaseModel):
     text: str
+    include_hate: bool = False  # Instagram 등에서만 kor_unsmile 요청
 
 
 @app.post("/analyze")
 def do_analyze(req: AnalyzeRequest) -> dict:
-    return engine.analyze(req.text)
+    return engine.analyze(req.text, include_hate=req.include_hate)
 
 
 @app.get("/")

@@ -101,7 +101,7 @@
             try {
                 const res = await fetch("/analyze", {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify({ text, include_hate: true })  // 테스트 화면은 욕설혐오도 확인
                 });
                 const d = await res.json();
                 meta.textContent = ((performance.now() - t0) / 1000).toFixed(2) + "초";
@@ -111,10 +111,11 @@
                 badge($("catBadge"), d.category.uncertain);
 
                 const rb = $("riskBadge");
-                if (d.hate.suspected) {
-                    $("risk").textContent = d.hate.labels.join(", ");
+                const hate = d.hate || { suspected: false, labels: [], scores: {} };
+                if (hate.suspected) {
+                    $("risk").textContent = hate.labels.join(", ");
                     rb.className = "badge warn"; rb.textContent = "의심 → LLM 확인 필요";
-                    $("riskHits").textContent = "모델 점수(확정 아님): " + JSON.stringify(d.hate.scores);
+                    $("riskHits").textContent = "모델 점수(확정 아님): " + JSON.stringify(hate.scores);
                 } else {
                     $("risk").textContent = "없음";
                     rb.className = "badge ok"; rb.textContent = "깨끗";
