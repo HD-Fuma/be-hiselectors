@@ -24,9 +24,7 @@ import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
-import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -50,7 +48,6 @@ class ContentCollectionServiceTest {
 
     private static final Long ACCOUNT_ID = 10L;
     private static final Long SELECTORS_ID = 20L;
-    private static final String SELECTORS_CODE = "RC0001";
     private static final LocalDateTime CONTENT_COLLECTION_START_AT =
             LocalDateTime.of(2026, 5, 1, 0, 0);
 
@@ -62,8 +59,6 @@ class ContentCollectionServiceTest {
     private SelectorsContentClassifier classifier;
     @Mock
     private SelectorsSnsAccountRepository accountRepository;
-    @Mock
-    private SelectorsRepository selectorsRepository;
     @Mock
     private ContentRepository contentRepository;
     @Mock
@@ -86,7 +81,7 @@ class ContentCollectionServiceTest {
 
         service = new ContentCollectionService(
                 List.of(instagramClient, youtubeClient), classifier,
-                accountRepository, selectorsRepository, contentRepository,
+                accountRepository, contentRepository,
                 versionRepository, mediaRepository, transactionTemplate);
     }
 
@@ -98,9 +93,6 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(selectorsRepository.findById(SELECTORS_ID))
-                .thenReturn(Optional.of(selectors()));
-
         RawContent old = raw(
                 "old", "RC0001", lastCollectedAt.minusSeconds(1), List.of());
         RawContent boundary = raw(
@@ -117,9 +109,9 @@ class ContentCollectionServiceTest {
         when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
                 .thenReturn(new CollectionResult(
                         4, List.of(old, boundary, unrelated, matching)));
-        when(classifier.isSelectorsContent(boundary, SELECTORS_CODE)).thenReturn(false);
-        when(classifier.isSelectorsContent(unrelated, SELECTORS_CODE)).thenReturn(false);
-        when(classifier.isSelectorsContent(matching, SELECTORS_CODE)).thenReturn(true);
+        when(classifier.isSelectorsContent(boundary)).thenReturn(false);
+        when(classifier.isSelectorsContent(unrelated)).thenReturn(false);
+        when(classifier.isSelectorsContent(matching)).thenReturn(true);
 
         AtomicReference<List<Content>> savedContents = new AtomicReference<>();
         AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
@@ -180,7 +172,7 @@ class ContentCollectionServiceTest {
 
         verify(instagramClient, times(1)).collect("nike", CONTENT_COLLECTION_START_AT);
         verify(youtubeClient, never()).collect(any(), any());
-        verify(classifier, never()).isSelectorsContent(old, SELECTORS_CODE);
+        verify(classifier, never()).isSelectorsContent(old);
         verify(contentRepository, times(1)).saveAll(any());
         verify(versionRepository, times(1)).saveAll(any());
         verify(mediaRepository, times(1)).saveAll(any());
@@ -194,8 +186,6 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(selectorsRepository.findById(SELECTORS_ID))
-                .thenReturn(Optional.of(selectors()));
         when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
                 .thenReturn(new CollectionResult(1, List.of(raw(
                         "old", "RC0001", lastCollectedAt.minusSeconds(1), List.of()))));
@@ -217,8 +207,6 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(null);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(selectorsRepository.findById(SELECTORS_ID))
-                .thenReturn(Optional.of(selectors()));
         RawContent beforeGeneration = raw(
                 "before", "RC0001", CONTENT_COLLECTION_START_AT.minusSeconds(1), List.of());
         RawContent generationContent = raw(
@@ -226,15 +214,15 @@ class ContentCollectionServiceTest {
         when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
                 .thenReturn(new CollectionResult(
                         2, List.of(beforeGeneration, generationContent)));
-        when(classifier.isSelectorsContent(generationContent, SELECTORS_CODE))
+        when(classifier.isSelectorsContent(generationContent))
                 .thenReturn(false);
 
         int savedCount = service.collectForAccount(ACCOUNT_ID);
 
         assertThat(savedCount).isZero();
         assertThat(managedAccount.getLastCollectedAt()).isNotNull();
-        verify(classifier, never()).isSelectorsContent(beforeGeneration, SELECTORS_CODE);
-        verify(classifier).isSelectorsContent(generationContent, SELECTORS_CODE);
+        verify(classifier, never()).isSelectorsContent(beforeGeneration);
+        verify(classifier).isSelectorsContent(generationContent);
         verify(contentRepository, never()).saveAll(any());
     }
 
@@ -263,13 +251,11 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(selectorsRepository.findById(SELECTORS_ID))
-                .thenReturn(Optional.of(selectors()));
         RawContent matching = raw(
                 "matching", "RC0001", lastCollectedAt.plusMinutes(1), List.of());
         when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
                 .thenReturn(new CollectionResult(1, List.of(matching)));
-        when(classifier.isSelectorsContent(matching, SELECTORS_CODE)).thenReturn(true);
+        when(classifier.isSelectorsContent(matching)).thenReturn(true);
         when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
             List<Content> values = toList(invocation.getArgument(0));
             ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
@@ -299,13 +285,6 @@ class ContentCollectionServiceTest {
                 .build();
         ReflectionTestUtils.setField(account, "id", ACCOUNT_ID);
         return account;
-    }
-
-    private Selectors selectors() {
-        return Selectors.builder()
-                .selectorsRoleId("NORMAL")
-                .selectorsCode(SELECTORS_CODE)
-                .build();
     }
 
     private RawContent raw(

@@ -16,9 +16,7 @@ import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -47,7 +45,6 @@ public class ContentCollectionService {
     private final List<ContentPlatformClient> contentClients;
     private final SelectorsContentClassifier classifier;
     private final SelectorsSnsAccountRepository accountRepository;
-    private final SelectorsRepository selectorsRepository;
     private final ContentRepository contentRepository;
     private final ContentVersionRepository versionRepository;
     private final ContentMediaRepository mediaRepository;
@@ -93,10 +90,6 @@ public class ContentCollectionService {
         // 트랜잭션 내부에서 SNS 계정 재조회: 마지막 수집 시각 갱신
         SelectorsSnsAccount account = findAccount(selectorsSnsAccountId);
 
-        // 셀렉터스 코드 조회 (셀렉터스 게시글 여부 판별 목적)
-        Selectors selectors = selectorsRepository.findById(account.getSelectorsId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-
         // 마지막 수집 시각 이후 콘텐츠 선별
         List<RawContent> candidates = new ArrayList<>();
         LocalDateTime lastCollectedAt = account.getLastCollectedAt();
@@ -112,8 +105,7 @@ public class ContentCollectionService {
 
         // 신규 콘텐츠만 셀렉터스 콘텐츠 판별
         List<RawContent> selectorsContents = candidates.stream()
-                .filter(content -> classifier.isSelectorsContent(
-                        content, selectors.getSelectorsCode()))
+                .filter(classifier::isSelectorsContent)
                 .toList();
 
         saveAll(account.getSelectorsId(), selectorsContents, collectionStartedAt);
