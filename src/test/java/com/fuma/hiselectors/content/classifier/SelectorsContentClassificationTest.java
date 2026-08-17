@@ -22,9 +22,9 @@ class SelectorsContentClassificationTest {
         List<String> matchedUrls = new ArrayList<>(List.of("https://z.example", "https://a.example", "https://z.example"));
 
         SelectorsContentClassification classification = new SelectorsContentClassification(
-                SelectorsContentDecision.REVIEW_REQUIRED,
+                SelectorsContentDecision.CONFIRMED,
                 3,
-                SelectorsContentReviewTier.NORMAL,
+                SelectorsContentReviewTier.NONE,
                 evidence,
                 referralCodes,
                 matchedUrls,
@@ -114,5 +114,25 @@ class SelectorsContentClassificationTest {
         assertThrows(IllegalArgumentException.class, () -> new SelectorsContentClassification(
                 SelectorsContentDecision.NOT_SELECTORS, 2, SelectorsContentReviewTier.NORMAL,
                 Set.of(), List.of(), List.of(), "v1"));
+    }
+
+    @Test
+    void nonConfirmedDecisionsRejectEveryDecisiveEvidence() {
+        for (SelectorsContentEvidence decisiveEvidence : decisiveEvidence()) {
+            assertThrows(IllegalArgumentException.class, () -> new SelectorsContentClassification(
+                    SelectorsContentDecision.REVIEW_REQUIRED, 3, SelectorsContentReviewTier.NORMAL,
+                    Set.of(decisiveEvidence), List.of(), List.of(), "v1"));
+            assertThrows(IllegalArgumentException.class, () -> new SelectorsContentClassification(
+                    SelectorsContentDecision.NOT_SELECTORS, 2, SelectorsContentReviewTier.NONE,
+                    Set.of(decisiveEvidence), List.of(), List.of(), "v1"));
+        }
+    }
+
+    private static List<SelectorsContentEvidence> decisiveEvidence() {
+        return List.of(
+                SelectorsContentEvidence.REFERRAL_CODE,
+                SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
+                SelectorsContentEvidence.SELECTORS_SHOP_URL,
+                SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
     }
 }

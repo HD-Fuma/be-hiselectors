@@ -44,22 +44,24 @@ public record SelectorsContentClassification(
                 SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
                 SelectorsContentEvidence.SELECTORS_SHOP_URL,
                 SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
+        boolean hasDecisiveEvidence = decisiveEvidence.stream().anyMatch(evidence::contains);
         switch (decision) {
             case CONFIRMED -> {
-                if (decisiveEvidence.stream().noneMatch(evidence::contains)
+                if (!hasDecisiveEvidence
                         || reviewTier != SelectorsContentReviewTier.NONE) {
                     throw new IllegalArgumentException("confirmed classification requires decisive evidence and no review tier");
                 }
             }
             case REVIEW_REQUIRED -> {
-                if (score < 3
+                if (hasDecisiveEvidence
+                        || score < 3
                         || (score <= 5 && reviewTier != SelectorsContentReviewTier.NORMAL)
                         || (score >= 6 && reviewTier != SelectorsContentReviewTier.STRONG)) {
                     throw new IllegalArgumentException("review tier does not match score");
                 }
             }
             case NOT_SELECTORS -> {
-                if (score > 2 || reviewTier != SelectorsContentReviewTier.NONE) {
+                if (hasDecisiveEvidence || score > 2 || reviewTier != SelectorsContentReviewTier.NONE) {
                     throw new IllegalArgumentException("not selectors classification requires score at most two and no review tier");
                 }
             }
