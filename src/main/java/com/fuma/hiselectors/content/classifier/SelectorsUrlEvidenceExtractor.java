@@ -40,7 +40,7 @@ final class SelectorsUrlEvidenceExtractor {
             if (isTrusted(candidate)) {
                 trusted.add(candidate);
             }
-            spans.add(new int[] {matcher.start(), matcher.end()});
+            spans.add(new int[] {matcher.start(), matcher.start() + candidate.length()});
         }
         for (int[] span : spans) {
             masked.replace(span[0], span[1], " ".repeat(span[1] - span[0]));

@@ -18,13 +18,16 @@ class SelectorsUrlEvidenceExtractorTest {
         assertThat(result.matchedUrls()).containsExactly(
                 "https://hi.thehyundai.com/product/A",
                 "https://hi.thehyundai.com/product/B");
-        assertThat(result.textWithoutUrls()).doesNotContain("https://");
+        assertThat(result.textWithoutUrls()).isEqualTo(
+                "앞 " + " ".repeat("https://hi.thehyundai.com/product/A".length()) + "... 뒤\n"
+                        + " ".repeat("https://hi.thehyundai.com/product/A".length()) + "\n"
+                        + " ".repeat("https://hi.thehyundai.com/product/B".length()) + ")]" );
     }
 
     @Test
     void trustsOnlyTheExactHostAndDefaultPorts() {
         String text = "https://hi.thehyundai.com/a https://hi.thehyundai.com:80/b "
-                + "http://HI.THEHYUNDAI.COM/c https://hi.thehyundai.com:443/d "
+                + "http://HI.THEHYUNDAI.COM/c http://hi.thehyundai.com:80/i https://hi.thehyundai.com:443/d "
                 + "https://user@hi.thehyundai.com/e https://hi.thehyundai.com:8080/f "
                 + "https://evilhi.thehyundai.com/g https://sub.hi.thehyundai.com/h "
                 + "https://[bad https://hi.thehyundai.com/valid ftp://hi.thehyundai.com/nope";
@@ -33,6 +36,7 @@ class SelectorsUrlEvidenceExtractorTest {
 
         assertThat(result.trustedUrls()).containsExactly(
                 "http://HI.THEHYUNDAI.COM/c",
+                "http://hi.thehyundai.com:80/i",
                 "https://hi.thehyundai.com/a",
                 "https://hi.thehyundai.com/valid",
                 "https://hi.thehyundai.com:443/d");
