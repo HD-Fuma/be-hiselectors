@@ -64,6 +64,10 @@ public enum ErrorCode {
     PURCHASE_CONFLICT(HttpStatus.CONFLICT, "기존 구매 정보와 요청 정보가 일치하지 않습니다."),
     INVALID_PURCHASE_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 구매 상태 변경입니다."),
 
+    // --- 캠페인 ---
+    CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "캠페인을 찾을 수 없습니다."),
+    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "종료된 캠페인만 삭제할 수 있습니다."),
+
     // --- 정산 ---
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),
     SETTLEMENT_RATE_SOURCE_NOT_FOUND(HttpStatus.CONFLICT, "수수료율 산정에 필요한 지원 정보를 찾을 수 없습니다."),
