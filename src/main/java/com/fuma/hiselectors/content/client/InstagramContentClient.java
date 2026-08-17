@@ -18,7 +18,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -43,9 +45,8 @@ public class InstagramContentClient implements ContentPlatformClient {
             "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
                     + "children{id,media_type,media_url}";
 
-    // 비정상적인 무한 호출 방지
     private static final int PAGE_SIZE = 25;
-    private static final int MAX_PAGES = 10;
+    private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
 
     // Meta 게시물 작성 시각을 변환할 서비스 기준 시간대
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
@@ -70,29 +71,35 @@ public class InstagramContentClient implements ContentPlatformClient {
     }
 
     /**
-     * username의 Instagram 게시물 중 현재 기수 시작 시각 이후 게시물 조회
+     * username의 Instagram 게시물 중 수집 기준 시각 이후 게시물 조회
      *
      * accountId: Instagram username (숫자 ID가 아님)
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime generationStartedAt) {
-        validateRequest(accountId, generationStartedAt);
+    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
+        validateRequest(accountId, collectedAfter);
 
         int fetchedCount = 0;
+        int consecutiveOutOfPeriodCount = 0;
         List<RawContent> contents = new ArrayList<>();
+        Set<String> requestedNextUrls = new HashSet<>();
 
         // Business Discovery로 username의 첫 게시글 페이지 요청
         MediaPage page = requestFirstPage(accountId);
 
-        for (int pageCount = 0; pageCount < MAX_PAGES; pageCount++) {
+        while (true) {
             // API가 반환한 게시글 수 합산 (로깅)
-            fetchedCount += page.data() == null ? 0 : page.data().size();
+            List<Media> media = page.data();
+            fetchedCount += media == null ? 0 : media.size();
+            if (media == null || media.isEmpty()) {
+                break;
+            }
 
-            // 현재 기수 시작 시각 이후 게시글을 신규·기존 여부와 관계없이 변환
-            boolean reachedBeforeGeneration = addGenerationContents(
-                    page.data(), generationStartedAt, contents);
-            if (reachedBeforeGeneration) {
+            // 이미 받은 페이지는 끝까지 확인하고, 페이지 끝의 연속 횟수로 다음 요청 결정
+            consecutiveOutOfPeriodCount = addCollectedContents(
+                    media, collectedAfter, contents, consecutiveOutOfPeriodCount);
+            if (consecutiveOutOfPeriodCount >= OUT_OF_PERIOD_STOP_THRESHOLD) {
                 break;
             }
 
@@ -101,8 +108,8 @@ public class InstagramContentClient implements ContentPlatformClient {
             if (nextUrl == null) {
                 break;
             }
-            if (pageCount == MAX_PAGES - 1) {
-                log.warn("Instagram 콘텐츠 수집 페이지 상한 도달. 최대페이지수={}", MAX_PAGES);
+            if (!requestedNextUrls.add(nextUrl)) {
+                log.warn("Instagram 페이지 URL 반복 감지");
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
             page = requestNextPage(nextUrl);
@@ -111,15 +118,15 @@ public class InstagramContentClient implements ContentPlatformClient {
         return new CollectionResult(fetchedCount, contents);
     }
 
-    private void validateRequest(String username, LocalDateTime generationStartedAt) {
+    private void validateRequest(String username, LocalDateTime collectedAfter) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
         }
 
-        // username, generationStartedAt이 정상인지 확인
+        // username, collectedAfter가 정상인지 확인
         if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()
-                || generationStartedAt == null) {
+                || collectedAfter == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -184,27 +191,25 @@ public class InstagramContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addGenerationContents(List<Media> media, LocalDateTime generationStartedAt,
-                                          List<RawContent> contents) {
-        if (media == null || media.isEmpty()) {
-            return true;
-        }
-
-        boolean hasGenerationContent = false;
+    private int addCollectedContents(
+            List<Media> media,
+            LocalDateTime collectedAfter,
+            List<RawContent> contents,
+            int consecutiveOutOfPeriodCount) {
         for (Media item : media) {
             if (item == null || item.timestamp() == null) {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
             // createdAt은 DB 저장 시각이 아닌 Instagram 게시글 작성 시각
             LocalDateTime createdAt = parseTimestamp(item.timestamp());
-            if (createdAt.isBefore(generationStartedAt)) {
+            if (createdAt.isBefore(collectedAfter)) {
+                consecutiveOutOfPeriodCount++;
                 continue;
             }
             contents.add(toRawContent(item, createdAt));
-            hasGenerationContent = true;
+            consecutiveOutOfPeriodCount = 0;
         }
-        // 최신순 페이지의 모든 게시글이 기수 시작 전이면 이후 페이지 조회 종료
-        return !hasGenerationContent;
+        return consecutiveOutOfPeriodCount;
     }
 
     private RawContent toRawContent(Media media, LocalDateTime createdAt) {

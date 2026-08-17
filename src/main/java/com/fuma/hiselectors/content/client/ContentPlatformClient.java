@@ -12,13 +12,13 @@ public interface ContentPlatformClient {
     SnsPlatform supports();
 
     /**
-     * 현재 기수 시작 시각 이후의 콘텐츠 조회
+     * 수집 기준 시각 이후의 콘텐츠 조회
      *
      * @param accountId Instagram username 또는 YouTube 채널 ID
-     * @param generationStartedAt 현재 기수 시작 시각
-     * @return 신규·기존 여부를 판단하지 않은 현재 기수 콘텐츠
+     * @param collectedAfter 최초 수집은 기수 시작 시각, 이후 수집은 최종 수집 시각
+     * @return 신규·기존 여부를 판단하지 않은 수집 기준 시각 이후 콘텐츠
      */
-    CollectionResult collect(String accountId, LocalDateTime generationStartedAt);
+    CollectionResult collect(String accountId, LocalDateTime collectedAfter);
 
     record CollectionResult(int fetchedCount, List<RawContent> contents) {
 

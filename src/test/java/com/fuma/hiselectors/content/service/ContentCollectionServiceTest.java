@@ -106,7 +106,7 @@ class ContentCollectionServiceTest {
                         new RawContentMedia("image-1", MediaType.IMAGE,
                                 "https://cdn.example.com/image.jpg"),
                         new RawContentMedia("video-1", MediaType.VIDEO, null)));
-        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+        when(instagramClient.collect("nike", lastCollectedAt))
                 .thenReturn(new CollectionResult(
                         4, List.of(old, boundary, unrelated, matching)));
         when(classifier.isSelectorsContent(boundary)).thenReturn(false);
@@ -170,7 +170,7 @@ class ContentCollectionServiceTest {
                 "콘텐츠 수집 결과 | 플랫폼=INSTAGRAM | 계정=nike | API 조회=4건 "
                         + "| 현재 기수=4건 | 셀렉터스 게시글=1건");
 
-        verify(instagramClient, times(1)).collect("nike", CONTENT_COLLECTION_START_AT);
+        verify(instagramClient, times(1)).collect("nike", lastCollectedAt);
         verify(youtubeClient, never()).collect(any(), any());
         verify(classifier, never()).isSelectorsContent(old);
         verify(contentRepository, times(1)).saveAll(any());
@@ -186,7 +186,7 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+        when(instagramClient.collect("nike", lastCollectedAt))
                 .thenReturn(new CollectionResult(1, List.of(raw(
                         "old", "RC0001", lastCollectedAt.minusSeconds(1), List.of()))));
 
@@ -253,7 +253,7 @@ class ContentCollectionServiceTest {
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent matching = raw(
                 "matching", "RC0001", lastCollectedAt.plusMinutes(1), List.of());
-        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+        when(instagramClient.collect("nike", lastCollectedAt))
                 .thenReturn(new CollectionResult(1, List.of(matching)));
         when(classifier.isSelectorsContent(matching)).thenReturn(true);
         when(contentRepository.saveAll(any())).thenAnswer(invocation -> {

@@ -237,30 +237,143 @@ class InstagramContentClientTest {
     }
 
     @Test
-    @DisplayName("기수 시작 전 게시물만 있는 페이지에서 조회를 종료한다")
-    void stopAtOldPage() {
-        server.expect(request -> assertThat(request.getURI().getPath())
-                        .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID))
-                .andRespond(withSuccess("""
-                        {
-                          "business_discovery": {
-                            "media": {
-                              "data": [{
-                                "id": "old",
-                                "timestamp": "2026-08-13T03:00:00+0000"
-                              }],
-                              "paging": {
-                                "next": "https://graph.facebook.com/v24.0/target-id/media?after=cursor"
-                              }
-                            }
-                          }
-                        }
-                        """, MediaType.APPLICATION_JSON));
+    @DisplayName("기간 외 게시물이 3개 연속이면 다음 페이지를 계속 조회한다")
+    void continueAfterThreeConsecutiveOutOfPeriodContents() {
+        String nextUrl = nextUrl("page-2");
+        expectFirstPage(List.of(
+                mediaJson("old-1", "2026-08-13T03:00:00+0000"),
+                mediaJson("old-2", "2026-08-13T02:59:00+0000"),
+                mediaJson("old-3", "2026-08-13T02:58:00+0000")), nextUrl);
+        expectNextPage(nextUrl, List.of(
+                mediaJson("current", "2026-08-13T05:00:00+0000")), null);
 
-        List<RawContent> result = client.collect(
-                "nike", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result).isEmpty();
+        assertThat(result.fetchedCount()).isEqualTo(4);
+        assertThat(result.contents()).extracting(RawContent::snsContentId)
+                .containsExactly("current");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("페이지 끝에 기간 외 게시물이 4개 연속이면 다음 페이지를 조회하지 않는다")
+    void stopAfterFourConsecutiveOutOfPeriodContents() {
+        expectFirstPage(List.of(
+                mediaJson("old-1", "2026-08-13T03:00:00+0000"),
+                mediaJson("old-2", "2026-08-13T02:59:00+0000"),
+                mediaJson("old-3", "2026-08-13T02:58:00+0000"),
+                mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(4);
+        assertThat(result.contents()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("이미 받은 페이지는 기간 외 게시물 4개 뒤까지 끝까지 확인한다")
+    void scanWholeFetchedPage() {
+        String nextUrl = nextUrl("page-2");
+        expectFirstPage(List.of(
+                mediaJson("old-1", "2026-08-13T03:00:00+0000"),
+                mediaJson("old-2", "2026-08-13T02:59:00+0000"),
+                mediaJson("old-3", "2026-08-13T02:58:00+0000"),
+                mediaJson("old-4", "2026-08-13T02:57:00+0000"),
+                mediaJson("current-1", "2026-08-13T05:00:00+0000")), nextUrl);
+        expectNextPage(nextUrl, List.of(
+                mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(6);
+        assertThat(result.contents()).extracting(RawContent::snsContentId)
+                .containsExactly("current-1", "current-2");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("기간 외 게시물 연속 횟수를 페이지 경계에서도 유지한다")
+    void carryConsecutiveCountAcrossPages() {
+        String secondPageUrl = nextUrl("page-2");
+        expectFirstPage(List.of(
+                mediaJson("old-1", "2026-08-13T03:00:00+0000"),
+                mediaJson("old-2", "2026-08-13T02:59:00+0000"),
+                mediaJson("old-3", "2026-08-13T02:58:00+0000")), secondPageUrl);
+        expectNextPage(secondPageUrl, List.of(
+                mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(4);
+        assertThat(result.contents()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("기간 내 게시물이 나오면 페이지 간 연속 횟수를 초기화한다")
+    void resetConsecutiveCountAcrossPages() {
+        String secondPageUrl = nextUrl("page-2");
+        String thirdPageUrl = nextUrl("page-3");
+        expectFirstPage(List.of(
+                mediaJson("old-1", "2026-08-13T03:00:00+0000"),
+                mediaJson("old-2", "2026-08-13T02:59:00+0000"),
+                mediaJson("old-3", "2026-08-13T02:58:00+0000")), secondPageUrl);
+        expectNextPage(secondPageUrl, List.of(
+                mediaJson("old-4", "2026-08-13T02:57:00+0000"),
+                mediaJson("current-1", "2026-08-13T05:00:00+0000")), thirdPageUrl);
+        expectNextPage(thirdPageUrl, List.of(
+                mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(6);
+        assertThat(result.contents()).extracting(RawContent::snsContentId)
+                .containsExactly("current-1", "current-2");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("페이지가 10개를 넘어도 종료 조건 전까지 계속 조회한다")
+    void collectMoreThanTenPages() {
+        for (int page = 0; page < 11; page++) {
+            String followingUrl = page == 10 ? null : nextUrl("page-" + (page + 2));
+            List<String> data = List.of(mediaJson(
+                    "current-" + page, "2026-08-13T05:00:00+0000"));
+            if (page == 0) {
+                expectFirstPage(data, followingUrl);
+            } else {
+                expectNextPage(nextUrl("page-" + (page + 1)), data, followingUrl);
+            }
+        }
+
+        ContentPlatformClient.CollectionResult result = client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
+
+        assertThat(result.fetchedCount()).isEqualTo(11);
+        assertThat(result.contents()).hasSize(11);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("같은 다음 페이지 URL이 반복되면 수집을 실패시킨다")
+    void rejectRepeatedNextUrl() {
+        String repeatedUrl = nextUrl("repeated");
+        expectFirstPage(List.of(
+                mediaJson("current-1", "2026-08-13T05:00:00+0000")), repeatedUrl);
+        expectNextPage(repeatedUrl, List.of(
+                mediaJson("current-2", "2026-08-13T04:59:00+0000")), repeatedUrl);
+
+        assertThatThrownBy(() -> client.collect(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         server.verify();
     }
 
@@ -334,5 +447,62 @@ class InstagramContentClientTest {
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         server.verify();
+    }
+
+    private void expectFirstPage(List<String> media, String nextUrl) {
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID))
+                .andRespond(withSuccess(firstPageJson(media, nextUrl),
+                        MediaType.APPLICATION_JSON));
+    }
+
+    private void expectNextPage(String requestedUrl, List<String> media, String nextUrl) {
+        server.expect(request -> assertThat(request.getURI().toString())
+                        .isEqualTo(requestedUrl))
+                .andRespond(withSuccess(nextPageJson(media, nextUrl),
+                        MediaType.APPLICATION_JSON));
+    }
+
+    private String firstPageJson(List<String> media, String nextUrl) {
+        return """
+                {
+                  "business_discovery": {
+                    "media": {
+                      "data": [%s]%s
+                    }
+                  }
+                }
+                """.formatted(String.join(",", media), pagingJson(nextUrl));
+    }
+
+    private String nextPageJson(List<String> media, String nextUrl) {
+        return """
+                {
+                  "data": [%s]%s
+                }
+                """.formatted(String.join(",", media), pagingJson(nextUrl));
+    }
+
+    private String pagingJson(String nextUrl) {
+        return nextUrl == null
+                ? ""
+                : ",\"paging\":{\"next\":\"" + nextUrl + "\"}";
+    }
+
+    private String mediaJson(String id, String timestamp) {
+        return """
+                {
+                  "id": "%s",
+                  "media_type": "IMAGE",
+                  "media_product_type": "FEED",
+                  "media_url": "https://cdn.example.com/%s.jpg",
+                  "permalink": "https://www.instagram.com/p/%s",
+                  "timestamp": "%s"
+                }
+                """.formatted(id, id, id, timestamp);
+    }
+
+    private String nextUrl(String cursor) {
+        return "https://graph.facebook.com/v24.0/target-id/media?after=" + cursor;
     }
 }

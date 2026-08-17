@@ -65,14 +65,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
     }
 
     /**
-     * channelId의 YouTube 영상 중 현재 기수 시작 시각 이후 영상 조회
+     * channelId의 YouTube 영상 중 수집 기준 시각 이후 영상 조회
      *
      * accountId: {@code UC...} 형식의 채널 ID
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime generationStartedAt) {
-        validateRequest(accountId, generationStartedAt);
+    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
+        validateRequest(accountId, collectedAfter);
 
         int fetchedCount = 0;
 
@@ -95,7 +95,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             // 신규 여부와 관계없이 API가 반환한 영상 항목 수 합산 (로깅)
             fetchedCount += page.items() == null ? 0 : page.items().size();
             boolean reachedBeforeGeneration = addGenerationContents(
-                    page.items(), generationStartedAt, contents);
+                    page.items(), collectedAfter, contents);
             if (reachedBeforeGeneration) {
                 break;
             }
@@ -109,14 +109,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
         return new CollectionResult(fetchedCount, contents);
     }
 
-    private void validateRequest(String channelId, LocalDateTime generationStartedAt) {
+    private void validateRequest(String channelId, LocalDateTime collectedAfter) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // channelId, generationStartedAt이 정상인지 확인
-        if (!StringUtils.hasText(channelId) || generationStartedAt == null) {
+        // channelId, collectedAfter가 정상인지 확인
+        if (!StringUtils.hasText(channelId) || collectedAfter == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -174,7 +174,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addGenerationContents(List<Item> items, LocalDateTime generationStartedAt,
+    private boolean addGenerationContents(List<Item> items, LocalDateTime collectedAfter,
                                           List<RawContent> contents) {
         if (items == null) {
             return false;
@@ -190,7 +190,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             hasPublishedVideo = true;
             // createdAt: YouTube 영상 공개 시각
             LocalDateTime createdAt = parseCreatedAt(item.contentDetails().videoPublishedAt());
-            if (createdAt.isBefore(generationStartedAt)) {
+            if (createdAt.isBefore(collectedAfter)) {
                 continue;
             }
             contents.add(toRawContent(item, createdAt));

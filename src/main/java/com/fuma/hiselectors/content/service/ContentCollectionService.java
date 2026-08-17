@@ -63,10 +63,13 @@ public class ContentCollectionService {
         // SNS 플랫폼별 API 클라이언트 선택
         SelectorsSnsAccount account = findAccount(selectorsSnsAccountId);
         ContentPlatformClient client = findClient(account.getSnsCode());
+        LocalDateTime collectedAfter = account.getLastCollectedAt() == null
+                ? CONTENT_COLLECTION_START_AT
+                : account.getLastCollectedAt();
 
         // 외부 API 호출
         CollectionResult collectionResult = Objects.requireNonNull(
-                client.collect(account.getAccountId(), CONTENT_COLLECTION_START_AT),
+                client.collect(account.getAccountId(), collectedAfter),
                 "콘텐츠 수집 결과는 null일 수 없습니다.");
         List<RawContent> collectedContents = collectionResult.contents();
 
