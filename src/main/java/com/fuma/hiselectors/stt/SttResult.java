@@ -11,9 +11,12 @@ public record SttResult(
         String stt,
 
         @Schema(description = "화면 텍스트(OCR). 음성과 무관한 자막·제목·그래픽. 없으면 빈 문자열")
-        String ocr) {
+        String ocr,
+
+        @Schema(description = "LLM이 같은 호출에서 뽑은 정성 분석(스타일·톤·강점·위험·브랜드 등)")
+        ContentInsight insight) {
 
     public static SttResult empty() {
-        return new SttResult("", "", "");
+        return new SttResult("", "", "", ContentInsight.empty());
     }
 }

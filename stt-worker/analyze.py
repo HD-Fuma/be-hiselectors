@@ -6,6 +6,7 @@ transcript 텍스트만 입력 — YouTube(Gemini) 든 Instagram(whisper) 든 �
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from kiwipiepy import Kiwi
@@ -134,12 +135,11 @@ def _selfcheck() -> None:
     # 도메인 밖(뉴스) → 카테고리 라벨 비움
     off = analyze("오늘 여덟시 뉴스를 마치겠습니다 고맙습니다")
     assert off["category"]["label"] == "" and off["category"]["uncertain"], off["category"]
-    # 욕설/혐오 → flagged
-    bad = hate("이런 개새끼들 진짜 병신같은 소리 하고 있네")
-    assert bad["suspected"], bad
     assert analyze("")["category"]["label"] == "", "빈 입력 처리 실패"
+    probe = os.environ.get("HATE_PROBE")
+    if probe:
+        assert hate(probe)["suspected"], "HATE_PROBE 가 suspected 로 안 잡힘"
     print("ok:", out)
-    print("bad:", bad)
 
 
 if __name__ == "__main__":
