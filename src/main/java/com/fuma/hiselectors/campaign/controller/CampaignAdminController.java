@@ -1,9 +1,11 @@
 package com.fuma.hiselectors.campaign.controller;
 
 import com.fuma.hiselectors.campaign.dto.CampaignCreateRequest;
+import com.fuma.hiselectors.campaign.dto.CampaignParticipantResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignUpdateRequest;
 import com.fuma.hiselectors.campaign.service.CampaignAdminService;
+import com.fuma.hiselectors.campaign.service.CampaignParticipantService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CampaignAdminController {
 
     private final CampaignAdminService campaignAdminService;
+    private final CampaignParticipantService campaignParticipantService;
 
     @GetMapping
     public ResponseEntity<Page<CampaignResponse>> search(
@@ -42,6 +45,12 @@ public class CampaignAdminController {
     @GetMapping("/{campaignId}")
     public ResponseEntity<CampaignResponse> findOne(@PathVariable Long campaignId) {
         return ResponseEntity.ok(campaignAdminService.findOne(campaignId));
+    }
+
+    @GetMapping("/{campaignId}/participants")
+    public ResponseEntity<Page<CampaignParticipantResponse>> findParticipants(@PathVariable Long campaignId,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(campaignParticipantService.findParticipants(campaignId, pageable));
     }
 
     @PostMapping

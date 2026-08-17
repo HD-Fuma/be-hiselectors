@@ -72,4 +72,8 @@ public class Campaign extends BaseTimeEntity {
     public void softDelete() {
         this.isDeleted = true;
     }
+
+    public void synchronizeStatus(CampaignStatus status) {
+        this.status = status;
+    }
 }
