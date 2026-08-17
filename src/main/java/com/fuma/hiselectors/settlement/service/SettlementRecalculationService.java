@@ -6,7 +6,6 @@ import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.dto.SettlementRecalculationResponse;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -23,12 +22,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SettlementRecalculationService {
 
-    private static final int FINALIZATION_START_DAY = 22;
-
     private final SelectorsRepository selectorsRepository;
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementCalculationWorker settlementCalculationWorker;
+    private final SettlementSchedulePolicy settlementSchedulePolicy;
     private final Clock clock;
 
     public SettlementRecalculationResponse recalculate(
@@ -39,41 +37,40 @@ public class SettlementRecalculationService {
     public SettlementRecalculationResponse recalculate(
             YearMonth requestedMonth, Long requestedSelectorsId, boolean forcePaymentPendingRecalculation) {
         LocalDate today = LocalDate.now(clock);
-        List<YearMonth> settlementMonths = resolveSettlementMonths(requestedMonth, today);
+        List<YearMonth> activityMonths = resolveActivityMonths(requestedMonth, today);
         List<Long> selectorsIds = resolveSelectors(requestedSelectorsId);
         RecalculationCounts counts = new RecalculationCounts();
 
-        for (YearMonth settlementMonth : settlementMonths) {
-            boolean finalizeSettlement = shouldFinalize(settlementMonth, today);
+        for (YearMonth activityMonth : activityMonths) {
+            boolean finalizeSettlement = shouldFinalize(activityMonth, today);
             for (Long selectorsId : selectorsIds) {
                 try {
                     SettlementCalculationResult result = settlementCalculationWorker.calculate(
                             selectorsId,
-                            settlementMonth,
-                            SettlementSourceCode.DAILY_BATCH,
+                            activityMonth,
                             finalizeSettlement,
                             forcePaymentPendingRecalculation);
                     counts.add(result.outcome());
                 } catch (RuntimeException e) {
                     counts.failedCount++;
                     log.error(
-                            "관리자 정산 재계산 실패: selectorsId={}, settlementMonth={}",
+                            "관리자 정산 재계산 실패: selectorsId={}, activityMonth={}",
                             selectorsId,
-                            settlementMonth,
+                            activityMonth,
                             e);
                 }
             }
         }
 
-        YearMonth startMonth = settlementMonths.isEmpty() ? null : settlementMonths.getFirst();
-        YearMonth endMonth = settlementMonths.isEmpty() ? null : settlementMonths.getLast();
+        YearMonth startMonth = activityMonths.isEmpty() ? null : activityMonths.getFirst();
+        YearMonth endMonth = activityMonths.isEmpty() ? null : activityMonths.getLast();
         return new SettlementRecalculationResponse(
                 requestedSelectorsId,
                 requestedMonth,
                 startMonth,
                 endMonth,
                 selectorsIds.size(),
-                settlementMonths.size(),
+                activityMonths.size(),
                 counts.createdCount,
                 counts.updatedCount,
                 counts.finalizedCount,
@@ -91,7 +88,7 @@ public class SettlementRecalculationService {
         return List.of(requestedSelectorsId);
     }
 
-    private List<YearMonth> resolveSettlementMonths(YearMonth requestedMonth, LocalDate today) {
+    private List<YearMonth> resolveActivityMonths(YearMonth requestedMonth, LocalDate today) {
         YearMonth previousMonth = YearMonth.from(today).minusMonths(1);
         if (requestedMonth != null) {
             if (requestedMonth.isAfter(previousMonth)) {
@@ -100,7 +97,7 @@ public class SettlementRecalculationService {
             return List.of(requestedMonth);
         }
 
-        YearMonth earliestMonth = earliestSettlementMonth();
+        YearMonth earliestMonth = earliestActivityMonth();
         if (earliestMonth == null || earliestMonth.isAfter(previousMonth)) {
             return List.of();
         }
@@ -112,10 +109,10 @@ public class SettlementRecalculationService {
         return months;
     }
 
-    private YearMonth earliestSettlementMonth() {
+    private YearMonth earliestActivityMonth() {
         LocalDateTime earliestPurchasedAt = purchaseHistoryRepository
                 .findEarliestPurchasedAtByStatus(PurchaseStatus.PURCHASE_CONFIRMED);
-        LocalDateTime earliestHistoryMonth = settlementHistoryRepository.findEarliestSettlementMonth();
+        LocalDateTime earliestHistoryMonth = settlementHistoryRepository.findEarliestActivityMonth();
         if (earliestPurchasedAt == null) {
             return toYearMonth(earliestHistoryMonth);
         }
@@ -129,10 +126,8 @@ public class SettlementRecalculationService {
         return value == null ? null : YearMonth.from(value);
     }
 
-    private boolean shouldFinalize(YearMonth settlementMonth, LocalDate today) {
-        LocalDate finalizationDate = settlementMonth.plusMonths(1)
-                .atDay(FINALIZATION_START_DAY);
-        return !today.isBefore(finalizationDate);
+    private boolean shouldFinalize(YearMonth activityMonth, LocalDate today) {
+        return !today.isBefore(settlementSchedulePolicy.finalizationDate(activityMonth));
     }
 
     private static final class RecalculationCounts {

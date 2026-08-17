@@ -9,6 +9,7 @@ import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -34,35 +35,59 @@ public class SettlementPaymentWorker {
             return PaymentOutcome.SKIPPED;
         }
 
-        Selectors selectors = selectorsRepository.findById(history.getSelectorsId()).orElse(null);
-        SettlementAccount account = selectors == null ? null
-                : settlementAccountRepository
-                        .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(
-                                history.getSelectorsId())
-                        .orElse(null);
+        Selectors selectors = findSelectors(history.getSelectorsId()).orElse(null);
+        SettlementAccount account = findAccount(history.getSelectorsId()).orElse(null);
         LocalDateTime processedAt = LocalDateTime.now(clock);
 
-        if (isPaymentHold(selectors, account)) {
-            history.transitionTo(SettlementStatus.PAYMENT_HOLD, processedAt);
-            return PaymentOutcome.HELD;
+        if (isBlacklisted(selectors)) {
+            history.transitionTo(SettlementStatus.PAYMENT_HOLD_BLACK, processedAt);
+            return PaymentOutcome.HELD_BLACK;
+        }
+        if (isSettlementAccountMissing(account)) {
+            history.transitionTo(SettlementStatus.PAYMENT_HOLD_INFO, processedAt);
+            return PaymentOutcome.HELD_INFO;
         }
 
         history.transitionTo(SettlementStatus.SETTLED, processedAt);
         return PaymentOutcome.SETTLED;
     }
 
-    private boolean isPaymentHold(Selectors selectors, SettlementAccount account) {
-        return selectors == null
-                || BLACKLIST_ROLE.equalsIgnoreCase(selectors.getSelectorsRoleId())
-                || isSettlementAccountMissing(account);
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean reopenIfResolved(Long settlementId) {
+        SettlementHistory history = settlementHistoryRepository.findByIdForUpdate(settlementId)
+                .orElse(null);
+        if (history == null || (history.getStatus() != SettlementStatus.PAYMENT_HOLD_INFO
+                && history.getStatus() != SettlementStatus.PAYMENT_HOLD_BLACK)) {
+            return false;
+        }
+
+        Selectors selectors = findSelectors(history.getSelectorsId()).orElse(null);
+        SettlementAccount account = findAccount(history.getSelectorsId()).orElse(null);
+        if (isBlacklisted(selectors) || isSettlementAccountMissing(account)) {
+            return false;
+        }
+        history.reopenFromPaymentHold();
+        return true;
+    }
+
+    private Optional<Selectors> findSelectors(Long selectorsId) {
+        return selectorsRepository.findById(selectorsId);
+    }
+
+    private Optional<SettlementAccount> findAccount(Long selectorsId) {
+        return settlementAccountRepository
+                .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectorsId);
+    }
+
+    private boolean isBlacklisted(Selectors selectors) {
+        return selectors == null || BLACKLIST_ROLE.equalsIgnoreCase(selectors.getSelectorsRoleId());
     }
 
     private boolean isSettlementAccountMissing(SettlementAccount account) {
         return account == null
                 || isBlank(account.getBankName())
                 || isBlank(account.getAccountNumber())
-                || isBlank(account.getAccountHolder())
-                || isBlank(account.getBusinessNumber());
+                || isBlank(account.getAccountHolder());
     }
 
     private boolean isBlank(String value) {
@@ -71,7 +96,8 @@ public class SettlementPaymentWorker {
 
     public enum PaymentOutcome {
         SETTLED,
-        HELD,
+        HELD_INFO,
+        HELD_BLACK,
         SKIPPED
     }
 }

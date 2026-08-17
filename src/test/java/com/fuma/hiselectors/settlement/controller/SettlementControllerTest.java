@@ -4,7 +4,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,7 +11,6 @@ import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementHistoryListResponse;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.service.SettlementEstimateService;
 import java.math.BigDecimal;
@@ -44,27 +42,17 @@ class SettlementControllerTest {
                 .thenReturn(response());
 
         mockMvc.perform(get("/api/settlements/estimates")
-                        .param("month", "2026-07")
+                        .param("activityMonth", "2026-07")
                         .principal(() -> "selector-user"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.settlementMonth").value("2026-07"))
-                .andExpect(jsonPath("$.data.commissionRate").value(3.00))
-                .andExpect(jsonPath("$.data.estimatedCommission").value(300));
+                .andExpect(jsonPath("$.data.activityMonth").value("2026-07"))
+                .andExpect(jsonPath("$.data.settlementMonth").value("2026-08"))
+                .andExpect(jsonPath("$.data.paymentMonth").value("2026-09"))
+                .andExpect(jsonPath("$.data.settlementRate").value(3.00))
+                .andExpect(jsonPath("$.data.settlementAmount").value(300));
 
         verify(settlementEstimateService)
                 .getEstimate("selector-user", YearMonth.of(2026, 7));
-    }
-
-    @Test
-    void refreshesPreviousMonthExplicitly() throws Exception {
-        when(settlementEstimateService.refreshPreviousMonth("selector-user"))
-                .thenReturn(response());
-
-        mockMvc.perform(post("/api/settlements/estimates/refresh")
-                        .principal(() -> "selector-user"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.settlementSourceCode")
-                        .value("USER_REFRESH"));
     }
 
     @Test
@@ -79,7 +67,7 @@ class SettlementControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.selectedYear").value(2026))
                 .andExpect(jsonPath("$.data.availableYears[0]").value(2026))
-                .andExpect(jsonPath("$.data.histories[0].settlementMonth").value("2026-07"));
+                .andExpect(jsonPath("$.data.histories[0].activityMonth").value("2026-07"));
 
         verify(settlementEstimateService).getHistories("selector-user", 2026);
     }
@@ -104,12 +92,13 @@ class SettlementControllerTest {
                 "SELECTORS-1",
                 "셀렉터스",
                 YearMonth.of(2026, 7),
+                YearMonth.of(2026, 8),
+                YearMonth.of(2026, 9),
                 2L,
                 10_000L,
                 new BigDecimal("3.00"),
                 300L,
                 SettlementStatus.CALCULATING,
-                SettlementSourceCode.USER_REFRESH,
                 LocalDateTime.of(2026, 8, 10, 3, 0),
                 LocalDateTime.of(2026, 8, 10, 3, 0));
     }

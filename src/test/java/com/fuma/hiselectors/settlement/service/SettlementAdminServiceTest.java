@@ -17,7 +17,6 @@ import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.math.BigDecimal;
@@ -44,15 +43,15 @@ class SettlementAdminServiceTest {
         Pageable pageable = PageRequest.of(0, 12);
 
         when(selectorsRepository.findById(15L)).thenReturn(Optional.of(selectors));
-        when(historyRepository.findAllBySelectorsIdOrderBySettlementMonthDesc(15L, pageable))
+        when(historyRepository.findAllBySelectorsIdOrderByActivityMonthDesc(15L, pageable))
                 .thenReturn(new PageImpl<>(List.of(history), pageable, 1));
 
         var result = service.getHistories(15L, pageable);
 
         assertThat(result).hasSize(1);
         assertThat(result.getContent().getFirst().selectorsCode()).isEqualTo("SEL-0015");
-        assertThat(result.getContent().getFirst().settlementMonth()).isEqualTo(java.time.YearMonth.of(2026, 7));
-        verify(historyRepository).findAllBySelectorsIdOrderBySettlementMonthDesc(15L, pageable);
+        assertThat(result.getContent().getFirst().activityMonth()).isEqualTo(java.time.YearMonth.of(2026, 7));
+        verify(historyRepository).findAllBySelectorsIdOrderByActivityMonthDesc(15L, pageable);
     }
 
     @Test
@@ -106,12 +105,12 @@ class SettlementAdminServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0))).thenReturn(2L);
         when(historyRepository.sumCommissionBySelectorsIdAndStatus(15L, SettlementStatus.SETTLED))
                 .thenReturn(1_500L);
-        when(historyRepository.findBySelectorsIdAndSettlementMonthAndStatusIn(
+        when(historyRepository.findBySelectorsIdAndActivityMonthAndStatusIn(
                 15L,
                 LocalDateTime.of(2026, 6, 1, 0, 0),
                 List.of(SettlementStatus.CALCULATING, SettlementStatus.PAYMENT_PENDING)))
                 .thenReturn(Optional.of(nextPaymentHistory));
-        when(historyRepository.findAllBySelectorsIdOrderBySettlementMonthDesc(15L, pageable))
+        when(historyRepository.findAllBySelectorsIdOrderByActivityMonthDesc(15L, pageable))
                 .thenReturn(new PageImpl<>(List.of(nextPaymentHistory), pageable, 1));
 
         var result = service.getDetail(15L, pageable);
@@ -155,7 +154,6 @@ class SettlementAdminServiceTest {
                 2L,
                 new BigDecimal("3.00"),
                 300L,
-                SettlementSourceCode.DAILY_BATCH,
                 LocalDateTime.of(2026, 8, 1, 3, 0));
         return history;
     }

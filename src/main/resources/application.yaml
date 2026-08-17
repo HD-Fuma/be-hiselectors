@@ -90,5 +90,11 @@ settlement:
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
   estimate:
     cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}
+  finalization:
+    cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
   payment:
-    cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 20 * *}
+    cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+  expiry:
+    cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
+  notification:
+    sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}

@@ -13,7 +13,6 @@ import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.settlement.dto.SelectorSettlementDetailResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.service.SettlementAdminService;
 import java.math.BigDecimal;
@@ -50,7 +49,7 @@ class SettlementAdminHistoryControllerTest {
 
         mockMvc.perform(get("/api/admin/settlements/selectors/15/histories"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[0].settlementMonth").value("2026-07"))
+                .andExpect(jsonPath("$.data.content[0].activityMonth").value("2026-07"))
                 .andExpect(jsonPath("$.data.content[0].confirmedPurchaseCount").value(2))
                 .andExpect(jsonPath("$.data.content[0].status").value("PAYMENT_PENDING"));
 
@@ -58,8 +57,8 @@ class SettlementAdminHistoryControllerTest {
                 eq(15L),
                 argThat(pageable -> pageable.getPageNumber() == 0
                         && pageable.getPageSize() == 12
-                        && pageable.getSort().getOrderFor("settlementMonth") != null
-                        && pageable.getSort().getOrderFor("settlementMonth").isDescending()));
+                        && pageable.getSort().getOrderFor("activityMonth") != null
+                        && pageable.getSort().getOrderFor("activityMonth").isDescending()));
     }
 
     @Test
@@ -75,14 +74,14 @@ class SettlementAdminHistoryControllerTest {
                         .value(11))
                 .andExpect(jsonPath("$.data.settlementSummary.nextMonthScheduledCommission")
                         .value(300))
-                .andExpect(jsonPath("$.data.histories.content[0].settlementMonth").value("2026-07"));
+                .andExpect(jsonPath("$.data.histories.content[0].activityMonth").value("2026-07"));
 
         verify(settlementAdminService).getDetail(
                 eq(15L),
                 argThat(pageable -> pageable.getPageNumber() == 0
                         && pageable.getPageSize() == 12
-                        && pageable.getSort().getOrderFor("settlementMonth") != null
-                        && pageable.getSort().getOrderFor("settlementMonth").isDescending()));
+                        && pageable.getSort().getOrderFor("activityMonth") != null
+                        && pageable.getSort().getOrderFor("activityMonth").isDescending()));
     }
 
     private SelectorSettlementDetailResponse detailResponse() {
@@ -114,12 +113,13 @@ class SettlementAdminHistoryControllerTest {
                 "SEL-0015",
                 "박도윤",
                 YearMonth.of(2026, 7),
+                YearMonth.of(2026, 8),
+                YearMonth.of(2026, 9),
                 2L,
                 10_000L,
                 new BigDecimal("3.00"),
                 300L,
                 SettlementStatus.PAYMENT_PENDING,
-                SettlementSourceCode.DAILY_BATCH,
                 LocalDateTime.of(2026, 8, 1, 3, 0),
                 LocalDateTime.of(2026, 8, 1, 3, 0));
     }
