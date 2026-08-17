@@ -54,10 +54,12 @@ final class SelectorsUrlEvidenceExtractor {
                 continue;
             }
             matched.add(candidate);
-            if (!terminalDotSegment && isTrusted(candidate)) {
+            if (isTrusted(candidate)) {
                 trusted.add(candidate);
-                classifyProductUrl(candidate, evidence, referralCodes);
-                classifySelectorsShopUrl(candidate, evidence, referralCodes);
+                if (!terminalDotSegment) {
+                    classifyProductUrl(candidate, evidence, referralCodes);
+                    classifySelectorsShopUrl(candidate, evidence, referralCodes);
+                }
             }
             spans.add(new int[] {matcher.start(), matcher.start() + candidate.length()});
         }

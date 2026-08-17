@@ -107,6 +107,9 @@ class SelectorsUrlEvidenceExtractorTest {
 
         assertThat(result.evidence()).isEmpty();
         assertThat(result.referralCodes()).isEmpty();
+        assertThat(result.trustedUrls()).containsExactly(
+                "https://hi.thehyundai.com/sellectors/67/",
+                "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/");
     }
 
     @Test
