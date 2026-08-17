@@ -27,7 +27,7 @@ final class SelectorsUrlEvidenceExtractor {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern SELECTORS_GROUP_PATH = Pattern.compile(
-            "^/sellectors/([A-Za-z0-9_-]{1,100})/?$"
+            "^/sellectors/([A-Za-z0-9_-]{1,100})/?$", Pattern.CASE_INSENSITIVE
     );
     private static final Pattern REFERRAL_CODE = Pattern.compile(
             "RC[0-9]{9}T", Pattern.CASE_INSENSITIVE
@@ -47,12 +47,14 @@ final class SelectorsUrlEvidenceExtractor {
         Set<String> referralCodes = new TreeSet<>();
         List<int[]> spans = new ArrayList<>();
         while (matcher.find()) {
-            String candidate = stripTrailingPunctuation(matcher.group());
+            String rawCandidate = matcher.group();
+            boolean terminalDotSegment = hasTerminalDotSegment(rawCandidate);
+            String candidate = stripTrailingPunctuation(rawCandidate);
             if (candidate.isEmpty()) {
                 continue;
             }
             matched.add(candidate);
-            if (isTrusted(candidate)) {
+            if (!terminalDotSegment && isTrusted(candidate)) {
                 trusted.add(candidate);
                 classifyProductUrl(candidate, evidence, referralCodes);
                 classifySelectorsShopUrl(candidate, evidence, referralCodes);
@@ -130,6 +132,29 @@ final class SelectorsUrlEvidenceExtractor {
         } catch (URISyntaxException | IllegalArgumentException ignored) {
             // The URL was already trusted, but leave classification conservative if parsing changes.
         }
+    }
+
+    private static boolean hasTerminalDotSegment(String candidate) {
+        for (int slash = 0; slash + 1 < candidate.length(); slash++) {
+            if (candidate.charAt(slash) != '/' || candidate.charAt(slash + 1) != '.') {
+                continue;
+            }
+            int suffixStart = slash + 2;
+            if (suffixStart < candidate.length() && candidate.charAt(suffixStart) == '.') {
+                suffixStart++;
+            }
+            boolean punctuationOnly = true;
+            for (int index = suffixStart; index < candidate.length(); index++) {
+                if (TRAILING_PUNCTUATION.indexOf(candidate.charAt(index)) < 0) {
+                    punctuationOnly = false;
+                    break;
+                }
+            }
+            if (punctuationOnly) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String stripTrailingPunctuation(String candidate) {

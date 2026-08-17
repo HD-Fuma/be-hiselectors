@@ -91,6 +91,34 @@ class SelectorsUrlEvidenceExtractorTest {
     }
 
     @Test
+    void recognizesShortSelectorsRouteKeywordCaseInsensitively() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/SELLECTORS/67");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_SHOP_URL);
+        assertThat(result.referralCodes()).isEmpty();
+    }
+
+    @Test
+    void rejectsTerminalDotSegmentsBeforePunctuationStripping() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/sellectors/67/. "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/..);");
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.referralCodes()).isEmpty();
+    }
+
+    @Test
+    void keepsNormalSentencePunctuationOutsideAValidShortRoute() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/sellectors/67.");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_SHOP_URL);
+        assertThat(result.textWithoutUrls()).endsWith(".");
+    }
+
+    @Test
     void rejectsMalformedSelectorsShopAndGroupPaths() {
         String longId = "a".repeat(101);
         String longGroupId = "b".repeat(101);
