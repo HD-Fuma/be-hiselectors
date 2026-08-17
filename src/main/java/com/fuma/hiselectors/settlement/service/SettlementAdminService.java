@@ -47,11 +47,11 @@ public class SettlementAdminService {
             Long selectorsId,
             SettlementStatus status,
             Pageable pageable) {
-        YearMonth settlementMonth = requestedMonth == null
+        YearMonth activityMonth = requestedMonth == null
                 ? YearMonth.from(LocalDate.now(clock)).minusMonths(1)
                 : requestedMonth;
         Page<SettlementHistory> histories = settlementHistoryRepository.search(
-                settlementMonth.atDay(1).atStartOfDay(), selectorsId, status, pageable);
+                activityMonth.atDay(1).atStartOfDay(), selectorsId, status, pageable);
         Map<Long, Selectors> selectorsById = selectorsRepository
                 .findAllById(histories.stream().map(SettlementHistory::getSelectorsId).toList())
                 .stream()
@@ -77,11 +77,11 @@ public class SettlementAdminService {
                 .orElse(null);
         YearMonth currentMonth = YearMonth.from(LocalDate.now(clock));
         YearMonth paymentMonth = currentMonth;
-        YearMonth payableSettlementMonth = currentMonth.minusMonths(2);
+        YearMonth payableActivityMonth = currentMonth.minusMonths(2);
         SettlementHistory nextPaymentHistory = settlementHistoryRepository
-                .findBySelectorsIdAndSettlementMonthAndStatusIn(
+                .findBySelectorsIdAndActivityMonthAndStatusIn(
                         selectorsId,
-                        payableSettlementMonth.atDay(1).atStartOfDay(),
+                        payableActivityMonth.atDay(1).atStartOfDay(),
                         NEXT_PAYMENT_ELIGIBLE_STATUSES)
                 .orElse(null);
 
@@ -99,7 +99,7 @@ public class SettlementAdminService {
                                 selectorsId, SettlementStatus.SETTLED),
                         currentMonthPurchaseConversionCount,
                         currentMonth,
-                        nextPaymentHistory == null ? 0L : nextPaymentHistory.getCommission(),
+                        nextPaymentHistory == null ? 0L : nextPaymentHistory.getSettlementAmount(),
                         paymentMonth,
                         nextPaymentHistory == null ? null : nextPaymentHistory.getStatus());
 
@@ -110,7 +110,7 @@ public class SettlementAdminService {
     private Page<SettlementEstimateResponse> getHistories(
             Long selectorsId, Selectors selectors, Pageable pageable) {
         return settlementHistoryRepository
-                .findAllBySelectorsIdOrderBySettlementMonthDesc(selectorsId, pageable)
+                .findAllBySelectorsIdOrderByActivityMonthDesc(selectorsId, pageable)
                 .map(history -> SettlementEstimateResponse.of(history, selectors));
     }
 

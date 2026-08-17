@@ -10,7 +10,6 @@ import com.fuma.hiselectors.purchase.repository.PurchaseSettlementSummary;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.math.BigDecimal;
@@ -39,25 +38,23 @@ public class SettlementCalculationWorker {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SettlementCalculationResult calculate(
             Long selectorsId,
-            YearMonth settlementMonth,
-            SettlementSourceCode sourceCode,
+            YearMonth activityMonth,
             boolean finalizeSettlement) {
-        return calculate(selectorsId, settlementMonth, sourceCode, finalizeSettlement, false);
+        return calculate(selectorsId, activityMonth, finalizeSettlement, false);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SettlementCalculationResult calculate(
             Long selectorsId,
-            YearMonth settlementMonth,
-            SettlementSourceCode sourceCode,
+            YearMonth activityMonth,
             boolean finalizeSettlement,
             boolean forcePaymentPendingRecalculation) {
         Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-        LocalDateTime monthStart = settlementMonth.atDay(1).atStartOfDay();
+        LocalDateTime monthStart = activityMonth.atDay(1).atStartOfDay();
 
         SettlementHistory history = settlementHistoryRepository
-                .findBySelectorsIdAndSettlementMonth(selectorsId, monthStart)
+                .findBySelectorsIdAndActivityMonth(selectorsId, monthStart)
                 .orElse(null);
         if (history != null && !history.isCalculating()) {
             if (forcePaymentPendingRecalculation
@@ -70,11 +67,11 @@ public class SettlementCalculationWorker {
         }
 
         Application application = requireRateSource(selectors);
-        PurchaseSummary summary = summarizePurchases(selectorsId, settlementMonth);
+        PurchaseSummary summary = summarizePurchases(selectorsId, activityMonth);
         long totalSales = requireWholeWon(summary.totalSales());
-        BigDecimal commissionRate = commissionRateCalculator.calculate(
+        BigDecimal settlementRate = commissionRateCalculator.calculate(
                 application.getSnsCode(), application.getFollowerCount());
-        long commission = calculateCommission(totalSales, commissionRate);
+        long settlementAmount = calculateSettlementAmount(totalSales, settlementRate);
         LocalDateTime now = LocalDateTime.now(clock);
 
         boolean created = history == null;
@@ -84,9 +81,8 @@ public class SettlementCalculationWorker {
         history.updateCalculation(
                 totalSales,
                 summary.confirmedPurchaseCount(),
-                commissionRate,
-                commission,
-                sourceCode,
+                settlementRate,
+                settlementAmount,
                 now);
 
         SettlementCalculationOutcome outcome = created
@@ -108,9 +104,9 @@ public class SettlementCalculationWorker {
                         ErrorCode.SETTLEMENT_RATE_SOURCE_NOT_FOUND));
     }
 
-    private PurchaseSummary summarizePurchases(Long selectorsId, YearMonth settlementMonth) {
-        LocalDateTime startInclusive = settlementMonth.atDay(1).atStartOfDay();
-        LocalDateTime endExclusive = settlementMonth.plusMonths(1).atDay(1).atStartOfDay();
+    private PurchaseSummary summarizePurchases(Long selectorsId, YearMonth activityMonth) {
+        LocalDateTime startInclusive = activityMonth.atDay(1).atStartOfDay();
+        LocalDateTime endExclusive = activityMonth.plusMonths(1).atDay(1).atStartOfDay();
         PurchaseSettlementSummary result = purchaseHistoryRepository
                 .summarizeConfirmedPurchasesForActivityMonth(
                 selectorsId,
@@ -134,7 +130,7 @@ public class SettlementCalculationWorker {
         }
     }
 
-    private long calculateCommission(long totalSales, BigDecimal rate) {
+    private long calculateSettlementAmount(long totalSales, BigDecimal rate) {
         return BigDecimal.valueOf(totalSales)
                 .multiply(rate)
                 .divide(ONE_HUNDRED, 0, RoundingMode.FLOOR)

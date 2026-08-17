@@ -20,28 +20,36 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
     @Query("select h from SettlementHistory h where h.id = :settlementId")
     Optional<SettlementHistory> findByIdForUpdate(@Param("settlementId") Long settlementId);
 
-    Optional<SettlementHistory> findBySelectorsIdAndSettlementMonth(
-            Long selectorsId, LocalDateTime settlementMonth);
+    Optional<SettlementHistory> findBySelectorsIdAndActivityMonth(
+            Long selectorsId, LocalDateTime activityMonth);
 
-    List<SettlementHistory> findAllBySettlementMonthAndStatus(
-            LocalDateTime settlementMonth, SettlementStatus status);
+    List<SettlementHistory> findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
+            SettlementStatus status, LocalDateTime activityMonth);
 
-    Page<SettlementHistory> findAllBySelectorsIdOrderBySettlementMonthDesc(
+    List<SettlementHistory> findAllByStatusIn(Collection<SettlementStatus> statuses);
+
+    List<SettlementHistory> findAllByStatusInAndUpdatedAtLessThanEqual(
+            Collection<SettlementStatus> statuses, LocalDateTime updatedAt);
+
+    List<SettlementHistory> findAllBySelectorsIdAndStatus(
+            Long selectorsId, SettlementStatus status);
+
+    Page<SettlementHistory> findAllBySelectorsIdOrderByActivityMonthDesc(
             Long selectorsId, Pageable pageable);
 
-    List<SettlementHistory> findAllBySelectorsIdAndSettlementMonthGreaterThanEqualAndSettlementMonthLessThanOrderBySettlementMonthDesc(
+    List<SettlementHistory> findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
             Long selectorsId, LocalDateTime startMonth, LocalDateTime endMonth);
 
     @Query("""
-            select distinct year(h.settlementMonth)
+            select distinct year(h.activityMonth)
             from SettlementHistory h
             where h.selectorsId = :selectorsId
-            order by year(h.settlementMonth) desc
+            order by year(h.activityMonth) desc
             """)
     List<Integer> findAvailableYearsBySelectorsId(@Param("selectorsId") Long selectorsId);
 
     @Query("""
-            select coalesce(sum(h.commission), 0)
+            select coalesce(sum(h.settlementAmount), 0)
             from SettlementHistory h
             where h.selectorsId = :selectorsId
               and h.status = :status
@@ -54,26 +62,26 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             select h
             from SettlementHistory h
             where h.selectorsId = :selectorsId
-              and h.settlementMonth = :settlementMonth
+              and h.activityMonth = :activityMonth
               and h.status in :statuses
             """)
-    Optional<SettlementHistory> findBySelectorsIdAndSettlementMonthAndStatusIn(
+    Optional<SettlementHistory> findBySelectorsIdAndActivityMonthAndStatusIn(
             @Param("selectorsId") Long selectorsId,
-            @Param("settlementMonth") LocalDateTime settlementMonth,
+            @Param("activityMonth") LocalDateTime activityMonth,
             @Param("statuses") Collection<SettlementStatus> statuses);
 
-    @Query("select min(h.settlementMonth) from SettlementHistory h")
-    LocalDateTime findEarliestSettlementMonth();
+    @Query("select min(h.activityMonth) from SettlementHistory h")
+    LocalDateTime findEarliestActivityMonth();
 
     @Query("""
             select h
             from SettlementHistory h
-            where h.settlementMonth = :settlementMonth
+            where h.activityMonth = :activityMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
             """)
     Page<SettlementHistory> search(
-            @Param("settlementMonth") LocalDateTime settlementMonth,
+            @Param("activityMonth") LocalDateTime activityMonth,
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status,
             Pageable pageable);

@@ -16,7 +16,7 @@ class SettlementHistoryTest {
         SettlementHistory history = calculatedHistory();
 
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
-        history.transitionTo(SettlementStatus.PAYMENT_HOLD, LocalDateTime.now());
+        history.transitionTo(SettlementStatus.PAYMENT_HOLD_INFO, LocalDateTime.now());
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
         LocalDateTime settledAt = LocalDateTime.of(2026, 9, 20, 10, 0);
         history.transitionTo(SettlementStatus.SETTLED, settledAt);
@@ -30,7 +30,7 @@ class SettlementHistoryTest {
         SettlementHistory history = calculatedHistory();
 
         assertThatThrownBy(() -> history.transitionTo(
-                SettlementStatus.PAYMENT_HOLD, LocalDateTime.now()))
+                SettlementStatus.PAYMENT_HOLD_INFO, LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
@@ -43,13 +43,13 @@ class SettlementHistoryTest {
         history.transitionTo(SettlementStatus.SETTLED, LocalDateTime.now());
 
         assertThatThrownBy(() -> history.transitionTo(
-                SettlementStatus.PAYMENT_HOLD, LocalDateTime.now()))
+                SettlementStatus.PAYMENT_HOLD_INFO, LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
         assertThatThrownBy(() -> history.updateCalculation(
                 100L, 1L, new BigDecimal("3.00"), 3L,
-                SettlementSourceCode.DAILY_BATCH, LocalDateTime.now()))
+                LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class);
     }
 
@@ -61,7 +61,6 @@ class SettlementHistoryTest {
                 2L,
                 new BigDecimal("3.00"),
                 300L,
-                SettlementSourceCode.DAILY_BATCH,
                 LocalDateTime.of(2026, 8, 1, 3, 0));
         return history;
     }

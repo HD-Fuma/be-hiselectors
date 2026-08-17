@@ -32,9 +32,15 @@ public class SettlementHistory extends BaseTimeEntity {
     private static final Map<SettlementStatus, Set<SettlementStatus>> ALLOWED_TRANSITIONS = Map.of(
             SettlementStatus.CALCULATING, EnumSet.of(SettlementStatus.PAYMENT_PENDING),
             SettlementStatus.PAYMENT_PENDING, EnumSet.of(
-                    SettlementStatus.PAYMENT_HOLD, SettlementStatus.SETTLED),
-            SettlementStatus.PAYMENT_HOLD, EnumSet.of(SettlementStatus.PAYMENT_PENDING),
-            SettlementStatus.SETTLED, Set.of()
+                    SettlementStatus.PAYMENT_HOLD_INFO,
+                    SettlementStatus.PAYMENT_HOLD_BLACK,
+                    SettlementStatus.SETTLED),
+            SettlementStatus.PAYMENT_HOLD_INFO, EnumSet.of(
+                    SettlementStatus.PAYMENT_PENDING, SettlementStatus.EXPIRED),
+            SettlementStatus.PAYMENT_HOLD_BLACK, EnumSet.of(
+                    SettlementStatus.PAYMENT_PENDING, SettlementStatus.EXPIRED),
+            SettlementStatus.SETTLED, Set.of(),
+            SettlementStatus.EXPIRED, Set.of()
     );
 
     @Id
@@ -50,16 +56,16 @@ public class SettlementHistory extends BaseTimeEntity {
     private SettlementStatus status;
 
     @Column(name = "settlement_month", nullable = false)
-    private LocalDateTime settlementMonth;
+    private LocalDateTime activityMonth;
 
     @Column(name = "total_sales", nullable = false)
     private Long totalSales;
 
-    @Column(nullable = false)
-    private Long commission;
+    @Column(name = "commission", nullable = false)
+    private Long settlementAmount;
 
     @Column(name = "commission_rate", precision = 5, scale = 2)
-    private BigDecimal commissionRate;
+    private BigDecimal settlementRate;
 
     @Column(name = "confirmed_purchase_count")
     private Long confirmedPurchaseCount;
@@ -70,13 +76,13 @@ public class SettlementHistory extends BaseTimeEntity {
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
 
-    public static SettlementHistory create(Long selectorsId, LocalDateTime settlementMonth) {
+    public static SettlementHistory create(Long selectorsId, LocalDateTime activityMonth) {
         SettlementHistory history = new SettlementHistory();
         history.selectorsId = selectorsId;
-        history.settlementMonth = settlementMonth;
+        history.activityMonth = activityMonth;
         history.status = SettlementStatus.CALCULATING;
         history.totalSales = 0L;
-        history.commission = 0L;
+        history.settlementAmount = 0L;
         history.confirmedPurchaseCount = 0L;
         return history;
     }
@@ -93,19 +99,33 @@ public class SettlementHistory extends BaseTimeEntity {
         this.status = SettlementStatus.CALCULATING;
     }
 
+    public void reopenFromInformationHold() {
+        if (status != SettlementStatus.PAYMENT_HOLD_INFO) {
+            throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
+        }
+        this.status = SettlementStatus.PAYMENT_PENDING;
+    }
+
+    public void reopenFromPaymentHold() {
+        if (status != SettlementStatus.PAYMENT_HOLD_INFO
+                && status != SettlementStatus.PAYMENT_HOLD_BLACK) {
+            throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
+        }
+        this.status = SettlementStatus.PAYMENT_PENDING;
+    }
+
     public void updateCalculation(long totalSales,
                                   long confirmedPurchaseCount,
-                                  BigDecimal commissionRate,
-                                  long commission,
-                                  SettlementSourceCode sourceCode,
+                                  BigDecimal settlementRate,
+                                  long settlementAmount,
                                   LocalDateTime calculatedAt) {
         if (!isCalculating()) {
             throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
         }
         this.totalSales = totalSales;
         this.confirmedPurchaseCount = confirmedPurchaseCount;
-        this.commissionRate = commissionRate;
-        this.commission = commission;
+        this.settlementRate = settlementRate;
+        this.settlementAmount = settlementAmount;
         this.calculatedAt = calculatedAt;
     }
 
