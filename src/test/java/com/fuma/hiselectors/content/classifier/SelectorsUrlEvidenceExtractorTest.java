@@ -67,24 +67,36 @@ class SelectorsUrlEvidenceExtractorTest {
 
     @Test
     void classifiesTrustedSelectorsShopAndGroupPaths() {
-        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
-                "https://hi.thehyundai.com/sellectors/manage/shop/rc000005105t "
-                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/1/ "
-                        + "https://hi.thehyundai.com/sellectors/67/");
+        String boundaryGroupId = "a".repeat(100);
+        for (String path : List.of("RC000005105T", "RC000005105T/1", "RC000005105T/2",
+                "RC000005105T/A_2-z", "RC000005105T/" + boundaryGroupId)) {
+            SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                    "https://hi.thehyundai.com/sellectors/manage/shop/" + path);
 
-        assertThat(result.evidence()).containsExactlyInAnyOrder(
-                SelectorsContentEvidence.SELECTORS_SHOP_URL,
-                SelectorsContentEvidence.REFERRAL_CODE);
-        assertThat(result.referralCodes()).containsExactly("RC000005105T");
+            assertThat(result.evidence()).containsExactlyInAnyOrder(
+                    SelectorsContentEvidence.SELECTORS_SHOP_URL,
+                    SelectorsContentEvidence.REFERRAL_CODE);
+            assertThat(result.referralCodes()).containsExactly("RC000005105T");
+        }
+    }
+
+    @Test
+    void classifiesShortSelectorsShopPathWithoutReferral() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/sellectors/67");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_SHOP_URL);
+        assertThat(result.referralCodes()).isEmpty();
     }
 
     @Test
     void rejectsMalformedSelectorsShopAndGroupPaths() {
         String longId = "a".repeat(101);
+        String longGroupId = "b".repeat(101);
         SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
                 "https://hi.thehyundai.com/sellectors/manage/shop/ "
-                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/2 "
                         + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/1/extra "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/" + longGroupId + " "
                         + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105%54 "
                         + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105TT "
                         + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T// "

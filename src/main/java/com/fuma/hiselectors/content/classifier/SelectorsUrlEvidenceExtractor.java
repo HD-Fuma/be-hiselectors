@@ -23,7 +23,8 @@ final class SelectorsUrlEvidenceExtractor {
             "^/product/([A-Za-z0-9_-]{1,100})/?$"
     );
     private static final Pattern SELECTORS_MANAGE_SHOP_PATH = Pattern.compile(
-            "^/sellectors/manage/shop/(RC[0-9]{9}T)(?:/1)?/?$", Pattern.CASE_INSENSITIVE
+            "^/sellectors/manage/shop/(RC[0-9]{9}T)(?:/[A-Za-z0-9_-]{1,100})?/?$",
+            Pattern.CASE_INSENSITIVE
     );
     private static final Pattern SELECTORS_GROUP_PATH = Pattern.compile(
             "^/sellectors/([A-Za-z0-9_-]{1,100})/?$"
