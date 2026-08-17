@@ -9,21 +9,21 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class SettlementEstimateScheduler {
+public class SettlementFinalizationScheduler {
 
     private final SettlementBatchService settlementBatchService;
 
     @Scheduled(
-            cron = "${settlement.estimate.cron:0 0 3 * * *}",
+            cron = "${settlement.finalization.cron:0 0 0 * * *}",
             zone = "${settlement.zone:Asia/Seoul}")
-    public void calculateOpenActivityMonth() {
+    public void finalizeOpenActivityMonth() {
         SettlementBatchService.SettlementBatchResult result =
-                settlementBatchService.calculateOpenActivityMonth();
-        log.info(
-                "활동월 예상 정산 산정 배치 완료: activityMonth={}, processed={}, skipped={}, failed={}",
-                result.activityMonth(),
-                result.processedCount(),
-                result.skippedCount(),
+                settlementBatchService.finalizeOpenActivityMonth();
+        if (!result.finalized()) {
+            return;
+        }
+        log.info("활동월 정산 확정 배치 완료: activityMonth={}, processed={}, skipped={}, failed={}",
+                result.activityMonth(), result.processedCount(), result.skippedCount(),
                 result.failedCount());
     }
 }

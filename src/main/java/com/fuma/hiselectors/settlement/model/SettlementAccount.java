@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -42,4 +43,20 @@ public class SettlementAccount extends BaseTimeEntity {
 
     @Column(name = "is_deleted", nullable = false)
     private boolean deleted;
+
+    @Builder
+    private SettlementAccount(Long selectorsId, String bankName, String accountNumber,
+                              String accountHolder) {
+        this.selectorsId = selectorsId;
+        this.bankName = bankName;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+        this.deleted = false;
+    }
+
+    public void update(String bankName, String accountNumber, String accountHolder) {
+        this.bankName = bankName;
+        this.accountNumber = accountNumber;
+        this.accountHolder = accountHolder;
+    }
 }

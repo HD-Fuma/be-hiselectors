@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,9 +28,9 @@ public class SettlementController {
     public ResponseEntity<SettlementEstimateResponse> getEstimate(
             Principal principal,
             @RequestParam(required = false)
-            @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
+            @DateTimeFormat(pattern = "yyyy-MM") YearMonth activityMonth) {
         return ResponseEntity.ok(
-                settlementEstimateService.getEstimate(principal.getName(), month));
+                settlementEstimateService.getEstimate(principal.getName(), activityMonth));
     }
 
     @Operation(summary = "연도별 정산 이력 조회")
@@ -43,10 +42,4 @@ public class SettlementController {
                 settlementEstimateService.getHistories(principal.getName(), year));
     }
 
-    @Operation(summary = "전월 예상 수수료 새로고침")
-    @PostMapping("/refresh")
-    public ResponseEntity<SettlementEstimateResponse> refresh(Principal principal) {
-        return ResponseEntity.ok(
-                settlementEstimateService.refreshPreviousMonth(principal.getName()));
-    }
 }

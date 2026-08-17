@@ -1,7 +1,6 @@
 package com.fuma.hiselectors.settlement.service;
 
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
-import com.fuma.hiselectors.settlement.model.SettlementSourceCode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -14,16 +13,26 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SettlementBatchService {
 
-    private static final int FINALIZATION_START_DAY = 22;
-
     private final SelectorsRepository selectorsRepository;
     private final SettlementCalculationWorker calculationWorker;
+    private final SettlementSchedulePolicy schedulePolicy;
     private final Clock clock;
 
-    public SettlementBatchResult calculatePreviousMonth() {
+    public SettlementBatchResult calculateOpenActivityMonth() {
         LocalDate today = LocalDate.now(clock);
-        YearMonth settlementMonth = YearMonth.from(today).minusMonths(1);
-        boolean finalizeSettlement = today.getDayOfMonth() >= FINALIZATION_START_DAY;
+        YearMonth activityMonth = YearMonth.from(today).minusMonths(1);
+        return calculate(activityMonth, false);
+    }
+
+    public SettlementBatchResult finalizeOpenActivityMonth() {
+        LocalDate today = LocalDate.now(clock);
+        if (!schedulePolicy.isFinalizationDate(today)) {
+            return SettlementBatchResult.notExecuted(YearMonth.from(today).minusMonths(1));
+        }
+        return calculate(YearMonth.from(today).minusMonths(1), true);
+    }
+
+    private SettlementBatchResult calculate(YearMonth activityMonth, boolean finalizeSettlement) {
         int processed = 0;
         int skipped = 0;
         int failed = 0;
@@ -32,8 +41,7 @@ public class SettlementBatchService {
             try {
                 SettlementCalculationResult result = calculationWorker.calculate(
                         selectorsId,
-                        settlementMonth,
-                        SettlementSourceCode.DAILY_BATCH,
+                        activityMonth,
                         finalizeSettlement);
                 if (result.outcome() == SettlementCalculationOutcome.SKIPPED) {
                     skipped++;
@@ -42,21 +50,24 @@ public class SettlementBatchService {
                 }
             } catch (RuntimeException e) {
                 failed++;
-                log.error("셀렉터스 정산 계산 실패: selectorsId={}, settlementMonth={}",
-                        selectorsId, settlementMonth, e);
+                log.error("셀렉터스 활동월 정산 계산 실패: selectorsId={}, activityMonth={}",
+                        selectorsId, activityMonth, e);
             }
         }
 
-        return new SettlementBatchResult(settlementMonth, processed, skipped, failed,
+        return new SettlementBatchResult(activityMonth, processed, skipped, failed,
                 finalizeSettlement);
     }
 
     public record SettlementBatchResult(
-            YearMonth settlementMonth,
+            YearMonth activityMonth,
             int processedCount,
             int skippedCount,
             int failedCount,
-            boolean finalized
+        boolean finalized
     ) {
+        public static SettlementBatchResult notExecuted(YearMonth activityMonth) {
+            return new SettlementBatchResult(activityMonth, 0, 0, 0, false);
+        }
     }
 }

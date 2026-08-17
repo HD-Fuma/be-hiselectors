@@ -17,9 +17,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.ArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,7 +48,7 @@ class SettlementPurchaseHistoryControllerTest {
                 BigDecimal.valueOf(10000), LocalDateTime.of(2026, 7, 15, 10, 0),
                 LocalDateTime.of(2026, 7, 22, 0, 5), PurchaseStatus.PURCHASE_CONFIRMED);
         when(service.search(eq(3L), eq(YearMonth.of(2026, 7)), eq(false), org.mockito.ArgumentMatchers.any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(row)));
+                .thenReturn(new PageImpl<>(new ArrayList<>(List.of(row)), PageRequest.of(0, 20), 1));
 
         mockMvc.perform(get("/api/admin/settlements/purchase-histories")
                         .param("selectorsId", "3")

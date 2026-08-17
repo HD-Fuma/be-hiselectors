@@ -37,13 +37,13 @@ public class SettlementAdminController {
     @GetMapping
     public ResponseEntity<Page<SettlementEstimateResponse>> search(
             @RequestParam(required = false)
-            @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
+            @DateTimeFormat(pattern = "yyyy-MM") YearMonth activityMonth,
             @RequestParam(required = false) Long selectorsId,
             @RequestParam(required = false) SettlementStatus status,
             @PageableDefault(size = 20, sort = "selectorsId", direction = Sort.Direction.ASC)
             Pageable pageable) {
         return ResponseEntity.ok(
-                settlementAdminService.search(month, selectorsId, status, pageable));
+                settlementAdminService.search(activityMonth, selectorsId, status, pageable));
     }
 
     /**
@@ -53,29 +53,29 @@ public class SettlementAdminController {
     @Operation(
             summary = "관리자 정산 이력 재계산 (테스트용)",
             description = "더미 데이터 정합성 보정용 API입니다. 운영 지급 배치를 대체하지 않으며, "
-                    + "month와 selectorsId를 생략하면 전체 기간·전체 셀렉터스를 동기 재계산합니다.")
+                    + "activityMonth와 selectorsId를 생략하면 전체 기간·전체 셀렉터스를 동기 재계산합니다.")
     @PostMapping("/recalculate")
     public ResponseEntity<SettlementRecalculationResponse> recalculate(
             @RequestParam(required = false)
-            @DateTimeFormat(pattern = "yyyy-MM") YearMonth month,
+            @DateTimeFormat(pattern = "yyyy-MM") YearMonth activityMonth,
             @RequestParam(required = false) Long selectorsId,
             @RequestParam(defaultValue = "false") boolean force) {
         return ResponseEntity.ok(
-                settlementRecalculationService.recalculate(month, selectorsId, force));
+                settlementRecalculationService.recalculate(activityMonth, selectorsId, force));
     }
 
     /** 지급 연동 없이 전전월 정산 이력을 지급 완료 또는 지급 보류로 상태 변경한다. */
     @Operation(
             summary = "정산 지급 상태 처리",
             description = "지급 연동 없이 전전월 활동월 정산 이력을 지급 완료 또는 지급 보류 상태로 변경합니다. "
-                    + "month를 생략하면 현재 기준 전전월을 대상으로 처리합니다.")
+                    + "paymentMonth를 생략하면 현재 지급월을 대상으로 처리합니다.")
     @PostMapping("/payments/process")
     public ResponseEntity<SettlementPaymentResponse> processPayment(
             @RequestParam(required = false)
-            @DateTimeFormat(pattern = "yyyy-MM") YearMonth month) {
-        SettlementPaymentResponse response = month == null
-                ? settlementPaymentService.processPreviousPreviousMonth()
-                : settlementPaymentService.process(month);
+            @DateTimeFormat(pattern = "yyyy-MM") YearMonth paymentMonth) {
+        SettlementPaymentResponse response = paymentMonth == null
+                ? settlementPaymentService.processCurrentPaymentMonth()
+                : settlementPaymentService.process(paymentMonth);
         return ResponseEntity.ok(response);
     }
 }

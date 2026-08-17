@@ -55,7 +55,7 @@ class SettlementAdminControllerTest {
                         0));
 
         mockMvc.perform(post("/api/admin/settlements/estimates/recalculate")
-                        .param("month", "2026-07")
+                        .param("activityMonth", "2026-07")
                         .param("selectorsId", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.selectorsId").value(10))
@@ -67,12 +67,13 @@ class SettlementAdminControllerTest {
     @Test
     void processesPaymentForRequestedMonth() throws Exception {
         when(settlementPaymentService.process(YearMonth.of(2026, 6)))
-                .thenReturn(new SettlementPaymentResponse(YearMonth.of(2026, 6), 3, 2, 1, 0, 0));
+                .thenReturn(new SettlementPaymentResponse(
+                        YearMonth.of(2026, 6), YearMonth.of(2026, 4), 3, 2, 1, 0, 0));
 
         mockMvc.perform(post("/api/admin/settlements/estimates/payments/process")
-                        .param("month", "2026-06"))
+                        .param("paymentMonth", "2026-06"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.targetSettlementMonth").value("2026-06"))
+                .andExpect(jsonPath("$.data.paymentMonth").value("2026-06"))
                 .andExpect(jsonPath("$.data.settledCount").value(2))
                 .andExpect(jsonPath("$.data.heldCount").value(1));
 

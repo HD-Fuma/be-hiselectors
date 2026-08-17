@@ -13,6 +13,7 @@ import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
@@ -26,9 +27,11 @@ class SettlementPaymentServiceTest {
     void aggregatesIndependentPaymentWorkerResults() {
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
         SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
+        SettlementMissingNotificationService notificationService = mock(
+                SettlementMissingNotificationService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), SEOUL);
         SettlementPaymentService service = new SettlementPaymentService(
-                historyRepository, paymentWorker, clock);
+                historyRepository, paymentWorker, notificationService, clock);
 
         SettlementHistory first = mock(SettlementHistory.class);
         SettlementHistory second = mock(SettlementHistory.class);
@@ -36,17 +39,22 @@ class SettlementPaymentServiceTest {
         when(first.getId()).thenReturn(1L);
         when(second.getId()).thenReturn(2L);
         when(third.getId()).thenReturn(3L);
-        when(historyRepository.findAllBySettlementMonthAndStatus(
-                LocalDateTime.of(2026, 6, 1, 0, 0), SettlementStatus.PAYMENT_PENDING))
+        when(historyRepository.findAllByStatusIn(EnumSet.of(
+                SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)))
+                .thenReturn(List.of());
+        when(historyRepository.findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
+                SettlementStatus.PAYMENT_PENDING,
+                LocalDateTime.of(2026, 4, 1, 0, 0)))
                 .thenReturn(List.of(first, second, third));
         when(paymentWorker.process(any())).thenReturn(
                 SettlementPaymentWorker.PaymentOutcome.SETTLED,
-                SettlementPaymentWorker.PaymentOutcome.HELD,
-                SettlementPaymentWorker.PaymentOutcome.HELD);
+                SettlementPaymentWorker.PaymentOutcome.HELD_INFO,
+                SettlementPaymentWorker.PaymentOutcome.HELD_BLACK);
 
         var result = service.process(YearMonth.of(2026, 6));
 
-        assertThat(result.targetSettlementMonth()).isEqualTo(YearMonth.of(2026, 6));
+        assertThat(result.paymentMonth()).isEqualTo(YearMonth.of(2026, 6));
+        assertThat(result.latestEligibleActivityMonth()).isEqualTo(YearMonth.of(2026, 4));
         assertThat(result.processedCount()).isEqualTo(3);
         assertThat(result.settledCount()).isEqualTo(1);
         assertThat(result.heldCount()).isEqualTo(2);
