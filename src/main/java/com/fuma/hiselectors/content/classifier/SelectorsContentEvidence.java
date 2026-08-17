@@ -1,0 +1,15 @@
+package com.fuma.hiselectors.content.classifier;
+
+public enum SelectorsContentEvidence {
+    REFERRAL_CODE,
+    PRODUCT_URL_WITH_REFERRAL,
+    SELECTORS_SHOP_URL,
+    DESIGNATED_HASHTAG_PAIR,
+    SELECTORS_BRAND_PHRASE,
+    SELECTORS_NAME,
+    SELECTORS_SHOP_NAME,
+    PUBLIC_PRODUCT_URL,
+    ECONOMIC_DISCLOSURE,
+    PURCHASE_CTA,
+    THE_HYUNDAI_MENTION
+}
