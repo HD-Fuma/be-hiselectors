@@ -11,8 +11,13 @@ import com.fuma.hiselectors.kakao.service.KakaoRecipientStatusService;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.dto.NotificationSendResponse;
 import com.fuma.hiselectors.notification.model.KakaoTemplateType;
+import com.fuma.hiselectors.notification.model.Notification;
+import com.fuma.hiselectors.notification.model.NotificationChannel;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
+import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.sender.NotificationSender;
+import java.time.LocalDateTime;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +33,8 @@ public class NotificationService {
     private final NotificationRecorder recorder;
     private final NotificationSender notificationSender;
     private final KakaoRecipientStatusService recipientStatusService;
+    private final NotificationRepository notificationRepository;
+    private final TextTemplateFactory textTemplateFactory;
 
     public NotificationSendResponse sendToMe(String adminLoginId,
                                                NotificationMessageCommand command) {
@@ -41,6 +48,50 @@ public class NotificationService {
         Admin admin = adminRepository.findByLoginId(adminLoginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
         return sendToFriend(admin, command);
+    }
+
+    @Transactional
+    public NotificationSendResponse resendFailed(String adminLoginId, Long notificationId) {
+        Admin admin = adminRepository.findByLoginId(adminLoginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        if (notification.getStatus() != NotificationStatus.FAILED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "실패한 발송 이력만 재발송할 수 있습니다.");
+        }
+        if (notification.getNotificationChannel() != NotificationChannel.KAKAO_MESSAGE) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "카카오 메시지 발송 이력만 재발송할 수 있습니다.");
+        }
+
+        UserKakaoRecipient recipient = recipientRepository
+                .findByKakaoMessageUuid(notification.getReceiver())
+                .orElseThrow(() -> new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
+        if (recipient.getStatus() != KakaoRecipientStatus.READY) {
+            throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_READY);
+        }
+
+        Long connectionId = requireConnection(admin);
+        try {
+            notificationSender.sendToFriend(connectionId, recipient.getKakaoMessageUuid(),
+                    textTemplateFactory.createReplayTemplate(notification.getBody()));
+            notification.markSent(LocalDateTime.now());
+            notificationRepository.save(notification);
+            return new NotificationSendResponse(notification.getId(), NotificationStatus.SENT);
+        } catch (BusinessException e) {
+            if (e.getErrorCode() == ErrorCode.KAKAO_RECIPIENT_INVALID) {
+                recipientStatusService.markReauthRequired(recipient.getId());
+            }
+            notification.markFailed();
+            notificationRepository.save(notification);
+            throw e;
+        } catch (RuntimeException e) {
+            notification.markFailed();
+            notificationRepository.save(notification);
+            throw e;
+        }
     }
 
     private NotificationSendResponse sendToMe(Admin admin, NotificationMessageCommand command) {

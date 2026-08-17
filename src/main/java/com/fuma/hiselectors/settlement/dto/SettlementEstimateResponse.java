@@ -20,7 +20,6 @@ public record SettlementEstimateResponse(
         BigDecimal commissionRate,
         Long estimatedCommission,
         SettlementStatus status,
-        SettlementSourceCode settlementSourceCode,
         LocalDateTime calculatedAt,
         LocalDateTime updatedAt
 ) {
@@ -38,7 +37,6 @@ public record SettlementEstimateResponse(
                 history.getCommissionRate(),
                 history.getCommission(),
                 history.getStatus(),
-                history.getSettlementSourceCode(),
                 history.getCalculatedAt(),
                 history.getUpdatedAt()
         );

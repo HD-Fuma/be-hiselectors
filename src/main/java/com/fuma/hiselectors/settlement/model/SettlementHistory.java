@@ -70,10 +70,6 @@ public class SettlementHistory extends BaseTimeEntity {
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "settlement_source_code", nullable = false, length = 20)
-    private SettlementSourceCode settlementSourceCode;
-
     public static SettlementHistory create(Long selectorsId, LocalDateTime settlementMonth) {
         SettlementHistory history = new SettlementHistory();
         history.selectorsId = selectorsId;
@@ -110,7 +106,6 @@ public class SettlementHistory extends BaseTimeEntity {
         this.confirmedPurchaseCount = confirmedPurchaseCount;
         this.commissionRate = commissionRate;
         this.commission = commission;
-        this.settlementSourceCode = sourceCode;
         this.calculatedAt = calculatedAt;
     }
 
