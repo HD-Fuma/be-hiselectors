@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 final class SelectorsUrlEvidenceExtractor {
 
     private static final Pattern HTTP_URL = Pattern.compile(
-            "(?i)(?<![a-z0-9])https?://[^\\s]+"
+            "https?://[^\\s]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS
     );
     private static final String TRAILING_PUNCTUATION = "., !;:)\'\"]}>".replace(" ", "");
 
@@ -65,7 +65,8 @@ final class SelectorsUrlEvidenceExtractor {
                 return false;
             }
             if (!"hi.thehyundai.com".equalsIgnoreCase(uri.getHost())
-                    || uri.getUserInfo() != null) {
+                    || uri.getUserInfo() != null
+                    || (uri.getRawAuthority() != null && uri.getRawAuthority().endsWith(":"))) {
                 return false;
             }
             int port = uri.getPort();

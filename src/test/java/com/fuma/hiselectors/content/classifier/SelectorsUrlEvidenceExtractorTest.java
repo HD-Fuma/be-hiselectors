@@ -1,8 +1,13 @@
 package com.fuma.hiselectors.content.classifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class SelectorsUrlEvidenceExtractorTest {
@@ -30,7 +35,8 @@ class SelectorsUrlEvidenceExtractorTest {
                 + "http://HI.THEHYUNDAI.COM/c http://hi.thehyundai.com:80/i https://hi.thehyundai.com:443/d "
                 + "https://user@hi.thehyundai.com/e https://hi.thehyundai.com:8080/f "
                 + "https://evilhi.thehyundai.com/g https://sub.hi.thehyundai.com/h "
-                + "https://[bad https://hi.thehyundai.com/valid ftp://hi.thehyundai.com/nope";
+                + "https://[bad https://hi.thehyundai.com:/empty-port https://hi.thehyundai.com/valid "
+                + "ftp://hi.thehyundai.com/nope";
 
         SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(text);
 
@@ -47,6 +53,50 @@ class SelectorsUrlEvidenceExtractorTest {
                 "https://evilhi.thehyundai.com/g",
                 "https://sub.hi.thehyundai.com/h",
                 "https://hi.thehyundai.com/valid");
+        assertThat(result.matchedUrls()).contains("https://hi.thehyundai.com:/empty-port");
         assertThat(result.matchedUrls()).noneMatch(url -> url.startsWith("ftp://"));
+    }
+
+    @Test
+    void extractsUrlImmediatelyFollowingAnAsciiWordCharacter() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "xhttps://evil.example/RC000005105T");
+
+        assertThat(result.matchedUrls()).containsExactly("https://evil.example/RC000005105T");
+        assertThat(result.textWithoutUrls()).isEqualTo("x" + " ".repeat(
+                "https://evil.example/RC000005105T".length()));
+        assertThat(result.textWithoutUrls()).doesNotContain("RC000005105T");
+    }
+
+    @Test
+    void treatsUnicodeLineSeparatorsAsCandidateBoundaries() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://evil.example/a\u2028RC000005105T\u2029https://evil.example/b");
+
+        assertThat(result.textWithoutUrls()).contains("RC000005105T");
+        assertThat(result.matchedUrls()).containsExactly(
+                "https://evil.example/a", "https://evil.example/b");
+    }
+
+    @Test
+    void resultCollectionsAreIndependentImmutableCopies() {
+        Set<SelectorsContentEvidence> evidence = EnumSet.of(SelectorsContentEvidence.SELECTORS_NAME);
+        Set<String> referralCodes = new HashSet<>(Set.of("RC1"));
+        List<String> matchedUrls = new ArrayList<>(List.of("https://b.example", "https://a.example"));
+        List<String> trustedUrls = new ArrayList<>(List.of("https://a.example"));
+
+        SelectorsUrlEvidenceExtractor.Result result = new SelectorsUrlEvidenceExtractor.Result(
+                "masked", evidence, referralCodes, matchedUrls, trustedUrls);
+        evidence.clear();
+        referralCodes.clear();
+        matchedUrls.clear();
+        trustedUrls.clear();
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_NAME);
+        assertThat(result.referralCodes()).containsExactly("RC1");
+        assertThat(result.matchedUrls()).containsExactly("https://a.example", "https://b.example");
+        assertThat(result.trustedUrls()).containsExactly("https://a.example");
+        assertThatThrownBy(() -> result.matchedUrls().add("https://c.example"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 }
