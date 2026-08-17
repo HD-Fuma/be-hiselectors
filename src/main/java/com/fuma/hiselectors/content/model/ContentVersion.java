@@ -38,7 +38,7 @@ public class ContentVersion {
     @Column(name = "version_no", nullable = false)
     private Long versionNo;
 
-    // 현재 버전의 TEXT 유형 값을 순서대로 모아 생성한 SHA-256 해시
+    // 현재 버전의 TEXT와 미디어 순서·유형·SNS ID를 반영한 SHA-256 해시
     @Column(name = "content_hash", nullable = false, length = 64)
     private String contentHash;
 

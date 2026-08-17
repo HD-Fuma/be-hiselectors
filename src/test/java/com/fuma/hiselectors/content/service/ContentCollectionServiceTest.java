@@ -356,6 +356,66 @@ class ContentCollectionServiceTest {
         assertThat(managedAccount.getLastCollectedAt()).isEqualTo(lastCollectedAt);
     }
 
+    @Test
+    @DisplayName("TEXT 순서가 바뀌면 콘텐츠 해시가 달라진다")
+    void distinguishTextOrderInContentHash() {
+        RawContent first = hashTarget(
+                List.of("first", "second"), List.of());
+        RawContent reordered = hashTarget(
+                List.of("second", "first"), List.of());
+
+        assertThat(contentHash(first)).isNotEqualTo(contentHash(reordered));
+    }
+
+    @Test
+    @DisplayName("미디어 순서가 바뀌면 콘텐츠 해시가 달라진다")
+    void distinguishMediaOrderInContentHash() {
+        RawContentMedia image = new RawContentMedia(
+                "image-1", MediaType.IMAGE, "https://cdn.example.com/image.jpg");
+        RawContentMedia video = new RawContentMedia(
+                "video-1", MediaType.VIDEO, "https://cdn.example.com/video.mp4");
+
+        RawContent first = hashTarget(List.of("caption"), List.of(image, video));
+        RawContent reordered = hashTarget(List.of("caption"), List.of(video, image));
+
+        assertThat(contentHash(first)).isNotEqualTo(contentHash(reordered));
+    }
+
+    @Test
+    @DisplayName("미디어 유형이 바뀌면 콘텐츠 해시가 달라진다")
+    void distinguishMediaTypeInContentHash() {
+        RawContent image = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia("media-1", MediaType.IMAGE, null)));
+        RawContent video = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia("media-1", MediaType.VIDEO, null)));
+
+        assertThat(contentHash(image)).isNotEqualTo(contentHash(video));
+    }
+
+    @Test
+    @DisplayName("SNS 미디어 ID가 바뀌면 콘텐츠 해시가 달라진다")
+    void distinguishSnsMediaIdInContentHash() {
+        RawContent first = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia("media-1", MediaType.IMAGE, null)));
+        RawContent changed = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia("media-2", MediaType.IMAGE, null)));
+
+        assertThat(contentHash(first)).isNotEqualTo(contentHash(changed));
+    }
+
+    @Test
+    @DisplayName("미디어 URL만 바뀌면 콘텐츠 해시는 유지된다")
+    void ignoreMediaUrlInContentHash() {
+        RawContent first = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia(
+                        "media-1", MediaType.IMAGE, "https://cdn.example.com/first.jpg")));
+        RawContent changedUrl = hashTarget(List.of("caption"), List.of(
+                new RawContentMedia(
+                        "media-1", MediaType.IMAGE, "https://cdn.example.com/second.jpg")));
+
+        assertThat(contentHash(first)).isEqualTo(contentHash(changedUrl));
+    }
+
     private SelectorsSnsAccount account(LocalDateTime lastCollectedAt) {
         SelectorsSnsAccount account = SelectorsSnsAccount.builder()
                 .selectorsId(SELECTORS_ID)
@@ -388,6 +448,15 @@ class ContentCollectionServiceTest {
                 texts,
                 createdAt,
                 media);
+    }
+
+    private RawContent hashTarget(
+            List<String> texts, List<RawContentMedia> media) {
+        return raw("hash-target", texts, CONTENT_COLLECTION_START_AT, media);
+    }
+
+    private String contentHash(RawContent rawContent) {
+        return ReflectionTestUtils.invokeMethod(service, "contentHash", rawContent);
     }
 
     private <T> List<T> toList(Iterable<T> values) {

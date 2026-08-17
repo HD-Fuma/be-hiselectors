@@ -166,7 +166,7 @@ public class ContentCollectionService {
                 .toList();
         contentRepository.saveAll(contents);
 
-        // 신규 콘텐츠의 텍스트 해시 일괄 저장
+        // 신규 콘텐츠의 TEXT와 미디어 정보를 반영한 해시 일괄 저장
         List<ContentVersion> versions = new ArrayList<>(contents.size());
         for (int index = 0; index < contents.size(); index++) {
             versions.add(ContentVersion.builder()
