@@ -40,6 +40,7 @@ class SettlementAccountServiceTest {
         when(selectors.getId()).thenReturn(9L);
         when(userRepository.findByHiId("selector-user")).thenReturn(Optional.of(user));
         when(selectorsRepository.findByUserId(3L)).thenReturn(Optional.of(selectors));
+        when(selectorsRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(selectors));
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.of(account));
         when(accountRepository.save(account)).thenReturn(account);

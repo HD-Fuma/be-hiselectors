@@ -4,6 +4,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.NotificationType;
+import com.fuma.hiselectors.notification.service.NotificationMessageFactory;
 import com.fuma.hiselectors.notification.service.NotificationRecorder;
 import com.fuma.hiselectors.notification.service.NotificationService;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -19,14 +20,13 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class SettlementMissingNotificationService {
 
-    private static final String FAILURE_BODY = "정산 계좌정보가 등록되지 않아 지급이 보류되었습니다.";
-
     @Value("${settlement.notification.sender-admin-login-id:}")
     private String senderAdminLoginId;
 
     private final SelectorsRepository selectorsRepository;
     private final NotificationService notificationService;
     private final NotificationRecorder notificationRecorder;
+    private final NotificationMessageFactory notificationMessageFactory;
 
     public void notifyMissing(Long settlementId, Long selectorsId) {
         if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
@@ -77,10 +77,20 @@ public class SettlementMissingNotificationService {
         try {
             Long notificationId = notificationRecorder.createRequested(
                     NotificationType.SETTLEMENT_MISSING.getPurposeCode(), settlementId,
-                    receiver, FAILURE_BODY);
+                    receiver, createMessageBody(selectors));
             notificationRecorder.markFailed(notificationId);
         } catch (RuntimeException e) {
             log.warn("정산정보 미기재 알림 실패 이력 기록 실패: settlementId={}", settlementId, e);
         }
+    }
+
+    private String createMessageBody(Selectors selectors) {
+        String name = selectors == null || selectors.getSelectorsNickname() == null
+                || selectors.getSelectorsNickname().isBlank()
+                ? "회원"
+                : selectors.getSelectorsNickname();
+        NotificationMessageFactory.MessageText message = notificationMessageFactory.create(
+                NotificationType.SETTLEMENT_MISSING, name, null);
+        return message.title() + "\n\n" + message.description();
     }
 }

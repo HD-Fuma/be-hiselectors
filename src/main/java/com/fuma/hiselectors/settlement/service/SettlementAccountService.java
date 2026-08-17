@@ -37,7 +37,7 @@ public class SettlementAccountService {
 
     @Transactional
     public SettlementAccountResponse upsert(String loginId, SettlementAccountUpsertRequest request) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = findSelectorsForUpdate(loginId);
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseGet(() -> SettlementAccount.builder().selectorsId(selectors.getId()).build());
@@ -54,6 +54,12 @@ public class SettlementAccountService {
         User user = userRepository.findByHiId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         return selectorsRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+    }
+
+    private Selectors findSelectorsForUpdate(String loginId) {
+        Selectors selectors = findSelectors(loginId);
+        return selectorsRepository.findByIdForUpdate(selectors.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
     }
 }

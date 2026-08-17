@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "정산", description = "셀렉터스 예상 수수료 조회 및 새로고침")
+@Tag(name = "정산", description = "셀렉터스 예상 수수료 조회")
 @RestController
 @RequestMapping("/api/settlements/estimates")
 @RequiredArgsConstructor
@@ -41,5 +41,4 @@ public class SettlementController {
         return ResponseEntity.ok(
                 settlementEstimateService.getHistories(principal.getName(), year));
     }
-
 }

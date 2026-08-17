@@ -77,6 +77,12 @@ public class SettlementPaymentService {
     private void reopenResolvedHolds() {
         settlementHistoryRepository.findAllByStatusIn(EnumSet.of(
                         SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK))
-                .forEach(history -> settlementPaymentWorker.reopenIfResolved(history.getId()));
+                .forEach(history -> {
+                    try {
+                        settlementPaymentWorker.reopenIfResolved(history.getId());
+                    } catch (RuntimeException e) {
+                        log.error("보류 정산 재개 처리 실패: settlementId={}", history.getId(), e);
+                    }
+                });
     }
 }

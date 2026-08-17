@@ -1,8 +1,10 @@
 package com.fuma.hiselectors.settlement.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +24,7 @@ class SettlementExpiryServiceTest {
     @Test
     void expiresBothKindsOfUnresolvedHoldAfterTwelveMonths() {
         SettlementHistoryRepository repository = mock(SettlementHistoryRepository.class);
+        SettlementExpiryWorker worker = mock(SettlementExpiryWorker.class);
         Clock clock = Clock.fixed(Instant.parse("2027-07-01T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         SettlementHistory infoHold = heldHistory(SettlementStatus.PAYMENT_HOLD_INFO);
         SettlementHistory blackHold = heldHistory(SettlementStatus.PAYMENT_HOLD_BLACK);
@@ -29,14 +32,16 @@ class SettlementExpiryServiceTest {
         when(repository.findAllByStatusInAndUpdatedAtLessThanEqual(
                 eq(EnumSet.of(SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)),
                 eq(cutoff))).thenReturn(List.of(infoHold, blackHold));
+        when(worker.expireIfEligible(any(), eq(cutoff), eq(LocalDateTime.of(2027, 7, 1, 9, 0))))
+                .thenReturn(true);
 
-        int expired = new SettlementExpiryService(repository, clock).expireLongTermHolds();
+        int expired = new SettlementExpiryService(repository, worker, clock).expireLongTermHolds();
 
         assertThat(expired).isEqualTo(2);
-        assertThat(infoHold.getStatus()).isEqualTo(SettlementStatus.EXPIRED);
-        assertThat(blackHold.getStatus()).isEqualTo(SettlementStatus.EXPIRED);
         verify(repository).findAllByStatusInAndUpdatedAtLessThanEqual(
                 EnumSet.of(SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK), cutoff);
+        verify(worker, times(2)).expireIfEligible(
+                any(), eq(cutoff), eq(LocalDateTime.of(2027, 7, 1, 9, 0)));
     }
 
     private SettlementHistory heldHistory(SettlementStatus holdStatus) {
