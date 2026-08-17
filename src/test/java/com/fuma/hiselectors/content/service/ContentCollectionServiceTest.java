@@ -24,6 +24,8 @@ import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
+import com.fuma.hiselectors.generation.model.Generation;
+import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.LocalDateTime;
@@ -48,8 +50,8 @@ class ContentCollectionServiceTest {
 
     private static final Long ACCOUNT_ID = 10L;
     private static final Long SELECTORS_ID = 20L;
-    private static final LocalDateTime CONTENT_COLLECTION_START_AT =
-            LocalDateTime.of(2026, 5, 1, 0, 0);
+    private static final LocalDateTime ACTIVE_GENERATION_START_AT =
+            LocalDateTime.of(2026, 8, 1, 0, 0);
 
     @Mock
     private ContentPlatformClient instagramClient;
@@ -57,6 +59,8 @@ class ContentCollectionServiceTest {
     private ContentPlatformClient youtubeClient;
     @Mock
     private SelectorsContentClassifier classifier;
+    @Mock
+    private GenerationService generationService;
     @Mock
     private SelectorsSnsAccountRepository accountRepository;
     @Mock
@@ -74,6 +78,8 @@ class ContentCollectionServiceTest {
     void setUp() {
         lenient().when(instagramClient.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         lenient().when(youtubeClient.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        lenient().when(generationService.getActive())
+                .thenReturn(activeGeneration(ACTIVE_GENERATION_START_AT));
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -81,12 +87,32 @@ class ContentCollectionServiceTest {
 
         service = new ContentCollectionService(
                 List.of(instagramClient, youtubeClient), classifier,
-                accountRepository, contentRepository,
+                generationService, accountRepository, contentRepository,
                 versionRepository, mediaRepository, transactionTemplate);
     }
 
     @Test
-    @DisplayName("최종 수집 시각 이후의 신규 셀렉터스 콘텐츠만 묶어서 저장한다")
+    @DisplayName("이후 수집도 활성 기수 시작 시각부터 한 번 조회한다")
+    void collectFromActiveGenerationStartWhenLastCollectedAtExists() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        Generation activeGeneration = activeGeneration(ACTIVE_GENERATION_START_AT);
+        when(generationService.getActive()).thenReturn(activeGeneration);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        when(instagramClient.collect("nike", activeGeneration.getStartDate()))
+                .thenReturn(new CollectionResult(0, List.of()));
+
+        service.collectForAccount(ACCOUNT_ID);
+
+        verify(generationService, times(1)).getActive();
+        verify(instagramClient, times(1))
+                .collect("nike", activeGeneration.getStartDate());
+    }
+
+    @Test
+    @DisplayName("활성 기수 시작 시각 이후의 신규 셀렉터스 콘텐츠만 묶어서 저장한다")
     void collectNewSelectorsContent(CapturedOutput output) {
         LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
         SelectorsSnsAccount snapshot = account(lastCollectedAt);
@@ -94,9 +120,9 @@ class ContentCollectionServiceTest {
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent old = raw(
-                "old", "RC0001", lastCollectedAt.minusSeconds(1), List.of());
+                "old", "RC0001", ACTIVE_GENERATION_START_AT.minusSeconds(1), List.of());
         RawContent boundary = raw(
-                "boundary", "일반 게시글", lastCollectedAt, List.of());
+                "boundary", "일반 게시글", ACTIVE_GENERATION_START_AT, List.of());
         RawContent unrelated = raw(
                 "unrelated", "일반 게시글", lastCollectedAt.plusMinutes(2), List.of());
         RawContent matching = raw(
@@ -106,7 +132,7 @@ class ContentCollectionServiceTest {
                         new RawContentMedia("image-1", MediaType.IMAGE,
                                 "https://cdn.example.com/image.jpg"),
                         new RawContentMedia("video-1", MediaType.VIDEO, null)));
-        when(instagramClient.collect("nike", lastCollectedAt))
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(
                         4, List.of(old, boundary, unrelated, matching)));
         when(classifier.isSelectorsContent(boundary)).thenReturn(false);
@@ -176,7 +202,7 @@ class ContentCollectionServiceTest {
                 "콘텐츠 수집 결과 | 플랫폼=INSTAGRAM | 계정=nike | API 조회=4건 "
                         + "| 현재 기수=4건 | 셀렉터스 게시글=1건");
 
-        verify(instagramClient, times(1)).collect("nike", lastCollectedAt);
+        verify(instagramClient, times(1)).collect("nike", ACTIVE_GENERATION_START_AT);
         verify(youtubeClient, never()).collect(any(), any());
         verify(classifier, never()).isSelectorsContent(old);
         verify(contentRepository, times(1)).saveAll(any());
@@ -185,7 +211,7 @@ class ContentCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("경계 시각에 다시 조회된 기존 콘텐츠는 제외하고 신규 콘텐츠만 저장한다")
+    @DisplayName("기수 시작 경계에 다시 조회된 기존 콘텐츠는 제외하고 신규 콘텐츠만 저장한다")
     void excludeExistingContentAtCollectionBoundary() {
         LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
         SelectorsSnsAccount snapshot = account(lastCollectedAt);
@@ -193,10 +219,10 @@ class ContentCollectionServiceTest {
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent existing = raw(
-                "existing", "RC0001", lastCollectedAt, List.of());
+                "existing", "RC0001", ACTIVE_GENERATION_START_AT, List.of());
         RawContent newContent = raw(
-                "new", "RC0002", lastCollectedAt, List.of());
-        when(instagramClient.collect("nike", lastCollectedAt))
+                "new", "RC0002", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(2, List.of(existing, newContent)));
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM, List.of("existing", "new")))
@@ -235,8 +261,8 @@ class ContentCollectionServiceTest {
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent duplicate = raw(
-                "duplicate", "RC0001", lastCollectedAt, List.of());
-        when(instagramClient.collect("nike", lastCollectedAt))
+                "duplicate", "RC0001", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(2, List.of(duplicate, duplicate)));
         when(classifier.isSelectorsContent(duplicate)).thenReturn(true);
 
@@ -266,9 +292,10 @@ class ContentCollectionServiceTest {
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
-        when(instagramClient.collect("nike", lastCollectedAt))
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(1, List.of(raw(
-                        "old", "RC0001", lastCollectedAt.minusSeconds(1), List.of()))));
+                        "old", "RC0001",
+                        ACTIVE_GENERATION_START_AT.minusSeconds(1), List.of()))));
 
         int savedCount = service.collectForAccount(ACCOUNT_ID);
 
@@ -281,17 +308,17 @@ class ContentCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("최초 수집은 기수 시작일부터 선별하고 성공 시 수집 시각을 기록한다")
+    @DisplayName("마지막 수집 시각이 없어도 활성 기수 시작 시각부터 선별한다")
     void collectFromGenerationStartWhenLastCollectedAtIsNull() {
         SelectorsSnsAccount snapshot = account(null);
         SelectorsSnsAccount managedAccount = account(null);
         when(accountRepository.findById(ACCOUNT_ID))
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent beforeGeneration = raw(
-                "before", "RC0001", CONTENT_COLLECTION_START_AT.minusSeconds(1), List.of());
+                "before", "RC0001", ACTIVE_GENERATION_START_AT.minusSeconds(1), List.of());
         RawContent generationContent = raw(
-                "generation", "일반 게시글", CONTENT_COLLECTION_START_AT, List.of());
-        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+                "generation", "일반 게시글", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(
                         2, List.of(beforeGeneration, generationContent)));
         when(classifier.isSelectorsContent(generationContent))
@@ -307,11 +334,11 @@ class ContentCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("최초 외부 API 호출이 실패하면 수집 완료 시각을 기록하지 않는다")
+    @DisplayName("외부 API 호출이 실패하면 수집 완료 시각을 기록하지 않는다")
     void keepCollectionTimeWhenApiFails() {
         SelectorsSnsAccount snapshot = account(null);
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(snapshot));
-        when(instagramClient.collect("nike", CONTENT_COLLECTION_START_AT))
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenThrow(new IllegalStateException("API failure"));
 
         assertThatThrownBy(() -> service.collectForAccount(ACCOUNT_ID))
@@ -333,7 +360,7 @@ class ContentCollectionServiceTest {
                 .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
         RawContent matching = raw(
                 "matching", "RC0001", lastCollectedAt.plusMinutes(1), List.of());
-        when(instagramClient.collect("nike", lastCollectedAt))
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(1, List.of(matching)));
         when(classifier.isSelectorsContent(matching)).thenReturn(true);
         when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -427,6 +454,12 @@ class ContentCollectionServiceTest {
         return account;
     }
 
+    private Generation activeGeneration(LocalDateTime startDate) {
+        return Generation.builder()
+                .startDate(startDate)
+                .build();
+    }
+
     private RawContent raw(
             String snsContentId,
             String caption,
@@ -452,7 +485,7 @@ class ContentCollectionServiceTest {
 
     private RawContent hashTarget(
             List<String> texts, List<RawContentMedia> media) {
-        return raw("hash-target", texts, CONTENT_COLLECTION_START_AT, media);
+        return raw("hash-target", texts, ACTIVE_GENERATION_START_AT, media);
     }
 
     private String contentHash(RawContent rawContent) {
