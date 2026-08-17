@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentType;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,30 +52,54 @@ class ContentRepositoryTest {
     }
 
     @Test
-    @DisplayName("SNS 코드와 콘텐츠 ID 목록으로 기존 콘텐츠를 조회한다")
-    void findAllBySnsCodeAndSnsContentIdIn() {
-        contentRepository.saveAll(List.of(
-                Content.builder()
-                        .selectorsId(1L)
-                        .snsCode(SnsPlatform.INSTAGRAM)
-                        .snsContentId("instagram-001")
-                        .contentUrl("https://www.instagram.com/p/instagram-001")
-                        .contentType(ContentType.FEED)
-                        .build(),
-                Content.builder()
-                        .selectorsId(1L)
-                        .snsCode(SnsPlatform.YOUTUBE)
-                        .snsContentId("youtube-001")
-                        .contentUrl("https://www.youtube.com/watch?v=youtube-001")
-                        .contentType(ContentType.LONG_FORM)
-                        .build()));
+    @DisplayName("셀렉터와 SNS 플랫폼이 같고 기수 시작 이후 저장된 콘텐츠를 조회한다")
+    void findContentsStoredFromGenerationStart() {
+        Content active = Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("instagram-active")
+                .contentUrl("https://www.instagram.com/p/instagram-active")
+                .contentType(ContentType.FEED)
+                .build();
+        Content deleted = Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("instagram-deleted")
+                .contentUrl("https://www.instagram.com/p/instagram-deleted")
+                .contentType(ContentType.FEED)
+                .build();
+        deleted.markDeleted();
+        Content otherSelector = Content.builder()
+                .selectorsId(2L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("other-selector")
+                .contentUrl("https://www.instagram.com/p/other-selector")
+                .contentType(ContentType.FEED)
+                .build();
+        Content otherPlatform = Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("other-platform")
+                .contentUrl("https://www.youtube.com/watch?v=other-platform")
+                .contentType(ContentType.LONG_FORM)
+                .build();
+        contentRepository.saveAllAndFlush(
+                List.of(active, deleted, otherSelector, otherPlatform));
 
-        List<Content> found = contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM,
-                List.of("instagram-001", "youtube-001", "missing"));
+        List<Content> found = contentRepository
+                .findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                        1L, SnsPlatform.INSTAGRAM,
+                        LocalDateTime.of(2000, 1, 1, 0, 0));
 
         assertThat(found)
                 .extracting(Content::getSnsContentId)
-                .containsExactly("instagram-001");
+                .containsExactlyInAnyOrder("instagram-active", "instagram-deleted");
+
+        List<Content> storedBeforeGeneration = contentRepository
+                .findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                        1L, SnsPlatform.INSTAGRAM,
+                        LocalDateTime.now().plusDays(1));
+
+        assertThat(storedBeforeGeneration).isEmpty();
     }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.BeforeEach;
@@ -234,8 +236,8 @@ class ContentCollectionServiceTest {
                 .contentType(existing.contentType())
                 .build();
         ReflectionTestUtils.setField(existingContent, "id", 100L);
-        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("existing", "new")))
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
                 .thenReturn(List.of(existingContent));
         when(versionRepository.findLatestByContentIdIn(List.of(100L)))
                 .thenReturn(List.of(ContentVersion.builder()
@@ -301,8 +303,8 @@ class ContentCollectionServiceTest {
                 .contentType(changed.contentType())
                 .build();
         ReflectionTestUtils.setField(existingContent, "id", 100L);
-        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("existing")))
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
                 .thenReturn(List.of(existingContent));
         when(versionRepository.findLatestByContentIdIn(List.of(100L)))
                 .thenReturn(List.of(ContentVersion.builder()
@@ -388,8 +390,8 @@ class ContentCollectionServiceTest {
                 .contentType(unchanged.contentType())
                 .build();
         ReflectionTestUtils.setField(existingContent, "id", 100L);
-        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("existing")))
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
                 .thenReturn(List.of(existingContent));
         when(versionRepository.findLatestByContentIdIn(List.of(100L)))
                 .thenReturn(List.of(ContentVersion.builder()
@@ -407,6 +409,266 @@ class ContentCollectionServiceTest {
         verify(contentRepository, never()).saveAll(any());
         verify(versionRepository, never()).saveAll(any());
         verify(mediaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("SNS 조회 결과에서 사라진 기존 콘텐츠를 삭제 상태로 변경한다")
+    void markMissingExistingContentAsDeleted() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent collected = raw(
+                "collected", "일반 게시글", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(collected)));
+        when(classifier.isSelectorsContent(collected)).thenReturn(false);
+
+        Content missingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("missing")
+                .contentUrl("https://www.instagram.com/p/missing")
+                .contentType(ContentType.FEED)
+                .build();
+        ReflectionTestUtils.setField(missingContent, "id", 100L);
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(missingContent));
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(missingContent.isDeleted()).isTrue();
+        verify(contentRepository, never()).saveAll(any());
+        verify(versionRepository, never()).saveAll(any());
+        verify(mediaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("SNS 응답에 존재하는 콘텐츠는 수집 후보 범위 밖이어도 삭제하지 않는다")
+    void keepExistingContentWhenPresentOutsideCandidateRange() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent present = raw(
+                "existing", "본문", ACTIVE_GENERATION_START_AT.minusSeconds(1), List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(present)));
+
+        Content existingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(present.contentUrl())
+                .contentType(present.contentType())
+                .build();
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(existingContent));
+
+        service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(existingContent.isDeleted()).isFalse();
+        verifyNoInteractions(classifier, versionRepository, mediaRepository);
+    }
+
+    @Test
+    @DisplayName("빈 SNS 조회 결과가 정상 반환되면 해당 범위의 기존 콘텐츠를 모두 삭제 상태로 변경한다")
+    void markAllExistingContentsDeletedWhenSuccessfulResultIsEmpty() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(0, List.of()));
+
+        Content activeContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("active")
+                .contentUrl("https://www.instagram.com/p/active")
+                .contentType(ContentType.FEED)
+                .build();
+        Content alreadyDeletedContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("already-deleted")
+                .contentUrl("https://www.instagram.com/p/already-deleted")
+                .contentType(ContentType.FEED)
+                .build();
+        alreadyDeletedContent.markDeleted();
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(activeContent, alreadyDeletedContent));
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(activeContent.isDeleted()).isTrue();
+        assertThat(alreadyDeletedContent.isDeleted()).isTrue();
+        assertThat(managedAccount.getLastCollectedAt()).isAfter(lastCollectedAt);
+        verify(instagramClient, times(1)).collect("nike", ACTIVE_GENERATION_START_AT);
+        verifyNoInteractions(classifier);
+        verify(contentRepository, never()).saveAll(any());
+        verifyNoInteractions(versionRepository, mediaRepository);
+    }
+
+    @Test
+    @DisplayName("활성 기수 시작 전에 저장된 콘텐츠는 수집 결과에 없어도 삭제하지 않는다")
+    void keepContentStoredBeforeActiveGeneration() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(0, List.of()));
+
+        Content previousGenerationContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("previous-generation")
+                .contentUrl("https://www.instagram.com/p/previous-generation")
+                .contentType(ContentType.FEED)
+                .build();
+        Content generationBoundaryContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("generation-boundary")
+                .contentUrl("https://www.instagram.com/p/generation-boundary")
+                .contentType(ContentType.FEED)
+                .build();
+        ReflectionTestUtils.setField(
+                previousGenerationContent, "createdAt",
+                ACTIVE_GENERATION_START_AT.minusNanos(1));
+        ReflectionTestUtils.setField(
+                generationBoundaryContent, "createdAt", ACTIVE_GENERATION_START_AT);
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(generationBoundaryContent));
+
+        service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(previousGenerationContent.isDeleted()).isFalse();
+        assertThat(generationBoundaryContent.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("삭제된 콘텐츠가 같은 내용으로 다시 조회되면 버전 추가 없이 복구한다")
+    void restoreDeletedContentWithoutNewVersionWhenHashUnchanged() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent reappeared = raw(
+                "existing", "같은 본문", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(reappeared)));
+
+        Content deletedContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(reappeared.contentUrl())
+                .contentType(reappeared.contentType())
+                .build();
+        ReflectionTestUtils.setField(deletedContent, "id", 100L);
+        deletedContent.markDeleted();
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(deletedContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(100L)
+                        .versionNo(1L)
+                        .contentHash(contentHash(reappeared))
+                        .createdAt(lastCollectedAt)
+                        .build()));
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(deletedContent.isDeleted()).isFalse();
+        assertThat(deletedContent.getLastVersionNo()).isEqualTo(1L);
+        verify(versionRepository, never()).saveAll(any());
+        verify(mediaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("삭제된 콘텐츠가 변경된 내용으로 다시 조회되면 복구하고 다음 버전을 저장한다")
+    void restoreDeletedContentAndSaveNextVersionWhenHashChanged() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+
+        RawContent previous = raw(
+                "existing", "이전 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent reappeared = raw(
+                "existing", "수정된 본문", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(1, List.of(reappeared)));
+
+        Content deletedContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("existing")
+                .contentUrl(reappeared.contentUrl())
+                .contentType(reappeared.contentType())
+                .build();
+        ReflectionTestUtils.setField(deletedContent, "id", 100L);
+        deletedContent.markDeleted();
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenReturn(List.of(deletedContent));
+        when(versionRepository.findLatestByContentIdIn(List.of(100L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(100L)
+                        .versionNo(1L)
+                        .contentHash(contentHash(previous))
+                        .createdAt(lastCollectedAt)
+                        .build()));
+
+        AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
+        AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 201L);
+            savedVersions.set(values);
+            return values;
+        });
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentMedia> values = toList(invocation.getArgument(0));
+            savedMedia.set(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isZero();
+        assertThat(deletedContent.isDeleted()).isFalse();
+        assertThat(deletedContent.getLastVersionNo()).isEqualTo(2L);
+        assertThat(savedVersions.get())
+                .extracting(ContentVersion::getContentId,
+                        ContentVersion::getVersionNo,
+                        ContentVersion::getContentHash)
+                .containsExactly(tuple(100L, 2L, contentHash(reappeared)));
+        assertThat(savedMedia.get())
+                .extracting(ContentMedia::getContentVersionId,
+                        ContentMedia::getBody,
+                        ContentMedia::getSequenceNo)
+                .containsExactly(tuple(201L, "수정된 본문", 0));
+        verifyNoInteractions(classifier);
     }
 
     @Test
@@ -431,8 +693,8 @@ class ContentCollectionServiceTest {
                 .contentType(existing.contentType())
                 .build();
         ReflectionTestUtils.setField(existingContent, "id", 100L);
-        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("existing")))
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
                 .thenReturn(List.of(existingContent));
         when(versionRepository.findLatestByContentIdIn(List.of(100L)))
                 .thenReturn(List.of());
@@ -450,8 +712,8 @@ class ContentCollectionServiceTest {
     }
 
     @Test
-    @DisplayName("한 수집 결과의 신규·변경·미변경 콘텐츠를 각각 처리한다")
-    void handleNewChangedAndUnchangedContentsTogether() {
+    @DisplayName("한 수집 결과에서 신규·변경·미변경·삭제·복구 콘텐츠를 함께 처리한다")
+    void handleNewChangedUnchangedDeletedAndRestoredContentsTogether() {
         LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
         SelectorsSnsAccount snapshot = account(lastCollectedAt);
         SelectorsSnsAccount managedAccount = account(lastCollectedAt);
@@ -466,10 +728,15 @@ class ContentCollectionServiceTest {
                 "changed", "수정 본문", ACTIVE_GENERATION_START_AT, List.of());
         RawContent unchanged = raw(
                 "unchanged", "동일 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent restored = raw(
+                "restored", "복구 본문", ACTIVE_GENERATION_START_AT, List.of());
+        RawContent unrelated = raw(
+                "unrelated", "일반 게시글", ACTIVE_GENERATION_START_AT, List.of());
         when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
                 .thenReturn(new CollectionResult(
-                        3, List.of(newContent, changed, unchanged)));
+                        5, List.of(newContent, changed, unchanged, restored, unrelated)));
         when(classifier.isSelectorsContent(newContent)).thenReturn(true);
+        when(classifier.isSelectorsContent(unrelated)).thenReturn(false);
 
         Content changedContent = Content.builder()
                 .selectorsId(SELECTORS_ID)
@@ -485,12 +752,45 @@ class ContentCollectionServiceTest {
                 .contentUrl(unchanged.contentUrl())
                 .contentType(unchanged.contentType())
                 .build();
+        Content restoredContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("restored")
+                .contentUrl(restored.contentUrl())
+                .contentType(restored.contentType())
+                .build();
+        Content missingContent = Content.builder()
+                .selectorsId(SELECTORS_ID)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("missing")
+                .contentUrl("https://www.instagram.com/p/missing")
+                .contentType(ContentType.FEED)
+                .build();
         ReflectionTestUtils.setField(changedContent, "id", 101L);
         ReflectionTestUtils.setField(unchangedContent, "id", 102L);
-        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("new", "changed", "unchanged")))
-                .thenReturn(List.of(changedContent, unchangedContent));
-        when(versionRepository.findLatestByContentIdIn(List.of(101L, 102L)))
+        ReflectionTestUtils.setField(restoredContent, "id", 103L);
+        ReflectionTestUtils.setField(missingContent, "id", 104L);
+        restoredContent.markDeleted();
+
+        AtomicBoolean transactionActive = new AtomicBoolean();
+        doAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            transactionActive.set(true);
+            try {
+                return callback.doInTransaction(null);
+            } finally {
+                transactionActive.set(false);
+            }
+        }).when(transactionTemplate).execute(any());
+        when(contentRepository.findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                SELECTORS_ID, SnsPlatform.INSTAGRAM, ACTIVE_GENERATION_START_AT))
+                .thenAnswer(invocation -> {
+                    assertThat(transactionActive).isTrue();
+                    return List.of(
+                            changedContent, unchangedContent,
+                            restoredContent, missingContent);
+                });
+        when(versionRepository.findLatestByContentIdIn(List.of(101L, 102L, 103L)))
                 .thenReturn(List.of(
                         ContentVersion.builder()
                                 .contentId(101L)
@@ -502,6 +802,12 @@ class ContentCollectionServiceTest {
                                 .contentId(102L)
                                 .versionNo(1L)
                                 .contentHash(contentHash(unchanged))
+                                .createdAt(lastCollectedAt)
+                                .build(),
+                        ContentVersion.builder()
+                                .contentId(103L)
+                                .versionNo(1L)
+                                .contentHash(contentHash(restored))
                                 .createdAt(lastCollectedAt)
                                 .build()));
 
@@ -537,6 +843,11 @@ class ContentCollectionServiceTest {
                 .containsExactly("new");
         assertThat(changedContent.getLastVersionNo()).isEqualTo(2L);
         assertThat(unchangedContent.getLastVersionNo()).isEqualTo(1L);
+        assertThat(unchangedContent.isDeleted()).isFalse();
+        assertThat(restoredContent.isDeleted()).isFalse();
+        assertThat(restoredContent.getLastVersionNo()).isEqualTo(1L);
+        assertThat(missingContent.isDeleted()).isTrue();
+        assertThat(transactionActive).isFalse();
         assertThat(savedVersions)
                 .extracting(ContentVersion::getContentId,
                         ContentVersion::getVersionNo,
@@ -557,10 +868,17 @@ class ContentCollectionServiceTest {
                         tuple(300L, "신규 본문", 0),
                         tuple(301L, "수정 본문", 0));
         verify(classifier).isSelectorsContent(newContent);
+        verify(classifier).isSelectorsContent(unrelated);
         verify(classifier, never()).isSelectorsContent(changed);
         verify(classifier, never()).isSelectorsContent(unchanged);
+        verify(classifier, never()).isSelectorsContent(restored);
         verify(versionRepository, times(1))
-                .findLatestByContentIdIn(List.of(101L, 102L));
+                .findLatestByContentIdIn(List.of(101L, 102L, 103L));
+        verify(contentRepository, times(1))
+                .findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                        SELECTORS_ID, SnsPlatform.INSTAGRAM,
+                        ACTIVE_GENERATION_START_AT);
+        verify(transactionTemplate, times(1)).execute(any());
         verify(instagramClient, times(1)).collect("nike", ACTIVE_GENERATION_START_AT);
         verify(youtubeClient, never()).collect(any(), any());
     }
@@ -592,9 +910,45 @@ class ContentCollectionServiceTest {
         assertThat(savedContents.get())
                 .extracting(Content::getSnsContentId)
                 .containsExactly("duplicate");
-        verify(contentRepository).findAllBySnsCodeAndSnsContentIdIn(
-                SnsPlatform.INSTAGRAM, List.of("duplicate"));
+        verify(contentRepository)
+                .findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                        SELECTORS_ID, SnsPlatform.INSTAGRAM,
+                        ACTIVE_GENERATION_START_AT);
         verify(classifier).isSelectorsContent(duplicate);
+    }
+
+    @Test
+    @DisplayName("범위 밖 중복 콘텐츠가 먼저 있어도 범위 안 콘텐츠를 저장한다")
+    void keepInRangeContentWhenOutOfRangeDuplicateAppearsFirst() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        RawContent outOfRange = raw(
+                "duplicate", "이전 본문",
+                ACTIVE_GENERATION_START_AT.minusSeconds(1), List.of());
+        RawContent inRange = raw(
+                "duplicate", "현재 본문", ACTIVE_GENERATION_START_AT, List.of());
+        when(instagramClient.collect("nike", ACTIVE_GENERATION_START_AT))
+                .thenReturn(new CollectionResult(2, List.of(outOfRange, inRange)));
+        when(classifier.isSelectorsContent(inRange)).thenReturn(true);
+
+        AtomicReference<List<Content>> savedContents = new AtomicReference<>();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Content> values = toList(invocation.getArgument(0));
+            savedContents.set(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isEqualTo(1);
+        assertThat(savedContents.get())
+                .extracting(Content::getSnsContentId)
+                .containsExactly("duplicate");
+        verify(classifier, never()).isSelectorsContent(outOfRange);
+        verify(classifier).isSelectorsContent(inRange);
     }
 
     @Test

@@ -87,7 +87,7 @@ public class ContentCollectionService {
         return savedCount;
     }
 
-    /** RawContent를 신규와 기존으로 나눠 저장 및 버전 갱신 */
+    /** 수집 결과를 반영해 신규 저장, 버전 갱신, 삭제 상태 동기화 */
     private int persist(
             Long selectorsSnsAccountId,
             List<RawContent> collectedContents,
@@ -95,22 +95,25 @@ public class ContentCollectionService {
             LocalDateTime collectionStartedAt) {
         // 트랜잭션 내부에서 SNS 계정 재조회: 마지막 수집 시각 갱신
         SelectorsSnsAccount account = findAccount(selectorsSnsAccountId);
+        LocalDateTime lastCollectedAt = account.getLastCollectedAt();
 
         // 활성 기수 시작 시각 이후 콘텐츠 선별
         List<RawContent> candidates = new ArrayList<>();
         Set<String> collectedContentIds = new HashSet<>();
-        LocalDateTime lastCollectedAt = account.getLastCollectedAt();
+        Set<String> candidateContentIds = new HashSet<>();
         for (RawContent content : collectedContents) {
             validatePlatform(content, account.getSnsCode());
+            collectedContentIds.add(content.snsContentId());
             if (!content.createdAt().isBefore(generationStartedAt)
-                    && collectedContentIds.add(content.snsContentId())) {
+                    && candidateContentIds.add(content.snsContentId())) {
                 candidates.add(content);
             }
         }
 
         // SNS 콘텐츠 ID로 신규 콘텐츠와 기존 콘텐츠 구분
-        List<Content> existingContents = findExistingContents(
-                candidates, account.getSnsCode());
+        List<Content> existingContents = contentRepository
+                .findAllBySelectorsIdAndSnsCodeAndCreatedAtGreaterThanEqual(
+                        account.getSelectorsId(), account.getSnsCode(), generationStartedAt);
         Set<String> existingContentIds = new HashSet<>();
         for (Content content : existingContents) {
             existingContentIds.add(content.getSnsContentId());
@@ -127,6 +130,7 @@ public class ContentCollectionService {
         saveNewContents(account.getSelectorsId(), selectorsContents, collectionStartedAt);
         saveChangedVersions(
                 candidates, existingContents, collectionStartedAt);
+        synchronizeDeletionStatus(existingContents, collectedContentIds);
 
         // 모든 저장 성공 이후에만 마지막 수집 시각 갱신
         if (lastCollectedAt == null || collectionStartedAt.isAfter(lastCollectedAt)) {
@@ -135,17 +139,17 @@ public class ContentCollectionService {
         return selectorsContents.size();
     }
 
-    private List<Content> findExistingContents(
-            List<RawContent> candidates, SnsPlatform snsCode) {
-        if (candidates.isEmpty()) {
-            return List.of();
+    private void synchronizeDeletionStatus(
+            List<Content> existingContents, Set<String> collectedContentIds) {
+        for (Content content : existingContents) {
+            if (collectedContentIds.contains(content.getSnsContentId())) {
+                if (content.isDeleted()) {
+                    content.restore();
+                }
+            } else if (!content.isDeleted()) {
+                content.markDeleted();
+            }
         }
-
-        List<String> candidateIds = candidates.stream()
-                .map(RawContent::snsContentId)
-                .toList();
-        return contentRepository.findAllBySnsCodeAndSnsContentIdIn(
-                snsCode, candidateIds);
     }
 
     private void saveChangedVersions(

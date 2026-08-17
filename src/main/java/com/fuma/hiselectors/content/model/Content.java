@@ -69,4 +69,12 @@ public class Content extends BaseTimeEntity {
         lastVersionNo++;
         return lastVersionNo;
     }
+
+    public void markDeleted() {
+        deleted = true;
+    }
+
+    public void restore() {
+        deleted = false;
+    }
 }
