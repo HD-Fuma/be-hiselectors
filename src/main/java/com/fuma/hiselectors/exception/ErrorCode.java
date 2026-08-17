@@ -109,7 +109,17 @@ public enum ErrorCode {
     // --- STT (Gemini) ---
     GEMINI_API_KEY_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API 키가 설정되지 않았습니다."),
     GEMINI_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "Gemini API 호출에 실패했습니다."),
-    STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다.");
+    STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다."),
+
+    // --- 콘텐츠 검수 / 위반 ---
+    CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
+    CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),
+    VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
+    VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
+    INVALID_CONTENT_INSPECTION_STATUS(HttpStatus.CONFLICT, "검수할 수 없는 콘텐츠 버전 상태입니다."),
+    INVALID_VIOLATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 위반 상태 변경입니다."),
+    AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다.");
+
 
     private final HttpStatus status;
     private final String message;
