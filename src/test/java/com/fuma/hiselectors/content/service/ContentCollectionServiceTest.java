@@ -116,6 +116,52 @@ class ContentCollectionServiceTest {
     }
 
     @Test
+    @DisplayName("일괄 수집에서 전달한 기수 시작 시각을 그대로 사용한다")
+    void collectFromProvidedGenerationStartWithoutLookingUpActiveGeneration() {
+        LocalDateTime providedGenerationStartAt = LocalDateTime.of(2026, 7, 1, 0, 0);
+        SelectorsSnsAccount snapshot = account(null);
+        SelectorsSnsAccount managedAccount = account(null);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        when(instagramClient.collect("nike", providedGenerationStartAt))
+                .thenReturn(new CollectionResult(0, List.of()));
+
+        LocalDateTime providedGenerationEndAt = LocalDateTime.of(2026, 7, 31, 23, 59);
+
+        service.collectForAccount(
+                ACCOUNT_ID, providedGenerationStartAt, providedGenerationEndAt);
+
+        verifyNoInteractions(generationService);
+        verify(instagramClient).collect("nike", providedGenerationStartAt);
+    }
+
+    @Test
+    @DisplayName("전달한 기수 종료 시각 이후 콘텐츠는 저장 대상에서 제외한다")
+    void excludeContentPublishedAfterProvidedGenerationEnd() {
+        LocalDateTime generationStartedAt = LocalDateTime.of(2026, 8, 1, 0, 0);
+        LocalDateTime generationEndedAt = LocalDateTime.of(2026, 8, 31, 23, 59);
+        SelectorsSnsAccount snapshot = account(null);
+        SelectorsSnsAccount managedAccount = account(null);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        RawContent inGeneration = raw(
+                "in-generation", "본문", generationEndedAt, List.of());
+        RawContent afterGeneration = raw(
+                "after-generation", "본문", generationEndedAt.plusSeconds(1), List.of());
+        when(instagramClient.collect("nike", generationStartedAt))
+                .thenReturn(new CollectionResult(
+                        2, List.of(inGeneration, afterGeneration)));
+        when(classifier.isSelectorsContent(inGeneration)).thenReturn(true);
+
+        int savedCount = service.collectForAccount(
+                ACCOUNT_ID, generationStartedAt, generationEndedAt);
+
+        assertThat(savedCount).isOne();
+        verify(classifier).isSelectorsContent(inGeneration);
+        verify(classifier, never()).isSelectorsContent(afterGeneration);
+    }
+
+    @Test
     @DisplayName("활성 기수 시작 시각 이후의 신규 셀렉터스 콘텐츠만 묶어서 저장한다")
     void collectNewSelectorsContent(CapturedOutput output) {
         LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
@@ -1124,6 +1170,7 @@ class ContentCollectionServiceTest {
     private Generation activeGeneration(LocalDateTime startDate) {
         return Generation.builder()
                 .startDate(startDate)
+                .endDate(startDate.plusMonths(1).minusNanos(1))
                 .build();
     }
 

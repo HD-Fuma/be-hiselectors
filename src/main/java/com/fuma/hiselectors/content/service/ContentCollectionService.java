@@ -16,6 +16,7 @@ import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
@@ -60,13 +61,25 @@ public class ContentCollectionService {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
 
+        Generation activeGeneration = generationService.getActive();
+        return collectForAccount(
+                selectorsSnsAccountId,
+                activeGeneration.getStartDate(),
+                activeGeneration.getEndDate());
+    }
+
+    /** 지정한 SNS 계정을 전달받은 기수 활동 기간 기준으로 수집 */
+    int collectForAccount(
+            Long selectorsSnsAccountId,
+            LocalDateTime generationStartedAt,
+            LocalDateTime generationEndedAt) {
+
         // 실행 기준 시각
         LocalDateTime collectionStartedAt = LocalDateTime.now(KOREA_ZONE).withNano(0);
 
         // SNS 플랫폼별 API 클라이언트 선택
         SelectorsSnsAccount account = findAccount(selectorsSnsAccountId);
         ContentPlatformClient client = findClient(account.getSnsCode());
-        LocalDateTime generationStartedAt = generationService.getActive().getStartDate();
 
         // 외부 API 호출
         CollectionResult collectionResult = Objects.requireNonNull(
@@ -77,7 +90,7 @@ public class ContentCollectionService {
         // DB 저장과 마지막 수집 시각 갱신의 단일 트랜잭션 처리
         int savedCount = Objects.requireNonNull(transactionTemplate.execute(status ->
                 persist(selectorsSnsAccountId, collectedContents,
-                        generationStartedAt, collectionStartedAt)));
+                        generationStartedAt, generationEndedAt, collectionStartedAt)));
 
         log.info(
                 "콘텐츠 수집 결과 | 플랫폼={} | 계정={} | API 조회={}건 | 현재 기수={}건 "
@@ -92,6 +105,7 @@ public class ContentCollectionService {
             Long selectorsSnsAccountId,
             List<RawContent> collectedContents,
             LocalDateTime generationStartedAt,
+            LocalDateTime generationEndedAt,
             LocalDateTime collectionStartedAt) {
         // 트랜잭션 내부에서 SNS 계정 재조회: 마지막 수집 시각 갱신
         SelectorsSnsAccount account = findAccount(selectorsSnsAccountId);
@@ -105,6 +119,7 @@ public class ContentCollectionService {
             validatePlatform(content, account.getSnsCode());
             collectedContentIds.add(content.snsContentId());
             if (!content.createdAt().isBefore(generationStartedAt)
+                    && !content.createdAt().isAfter(generationEndedAt)
                     && candidateContentIds.add(content.snsContentId())) {
                 candidates.add(content);
             }
