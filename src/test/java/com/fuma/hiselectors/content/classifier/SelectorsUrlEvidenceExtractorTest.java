@@ -66,6 +66,39 @@ class SelectorsUrlEvidenceExtractorTest {
     }
 
     @Test
+    void classifiesTrustedSelectorsShopAndGroupPaths() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/sellectors/manage/shop/rc000005105t "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/1/ "
+                        + "https://hi.thehyundai.com/sellectors/67/");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.SELECTORS_SHOP_URL,
+                SelectorsContentEvidence.REFERRAL_CODE);
+        assertThat(result.referralCodes()).containsExactly("RC000005105T");
+    }
+
+    @Test
+    void rejectsMalformedSelectorsShopAndGroupPaths() {
+        String longId = "a".repeat(101);
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/sellectors/manage/shop/ "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/2 "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T/1/extra "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105%54 "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105TT "
+                        + "https://hi.thehyundai.com/sellectors/manage/shop/RC000005105T// "
+                        + "https://hi.thehyundai.com/sellectors/ "
+                        + "https://hi.thehyundai.com/sellectors/../67 "
+                        + "https://hi.thehyundai.com/sellectors/a%2Fb "
+                        + "https://hi.thehyundai.com/sellectors/" + longId + " "
+                        + "https://hi.thehyundai.com/sellectors/67//");
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.referralCodes()).isEmpty();
+    }
+
+    @Test
     void rejectsMalformedProductPaths() {
         String longId = "a".repeat(101);
         SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(

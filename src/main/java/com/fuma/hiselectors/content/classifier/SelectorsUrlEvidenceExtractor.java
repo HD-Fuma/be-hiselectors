@@ -22,6 +22,12 @@ final class SelectorsUrlEvidenceExtractor {
     private static final Pattern PRODUCT_PATH = Pattern.compile(
             "^/product/([A-Za-z0-9_-]{1,100})/?$"
     );
+    private static final Pattern SELECTORS_MANAGE_SHOP_PATH = Pattern.compile(
+            "^/sellectors/manage/shop/(RC[0-9]{9}T)(?:/1)?/?$", Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SELECTORS_GROUP_PATH = Pattern.compile(
+            "^/sellectors/([A-Za-z0-9_-]{1,100})/?$"
+    );
     private static final Pattern REFERRAL_CODE = Pattern.compile(
             "RC[0-9]{9}T", Pattern.CASE_INSENSITIVE
     );
@@ -48,6 +54,7 @@ final class SelectorsUrlEvidenceExtractor {
             if (isTrusted(candidate)) {
                 trusted.add(candidate);
                 classifyProductUrl(candidate, evidence, referralCodes);
+                classifySelectorsShopUrl(candidate, evidence, referralCodes);
             }
             spans.add(new int[] {matcher.start(), matcher.start() + candidate.length()});
         }
@@ -94,6 +101,30 @@ final class SelectorsUrlEvidenceExtractor {
                 evidence.add(SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL);
                 evidence.add(SelectorsContentEvidence.REFERRAL_CODE);
                 referralCodes.add(referralCode);
+            }
+        } catch (URISyntaxException | IllegalArgumentException ignored) {
+            // The URL was already trusted, but leave classification conservative if parsing changes.
+        }
+    }
+
+    private static void classifySelectorsShopUrl(String candidate,
+                                                 Set<SelectorsContentEvidence> evidence,
+                                                 Set<String> referralCodes) {
+        try {
+            URI uri = new URI(candidate);
+            String rawPath = uri.getRawPath();
+            if (rawPath == null || rawPath.indexOf('%') >= 0) {
+                return;
+            }
+            Matcher manageShop = SELECTORS_MANAGE_SHOP_PATH.matcher(rawPath);
+            if (manageShop.matches()) {
+                evidence.add(SelectorsContentEvidence.SELECTORS_SHOP_URL);
+                evidence.add(SelectorsContentEvidence.REFERRAL_CODE);
+                referralCodes.add(manageShop.group(1).toUpperCase(java.util.Locale.ROOT));
+                return;
+            }
+            if (SELECTORS_GROUP_PATH.matcher(rawPath).matches()) {
+                evidence.add(SelectorsContentEvidence.SELECTORS_SHOP_URL);
             }
         } catch (URISyntaxException | IllegalArgumentException ignored) {
             // The URL was already trusted, but leave classification conservative if parsing changes.
