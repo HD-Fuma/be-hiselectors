@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentType;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,5 +48,33 @@ class ContentRepositoryTest {
                 .build());
 
         assertThat(saved.getLastVersionNo()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("SNS 코드와 콘텐츠 ID 목록으로 기존 콘텐츠를 조회한다")
+    void findAllBySnsCodeAndSnsContentIdIn() {
+        contentRepository.saveAll(List.of(
+                Content.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .snsContentId("instagram-001")
+                        .contentUrl("https://www.instagram.com/p/instagram-001")
+                        .contentType(ContentType.FEED)
+                        .build(),
+                Content.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .snsContentId("youtube-001")
+                        .contentUrl("https://www.youtube.com/watch?v=youtube-001")
+                        .contentType(ContentType.LONG_FORM)
+                        .build()));
+
+        List<Content> found = contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM,
+                List.of("instagram-001", "youtube-001", "missing"));
+
+        assertThat(found)
+                .extracting(Content::getSnsContentId)
+                .containsExactly("instagram-001");
     }
 }

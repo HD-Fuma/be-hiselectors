@@ -23,9 +23,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -95,19 +97,23 @@ public class ContentCollectionService {
 
         // 마지막 수집 시각 이후 콘텐츠 선별
         List<RawContent> candidates = new ArrayList<>();
+        Set<String> collectedContentIds = new HashSet<>();
         LocalDateTime lastCollectedAt = account.getLastCollectedAt();
         LocalDateTime collectedAfter = lastCollectedAt == null
                 ? CONTENT_COLLECTION_START_AT
                 : lastCollectedAt.withNano(0);
         for (RawContent content : collectedContents) {
             validatePlatform(content, account.getSnsCode());
-            if (!content.createdAt().isBefore(collectedAfter)) {
+            if (!content.createdAt().isBefore(collectedAfter)
+                    && collectedContentIds.add(content.snsContentId())) {
                 candidates.add(content);
             }
         }
 
-        // 신규 콘텐츠만 셀렉터스 콘텐츠 판별
-        List<RawContent> selectorsContents = candidates.stream()
+        // DB에 저장되지 않은 콘텐츠만 셀렉터스 콘텐츠 판별
+        List<RawContent> newCandidates = excludeExistingContents(
+                candidates, account.getSnsCode());
+        List<RawContent> selectorsContents = newCandidates.stream()
                 .filter(classifier::isSelectorsContent)
                 .toList();
 
@@ -118,6 +124,26 @@ public class ContentCollectionService {
             account.completeCollection(collectionStartedAt);
         }
         return selectorsContents.size();
+    }
+
+    private List<RawContent> excludeExistingContents(
+            List<RawContent> candidates, SnsPlatform snsCode) {
+        if (candidates.isEmpty()) {
+            return candidates;
+        }
+
+        List<String> candidateIds = candidates.stream()
+                .map(RawContent::snsContentId)
+                .toList();
+        Set<String> existingIds = new HashSet<>();
+        for (Content content : contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                snsCode, candidateIds)) {
+            existingIds.add(content.getSnsContentId());
+        }
+
+        return candidates.stream()
+                .filter(content -> !existingIds.contains(content.snsContentId()))
+                .toList();
     }
 
     private void saveAll(

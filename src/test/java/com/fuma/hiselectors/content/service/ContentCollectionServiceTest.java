@@ -185,6 +185,80 @@ class ContentCollectionServiceTest {
     }
 
     @Test
+    @DisplayName("경계 시각에 다시 조회된 기존 콘텐츠는 제외하고 신규 콘텐츠만 저장한다")
+    void excludeExistingContentAtCollectionBoundary() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        RawContent existing = raw(
+                "existing", "RC0001", lastCollectedAt, List.of());
+        RawContent newContent = raw(
+                "new", "RC0002", lastCollectedAt, List.of());
+        when(instagramClient.collect("nike", lastCollectedAt))
+                .thenReturn(new CollectionResult(2, List.of(existing, newContent)));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("existing", "new")))
+                .thenReturn(List.of(Content.builder()
+                        .selectorsId(SELECTORS_ID)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .snsContentId("existing")
+                        .contentUrl(existing.contentUrl())
+                        .contentType(existing.contentType())
+                        .build()));
+        when(classifier.isSelectorsContent(newContent)).thenReturn(true);
+
+        AtomicReference<List<Content>> savedContents = new AtomicReference<>();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Content> values = toList(invocation.getArgument(0));
+            savedContents.set(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isEqualTo(1);
+        assertThat(savedContents.get())
+                .extracting(Content::getSnsContentId)
+                .containsExactly("new");
+        verify(classifier, never()).isSelectorsContent(existing);
+        verify(classifier).isSelectorsContent(newContent);
+    }
+
+    @Test
+    @DisplayName("한 API 응답에 같은 콘텐츠가 반복되면 한 번만 저장한다")
+    void excludeDuplicateContentInApiResponse() {
+        LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
+        SelectorsSnsAccount snapshot = account(lastCollectedAt);
+        SelectorsSnsAccount managedAccount = account(lastCollectedAt);
+        when(accountRepository.findById(ACCOUNT_ID))
+                .thenReturn(Optional.of(snapshot), Optional.of(managedAccount));
+        RawContent duplicate = raw(
+                "duplicate", "RC0001", lastCollectedAt, List.of());
+        when(instagramClient.collect("nike", lastCollectedAt))
+                .thenReturn(new CollectionResult(2, List.of(duplicate, duplicate)));
+        when(classifier.isSelectorsContent(duplicate)).thenReturn(true);
+
+        AtomicReference<List<Content>> savedContents = new AtomicReference<>();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Content> values = toList(invocation.getArgument(0));
+            savedContents.set(values);
+            return values;
+        });
+
+        int savedCount = service.collectForAccount(ACCOUNT_ID);
+
+        assertThat(savedCount).isEqualTo(1);
+        assertThat(savedContents.get())
+                .extracting(Content::getSnsContentId)
+                .containsExactly("duplicate");
+        verify(contentRepository).findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("duplicate"));
+        verify(classifier).isSelectorsContent(duplicate);
+    }
+
+    @Test
     @DisplayName("신규 후보가 없어도 API 호출 성공 시 최종 수집 시각을 갱신한다")
     void advanceCollectionTimeWithoutNewContent() {
         LocalDateTime lastCollectedAt = LocalDateTime.of(2026, 8, 10, 0, 0);
