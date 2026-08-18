@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.report;
+package com.fuma.hiselectors.application.service;
 
 /**
  * 리포트 처리 상태. 기존 데이터가 쓰던 값(IN_PROGRESS/COMPLETED/FAILED)에

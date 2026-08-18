@@ -1,20 +1,35 @@
-package com.fuma.hiselectors.report.model;
+package com.fuma.hiselectors.application.model;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.CreationTimestamp;
 
-@MappedSuperclass
+/** 지원자(application) 맥락에서 요청한 분석 결과. application_id 필수. */
+@Entity
+@Table(name = "application_report")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@SuperBuilder
-public abstract class ReportBase {
+@Builder
+@lombok.AllArgsConstructor(access = AccessLevel.PRIVATE)
+public class ApplicationReport {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "application_report_id")
+    private Long id;
+
+    @Column(name = "application_id", nullable = false)
+    private Long applicationId;
 
     /** 정량 점수. 산출 로직 생기기 전까지 null. */
     @Column(name = "quantity_score", precision = 5, scale = 2)

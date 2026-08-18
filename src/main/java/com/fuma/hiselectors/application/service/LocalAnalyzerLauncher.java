@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.report;
+package com.fuma.hiselectors.application.service;
 
 import jakarta.annotation.PreDestroy;
 import java.io.File;

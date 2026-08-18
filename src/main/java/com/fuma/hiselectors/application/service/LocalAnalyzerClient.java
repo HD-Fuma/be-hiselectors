@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.report;
+package com.fuma.hiselectors.application.service;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fuma.hiselectors.exception.BusinessException;
