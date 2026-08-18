@@ -1,7 +1,6 @@
 package com.fuma.hiselectors.application.service;
 
 import com.fuma.hiselectors.application.model.ApplicationReport;
-import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.service.LocalAnalyzerClient.LocalAnalysis;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -12,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
@@ -20,15 +21,16 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class ApplicationReportService {
 
-    // AI 자동 분석 저장 기본값 = 관리자 검수 대기.
-    private static final String DEFAULT_STATUS = ReportStatus.AI_COMPLETED.name();
+    /** applicationId 별 콘텐츠 리포트 누적 캐시. 추후 인프라 캐시(Redis 등)로 config만 교체. */
+    static final String CONTENT_REPORT_CACHE = "applicationContentReports";
 
     private final SttService sttService;
     private final LocalAnalyzerClient analyzer;
-    private final ApplicationReportRepository applicationReportRepository;
+    private final CacheManager cacheManager;
     private final ObjectMapper objectMapper;
 
-    public ApplicationReport analyzeAndSave(
+    /** 콘텐츠 1개를 분석해 캐시에 쌓는다. application_report 저장은 지원자 단위 취합 시점에 별도로 수행. */
+    public ApplicationReport analyzeContent(
             Long applicationId, String snsCode, String snsContentId) {
 
         SttResult stt = sttService.transcribe(snsCode, snsContentId);
@@ -37,31 +39,43 @@ public class ApplicationReportService {
         ContentInsight insight = stt.insight() == null ? ContentInsight.empty() : stt.insight();
 
         String category = local.categoryLabel();
-        // 더현대 공식 카테고리로 안 잡히면 저장하지 않는다(도메인 밖 콘텐츠 제외).
+        // 더현대 공식 카테고리로 안 잡히면 캐시에 쌓지 않는다(도메인 밖 콘텐츠 제외).
         if (category == null || category.isBlank()) {
-            log.warn("카테고리 부적합으로 리포트 저장 스킵. applicationId={}, snsCode={}, snsContentId={}",
+            log.warn("카테고리 부적합으로 콘텐츠 분석 스킵. applicationId={}, snsCode={}, snsContentId={}",
                     applicationId, snsCode, snsContentId);
             throw new BusinessException(ErrorCode.REPORT_CATEGORY_NOT_SUPPORTED);
         }
 
-        String keywords = join(local.keywordsOrEmpty());
-        String tone = join1(insight.tone());
-        String strength = join(insight.strengths());
-        String warning = join(mergeWarnings(insight));
-        String brandHistory = join(insight.collabBrands());
-
-        return applicationReportRepository.save(ApplicationReport.builder()
+        // 미저장 ApplicationReport. 점수·상태는 취합 시점에 산출·설정한다.
+        ApplicationReport report = ApplicationReport.builder()
                 .applicationId(applicationId)
                 .summary(toJson(stt.summary()))
                 .category(category)
-                .keywords(clip(keywords, 500))
+                .keywords(clip(join(local.keywordsOrEmpty()), 500))
                 .contentStyle(clip(insight.contentStyle(), 19))
-                .tone(clip(tone, 500))
-                .strength(clip(strength, 500))
-                .warning(clip(warning, 500))
-                .brandHistory(clip(brandHistory, 500))
-                .status(DEFAULT_STATUS)
-                .build());
+                .tone(clip(join1(insight.tone()), 500))
+                .strength(clip(join(insight.strengths()), 500))
+                .warning(clip(join(mergeWarnings(insight)), 500))
+                .brandHistory(clip(join(insight.collabBrands()), 500))
+                .build();
+
+        cacheReport(applicationId, report);
+        return report;
+    }
+
+    private synchronized void cacheReport(Long applicationId, ApplicationReport report) {
+        Cache cache = cacheManager.getCache(CONTENT_REPORT_CACHE);
+        List<ApplicationReport> reports = new ArrayList<>(getCachedReports(applicationId));
+        reports.add(report);
+        cache.put(applicationId, reports);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<ApplicationReport> getCachedReports(Long applicationId) {
+        Cache cache = cacheManager.getCache(CONTENT_REPORT_CACHE);
+        List<ApplicationReport> cached = cache == null ? null
+                : cache.get(applicationId, List.class);
+        return cached == null ? List.of() : cached;
     }
 
     /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
