@@ -104,6 +104,7 @@
                     body: JSON.stringify({ text, include_hate: true })  // 테스트 화면은 욕설혐오도 확인
                 });
                 const d = await res.json();
+                if (!res.ok) throw new Error(d.detail || ("HTTP " + res.status));
                 meta.textContent = ((performance.now() - t0) / 1000).toFixed(2) + "초";
 
                 $("cat").textContent = d.category.label || "(해당없음)";

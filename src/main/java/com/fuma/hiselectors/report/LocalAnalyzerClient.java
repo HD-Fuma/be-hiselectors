@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.report;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -42,8 +44,9 @@ public class LocalAnalyzerClient {
                     .body(LocalAnalysis.class);
             return result == null ? LocalAnalysis.empty() : result;
         } catch (RestClientException e) {
-            log.warn("로컬 분석 워커 호출 실패({}). 키워드·카테고리 없이 진행한다.", baseUrl, e);
-            return LocalAnalysis.empty();
+            // 워커 장애를 빈 카테고리(→422)로 삼키지 않는다. 다운스트림 장애는 502로 구분.
+            log.warn("로컬 분석 워커 호출 실패({}).", baseUrl, e);
+            throw new BusinessException(ErrorCode.ANALYZER_UNAVAILABLE);
         }
     }
 

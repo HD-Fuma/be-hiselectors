@@ -122,7 +122,10 @@ public enum ErrorCode {
     // --- 리포트 분석 ---
     REPORT_CATEGORY_NOT_SUPPORTED(
             HttpStatus.UNPROCESSABLE_CONTENT,
-            "분석된 카테고리가 더현대 공식 체계에 없어 리포트를 저장하지 않았습니다.");
+            "분석된 카테고리가 더현대 공식 체계에 없어 리포트를 저장하지 않았습니다."),
+    ANALYZER_UNAVAILABLE(
+            HttpStatus.BAD_GATEWAY,
+            "로컬 분석 워커를 호출할 수 없습니다.");
 
     private final HttpStatus status;
     private final String message;
