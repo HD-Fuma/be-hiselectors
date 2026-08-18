@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.content.model;
 
+import com.fuma.hiselectors.common.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -7,24 +8,20 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
-/** 콘텐츠 버전에 포함된 개별 미디어 (콘텐츠 > 콘텐츠 버전 > 콘텐츠 미디어) */
 @Entity
-@Table(
-        name = "content_media",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uq_content_media_version_sequence",
-                columnNames = {"content_version_id", "sequence_no"}))
+@Table(name = "content_media")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ContentMedia {
+public class ContentMedia extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -34,44 +31,32 @@ public class ContentMedia {
     @Column(name = "content_version_id", nullable = false)
     private Long contentVersionId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "media_type", nullable = false, length = 19)
-    private MediaType mediaType;
-
     @Column(name = "media_url", length = 500)
     private String mediaUrl;
 
-    @Column(name = "sns_media_id", length = 200)
-    private String snsMediaId;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "media_type", nullable = false, length = 20)
+    private MediaType mediaType;
 
-    @Column(name = "sequence_no", nullable = false)
-    private Integer sequenceNo;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "body", columnDefinition = "json")
+    private Map<String, Object> body = new LinkedHashMap<>();
 
-    // TEXT: Instagram 본문, 프로필 설명, Youtube 본문, OCR/STT 추출 결과
-    @Lob
-    @Column(columnDefinition = "LONGTEXT")
-    private String body;
-
-    @Builder
-    private ContentMedia(
-            Long contentVersionId,
-            MediaType mediaType,
-            String mediaUrl,
-            String snsMediaId,
-            Integer sequenceNo,
-            String body) {
-        this.contentVersionId = contentVersionId;
-        this.mediaType = mediaType;
-        this.mediaUrl = mediaUrl;
-        this.snsMediaId = snsMediaId;
-        this.sequenceNo = sequenceNo;
-        this.body = body;
+    public static ContentMedia create(Long contentVersionId, String mediaUrl,
+                                      MediaType mediaType, Map<String, Object> body) {
+        ContentMedia media = new ContentMedia();
+        media.contentVersionId = contentVersionId;
+        media.mediaUrl = mediaUrl;
+        media.mediaType = mediaType;
+        media.replaceBody(body);
+        return media;
     }
 
-    public enum MediaType {
-        TEXT,
-        IMAGE,
-        VIDEO
+    public Map<String, Object> bodyOrEmpty() {
+        return body == null ? Map.of() : body;
     }
 
+    public void replaceBody(Map<String, Object> body) {
+        this.body = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
+    }
 }
