@@ -123,6 +123,21 @@ class SelectorsContentClassifierTest {
     }
 
     @Test
+    @DisplayName("단어 토큰에 붙은 URL 부분 문자열은 마스킹하되 확정 근거로 쓰지 않는다")
+    void embeddedProductUrlSubstringDoesNotConfirm() {
+        String url = "https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T";
+
+        assertClassification(
+                classifier.classify(content("x" + url)),
+                SelectorsContentDecision.NOT_SELECTORS,
+                0,
+                SelectorsContentReviewTier.NONE,
+                List.of(),
+                List.of(),
+                List.of(url));
+    }
+
+    @Test
     @DisplayName("전각 레퍼럴 코드는 NFKC 정규화 후 확정한다")
     void normalizesFullWidthReferralCode() {
         assertClassification(

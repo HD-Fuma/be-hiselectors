@@ -20,7 +20,7 @@ final class SelectorsUrlEvidenceExtractor {
             "https?://[^\\s]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS
     );
     private static final Pattern PRODUCT_PATH = Pattern.compile(
-            "^/product/([A-Za-z0-9_-]{1,100})/?$"
+            "^/product/([A-Za-z0-9_-]{1,100})/?$", Pattern.CASE_INSENSITIVE
     );
     private static final Pattern SELECTORS_MANAGE_SHOP_PATH = Pattern.compile(
             "^/sellectors/manage/shop/(RC[0-9]{9}T)(?:/[A-Za-z0-9_-]{1,100})?/?$",
@@ -48,13 +48,14 @@ final class SelectorsUrlEvidenceExtractor {
         List<int[]> spans = new ArrayList<>();
         while (matcher.find()) {
             String rawCandidate = matcher.group();
-            boolean terminalDotSegment = hasTerminalDotSegment(rawCandidate);
+            boolean terminalDotSegment = hasTerminalRawPathDotSegment(rawCandidate);
+            boolean classificationBoundary = hasClassificationStartBoundary(text, matcher.start());
             String candidate = stripTrailingPunctuation(rawCandidate);
             if (candidate.isEmpty()) {
                 continue;
             }
             matched.add(candidate);
-            if (isTrusted(candidate)) {
+            if (classificationBoundary && isTrusted(candidate)) {
                 trusted.add(candidate);
                 if (!terminalDotSegment) {
                     classifyProductUrl(candidate, evidence, referralCodes);
@@ -68,6 +69,19 @@ final class SelectorsUrlEvidenceExtractor {
         }
         return new Result(masked.toString(), evidence, referralCodes,
                 List.copyOf(matched), List.copyOf(trusted));
+    }
+
+    private static boolean hasClassificationStartBoundary(String text, int start) {
+        if (start == 0) {
+            return true;
+        }
+        int previous = text.codePointBefore(start);
+        int type = Character.getType(previous);
+        return !Character.isLetterOrDigit(previous)
+                && type != Character.NON_SPACING_MARK
+                && type != Character.COMBINING_SPACING_MARK
+                && type != Character.ENCLOSING_MARK
+                && type != Character.CONNECTOR_PUNCTUATION;
     }
 
     private static void classifyProductUrl(String candidate,
@@ -136,18 +150,33 @@ final class SelectorsUrlEvidenceExtractor {
         }
     }
 
-    private static boolean hasTerminalDotSegment(String candidate) {
-        for (int slash = 0; slash + 1 < candidate.length(); slash++) {
-            if (candidate.charAt(slash) != '/' || candidate.charAt(slash + 1) != '.') {
+    private static boolean hasTerminalRawPathDotSegment(String candidate) {
+        int authorityStart = candidate.indexOf("://");
+        int pathStart = candidate.indexOf('/', authorityStart < 0 ? 0 : authorityStart + 3);
+        if (pathStart < 0) {
+            return false;
+        }
+        int pathEnd = candidate.length();
+        int queryStart = candidate.indexOf('?', pathStart);
+        if (queryStart >= 0) {
+            pathEnd = Math.min(pathEnd, queryStart);
+        }
+        int fragmentStart = candidate.indexOf('#', pathStart);
+        if (fragmentStart >= 0) {
+            pathEnd = Math.min(pathEnd, fragmentStart);
+        }
+        String rawPath = candidate.substring(pathStart, pathEnd);
+        for (int slash = 0; slash + 1 < rawPath.length(); slash++) {
+            if (rawPath.charAt(slash) != '/' || rawPath.charAt(slash + 1) != '.') {
                 continue;
             }
             int suffixStart = slash + 2;
-            if (suffixStart < candidate.length() && candidate.charAt(suffixStart) == '.') {
+            if (suffixStart < rawPath.length() && rawPath.charAt(suffixStart) == '.') {
                 suffixStart++;
             }
             boolean punctuationOnly = true;
-            for (int index = suffixStart; index < candidate.length(); index++) {
-                if (TRAILING_PUNCTUATION.indexOf(candidate.charAt(index)) < 0) {
+            for (int index = suffixStart; index < rawPath.length(); index++) {
+                if (TRAILING_PUNCTUATION.indexOf(rawPath.charAt(index)) < 0) {
                     punctuationOnly = false;
                     break;
                 }

@@ -66,6 +66,18 @@ class SelectorsUrlEvidenceExtractorTest {
     }
 
     @Test
+    void recognizesProductRouteKeywordCaseInsensitively() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/PRODUCT/A?PTRSREFCD=RC000005105T");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.PUBLIC_PRODUCT_URL,
+                SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
+                SelectorsContentEvidence.REFERRAL_CODE);
+        assertThat(result.referralCodes()).containsExactly("RC000005105T");
+    }
+
+    @Test
     void classifiesTrustedSelectorsShopAndGroupPaths() {
         String boundaryGroupId = "a".repeat(100);
         for (String path : List.of("rc000005105t/", "RC000005105T/1", "RC000005105T/2",
@@ -190,6 +202,46 @@ class SelectorsUrlEvidenceExtractorTest {
                 SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
                 SelectorsContentEvidence.REFERRAL_CODE);
         assertThat(result.referralCodes()).containsExactly("RC000005105T");
+    }
+
+    @Test
+    void queryTextThatLooksLikeADotSegmentDoesNotInvalidateTheProductPath() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T&x=/..");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.PUBLIC_PRODUCT_URL,
+                SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
+                SelectorsContentEvidence.REFERRAL_CODE);
+        assertThat(result.referralCodes()).containsExactly("RC000005105T");
+    }
+
+    @Test
+    void masksButDoesNotTrustUrlsEmbeddedInUnicodeWordTokens() {
+        String text = "xhttps://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T "
+                + "한https://hi.thehyundai.com/product/B?ptrsRefCd=RC000005106T "
+                + "9https://hi.thehyundai.com/product/C?ptrsRefCd=RC000005107T "
+                + "_https://hi.thehyundai.com/product/D?ptrsRefCd=RC000005108T";
+
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(text);
+
+        assertThat(result.matchedUrls()).hasSize(4);
+        assertThat(result.trustedUrls()).isEmpty();
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.referralCodes()).isEmpty();
+        assertThat(result.textWithoutUrls()).doesNotContain("RC00000510");
+    }
+
+    @Test
+    void trustsAUrlThatStartsAfterOpeningPunctuation() {
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
+                "(https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T)");
+
+        assertThat(result.trustedUrls()).containsExactly(
+                "https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T");
+        assertThat(result.evidence()).contains(
+                SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
+                SelectorsContentEvidence.REFERRAL_CODE);
     }
 
     @Test
