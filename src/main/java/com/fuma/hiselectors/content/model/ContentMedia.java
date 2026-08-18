@@ -42,6 +42,12 @@ public class ContentMedia extends BaseTimeEntity {
     @Column(name = "body", columnDefinition = "json")
     private Map<String, Object> body = new LinkedHashMap<>();
 
+    @Column(name = "sns_media_id", length = 200)
+    private String snsMediaId;
+
+    @Column(name = "sequence_no", nullable = false)
+    private Integer sequenceNo;
+
     public static ContentMedia create(Long contentVersionId, String mediaUrl,
                                       MediaType mediaType, Map<String, Object> body) {
         ContentMedia media = new ContentMedia();
