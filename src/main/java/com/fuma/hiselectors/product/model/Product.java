@@ -32,23 +32,44 @@ public class Product extends BaseTimeEntity {
     @Column(name = "product_code", nullable = false, length = 50)
     private String productCode;
 
+    @Column(name = "product_name", length = 200)
+    private String productName;
+
+    @Column(name = "brand_name", length = 100)
+    private String brandName;
+
+    @Column(name = "category", length = 100)
+    private String category;
+
     @Column(name = "regular_price", nullable = false, precision = 19, scale = 2)
     private BigDecimal regularPrice;
 
     @Column(name = "sale_price", nullable = false, precision = 19, scale = 2)
     private BigDecimal salePrice;
 
+    @Column(name = "thumbnail_url", length = 500)
+    private String thumbnailUrl;
+
+    @Column(name = "detail_url", length = 500)
+    private String detailUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private ProductStatus status;
 
     @Builder
-    private Product(String productCode, BigDecimal regularPrice, BigDecimal salePrice,
-                    ProductStatus status) {
+    private Product(String productCode, String productName, String brandName, String category,
+                    BigDecimal regularPrice, BigDecimal salePrice, ProductStatus status,
+                    String thumbnailUrl, String detailUrl) {
         this.productCode = productCode;
+        this.productName = productName;
+        this.brandName = brandName;
+        this.category = category;
         this.regularPrice = regularPrice;
         this.salePrice = salePrice;
         this.status = status;
+        this.thumbnailUrl = thumbnailUrl;
+        this.detailUrl = detailUrl;
     }
 
     public boolean isAvailableForSale() {
