@@ -38,7 +38,7 @@ public class ContentMedia {
     @Column(name = "media_type", nullable = false, length = 19)
     private MediaType mediaType;
 
-    @Column(name = "media_url", length = 500)
+    @Column(name = "media_url", columnDefinition = "TEXT")
     private String mediaUrl;
 
     @Column(name = "sns_media_id", length = 200)

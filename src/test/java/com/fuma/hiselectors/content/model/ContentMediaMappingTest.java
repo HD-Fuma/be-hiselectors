@@ -12,6 +12,18 @@ import org.junit.jupiter.api.Test;
 class ContentMediaMappingTest {
 
     @Test
+    @DisplayName("미디어 URL을 길이 제한 없는 TEXT 컬럼에 저장한다")
+    void mapMediaUrlAsText() throws NoSuchFieldException, NoSuchMethodException {
+        Field mediaUrl = ContentMedia.class.getDeclaredField("mediaUrl");
+        Column column = mediaUrl.getAnnotation(Column.class);
+        int defaultLength = (int) Column.class.getDeclaredMethod("length").getDefaultValue();
+
+        assertThat(column.name()).isEqualTo("media_url");
+        assertThat(column.columnDefinition()).isEqualTo("TEXT");
+        assertThat(column.length()).isEqualTo(defaultLength);
+    }
+
+    @Test
     @DisplayName("본문 문자열을 JSON 컬럼에 인용해 저장하고 문자열로 조회한다")
     void mapBodyAsJsonString() throws NoSuchFieldException {
         Field body = ContentMedia.class.getDeclaredField("body");
