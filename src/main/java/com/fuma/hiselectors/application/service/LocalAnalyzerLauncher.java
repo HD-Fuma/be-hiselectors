@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -73,9 +74,18 @@ public class LocalAnalyzerLauncher implements ApplicationRunner {
 
     @PreDestroy
     public void stop() {
-        if (process != null && process.isAlive()) {
-            log.info("정성 엔진 워커 종료");
-            process.destroy();
+        if (process == null || !process.isAlive()) {
+            return;
+        }
+        log.info("정성 엔진 워커 종료");
+        process.destroy();
+        try {
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();  // graceful 종료 실패 시 강제
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
         }
     }
 }

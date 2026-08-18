@@ -8,7 +8,10 @@ import com.fuma.hiselectors.stt.ContentInsight;
 import com.fuma.hiselectors.stt.SttResult;
 import com.fuma.hiselectors.stt.SttService;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
@@ -59,23 +62,29 @@ public class ApplicationReportService {
                 .brandHistory(clip(join(insight.collabBrands()), 500))
                 .build();
 
-        cacheReport(applicationId, report);
+        cacheReport(applicationId, snsCode + ":" + snsContentId, report);
         return report;
     }
 
-    private synchronized void cacheReport(Long applicationId, ApplicationReport report) {
+    // 콘텐츠키로 매핑 → 같은 콘텐츠 재요청은 교체(멱등). 취합 로직이 getCachedReports 로 꺼내 쓴다.
+    // ponytail: 단일 인스턴스 전제. 멀티 인스턴스 전환 시 Redis 해시 연산 등으로 원자성 확보 필요.
+    private synchronized void cacheReport(Long applicationId, String contentKey, ApplicationReport report) {
         Cache cache = cacheManager.getCache(CONTENT_REPORT_CACHE);
-        List<ApplicationReport> reports = new ArrayList<>(getCachedReports(applicationId));
-        reports.add(report);
-        cache.put(applicationId, reports);
+        Map<String, ApplicationReport> byContent =
+                new LinkedHashMap<>(Optional.ofNullable(cachedMap(applicationId)).orElseGet(Map::of));
+        byContent.put(contentKey, report);
+        cache.put(applicationId, byContent);
+    }
+
+    public List<ApplicationReport> getCachedReports(Long applicationId) {
+        Map<String, ApplicationReport> byContent = cachedMap(applicationId);
+        return byContent == null ? List.of() : List.copyOf(byContent.values());
     }
 
     @SuppressWarnings("unchecked")
-    public List<ApplicationReport> getCachedReports(Long applicationId) {
+    private Map<String, ApplicationReport> cachedMap(Long applicationId) {
         Cache cache = cacheManager.getCache(CONTENT_REPORT_CACHE);
-        List<ApplicationReport> cached = cache == null ? null
-                : cache.get(applicationId, List.class);
-        return cached == null ? List.of() : cached;
+        return cache == null ? null : cache.get(applicationId, Map.class);
     }
 
     /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
