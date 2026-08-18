@@ -151,7 +151,7 @@ class CampaignQueryIntegrationTest {
 
     private Campaign campaign(String title, LocalDate startDate, LocalDate endDate) {
         return Campaign.builder().title(title).description("설명").startDate(startDate).endDate(endDate)
-                .thumbnailUrl("campaign-thumb").status(CampaignStatus.SCHEDULED).build();
+                .thumbnailUrl("campaign-thumb").build();
     }
 
     private Product product(String code, String name, String brand, ProductStatus status) {

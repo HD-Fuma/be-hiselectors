@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class CampaignQueryService {
+public class CampaignClientService {
 
     private static final ZoneId SEOUL_ZONE = ZoneId.of("Asia/Seoul");
 
@@ -44,13 +44,11 @@ public class CampaignQueryService {
         Campaign campaign = campaignRepository.findByIdAndIsDeletedFalse(campaignId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CAMPAIGN_NOT_FOUND));
         return CampaignDetailResponse.of(campaign,
-                campaignProductRepository.findAllByCampaignId(campaignId), deriveStatus(campaign));
+                campaignProductRepository.findAllByCampaignIdOrderByIdAsc(campaignId), deriveStatus(campaign));
     }
 
     private CampaignStatus deriveStatus(Campaign campaign) {
         LocalDate today = LocalDate.now(clock.withZone(SEOUL_ZONE));
-        if (today.isBefore(campaign.getStartDate())) return CampaignStatus.SCHEDULED;
-        if (today.isAfter(campaign.getEndDate())) return CampaignStatus.ENDED;
-        return CampaignStatus.ACTIVE;
+        return CampaignStatus.from(campaign.getStartDate(), campaign.getEndDate(), today);
     }
 }

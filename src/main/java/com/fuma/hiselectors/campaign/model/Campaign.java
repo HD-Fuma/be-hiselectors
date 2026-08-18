@@ -3,8 +3,6 @@ package com.fuma.hiselectors.campaign.model;
 import com.fuma.hiselectors.common.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -26,10 +24,6 @@ public class Campaign extends BaseTimeEntity {
     @Column(name = "campaign_id")
     private Long id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "campaign_status_code", nullable = false, length = 20)
-    private CampaignStatus status;
-
     @Column(length = 100)
     private String title;
 
@@ -50,30 +44,25 @@ public class Campaign extends BaseTimeEntity {
 
     @Builder
     private Campaign(String title, String description, LocalDate startDate, LocalDate endDate,
-                     String thumbnailUrl, CampaignStatus status) {
+                     String thumbnailUrl) {
         this.title = title;
         this.description = description;
         this.startDate = startDate;
         this.endDate = endDate;
         this.thumbnailUrl = thumbnailUrl;
-        this.status = status;
     }
 
     public void update(String title, String description, LocalDate startDate, LocalDate endDate,
-                       String thumbnailUrl, CampaignStatus status) {
+                       String thumbnailUrl) {
         if (title != null) this.title = title;
         if (description != null) this.description = description;
         if (startDate != null) this.startDate = startDate;
         if (endDate != null) this.endDate = endDate;
         if (thumbnailUrl != null) this.thumbnailUrl = thumbnailUrl;
-        this.status = status;
     }
 
     public void softDelete() {
         this.isDeleted = true;
     }
 
-    public void synchronizeStatus(CampaignStatus status) {
-        this.status = status;
-    }
 }

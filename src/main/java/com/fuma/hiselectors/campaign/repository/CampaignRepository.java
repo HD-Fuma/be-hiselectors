@@ -22,10 +22,16 @@ public interface CampaignRepository extends JpaRepository<Campaign, Long>, JpaSp
               from product_group pg
               join product_group_item pgi on pgi.group_id = pg.product_group_id
               join selectors s on s.selectors_id = pg.selectors_id
-              -- The domain invariant permits exactly one active SNS account per selector.
-         left join selectors_sns_account a on a.selectors_id = s.selectors_id and a.is_deleted = false
+         left join selectors_sns_account a on a.selectors_sns_account_id = (
+                select account.selectors_sns_account_id
+                  from selectors_sns_account account
+                 where account.selectors_id = s.selectors_id and account.is_deleted = false
+                 order by account.last_collected_at desc, account.selectors_sns_account_id desc
+                 limit 1
+            )
              where pg.campaign_id = :campaignId
                and pgi.created_at >= :startAt and pgi.created_at < :endExclusive
+             order by s.selectors_id asc
             """, countQuery = """
             select count(distinct pg.selectors_id)
               from product_group pg

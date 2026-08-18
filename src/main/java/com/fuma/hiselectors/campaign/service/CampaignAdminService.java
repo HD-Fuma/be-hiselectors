@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.campaign.service;
 
 import com.fuma.hiselectors.campaign.dto.CampaignCreateRequest;
+import com.fuma.hiselectors.campaign.dto.CampaignParticipantResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignUpdateRequest;
 import com.fuma.hiselectors.campaign.model.Campaign;
@@ -15,6 +16,7 @@ import com.fuma.hiselectors.product.repository.ProductRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -59,6 +61,14 @@ public class CampaignAdminService {
         return toResponse(getCampaign(campaignId));
     }
 
+    public Page<CampaignParticipantResponse> findParticipants(Long campaignId, Pageable pageable) {
+        Campaign campaign = getCampaign(campaignId);
+        LocalDateTime startAt = campaign.getStartDate().atStartOfDay();
+        LocalDateTime endExclusive = campaign.getEndDate().plusDays(1).atStartOfDay();
+        return campaignRepository.findParticipants(campaignId, startAt, endExclusive, pageable)
+                .map(CampaignParticipantResponse::from);
+    }
+
     @Transactional
     public CampaignResponse create(CampaignCreateRequest request) {
         validateDates(request.startDate(), request.endDate());
@@ -66,8 +76,7 @@ public class CampaignAdminService {
         ensureAllAvailable(products);
         Campaign campaign = campaignRepository.save(Campaign.builder()
                 .title(request.title().trim()).description(request.description().trim())
-                .startDate(request.startDate()).endDate(request.endDate()).thumbnailUrl(request.thumbnailUrl())
-                .status(deriveStatus(request.startDate(), request.endDate())).build());
+                .startDate(request.startDate()).endDate(request.endDate()).thumbnailUrl(request.thumbnailUrl()).build());
         saveLinks(campaign, products);
         return toResponse(campaign);
     }
@@ -79,10 +88,10 @@ public class CampaignAdminService {
         LocalDate endDate = request.endDate() == null ? campaign.getEndDate() : request.endDate();
         validateDates(startDate, endDate);
         campaign.update(trimToNull(request.title()), trimToNull(request.description()), request.startDate(),
-                request.endDate(), request.thumbnailUrl(), deriveStatus(startDate, endDate));
+                request.endDate(), request.thumbnailUrl());
 
         if (request.productIds() != null) {
-            List<CampaignProduct> existingLinks = campaignProductRepository.findAllByCampaignId(campaignId);
+            List<CampaignProduct> existingLinks = campaignProductRepository.findAllByCampaignIdOrderByIdAsc(campaignId);
             Set<Long> existingProductIds = existingLinks.stream()
                     .map(link -> link.getProduct().getId()).collect(java.util.stream.Collectors.toSet());
             List<Product> requestedProducts = getProducts(request.productIds());
@@ -161,25 +170,18 @@ public class CampaignAdminService {
     }
 
     private CampaignResponse toResponse(Campaign campaign) {
-        return toResponse(campaign, campaignProductRepository.findAllByCampaignId(campaign.getId()));
+        return toResponse(campaign, campaignProductRepository.findAllByCampaignIdOrderByIdAsc(campaign.getId()));
     }
 
     private CampaignResponse toResponse(Campaign campaign, List<CampaignProduct> products) {
         return CampaignResponse.of(campaign, products,
-                deriveStatus(campaign.getStartDate(), campaign.getEndDate()));
+                CampaignStatus.from(campaign.getStartDate(), campaign.getEndDate(), today()));
     }
 
     private void validateDates(LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "시작일은 종료일보다 늦을 수 없습니다.");
         }
-    }
-
-    private CampaignStatus deriveStatus(LocalDate startDate, LocalDate endDate) {
-        LocalDate today = today();
-        if (today.isBefore(startDate)) return CampaignStatus.SCHEDULED;
-        if (today.isAfter(endDate)) return CampaignStatus.ENDED;
-        return CampaignStatus.ACTIVE;
     }
 
     private LocalDate today() {

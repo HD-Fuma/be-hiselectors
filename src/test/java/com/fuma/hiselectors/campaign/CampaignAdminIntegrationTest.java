@@ -127,7 +127,7 @@ class CampaignAdminIntegrationTest {
                         .header("Authorization", bearer("ADMIN")))
                 .andExpect(status().isNoContent());
         assertThat(campaignRepository.findById(id).orElseThrow().isDeleted()).isTrue();
-        assertThat(campaignProductRepository.findAllByCampaignId(id)).isEmpty();
+        assertThat(campaignProductRepository.findAllByCampaignIdOrderByIdAsc(id)).isEmpty();
 
         mockMvc.perform(post("/api/admin/campaigns")
                         .header("Authorization", bearer("ADMIN"))

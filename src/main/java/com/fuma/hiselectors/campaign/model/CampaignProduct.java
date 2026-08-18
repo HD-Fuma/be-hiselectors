@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.campaign.model;
 
 import com.fuma.hiselectors.product.model.Product;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -21,6 +22,7 @@ public class CampaignProduct {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "campaign_product_id")
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

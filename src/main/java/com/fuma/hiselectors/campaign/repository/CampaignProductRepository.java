@@ -11,8 +11,4 @@ public interface CampaignProductRepository extends JpaRepository<CampaignProduct
 
     @EntityGraph(attributePaths = "product")
     List<CampaignProduct> findAllByCampaignIdInOrderByCampaignIdAscIdAsc(List<Long> campaignIds);
-    default List<CampaignProduct> findAllByCampaignId(Long campaignId) {
-        return findAllByCampaignIdOrderByIdAsc(campaignId);
-    }
-    void deleteAllByCampaignId(Long campaignId);
 }
