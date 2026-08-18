@@ -81,8 +81,22 @@ class SelectorsTextEvidenceExtractorTest {
             assertThat(result.hashtags()).containsExactlyElementsOf(expected);
             assertThat(result.evidence()).containsExactly(
                     SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR,
+                    SelectorsContentEvidence.SELECTORS_NAME,
                     SelectorsContentEvidence.THE_HYUNDAI_MENTION);
-            assertThat(result.score()).isEqualTo(1);
+            assertThat(result.score()).isEqualTo(5);
+        }
+    }
+
+    @Test
+    void recognizesStandaloneSelectorsHashtagsCaseInsensitively() {
+        for (String text : List.of("#셀렉터스", "#Selectors")) {
+            SelectorsTextEvidenceExtractor.Result result = extract(text);
+
+            assertThat(result.evidence()).as(text).containsExactly(
+                    SelectorsContentEvidence.SELECTORS_NAME);
+            assertThat(result.score()).as(text).isEqualTo(4);
+            assertThat(result.evidence()).doesNotContain(
+                    SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
         }
     }
 
@@ -93,6 +107,7 @@ class SelectorsTextEvidenceExtractorTest {
                 "#더현대서울",
                 "#셀렉터스",
                 "#더현대서울 #셀렉터스몰",
+                "#SelectorsMall",
                 "#더현대셀렉터스")) {
             SelectorsTextEvidenceExtractor.Result result = extract(text);
 
@@ -149,6 +164,8 @@ class SelectorsTextEvidenceExtractorTest {
                 "셀렉터스몰",
                 "MySelectors",
                 "SelectorsMall",
+                "#셀렉터스몰",
+                "#SelectorsMall",
                 astralLetter + "Selectors",
                 "Selectors" + astralLetter)) {
             SelectorsTextEvidenceExtractor.Result result = extract(text);

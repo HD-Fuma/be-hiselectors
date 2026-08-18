@@ -67,9 +67,13 @@ final class SelectorsTextEvidenceExtractor {
 
         String textForTextSignals = maskHashtags(textWithoutUrls);
         boolean hasCombinedSelectorsHashtag = hashtags.contains("#더현대셀렉터스");
+        boolean hasStandaloneSelectorsHashtag = hashtags.stream()
+                .anyMatch(hashtag -> hashtag.equals("#셀렉터스")
+                        || hashtag.equalsIgnoreCase("#Selectors"));
         boolean hasSelectorsBrandPhrase = containsStandalone(
                 SELECTORS_BRAND_PHRASE, textForTextSignals) || hasCombinedSelectorsHashtag;
-        boolean hasSelectorsName = containsStandalone(SELECTORS_NAME, textForTextSignals);
+        boolean hasSelectorsName = hasStandaloneSelectorsHashtag
+                || containsStandalone(SELECTORS_NAME, textForTextSignals);
         boolean hasSelectorsShopName = containsStandalone(SELECTORS_SHOP_NAME, textForTextSignals);
         if (hasSelectorsBrandPhrase) {
             evidence.add(SelectorsContentEvidence.SELECTORS_BRAND_PHRASE);
