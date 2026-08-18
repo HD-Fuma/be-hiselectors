@@ -8,6 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SelectorsTextEvidenceExtractorTest {
 
@@ -197,6 +199,163 @@ class SelectorsTextEvidenceExtractorTest {
                     SelectorsContentEvidence.THE_HYUNDAI_MENTION);
             assertThat(result.score()).as(text).isEqualTo(1);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "#광고", "#협찬", "#ad", "유료광고", "유료 광고", "광고입니다",
+            "협찬받아", "제휴 링크", "판매 수수료", "paid partnership", "PAID PARTNERSHIP", "paid link"
+    })
+    void scoresEachEconomicDisclosureSignalExactlyOnce(String signal) {
+        SelectorsTextEvidenceExtractor.Result result = extract(signal);
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.ECONOMIC_DISCLOSURE);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"#광고주", "#협찬사", "#advice"})
+    void rejectsNonDisclosureHashtags(String hashtag) {
+        SelectorsTextEvidenceExtractor.Result result = extract(hashtag);
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.score()).isZero();
+    }
+
+    @Test
+    void scoresRepeatedEconomicDisclosureTermsOnce() {
+        SelectorsTextEvidenceExtractor.Result result = extract(
+                "#광고 유료광고 광고입니다 paid partnership #ad");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.ECONOMIC_DISCLOSURE);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"협찬받아서", "오늘유료광고예요"})
+    void scoresEconomicDisclosureLiteralInsideNormalizedText(String text) {
+        SelectorsTextEvidenceExtractor.Result result = extract(text);
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.ECONOMIC_DISCLOSURE);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "프로필 링크", "링크 확인", "링크 클릭", "구매하기", "지금 구매", "바로 구매",
+            "구매 링크", "주문하기", "지금 주문", "예약하기", "쿠폰", "할인 코드", "DM 문의"
+    })
+    void scoresEachPurchaseCtaSignalExactlyOnce(String signal) {
+        SelectorsTextEvidenceExtractor.Result result = extract(signal);
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.PURCHASE_CTA);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"구매력", "주문진", "예약어"})
+    void rejectsPurchaseCtaSubstrings(String text) {
+        SelectorsTextEvidenceExtractor.Result result = extract(text);
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.score()).isZero();
+    }
+
+    @Test
+    void scoresRepeatedPurchaseCtaTermsOnce() {
+        SelectorsTextEvidenceExtractor.Result result = extract(
+                "프로필 링크 링크 확인 구매하기 지금 구매 구매 링크 주문하기 쿠폰 DM 문의");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.PURCHASE_CTA);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @Test
+    void scoresPurchaseCtaLiteralInsideNormalizedText() {
+        SelectorsTextEvidenceExtractor.Result result = extract("쿠폰받기");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.PURCHASE_CTA);
+        assertThat(result.score()).isEqualTo(1);
+    }
+
+    @Test
+    void composesEconomicDisclosureAndPurchaseCtaWithExistingSignals() {
+        SelectorsTextEvidenceExtractor.Result result = extract(
+                "더현대 셀렉터스 광고입니다 유료광고 프로필 링크 구매하기 지금 구매");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.ECONOMIC_DISCLOSURE,
+                SelectorsContentEvidence.PURCHASE_CTA,
+                SelectorsContentEvidence.SELECTORS_BRAND_PHRASE,
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.score()).isEqualTo(8);
+    }
+
+    @Test
+    void composesEconomicDisclosureIndependentlyWithNameAndHyundaiSignals() {
+        SelectorsTextEvidenceExtractor.Result result = extract("더현대 셀렉터스 광고입니다");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.ECONOMIC_DISCLOSURE,
+                SelectorsContentEvidence.SELECTORS_BRAND_PHRASE,
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.score()).isEqualTo(7);
+    }
+
+    @Test
+    void composesPurchaseCtaIndependentlyWithNameAndHyundaiSignals() {
+        SelectorsTextEvidenceExtractor.Result result = extract("더현대 셀렉터스 쿠폰");
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.PURCHASE_CTA,
+                SelectorsContentEvidence.SELECTORS_BRAND_PHRASE,
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.score()).isEqualTo(7);
+    }
+
+    @Test
+    void preservesHardUrlEvidenceWithoutScoringItAlongsideSoftSignals() {
+        String fullText = "https://hi.thehyundai.com/product/sku?ptrsRefCd=RC000005105T 광고입니다 쿠폰";
+        SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
+
+        SelectorsTextEvidenceExtractor.Result result = SelectorsTextEvidenceExtractor.extract(
+                fullText, urls.textWithoutUrls(), urls.evidence());
+
+        assertThat(result.evidence()).containsExactlyInAnyOrder(
+                SelectorsContentEvidence.PRODUCT_URL_WITH_REFERRAL,
+                SelectorsContentEvidence.REFERRAL_CODE,
+                SelectorsContentEvidence.PUBLIC_PRODUCT_URL,
+                SelectorsContentEvidence.ECONOMIC_DISCLOSURE,
+                SelectorsContentEvidence.PURCHASE_CTA);
+        assertThat(result.score()).isEqualTo(2);
+    }
+
+    @Test
+    void doesNotBridgeEconomicDisclosureOrPurchaseCtaAcrossMaskedSpans() {
+        SelectorsTextEvidenceExtractor.Result disclosure = extractAfterUrlMasking(
+                "유료 https://evil.example/x 광고");
+        SelectorsTextEvidenceExtractor.Result cta = extractAfterUrlMasking(
+                "프로필 #잡담 링크");
+
+        assertThat(disclosure.evidence()).doesNotContain(SelectorsContentEvidence.ECONOMIC_DISCLOSURE);
+        assertThat(disclosure.score()).isZero();
+        assertThat(cta.evidence()).doesNotContain(SelectorsContentEvidence.PURCHASE_CTA);
+        assertThat(cta.score()).isZero();
+    }
+
+    @Test
+    void doesNotScoreEconomicDisclosureOrPurchaseCtaFoundOnlyInsideUrls() {
+        String fullText = "https://evil.example/광고입니다 https://evil.example/구매하기";
+        SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
+
+        SelectorsTextEvidenceExtractor.Result result = SelectorsTextEvidenceExtractor.extract(
+                fullText, urls.textWithoutUrls(), urls.evidence());
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.score()).isZero();
     }
 
     @Test

@@ -27,6 +27,12 @@ final class SelectorsTextEvidenceExtractor {
     private static final Pattern THE_HYUNDAI_PHRASE = Pattern.compile(
             "THE\\s+HYUNDAI",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern ECONOMIC_DISCLOSURE_PHRASE = Pattern.compile(
+            "유료광고|유료 광고|광고입니다|협찬받아|제휴 링크|판매 수수료|paid partnership|paid link",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern PURCHASE_CTA_PHRASE = Pattern.compile(
+            "프로필 링크|링크 확인|링크 클릭|구매하기|지금 구매|바로 구매|구매 링크|주문하기|지금 주문|예약하기|쿠폰|할인 코드|DM 문의",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final char MASKED_CONTENT_BARRIER = '\u0000';
 
     private SelectorsTextEvidenceExtractor() {
@@ -68,6 +74,18 @@ final class SelectorsTextEvidenceExtractor {
 
         String textForTextSignals = maskHashtags(
                 maskRemovedUrlSpans(normalizedFullText, textWithoutUrls));
+        boolean hasEconomicDisclosure = hashtags.stream()
+                .anyMatch(hashtag -> hashtag.equalsIgnoreCase("#광고")
+                        || hashtag.equalsIgnoreCase("#협찬")
+                        || hashtag.equalsIgnoreCase("#ad"))
+                || ECONOMIC_DISCLOSURE_PHRASE.matcher(textForTextSignals).find();
+        boolean hasPurchaseCta = PURCHASE_CTA_PHRASE.matcher(textForTextSignals).find();
+        if (hasEconomicDisclosure) {
+            evidence.add(SelectorsContentEvidence.ECONOMIC_DISCLOSURE);
+        }
+        if (hasPurchaseCta) {
+            evidence.add(SelectorsContentEvidence.PURCHASE_CTA);
+        }
         boolean hasCombinedSelectorsHashtag = hashtags.contains("#더현대셀렉터스");
         boolean hasStandaloneSelectorsHashtag = hashtags.stream()
                 .anyMatch(hashtag -> hashtag.equals("#셀렉터스")
@@ -101,7 +119,9 @@ final class SelectorsTextEvidenceExtractor {
 
         int nameFamilyScore = hasSelectorsBrandPhrase ? 5
                 : (hasSelectorsName || hasSelectorsShopName ? 4 : 0);
-        int score = nameFamilyScore + (hasTheHyundaiMention ? 1 : 0);
+        int score = nameFamilyScore + (hasTheHyundaiMention ? 1 : 0)
+                + (hasEconomicDisclosure ? 1 : 0)
+                + (hasPurchaseCta ? 1 : 0);
 
         return new Result(evidence, referralCodes, score, hashtags);
     }
