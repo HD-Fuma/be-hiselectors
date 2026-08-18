@@ -14,6 +14,12 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+  # devtools 자동 재시작 끔. 코드 변경 때마다 컨텍스트가 재시작되면 자동 실행된 정성 엔진
+  # 워커도 매번 재기동(모델 20초 재로딩)돼 느려진다. 재시작이 필요하면 이 값을 true 로.
+  devtools:
+    restart:
+      enabled: false
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hiselectors}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
@@ -42,6 +48,9 @@ youtube:
 
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
+    api-key: ${youtube.collection.api-key}
+
+  collection:
     api-key: ${YOUTUBE_API_KEY:}
     daily-quota: ${YOUTUBE_DISCOVERY_DAILY_QUOTA:10000}
     max-results-per-keyword: ${YOUTUBE_DISCOVERY_MAX_RESULTS:25}
@@ -64,6 +73,11 @@ instagram:
     client-secret: ${INSTAGRAM_CLIENT_SECRET:}
     redirect-uri: ${INSTAGRAM_REDIRECT_URI}
     scope: instagram_business_basic
+
+  collection:
+    api-version: ${META_API_VERSION:v24.0}
+    business-account-id: ${META_INSTAGRAM_BUSINESS_ACCOUNT_ID:}
+    access-token: ${META_LONG_LIVED_ACCESS_TOKEN:}
 
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:

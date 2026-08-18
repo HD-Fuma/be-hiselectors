@@ -61,4 +61,8 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
         this.lastCollectedAt = lastCollectedAt;
         this.profileImageUrl = profileImageUrl;
     }
+
+    public void completeCollection(LocalDateTime collectedAt) {
+        this.lastCollectedAt = collectedAt;
+    }
 }

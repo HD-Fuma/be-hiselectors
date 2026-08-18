@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ContentMediaRepository extends JpaRepository<ContentMedia, Long> {
 
-    List<ContentMedia> findAllByContentVersionIdOrderById(Long contentVersionId);
+    List<ContentMedia> findByContentVersionIdOrderBySequenceNoAsc(Long contentVersionId);
 }
