@@ -138,6 +138,23 @@ class SelectorsContentClassifierTest {
     }
 
     @Test
+    @DisplayName("NFKC 정규화 뒤에도 유니코드 숫자에 붙은 URL은 확정 근거로 쓰지 않는다")
+    void unicodeNumberPrefixedProductUrlsDoNotConfirmAfterNormalization() {
+        String url = "https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T";
+
+        for (String prefix : List.of("ᛮ", "৴")) {
+            assertClassification(
+                    classifier.classify(content(prefix + url)),
+                    SelectorsContentDecision.NOT_SELECTORS,
+                    0,
+                    SelectorsContentReviewTier.NONE,
+                    List.of(),
+                    List.of(),
+                    List.of(url));
+        }
+    }
+
+    @Test
     @DisplayName("전각 레퍼럴 코드는 NFKC 정규화 후 확정한다")
     void normalizesFullWidthReferralCode() {
         assertClassification(

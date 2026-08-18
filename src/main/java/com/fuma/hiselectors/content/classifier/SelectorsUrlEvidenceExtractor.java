@@ -76,12 +76,24 @@ final class SelectorsUrlEvidenceExtractor {
             return true;
         }
         int previous = text.codePointBefore(start);
-        int type = Character.getType(previous);
-        return !Character.isLetterOrDigit(previous)
-                && type != Character.NON_SPACING_MARK
-                && type != Character.COMBINING_SPACING_MARK
-                && type != Character.ENCLOSING_MARK
-                && type != Character.CONNECTOR_PUNCTUATION;
+        return !isUnicodeWordLike(previous);
+    }
+
+    private static boolean isUnicodeWordLike(int codePoint) {
+        if (Character.isLetter(codePoint)) {
+            return true;
+        }
+        int type = Character.getType(codePoint);
+        return switch (type) {
+            case Character.DECIMAL_DIGIT_NUMBER,
+                    Character.LETTER_NUMBER,
+                    Character.OTHER_NUMBER,
+                    Character.NON_SPACING_MARK,
+                    Character.COMBINING_SPACING_MARK,
+                    Character.ENCLOSING_MARK,
+                    Character.CONNECTOR_PUNCTUATION -> true;
+            default -> false;
+        };
     }
 
     private static void classifyProductUrl(String candidate,

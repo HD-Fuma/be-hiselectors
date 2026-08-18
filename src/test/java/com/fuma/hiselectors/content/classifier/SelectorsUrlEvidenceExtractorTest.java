@@ -233,6 +233,19 @@ class SelectorsUrlEvidenceExtractorTest {
     }
 
     @Test
+    void doesNotTrustUrlsEmbeddedAfterUnicodeLetterOrOtherNumbers() {
+        String text = "ᛮhttps://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T "
+                + "৴https://hi.thehyundai.com/product/B?ptrsRefCd=RC000005106T";
+
+        SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(text);
+
+        assertThat(result.matchedUrls()).hasSize(2);
+        assertThat(result.trustedUrls()).isEmpty();
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.referralCodes()).isEmpty();
+    }
+
+    @Test
     void trustsAUrlThatStartsAfterOpeningPunctuation() {
         SelectorsUrlEvidenceExtractor.Result result = SelectorsUrlEvidenceExtractor.extract(
                 "(https://hi.thehyundai.com/product/A?ptrsRefCd=RC000005105T)");
