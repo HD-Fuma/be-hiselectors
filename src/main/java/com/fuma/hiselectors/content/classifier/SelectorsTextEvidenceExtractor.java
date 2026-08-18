@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 final class SelectorsTextEvidenceExtractor {
 
     private static final Pattern REFERRAL_CODE = Pattern.compile(
-            "(?<![\\p{L}\\p{N}_])RC[0-9]{9}T(?![\\p{L}\\p{N}_])",
+            "RC[0-9]{9}T",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern HASHTAG = Pattern.compile(
             "#[\\p{L}\\p{N}_]+", Pattern.UNICODE_CHARACTER_CLASS);
@@ -31,7 +31,10 @@ final class SelectorsTextEvidenceExtractor {
         Set<String> referralCodes = new TreeSet<>();
         Matcher referralMatcher = REFERRAL_CODE.matcher(textWithoutUrls);
         while (referralMatcher.find()) {
-            referralCodes.add(referralMatcher.group().toUpperCase(Locale.ROOT));
+            if (hasStandaloneBoundaries(textWithoutUrls,
+                    referralMatcher.start(), referralMatcher.end())) {
+                referralCodes.add(referralMatcher.group().toUpperCase(Locale.ROOT));
+            }
         }
 
         EnumSet<SelectorsContentEvidence> evidence = urlEvidence.isEmpty()
@@ -42,7 +45,7 @@ final class SelectorsTextEvidenceExtractor {
         }
 
         Set<String> hashtags = new TreeSet<>();
-        Matcher hashtagMatcher = HASHTAG.matcher(normalizedFullText);
+        Matcher hashtagMatcher = HASHTAG.matcher(textWithoutUrls);
         while (hashtagMatcher.find()) {
             hashtags.add(hashtagMatcher.group());
         }
@@ -53,6 +56,26 @@ final class SelectorsTextEvidenceExtractor {
         }
 
         return new Result(evidence, referralCodes, 0, hashtags);
+    }
+
+    private static boolean hasStandaloneBoundaries(String text, int start, int end) {
+        return (start == 0 || !isUnicodeWordLike(text.codePointBefore(start)))
+                && (end == text.length() || !isUnicodeWordLike(text.codePointAt(end)));
+    }
+
+    private static boolean isUnicodeWordLike(int codePoint) {
+        if (codePoint == '_') {
+            return true;
+        }
+        if (Character.isLetter(codePoint)) {
+            return true;
+        }
+        return switch (Character.getType(codePoint)) {
+            case Character.DECIMAL_DIGIT_NUMBER,
+                    Character.LETTER_NUMBER,
+                    Character.OTHER_NUMBER -> true;
+            default -> false;
+        };
     }
 
     record Result(

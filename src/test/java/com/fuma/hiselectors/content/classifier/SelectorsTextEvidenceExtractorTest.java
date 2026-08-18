@@ -35,6 +35,16 @@ class SelectorsTextEvidenceExtractorTest {
     }
 
     @Test
+    void rejectsSupplementaryPlaneUnicodeLetterAdjacencyOnEitherSide() {
+        String astralLetter = "\uD801\uDC00";
+
+        SelectorsTextEvidenceExtractor.Result result = extract(
+                astralLetter + "RC000005105T RC000005106T" + astralLetter);
+
+        assertThat(result.referralCodes()).isEmpty();
+    }
+
+    @Test
     void doesNotPromoteReferralCodeInsideAnUntrustedUrlAfterUrlMasking() {
         String fullText = "https://evil.example/RC000005105T #셀렉터스";
         SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
@@ -45,6 +55,19 @@ class SelectorsTextEvidenceExtractorTest {
         assertThat(result.referralCodes()).isEmpty();
         assertThat(result.evidence()).doesNotContain(SelectorsContentEvidence.REFERRAL_CODE);
         assertThat(result.hashtags()).containsExactly("#셀렉터스");
+    }
+
+    @Test
+    void doesNotPromoteHashtagPairWhenTheFirstHashtagIsInsideAnUntrustedUrl() {
+        String fullText = "https://evil.example/#더현대서울 #셀렉터스";
+        SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
+
+        SelectorsTextEvidenceExtractor.Result result = SelectorsTextEvidenceExtractor.extract(
+                fullText, urls.textWithoutUrls(), urls.evidence());
+
+        assertThat(result.hashtags()).containsExactly("#셀렉터스");
+        assertThat(result.evidence()).doesNotContain(
+                SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
     }
 
     @Test
