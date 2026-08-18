@@ -3,6 +3,7 @@ package com.fuma.hiselectors.report;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.report.LocalAnalyzerClient.LocalAnalysis;
+import com.fuma.hiselectors.inspection.model.ContentReportData;
 import com.fuma.hiselectors.report.model.ApplicationReport;
 import com.fuma.hiselectors.report.model.ContentReport;
 import com.fuma.hiselectors.report.repository.ApplicationReportRepository;
@@ -54,16 +55,14 @@ public class ReportService {
         String strength = join(insight.strengths());
         String warning = join(mergeWarnings(insight));
         String brandHistory = join(insight.collabBrands());
-        boolean advertisement = insight.collabBrands() != null && !insight.collabBrands().isEmpty();
 
         if (context == ReportContext.CONTENT) {
             String blob = toJson(analysisBlob(stt.summary(), category, keywords,
                     insight.contentStyle(), tone, strength, warning, brandHistory));
-            return contentReportRepository.save(ContentReport.builder()
-                    .contentVersionId(targetId)
-                    .advertisementYn(advertisement)
-                    .summary(blob)
-                    .build());
+            // ponytail: purpose/flow/overallAssessment 는 아직 producer 없음 → null.
+            //           정성평가 파이프라인 붙으면 ContentReportData 채워서 넘긴다.
+            ContentReportData data = new ContentReportData(blob, null, null, null);
+            return contentReportRepository.save(ContentReport.create(targetId, data));
         }
         return applicationReportRepository.save(ApplicationReport.builder()
                 .applicationId(targetId)

@@ -1,52 +1,54 @@
 package com.fuma.hiselectors.report.model;
 
+import com.fuma.hiselectors.common.BaseTimeEntity;
+import com.fuma.hiselectors.inspection.model.ContentReportData;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
 @Table(name = "content_report")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class ContentReport {
+public class ContentReport extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "content_report_id")
     private Long id;
 
-    @Column(name = "content_version_id", nullable = false)
+    @Column(name = "content_version_id", nullable = false, unique = true)
     private Long contentVersionId;
 
-    @Column(name = "advertisement_yn")
-    private Boolean advertisementYn;
-
-    /** 분석 전체를 담은 JSON. 카테고리는 더현대 공식 코드만 들어간다. */
-    @Column(columnDefinition = "json")
+    @Column(name = "summary", columnDefinition = "text")
     private String summary;
 
-    @CreationTimestamp
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    @Column(name = "purpose", length = 100)
+    private String purpose;
 
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    @Column(name = "flow", columnDefinition = "text")
+    private String flow;
 
-    @Builder
-    private ContentReport(Long contentVersionId, Boolean advertisementYn, String summary) {
-        this.contentVersionId = contentVersionId;
-        this.advertisementYn = advertisementYn;
-        this.summary = summary;
+    @Column(name = "overall_assessment", columnDefinition = "text")
+    private String overallAssessment;
+
+    public static ContentReport create(Long contentVersionId, ContentReportData data) {
+        ContentReport report = new ContentReport();
+        report.contentVersionId = contentVersionId;
+        report.update(data);
+        return report;
+    }
+
+    public void update(ContentReportData data) {
+        this.summary = data.summary();
+        this.purpose = data.purpose();
+        this.flow = data.flow();
+        this.overallAssessment = data.overallAssessment();
     }
 }

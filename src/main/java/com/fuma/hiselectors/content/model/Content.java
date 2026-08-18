@@ -10,12 +10,18 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "content")
+@Table(name = "content", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uq_content_sns",
+                columnNames = {"sns_code", "sns_content_id"})
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Content extends BaseTimeEntity {
@@ -32,28 +38,43 @@ public class Content extends BaseTimeEntity {
     @Column(name = "sns_code", nullable = false, length = 20)
     private SnsPlatform snsCode;
 
+    @Column(name = "sns_content_id", nullable = false, length = 200)
+    private String snsContentId;
+
     @Column(name = "content_url", nullable = false, length = 500)
     private String contentUrl;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "content_type", nullable = false, length = 20)
-    private String contentType;
+    private ContentType contentType;
 
     @Column(name = "last_version_no", nullable = false)
     private Long lastVersionNo;
 
-    public static Content create(Long selectorsId, SnsPlatform snsCode, String contentUrl,
-                                 String contentType) {
-        Content content = new Content();
-        content.selectorsId = selectorsId;
-        content.snsCode = snsCode;
-        content.contentUrl = contentUrl;
-        content.contentType = contentType;
-        content.lastVersionNo = 0L;
-        return content;
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted;
+
+    @Builder
+    private Content(Long selectorsId, SnsPlatform snsCode, String snsContentId,
+                    String contentUrl, ContentType contentType, Long lastVersionNo) {
+        this.selectorsId = selectorsId;
+        this.snsCode = snsCode;
+        this.snsContentId = snsContentId;
+        this.contentUrl = contentUrl;
+        this.contentType = contentType;
+        this.lastVersionNo = lastVersionNo == null ? 1L : lastVersionNo;
     }
 
-    public long nextVersionNo() {
-        lastVersionNo += 1;
+    public Long advanceVersion() {
+        lastVersionNo++;
         return lastVersionNo;
+    }
+
+    public void markDeleted() {
+        deleted = true;
+    }
+
+    public void restore() {
+        deleted = false;
     }
 }
