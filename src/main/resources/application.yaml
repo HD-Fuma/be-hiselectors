@@ -42,6 +42,9 @@ youtube:
 
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
+    api-key: ${youtube.collection.api-key}
+
+  collection:
     api-key: ${YOUTUBE_API_KEY:}
     daily-quota: ${YOUTUBE_DISCOVERY_DAILY_QUOTA:10000}
     max-results-per-keyword: ${YOUTUBE_DISCOVERY_MAX_RESULTS:25}
@@ -64,6 +67,11 @@ instagram:
     client-secret: ${INSTAGRAM_CLIENT_SECRET:}
     redirect-uri: ${INSTAGRAM_REDIRECT_URI}
     scope: instagram_business_basic
+
+  collection:
+    api-version: ${META_API_VERSION:v24.0}
+    business-account-id: ${META_INSTAGRAM_BUSINESS_ACCOUNT_ID:}
+    access-token: ${META_LONG_LIVED_ACCESS_TOKEN:}
 
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:
