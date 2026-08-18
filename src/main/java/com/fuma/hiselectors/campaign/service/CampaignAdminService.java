@@ -43,9 +43,9 @@ public class CampaignAdminService {
     private final Clock clock;
 
     public Page<CampaignResponse> search(String keyword, LocalDate startDate, LocalDate endDate,
-                                         Pageable pageable) {
+                                         CampaignStatus status, Pageable pageable) {
         Page<Campaign> campaigns = campaignRepository.findAll(
-                searchSpecification(keyword, startDate, endDate), pageable);
+                searchSpecification(keyword, startDate, endDate, status), pageable);
         Map<Long, List<CampaignProduct>> productsByCampaignId = campaigns.isEmpty()
                 ? Map.of()
                 : campaignProductRepository.findAllByCampaignIdInOrderByCampaignIdAscIdAsc(
@@ -103,7 +103,8 @@ public class CampaignAdminService {
         campaign.softDelete();
     }
 
-    private Specification<Campaign> searchSpecification(String keyword, LocalDate startDate, LocalDate endDate) {
+    private Specification<Campaign> searchSpecification(String keyword, LocalDate startDate, LocalDate endDate,
+                                                         CampaignStatus status) {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(builder.isFalse(root.get("isDeleted")));
@@ -118,6 +119,17 @@ public class CampaignAdminService {
             }
             if (startDate != null) predicates.add(builder.greaterThanOrEqualTo(root.get("endDate"), startDate));
             if (endDate != null) predicates.add(builder.lessThanOrEqualTo(root.get("startDate"), endDate));
+            if (status != null) {
+                LocalDate today = today();
+                switch (status) {
+                    case SCHEDULED -> predicates.add(builder.greaterThan(root.get("startDate"), today));
+                    case ACTIVE -> {
+                        predicates.add(builder.lessThanOrEqualTo(root.get("startDate"), today));
+                        predicates.add(builder.greaterThanOrEqualTo(root.get("endDate"), today));
+                    }
+                    case ENDED -> predicates.add(builder.lessThan(root.get("endDate"), today));
+                }
+            }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
     }

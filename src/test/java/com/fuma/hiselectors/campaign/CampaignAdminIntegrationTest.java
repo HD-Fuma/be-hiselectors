@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fuma.hiselectors.campaign.dto.CampaignCreateRequest;
 import com.fuma.hiselectors.campaign.dto.CampaignUpdateRequest;
+import com.fuma.hiselectors.campaign.model.Campaign;
+import com.fuma.hiselectors.campaign.model.CampaignProduct;
 import com.fuma.hiselectors.campaign.repository.CampaignProductRepository;
 import com.fuma.hiselectors.campaign.repository.CampaignRepository;
 import com.fuma.hiselectors.product.model.Product;
@@ -23,6 +25,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +36,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
@@ -62,6 +66,7 @@ class CampaignAdminIntegrationTest {
     @Autowired private ProductRepository productRepository;
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private MutableClock clock;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void resetClock() {
@@ -162,6 +167,115 @@ class CampaignAdminIntegrationTest {
     }
 
     @Test
+    void campaign_date_search_includes_campaigns_touching_either_query_boundary() throws Exception {
+        Long touchesStart = createCampaign("경계 시작", TODAY.minusDays(2), TODAY, List.of());
+        Long touchesEnd = createCampaign("경계 종료", TODAY.plusDays(2), TODAY.plusDays(4), List.of());
+        createCampaign("범위 이전", TODAY.minusDays(3), TODAY.minusDays(1), List.of());
+        createCampaign("범위 이후", TODAY.plusDays(3), TODAY.plusDays(5), List.of());
+
+        mockMvc.perform(get("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .param("startDate", TODAY.toString())
+                        .param("endDate", TODAY.plusDays(2).toString())
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content[0].id").value(touchesEnd))
+                .andExpect(jsonPath("$.data.content[1].id").value(touchesStart));
+    }
+
+    @Test
+    void campaign_status_filter_uses_seoul_today_and_combines_with_search_and_page_predicates()
+            throws Exception {
+        clock.setInstant(Instant.parse("2026-08-17T15:30:00Z"));
+        createCampaign("검색 예정", TODAY.plusDays(1), TODAY.plusDays(2), List.of());
+        createCampaign("검색 진행 첫째", TODAY.minusDays(1), TODAY.plusDays(1), List.of());
+        Long secondActiveId = createCampaign("검색 진행 둘째", TODAY, TODAY, List.of());
+        createCampaign("검색 종료", TODAY.minusDays(2), TODAY.minusDays(1), List.of());
+        createCampaign("다른 진행", TODAY, TODAY.plusDays(1), List.of());
+
+        mockMvc.perform(get("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .param("status", "SCHEDULED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("SCHEDULED"));
+        mockMvc.perform(get("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .param("status", "ENDED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].status").value("ENDED"));
+        mockMvc.perform(get("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .param("status", "ACTIVE")
+                        .param("keyword", "검색")
+                        .param("startDate", TODAY.minusDays(1).toString())
+                        .param("endDate", TODAY.plusDays(1).toString())
+                        .param("page", "0")
+                        .param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.totalPages").value(2))
+                .andExpect(jsonPath("$.data.content[0].id").value(secondActiveId))
+                .andExpect(jsonPath("$.data.content[0].status").value("ACTIVE"));
+    }
+
+    @Test
+    void campaign_response_contains_product_ids_and_product_details_in_association_order()
+            throws Exception {
+        Product full = productRepository.save(Product.builder()
+                .productCode("P-full").productName("상품명").brandName("브랜드").category("카테고리")
+                .regularPrice(new BigDecimal("12000.00")).salePrice(new BigDecimal("9900.00"))
+                .status(ProductStatus.ON_SALE).thumbnailUrl("https://example.com/product.jpg")
+                .detailUrl("https://example.com/product").build());
+        Product nullable = productRepository.save(Product.builder()
+                .productCode("P-nullable").regularPrice(new BigDecimal("20000.00"))
+                .salePrice(new BigDecimal("15000.00")).status(ProductStatus.ON_SALE).build());
+        Long campaignId = createCampaign("상품 응답", TODAY, TODAY, List.of());
+        Campaign campaign = campaignRepository.findById(campaignId).orElseThrow();
+        campaignProductRepository.saveAndFlush(new CampaignProduct(campaign, nullable));
+        campaignProductRepository.saveAndFlush(new CampaignProduct(campaign, full));
+
+        String response = mockMvc.perform(get("/api/admin/campaigns/{id}", campaignId)
+                        .header("Authorization", bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productIds[0]").value(nullable.getId()))
+                .andExpect(jsonPath("$.data.productIds[1]").value(full.getId()))
+                .andExpect(jsonPath("$.data.products[0].id").value(nullable.getId()))
+                .andExpect(jsonPath("$.data.products[0].code").value("P-nullable"))
+                .andExpect(jsonPath("$.data.products[0].productName").isEmpty())
+                .andExpect(jsonPath("$.data.products[0].brandName").isEmpty())
+                .andExpect(jsonPath("$.data.products[0].category").isEmpty())
+                .andExpect(jsonPath("$.data.products[0].regularPrice").value(20000))
+                .andExpect(jsonPath("$.data.products[0].salePrice").value(15000))
+                .andExpect(jsonPath("$.data.products[0].status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.products[0].thumbnailUrl").isEmpty())
+                .andExpect(jsonPath("$.data.products[0].detailUrl").isEmpty())
+                .andExpect(jsonPath("$.data.products[1].id").value(full.getId()))
+                .andExpect(jsonPath("$.data.products[1].code").value("P-full"))
+                .andExpect(jsonPath("$.data.products[1].productName").value("상품명"))
+                .andExpect(jsonPath("$.data.products[1].brandName").value("브랜드"))
+                .andExpect(jsonPath("$.data.products[1].category").value("카테고리"))
+                .andExpect(jsonPath("$.data.products[1].regularPrice").value(12000))
+                .andExpect(jsonPath("$.data.products[1].salePrice").value(9900))
+                .andExpect(jsonPath("$.data.products[1].status").value("ON_SALE"))
+                .andExpect(jsonPath("$.data.products[1].thumbnailUrl")
+                        .value("https://example.com/product.jpg"))
+                .andExpect(jsonPath("$.data.products[1].detailUrl").value("https://example.com/product"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(Set.copyOf(objectMapper.readTree(response).at("/data/products/0")
+                .properties().stream().map(java.util.Map.Entry::getKey).toList()))
+                .containsExactlyInAnyOrder("id", "code", "productName", "brandName", "category",
+                        "regularPrice", "salePrice", "status", "thumbnailUrl", "detailUrl");
+
+        mockMvc.perform(get("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .param("keyword", campaignId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].productIds[0]").value(nullable.getId()))
+                .andExpect(jsonPath("$.data.content[0].products[0].id").value(nullable.getId()))
+                .andExpect(jsonPath("$.data.content[0].productIds[1]").value(full.getId()))
+                .andExpect(jsonPath("$.data.content[0].products[1].id").value(full.getId()));
+    }
+
+    @Test
     void invalid_campaign_requests_return_400_and_product_errors_are_specific() throws Exception {
         Product onSale = productRepository.save(product("P-validation", ProductStatus.ON_SALE));
         Long id = createCampaign("검증", TODAY, TODAY, List.of(onSale.getId()));
@@ -170,6 +284,18 @@ class CampaignAdminIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title":" ","description":"설명","startDate":"2026-08-18","endDate":"2026-08-18"}
+                                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"제목","description":" ","startDate":"2026-08-18","endDate":"2026-08-18"}
+                                """))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"제목","description":"설명","startDate":"2026-08-19","endDate":"2026-08-18"}
                                 """))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
@@ -188,9 +314,45 @@ class CampaignAdminIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{" + "\"title\":\" \"}"))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(patch("/api/admin/campaigns/{id}", id).header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{" + "\"description\":\" \"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id).header("Authorization", bearer("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + "\"startDate\":\"2026-08-19\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void update_allows_retaining_or_removing_unavailable_links_but_rejects_new_unavailable_links()
+            throws Exception {
+        Product retained = productRepository.save(product("P-retained", ProductStatus.ON_SALE));
+        Product newlyUnavailable = productRepository.save(product("P-new-unavailable", ProductStatus.SOLD_OUT));
+        Long campaignId = createCampaign("상품 변경", TODAY, TODAY, List.of(retained.getId()));
+        jdbcTemplate.update("update product set status = 'SOLD_OUT' where product_id = ?", retained.getId());
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", campaignId)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CampaignUpdateRequest(
+                                null, null, null, null, null, List.of(retained.getId())))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productIds[0]").value(retained.getId()));
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", campaignId)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CampaignUpdateRequest(
+                                null, null, null, null, null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productIds").isEmpty());
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", campaignId)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CampaignUpdateRequest(
+                                null, null, null, null, null, List.of(newlyUnavailable.getId())))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRODUCT_NOT_AVAILABLE"));
     }
 
     @Test

@@ -9,12 +9,14 @@ import java.util.List;
 
 public record CampaignResponse(Long id, CampaignStatus status, String title, String description,
                                LocalDate startDate, LocalDate endDate, String thumbnailUrl,
-                               List<Long> productIds, LocalDateTime createdAt, LocalDateTime updatedAt) {
+                               List<Long> productIds, List<CampaignProductResponse> products,
+                               LocalDateTime createdAt, LocalDateTime updatedAt) {
     public static CampaignResponse of(Campaign campaign, List<CampaignProduct> products,
                                       CampaignStatus status) {
         return new CampaignResponse(campaign.getId(), status, campaign.getTitle(),
                 campaign.getDescription(), campaign.getStartDate(), campaign.getEndDate(),
                 campaign.getThumbnailUrl(), products.stream().map(p -> p.getProduct().getId()).toList(),
+                products.stream().map(p -> CampaignProductResponse.of(p.getProduct())).toList(),
                 campaign.getCreatedAt(), campaign.getUpdatedAt());
     }
 }

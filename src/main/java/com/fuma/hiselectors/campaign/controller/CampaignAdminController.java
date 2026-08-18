@@ -4,6 +4,7 @@ import com.fuma.hiselectors.campaign.dto.CampaignCreateRequest;
 import com.fuma.hiselectors.campaign.dto.CampaignParticipantResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignUpdateRequest;
+import com.fuma.hiselectors.campaign.model.CampaignStatus;
 import com.fuma.hiselectors.campaign.service.CampaignAdminService;
 import com.fuma.hiselectors.campaign.service.CampaignParticipantService;
 import jakarta.validation.Valid;
@@ -38,8 +39,9 @@ public class CampaignAdminController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) CampaignStatus status,
             @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(campaignAdminService.search(keyword, startDate, endDate, pageable));
+        return ResponseEntity.ok(campaignAdminService.search(keyword, startDate, endDate, status, pageable));
     }
 
     @GetMapping("/{campaignId}")
