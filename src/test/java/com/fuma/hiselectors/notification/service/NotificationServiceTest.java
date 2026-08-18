@@ -18,7 +18,11 @@ import com.fuma.hiselectors.kakao.repository.UserKakaoRecipientRepository;
 import com.fuma.hiselectors.kakao.service.KakaoRecipientStatusService;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.KakaoTemplateType;
+import com.fuma.hiselectors.notification.model.Notification;
+import com.fuma.hiselectors.notification.model.NotificationChannel;
+import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.model.NotificationType;
+import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.sender.NotificationSender;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +40,8 @@ class NotificationServiceTest {
     private final NotificationSender notificationSender = mock(NotificationSender.class);
     private final KakaoRecipientStatusService recipientStatusService =
             mock(KakaoRecipientStatusService.class);
+    private final NotificationRepository notificationRepository = mock(NotificationRepository.class);
+    private final TextTemplateFactory textTemplateFactory = mock(TextTemplateFactory.class);
     private final KakaoMessageTemplate template = mock(KakaoMessageTemplate.class);
     private final NotificationMessageCommand command = new NotificationMessageCommand(
             null, 2L, 3L, "홍길동", null, NotificationType.SELECTION_APPROVED);
@@ -46,7 +52,8 @@ class NotificationServiceTest {
     @BeforeEach
     void setUp() {
         service = new NotificationService(adminRepository, recipientRepository,
-                templateFactoryResolver, recorder, notificationSender, recipientStatusService);
+                templateFactoryResolver, recorder, notificationSender, recipientStatusService,
+                notificationRepository, textTemplateFactory);
         Admin admin = mock(Admin.class);
         recipient = mock(UserKakaoRecipient.class);
         when(adminRepository.findByLoginId("admin")).thenReturn(Optional.of(admin));
@@ -85,5 +92,58 @@ class NotificationServiceTest {
 
         verify(recipientStatusService, never()).markReauthRequired(4L);
         verify(recorder).markFailed(5L);
+    }
+
+    @Test
+    @DisplayName("실패한 메시지는 저장된 원문으로 재발송하고 원본 이력을 발송 완료로 갱신한다")
+    void resendFailedMessageUpdatesOriginalNotification() {
+        Notification notification = mock(Notification.class);
+        when(notificationRepository.findById(5L)).thenReturn(Optional.of(notification));
+        when(notification.getStatus()).thenReturn(NotificationStatus.FAILED);
+        when(notification.getNotificationChannel()).thenReturn(NotificationChannel.KAKAO_MESSAGE);
+        when(notification.getReceiver()).thenReturn("uuid");
+        when(notification.getBody()).thenReturn("저장된 원문");
+        when(notification.getId()).thenReturn(5L);
+        when(recipientRepository.findByKakaoMessageUuid("uuid")).thenReturn(Optional.of(recipient));
+        when(textTemplateFactory.createReplayTemplate("저장된 원문")).thenReturn(template);
+
+        service.resendFailed("admin", 5L);
+
+        verify(notificationSender).sendToFriend(1L, "uuid", template);
+        verify(notification).markSent(org.mockito.ArgumentMatchers.any());
+        verify(notificationRepository).save(notification);
+    }
+
+    @Test
+    @DisplayName("발송 실패 상태가 아닌 이력은 재발송하지 않는다")
+    void rejectResendForNonFailedNotification() {
+        Notification notification = mock(Notification.class);
+        when(notificationRepository.findById(5L)).thenReturn(Optional.of(notification));
+        when(notification.getStatus()).thenReturn(NotificationStatus.SENT);
+
+        assertThatThrownBy(() -> service.resendFailed("admin", 5L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(notificationSender, never()).sendToFriend(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("이메일 발송 실패 이력은 카카오 메시지로 재발송하지 않는다")
+    void rejectResendForEmailNotification() {
+        Notification notification = mock(Notification.class);
+        when(notificationRepository.findById(5L)).thenReturn(Optional.of(notification));
+        when(notification.getStatus()).thenReturn(NotificationStatus.FAILED);
+        when(notification.getNotificationChannel()).thenReturn(NotificationChannel.EMAIL);
+
+        assertThatThrownBy(() -> service.resendFailed("admin", 5L))
+                .isInstanceOf(BusinessException.class);
+
+        verify(notificationSender, never()).sendToFriend(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any());
     }
 }

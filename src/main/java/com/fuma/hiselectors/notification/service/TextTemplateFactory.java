@@ -31,6 +31,14 @@ public class TextTemplateFactory extends KakaoTemplateFactory {
 
     @Override
     protected KakaoMessageTemplate createTemplate(MessageText message, String body) {
+        return createTextTemplate(body, message.buttonTitle());
+    }
+
+    public KakaoMessageTemplate createReplayTemplate(String body) {
+        return createTextTemplate(body, "확인");
+    }
+
+    private KakaoMessageTemplate createTextTemplate(String body, String buttonTitle) {
         validateText(body);
 
         DefaultTextTemplate.Link link = new DefaultTextTemplate.Link(
@@ -39,7 +47,7 @@ public class TextTemplateFactory extends KakaoTemplateFactory {
                 "text",
                 body,
                 link,
-                List.of(new DefaultTextTemplate.Button(message.buttonTitle(), link))
+                List.of(new DefaultTextTemplate.Button(buttonTitle, link))
         );
     }
 

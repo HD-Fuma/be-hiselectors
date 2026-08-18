@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.notification.model;
 
 public enum NotificationChannel {
-    KAKAO_MESSAGE
+    KAKAO_MESSAGE,
+    EMAIL
 }
