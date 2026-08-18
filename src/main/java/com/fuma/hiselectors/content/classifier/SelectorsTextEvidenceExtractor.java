@@ -17,6 +17,16 @@ final class SelectorsTextEvidenceExtractor {
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern HASHTAG = Pattern.compile(
             "#[\\p{L}\\p{N}_]+", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern SELECTORS_BRAND_PHRASE = Pattern.compile(
+            "더현대\\s+셀렉터스", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern SELECTORS_NAME = Pattern.compile(
+            "셀렉터스|Selectors",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern SELECTORS_SHOP_NAME = Pattern.compile(
+            "셀렉터스\\s*샵", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern THE_HYUNDAI_PHRASE = Pattern.compile(
+            "THE\\s+HYUNDAI",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
 
     private SelectorsTextEvidenceExtractor() {
     }
@@ -55,7 +65,60 @@ final class SelectorsTextEvidenceExtractor {
             evidence.add(SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
         }
 
-        return new Result(evidence, referralCodes, 0, hashtags);
+        String textForTextSignals = maskHashtags(textWithoutUrls);
+        boolean hasCombinedSelectorsHashtag = hashtags.contains("#더현대셀렉터스");
+        boolean hasSelectorsBrandPhrase = containsStandalone(
+                SELECTORS_BRAND_PHRASE, textForTextSignals) || hasCombinedSelectorsHashtag;
+        boolean hasSelectorsName = containsStandalone(SELECTORS_NAME, textForTextSignals);
+        boolean hasSelectorsShopName = containsStandalone(SELECTORS_SHOP_NAME, textForTextSignals);
+        if (hasSelectorsBrandPhrase) {
+            evidence.add(SelectorsContentEvidence.SELECTORS_BRAND_PHRASE);
+            if (!hasCombinedSelectorsHashtag) {
+                hasSelectorsName = true;
+            }
+        }
+        if (hasSelectorsName) {
+            evidence.add(SelectorsContentEvidence.SELECTORS_NAME);
+        }
+        if (hasSelectorsShopName) {
+            evidence.add(SelectorsContentEvidence.SELECTORS_SHOP_NAME);
+            evidence.add(SelectorsContentEvidence.SELECTORS_NAME);
+        }
+
+        boolean hasTheHyundaiMention = hasTheHyundaiHashtag
+                || textForTextSignals.contains("더현대")
+                || textForTextSignals.contains("현대백화점")
+                || containsStandalone(THE_HYUNDAI_PHRASE, textForTextSignals);
+        if (hasTheHyundaiMention) {
+            evidence.add(SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        }
+
+        int nameFamilyScore = hasSelectorsBrandPhrase ? 5
+                : (hasSelectorsName || hasSelectorsShopName ? 4 : 0);
+        int score = nameFamilyScore + (hasTheHyundaiMention ? 1 : 0);
+
+        return new Result(evidence, referralCodes, score, hashtags);
+    }
+
+    private static boolean containsStandalone(Pattern pattern, String text) {
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            if (hasStandaloneBoundaries(text, matcher.start(), matcher.end())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String maskHashtags(String text) {
+        StringBuilder masked = new StringBuilder(text);
+        Matcher matcher = HASHTAG.matcher(text);
+        while (matcher.find()) {
+            for (int index = matcher.start(); index < matcher.end(); index++) {
+                masked.setCharAt(index, ' ');
+            }
+        }
+        return masked.toString();
     }
 
     private static boolean hasStandaloneBoundaries(String text, int start, int end) {

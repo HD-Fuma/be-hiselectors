@@ -80,8 +80,9 @@ class SelectorsTextEvidenceExtractorTest {
 
             assertThat(result.hashtags()).containsExactlyElementsOf(expected);
             assertThat(result.evidence()).containsExactly(
-                    SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
-            assertThat(result.score()).isZero();
+                    SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR,
+                    SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+            assertThat(result.score()).isEqualTo(1);
         }
     }
 
@@ -98,6 +99,99 @@ class SelectorsTextEvidenceExtractorTest {
             assertThat(result.evidence()).doesNotContain(
                     SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
         }
+    }
+
+    @Test
+    void scoresSelectorsBrandPhraseAndTheHyundaiOnce() {
+        SelectorsTextEvidenceExtractor.Result result = extract("더현대 셀렉터스");
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_BRAND_PHRASE,
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.score()).isEqualTo(6);
+    }
+
+    @Test
+    void recognizesCombinedSelectorsHashtagAsBrandPhraseWithoutHashtagPair() {
+        SelectorsTextEvidenceExtractor.Result result = extract("#더현대셀렉터스");
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_BRAND_PHRASE,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.evidence()).doesNotContain(
+                SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
+        assertThat(result.score()).isEqualTo(6);
+    }
+
+    @Test
+    void scoresSelectorsShopNameAsOneNameFamilySignal() {
+        SelectorsTextEvidenceExtractor.Result result = extract("셀렉터스 샵");
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.SELECTORS_SHOP_NAME);
+        assertThat(result.score()).isEqualTo(4);
+    }
+
+    @Test
+    void recognizesStandaloneSelectorsEnglishNameCaseInsensitively() {
+        SelectorsTextEvidenceExtractor.Result result = extract("my SELECTORS");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_NAME);
+        assertThat(result.score()).isEqualTo(4);
+    }
+
+    @Test
+    void rejectsSelectorsNameSubstringsAndUnicodeWordAdjacency() {
+        String astralLetter = "\uD801\uDC00";
+        for (String text : List.of(
+                "셀렉터스몰",
+                "MySelectors",
+                "SelectorsMall",
+                astralLetter + "Selectors",
+                "Selectors" + astralLetter)) {
+            SelectorsTextEvidenceExtractor.Result result = extract(text);
+
+            assertThat(result.evidence()).as(text).doesNotContain(
+                    SelectorsContentEvidence.SELECTORS_NAME,
+                    SelectorsContentEvidence.SELECTORS_SHOP_NAME,
+                    SelectorsContentEvidence.SELECTORS_BRAND_PHRASE);
+            assertThat(result.score()).as(text).isZero();
+        }
+    }
+
+    @Test
+    void scoresIndependentSelectorsAndHyundaiSignals() {
+        SelectorsTextEvidenceExtractor.Result result = extract("셀렉터스 그리고 더현대");
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.score()).isEqualTo(5);
+    }
+
+    @Test
+    void recognizesEachTheHyundaiSignalOnce() {
+        for (String text : List.of("더현대", "현대백화점", "THE HYUNDAI", "#더현대서울")) {
+            SelectorsTextEvidenceExtractor.Result result = extract(text);
+
+            assertThat(result.evidence()).as(text).containsExactly(
+                    SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+            assertThat(result.score()).as(text).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void doesNotScoreNameSignalsFoundOnlyInsideUrls() {
+        String fullText = "https://evil.example/더현대/셀렉터스?name=Selectors";
+        SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
+
+        SelectorsTextEvidenceExtractor.Result result = SelectorsTextEvidenceExtractor.extract(
+                fullText, urls.textWithoutUrls(), urls.evidence());
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.score()).isZero();
     }
 
     @Test
