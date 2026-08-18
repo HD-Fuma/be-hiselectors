@@ -92,6 +92,21 @@ class SelectorsContentClassifierTest {
     }
 
     @Test
+    @DisplayName("여러 공개 상품 URL은 보정 점수를 한 번만 더하고 정리된 URL을 보존한다")
+    void multiplePublicProductUrlsAddSoftScoreOnlyOnce() {
+        String firstUrl = "https://hi.thehyundai.com/product/A";
+        String secondUrl = "https://hi.thehyundai.com/product/B";
+        assertClassification(
+                classifier.classify(content(secondUrl + " " + firstUrl + " " + secondUrl)),
+                SelectorsContentDecision.REVIEW_REQUIRED,
+                3,
+                SelectorsContentReviewTier.NORMAL,
+                List.of(SelectorsContentEvidence.PUBLIC_PRODUCT_URL),
+                List.of(),
+                List.of(firstUrl, secondUrl));
+    }
+
+    @Test
     @DisplayName("레퍼럴 상품 URL은 확정하고 URL 코드를 정규화한다")
     void productUrlWithReferralIsConfirmed() {
         String url = "https://hi.thehyundai.com/product/A?ptrsRefCd=rc000005105t";
