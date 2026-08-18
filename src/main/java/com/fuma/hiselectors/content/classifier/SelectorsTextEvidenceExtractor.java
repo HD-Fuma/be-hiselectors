@@ -27,6 +27,7 @@ final class SelectorsTextEvidenceExtractor {
     private static final Pattern THE_HYUNDAI_PHRASE = Pattern.compile(
             "THE\\s+HYUNDAI",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
+    private static final char MASKED_CONTENT_BARRIER = '\u0000';
 
     private SelectorsTextEvidenceExtractor() {
     }
@@ -65,7 +66,8 @@ final class SelectorsTextEvidenceExtractor {
             evidence.add(SelectorsContentEvidence.DESIGNATED_HASHTAG_PAIR);
         }
 
-        String textForTextSignals = maskHashtags(textWithoutUrls);
+        String textForTextSignals = maskHashtags(
+                maskRemovedUrlSpans(normalizedFullText, textWithoutUrls));
         boolean hasCombinedSelectorsHashtag = hashtags.contains("#더현대셀렉터스");
         boolean hasStandaloneSelectorsHashtag = hashtags.stream()
                 .anyMatch(hashtag -> hashtag.equals("#셀렉터스")
@@ -119,7 +121,19 @@ final class SelectorsTextEvidenceExtractor {
         Matcher matcher = HASHTAG.matcher(text);
         while (matcher.find()) {
             for (int index = matcher.start(); index < matcher.end(); index++) {
-                masked.setCharAt(index, ' ');
+                masked.setCharAt(index, MASKED_CONTENT_BARRIER);
+            }
+        }
+        return masked.toString();
+    }
+
+    private static String maskRemovedUrlSpans(String normalizedFullText, String textWithoutUrls) {
+        StringBuilder masked = new StringBuilder(textWithoutUrls);
+        int commonLength = Math.min(normalizedFullText.length(), textWithoutUrls.length());
+        for (int index = 0; index < commonLength; index++) {
+            if (!Character.isWhitespace(normalizedFullText.charAt(index))
+                    && Character.isWhitespace(textWithoutUrls.charAt(index))) {
+                masked.setCharAt(index, MASKED_CONTENT_BARRIER);
             }
         }
         return masked.toString();

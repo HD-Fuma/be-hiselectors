@@ -212,6 +212,49 @@ class SelectorsTextEvidenceExtractorTest {
     }
 
     @Test
+    void doesNotBridgeSelectorsBrandPhraseAcrossMaskedUrl() {
+        String fullText = "더현대 https://evil.example/path 셀렉터스";
+        SelectorsTextEvidenceExtractor.Result result = extractAfterUrlMasking(fullText);
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.evidence()).doesNotContain(SelectorsContentEvidence.SELECTORS_BRAND_PHRASE);
+        assertThat(result.score()).isEqualTo(5);
+    }
+
+    @Test
+    void doesNotBridgeSelectorsBrandPhraseAcrossMaskedHashtag() {
+        SelectorsTextEvidenceExtractor.Result result = extractAfterUrlMasking(
+                "더현대 #잡담 셀렉터스");
+
+        assertThat(result.evidence()).containsExactly(
+                SelectorsContentEvidence.SELECTORS_NAME,
+                SelectorsContentEvidence.THE_HYUNDAI_MENTION);
+        assertThat(result.evidence()).doesNotContain(SelectorsContentEvidence.SELECTORS_BRAND_PHRASE);
+        assertThat(result.score()).isEqualTo(5);
+    }
+
+    @Test
+    void doesNotBridgeTheHyundaiPhraseAcrossMaskedHashtag() {
+        SelectorsTextEvidenceExtractor.Result result = extractAfterUrlMasking(
+                "THE #잡담 HYUNDAI");
+
+        assertThat(result.evidence()).isEmpty();
+        assertThat(result.score()).isZero();
+    }
+
+    @Test
+    void doesNotBridgeSelectorsShopNameAcrossMaskedUrl() {
+        SelectorsTextEvidenceExtractor.Result result = extractAfterUrlMasking(
+                "셀렉터스 https://evil.example/path 샵");
+
+        assertThat(result.evidence()).containsExactly(SelectorsContentEvidence.SELECTORS_NAME);
+        assertThat(result.evidence()).doesNotContain(SelectorsContentEvidence.SELECTORS_SHOP_NAME);
+        assertThat(result.score()).isEqualTo(4);
+    }
+
+    @Test
     void carriesSuppliedUrlEvidenceAndReturnsIndependentDeterministicImmutableCopies() {
         Set<SelectorsContentEvidence> suppliedEvidence = EnumSet.of(
                 SelectorsContentEvidence.PUBLIC_PRODUCT_URL);
@@ -259,5 +302,10 @@ class SelectorsTextEvidenceExtractorTest {
 
     private static SelectorsTextEvidenceExtractor.Result extract(String text) {
         return SelectorsTextEvidenceExtractor.extract(text, text, Set.of());
+    }
+
+    private static SelectorsTextEvidenceExtractor.Result extractAfterUrlMasking(String fullText) {
+        SelectorsUrlEvidenceExtractor.Result urls = SelectorsUrlEvidenceExtractor.extract(fullText);
+        return SelectorsTextEvidenceExtractor.extract(fullText, urls.textWithoutUrls(), urls.evidence());
     }
 }
