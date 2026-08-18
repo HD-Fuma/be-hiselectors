@@ -76,12 +76,22 @@
     <div class="err" id="err"></div>
 
     <div class="block">
-        <div class="blabel">🎙️ 음성 (STT)</div>
+        <div class="blabel">요약</div>
+        <div class="prebox"><pre id="summary" class="clamp"></pre></div>
+        <button class="more" data-target="summary" style="display:none"></button>
+    </div>
+    <div class="block">
+        <div class="blabel">분석 (스타일·톤·강점·위험·브랜드)</div>
+        <div class="prebox"><pre id="insight" class="clamp"></pre></div>
+        <button class="more" data-target="insight" style="display:none"></button>
+    </div>
+    <div class="block">
+        <div class="blabel"> 음성 (STT)</div>
         <div class="prebox"><pre id="stt" class="clamp"></pre></div>
         <button class="more" data-target="stt" style="display:none"></button>
     </div>
     <div class="block">
-        <div class="blabel">💬 자막 (화면 텍스트)</div>
+        <div class="blabel">자막 (화면 텍스트)</div>
         <div class="prebox"><pre id="ocr" class="clamp"></pre></div>
         <button class="more" data-target="ocr" style="display:none"></button>
     </div>
@@ -97,6 +107,8 @@
 
             btn.disabled = true;
             err.style.display = "none";
+            setBlock("summary", "");
+            setBlock("insight", "");
             setBlock("stt", "");
             setBlock("ocr", "");
             meta.textContent = "분석 중…";
@@ -112,6 +124,8 @@
                     const d = json.data || {};
                     const stt = d.stt || "", ocr = d.ocr || "";
                     meta.textContent = `${secs}초 · 음성 ${stt.length}자 · 자막 ${ocr.length}자`;
+                    setBlock("summary", d.summary || "");
+                    setBlock("insight", d.insight ? JSON.stringify(d.insight, null, 2) : "");
                     setBlock("stt", stt);
                     setBlock("ocr", ocr);
                 } else {

@@ -78,6 +78,8 @@ public enum ErrorCode {
     KEYWORD_DUPLICATED(HttpStatus.CONFLICT, "이미 등록된 발굴 키워드입니다."),
     CATEGORY_IN_USE(HttpStatus.CONFLICT, "발굴 이력이 있어 삭제할 수 없습니다. 비활성화를 사용하세요."),
     KEYWORD_IN_USE(HttpStatus.CONFLICT, "발굴 이력이 있어 삭제할 수 없습니다. 비활성화를 사용하세요."),
+    INVALID_CONTENT_INSPECTION_STATUS(HttpStatus.CONFLICT, "검수할 수 없는 콘텐츠 버전 상태입니다."),
+    INVALID_VIOLATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 위반 상태 변경입니다."),
 
     // --- 크리에이터 ---
     CREATOR_NOT_FOUND(HttpStatus.NOT_FOUND, "크리에이터를 찾을 수 없습니다."),
@@ -119,13 +121,18 @@ public enum ErrorCode {
     GEMINI_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "Gemini API 호출에 실패했습니다."),
     STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다."),
 
+    // --- 리포트 분석 ---
+    REPORT_CATEGORY_NOT_SUPPORTED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "분석된 카테고리가 더현대 공식 체계에 없어 리포트를 저장하지 않았습니다."),
+    ANALYZER_UNAVAILABLE(
+            HttpStatus.BAD_GATEWAY,
+            "로컬 분석 워커를 호출할 수 없습니다."),
     // --- 콘텐츠 검수 / 위반 ---
     CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
     CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
-    INVALID_CONTENT_INSPECTION_STATUS(HttpStatus.CONFLICT, "검수할 수 없는 콘텐츠 버전 상태입니다."),
-    INVALID_VIOLATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 위반 상태 변경입니다."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다.");
 
     private final HttpStatus status;
