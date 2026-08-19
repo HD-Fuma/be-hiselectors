@@ -117,6 +117,9 @@ public enum ErrorCode {
     // --- 지원 ---
 
     APPLICATION_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "지원자를 찾을 수 없습니다."),
+    GENERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "기수를 찾을 수 없습니다."),
+    GENERATION_PERIOD_INVALID(HttpStatus.BAD_REQUEST, "모집 시작일은 종료일보다 빨라야 합니다."),
+    ACTIVE_GENERATION_OVERLAPPED(HttpStatus.CONFLICT, "모집 기간이 겹치는 활성 기수가 있습니다."),
     ACTIVE_GENERATION_NOT_FOUND(HttpStatus.CONFLICT, "현재 모집 중인 기수가 없어 지원할 수 없습니다."),
     DUPLICATE_APPLICATION(HttpStatus.CONFLICT, "이미 해당 기수에 지원했습니다."),
 
