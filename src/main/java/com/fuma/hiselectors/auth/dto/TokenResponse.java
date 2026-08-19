@@ -11,10 +11,16 @@ public record TokenResponse(
         @Schema(description = "로그인 아이디", example = "hiadmin")
         String loginId,
         @Schema(description = "권한 (USER / ADMIN)", example = "ADMIN")
-        String role
+        String role,
+        @Schema(description = "알림톡 수신 동의 여부 (Y/N), 어드민은 null", example = "Y")
+        String alimtalk
 ) {
 
     public static TokenResponse of(String accessToken, String loginId, String role) {
-        return new TokenResponse(accessToken, "Bearer", loginId, role);
+        return new TokenResponse(accessToken, "Bearer", loginId, role, null);
+    }
+
+    public static TokenResponse of(String accessToken, String loginId, String role, String alimtalk) {
+        return new TokenResponse(accessToken, "Bearer", loginId, role, alimtalk);
     }
 }
