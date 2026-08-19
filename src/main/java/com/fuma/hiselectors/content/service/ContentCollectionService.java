@@ -4,8 +4,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.classifier.SelectorsContentClassifier;
-import com.fuma.hiselectors.content.client.ContentPlatformClient;
-import com.fuma.hiselectors.content.client.ContentPlatformClient.CollectionResult;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.Content;

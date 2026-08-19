@@ -25,19 +25,19 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-class InstagramContentClientTest {
+class InstagramContentFetcherTest {
 
     private static final String BUSINESS_ACCOUNT_ID = "test-business-account-id";
     private static final String ACCESS_TOKEN = "test-long-lived-token";
 
     private MockRestServiceServer server;
-    private InstagramContentClient client;
+    private InstagramContentFetcher client;
 
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new InstagramContentClient(
+        client = new InstagramContentFetcher(
                 new InstagramCollectionProperties("v24.0", BUSINESS_ACCOUNT_ID, ACCESS_TOKEN),
                 builder.build());
     }
@@ -95,7 +95,7 @@ class InstagramContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        ContentPlatformClient.CollectionResult collection = client.collect(
+        ContentFetcher.CollectionResult collection = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 12, 0));
         List<RawContent> result = collection.contents();
 
@@ -163,7 +163,7 @@ class InstagramContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<RawContent> result = client.collect(
+        List<RawContent> result = fetchByAccount(
                 "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).singleElement().satisfies(content -> {
@@ -228,7 +228,7 @@ class InstagramContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<RawContent> result = client.collect(
+        List<RawContent> result = fetchByAccount(
                 "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
 
         assertThat(result).extracting(RawContent::snsContentId)
@@ -247,7 +247,7 @@ class InstagramContentClientTest {
         expectNextPage(nextUrl, List.of(
                 mediaJson("current", "2026-08-13T05:00:00+0000")), null);
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(4);
@@ -265,7 +265,7 @@ class InstagramContentClientTest {
                 mediaJson("old-3", "2026-08-13T02:58:00+0000"),
                 mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(4);
@@ -286,7 +286,7 @@ class InstagramContentClientTest {
         expectNextPage(nextUrl, List.of(
                 mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(6);
@@ -306,7 +306,7 @@ class InstagramContentClientTest {
         expectNextPage(secondPageUrl, List.of(
                 mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(4);
@@ -329,7 +329,7 @@ class InstagramContentClientTest {
         expectNextPage(thirdPageUrl, List.of(
                 mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(6);
@@ -352,7 +352,7 @@ class InstagramContentClientTest {
             }
         }
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentFetcher.CollectionResult result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result.fetchedCount()).isEqualTo(11);
@@ -369,7 +369,7 @@ class InstagramContentClientTest {
         expectNextPage(repeatedUrl, List.of(
                 mediaJson("current-2", "2026-08-13T04:59:00+0000")), repeatedUrl);
 
-        assertThatThrownBy(() -> client.collect(
+        assertThatThrownBy(() -> fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -398,7 +398,7 @@ class InstagramContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.collect(
+        assertThatThrownBy(() -> fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -409,11 +409,11 @@ class InstagramContentClientTest {
     @Test
     @DisplayName("Instagram 수집 설정이 없으면 API를 호출하지 않는다")
     void rejectMissingConfiguration() {
-        InstagramContentClient unconfiguredClient = new InstagramContentClient(
+        InstagramContentFetcher unconfiguredClient = new InstagramContentFetcher(
                 new InstagramCollectionProperties("v24.0", "", ""),
                 RestClient.create());
 
-        assertThatThrownBy(() -> unconfiguredClient.collect(
+        assertThatThrownBy(() -> unconfiguredClient.fetchByAccount(
                 "nike", LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -423,7 +423,7 @@ class InstagramContentClientTest {
     @Test
     @DisplayName("올바르지 않은 Instagram username을 거부한다")
     void rejectInvalidUsername() {
-        assertThatThrownBy(() -> client.collect(
+        assertThatThrownBy(() -> fetchByAccount(
                 "invalid)username", LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -441,7 +441,7 @@ class InstagramContentClientTest {
                                 {"error":{"message":"permission denied","code":100}}
                                 """));
 
-        assertThatThrownBy(() -> client.collect(
+        assertThatThrownBy(() -> fetchByAccount(
                 "pharrell", LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -454,6 +454,11 @@ class InstagramContentClientTest {
                         .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID))
                 .andRespond(withSuccess(firstPageJson(media, nextUrl),
                         MediaType.APPLICATION_JSON));
+    }
+
+    private ContentFetcher.CollectionResult fetchByAccount(
+            String accountId, LocalDateTime since) {
+        return client.fetchByAccount(accountId, since);
     }
 
     private void expectNextPage(String requestedUrl, List<String> media, String nextUrl) {

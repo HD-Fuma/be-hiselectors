@@ -35,7 +35,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Slf4j
 @Component
-public class YoutubeContentClient implements ContentPlatformClient {
+public class YoutubeContentFetcher implements ContentFetcher {
 
     private static final String CHANNELS_URI =
             "https://www.googleapis.com/youtube/v3/channels";
@@ -52,7 +52,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
     private final YoutubeCollectionProperties properties;
     private final RestClient restClient;
 
-    public YoutubeContentClient(
+    public YoutubeContentFetcher(
             YoutubeCollectionProperties properties,
             @Qualifier("contentRestClient") RestClient restClient) {
         this.properties = properties;
@@ -71,8 +71,8 @@ public class YoutubeContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
+    public CollectionResult fetchByAccount(String accountId, LocalDateTime since) {
+        validateRequest(accountId, since);
 
         int fetchedCount = 0;
 
@@ -95,7 +95,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             // 신규 여부와 관계없이 API가 반환한 영상 항목 수 합산 (로깅)
             fetchedCount += page.items() == null ? 0 : page.items().size();
             boolean reachedBeforeGeneration = addGenerationContents(
-                    page.items(), collectedAfter, contents);
+                    page.items(), since, contents);
             if (reachedBeforeGeneration) {
                 break;
             }
@@ -109,14 +109,14 @@ public class YoutubeContentClient implements ContentPlatformClient {
         return new CollectionResult(fetchedCount, contents);
     }
 
-    private void validateRequest(String channelId, LocalDateTime collectedAfter) {
+    private void validateRequest(String channelId, LocalDateTime since) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
         // channelId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(channelId) || collectedAfter == null) {
+        if (!StringUtils.hasText(channelId) || since == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -174,8 +174,10 @@ public class YoutubeContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addGenerationContents(List<Item> items, LocalDateTime collectedAfter,
-                                          List<RawContent> contents) {
+    private boolean addGenerationContents(
+            List<Item> items,
+            LocalDateTime since,
+            List<RawContent> contents) {
         if (items == null) {
             return false;
         }
@@ -190,7 +192,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             hasPublishedVideo = true;
             // createdAt: YouTube 영상 공개 시각
             LocalDateTime createdAt = parseCreatedAt(item.contentDetails().videoPublishedAt());
-            if (createdAt.isBefore(collectedAfter)) {
+            if (createdAt.isBefore(since)) {
                 continue;
             }
             contents.add(toRawContent(item, createdAt));

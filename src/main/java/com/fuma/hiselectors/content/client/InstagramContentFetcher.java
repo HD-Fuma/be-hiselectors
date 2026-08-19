@@ -35,7 +35,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Slf4j
 @Component
-public class InstagramContentClient implements ContentPlatformClient {
+public class InstagramContentFetcher implements ContentFetcher {
 
     private static final String GRAPH_API_HOST = "https://graph.facebook.com";
 
@@ -58,7 +58,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     private final InstagramCollectionProperties properties;
     private final RestClient restClient;
 
-    public InstagramContentClient(
+    public InstagramContentFetcher(
             InstagramCollectionProperties properties,
             @Qualifier("contentRestClient") RestClient restClient) {
         this.properties = properties;
@@ -77,8 +77,8 @@ public class InstagramContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
+    public CollectionResult fetchByAccount(String accountId, LocalDateTime since) {
+        validateRequest(accountId, since);
 
         int fetchedCount = 0;
         int consecutiveOutOfPeriodCount = 0;
@@ -98,7 +98,7 @@ public class InstagramContentClient implements ContentPlatformClient {
 
             // 이미 받은 페이지는 끝까지 확인하고, 페이지 끝의 연속 횟수로 다음 요청 결정
             consecutiveOutOfPeriodCount = addCollectedContents(
-                    media, collectedAfter, contents, consecutiveOutOfPeriodCount);
+                    media, since, contents, consecutiveOutOfPeriodCount);
             if (consecutiveOutOfPeriodCount >= OUT_OF_PERIOD_STOP_THRESHOLD) {
                 break;
             }
@@ -118,7 +118,7 @@ public class InstagramContentClient implements ContentPlatformClient {
         return new CollectionResult(fetchedCount, contents);
     }
 
-    private void validateRequest(String username, LocalDateTime collectedAfter) {
+    private void validateRequest(String username, LocalDateTime since) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
@@ -126,7 +126,7 @@ public class InstagramContentClient implements ContentPlatformClient {
 
         // username, collectedAfter가 정상인지 확인
         if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()
-                || collectedAfter == null) {
+                || since == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -193,7 +193,7 @@ public class InstagramContentClient implements ContentPlatformClient {
 
     private int addCollectedContents(
             List<Media> media,
-            LocalDateTime collectedAfter,
+            LocalDateTime since,
             List<RawContent> contents,
             int consecutiveOutOfPeriodCount) {
         for (Media item : media) {
@@ -202,7 +202,7 @@ public class InstagramContentClient implements ContentPlatformClient {
             }
             // createdAt은 DB 저장 시각이 아닌 Instagram 게시글 작성 시각
             LocalDateTime createdAt = parseTimestamp(item.timestamp());
-            if (createdAt.isBefore(collectedAfter)) {
+            if (createdAt.isBefore(since)) {
                 consecutiveOutOfPeriodCount++;
                 continue;
             }

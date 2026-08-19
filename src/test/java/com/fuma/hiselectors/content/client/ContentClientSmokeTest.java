@@ -3,7 +3,7 @@ package com.fuma.hiselectors.content.client;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
-import com.fuma.hiselectors.content.client.ContentPlatformClient.CollectionResult;
+import com.fuma.hiselectors.content.client.ContentFetcher.CollectionResult;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
@@ -39,14 +39,14 @@ class ContentClientSmokeTest {
             LocalDateTime.of(2026, 5, 1, 0, 0);
 
     @Autowired
-    private InstagramContentClient instagramContentClient;
+    private InstagramContentFetcher instagramContentFetcher;
 
     @Autowired
-    private YoutubeContentClient youtubeContentClient;
+    private YoutubeContentFetcher youtubeContentFetcher;
 
     @Test
     void collectInstagramContentsFromRealApi() {
-        CollectionResult result = instagramContentClient.collect(
+        CollectionResult result = instagramContentFetcher.fetchByAccount(
                 INSTAGRAM_USERNAME, CONTENT_COLLECTION_START_AT);
 
         assertRawContents(result.contents(), SnsPlatform.INSTAGRAM);
@@ -54,7 +54,7 @@ class ContentClientSmokeTest {
 
     @Test
     void collectYoutubeContentsFromRealApi() {
-        CollectionResult result = youtubeContentClient.collect(
+        CollectionResult result = youtubeContentFetcher.fetchByAccount(
                 YOUTUBE_CHANNEL_ID, CONTENT_COLLECTION_START_AT);
 
         assertRawContents(result.contents(), SnsPlatform.YOUTUBE);
@@ -77,8 +77,8 @@ class ContentClientSmokeTest {
     })
     @Import({
             ContentClientConfig.class,
-            InstagramContentClient.class,
-            YoutubeContentClient.class
+            InstagramContentFetcher.class,
+            YoutubeContentFetcher.class
     })
     static class SmokeTestConfiguration {
     }
