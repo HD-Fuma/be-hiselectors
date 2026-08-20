@@ -7,6 +7,8 @@ import com.fuma.hiselectors.campaign.repository.CampaignRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
+import com.fuma.hiselectors.campaign.dto.CampaignProductDisplayResponse;
+import com.fuma.hiselectors.product.repository.ProductRepository;
 import com.fuma.hiselectors.productgroup.dto.MySelectorsShopResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupItemAddRequest;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupResponse;
@@ -48,6 +50,7 @@ public class ProductGroupService {
     private final SelectorsRepository selectorsRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private final ProductRepository productRepository;
 
     public List<ProductGroupResponse> findMine(String loginId) {
         return findBySelectors(findSelectors(loginId).getId());
@@ -75,6 +78,28 @@ public class ProductGroupService {
 
     public SelectorsShopResponse findPublicShop(String selectorsCode) {
         return toShopResponse(findPublicSelectors(selectorsCode));
+    }
+
+    public CampaignProductDisplayResponse findPublicProduct(String selectorsCode, Long productId) {
+        Selectors selectors = findPublicSelectors(selectorsCode);
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        return findPublicProduct(selectors, product);
+    }
+
+    public CampaignProductDisplayResponse findPublicProductByCode(
+            String selectorsCode, String productCode) {
+        Selectors selectors = findPublicSelectors(selectorsCode);
+        Product product = productRepository.findByProductCode(productCode)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        return findPublicProduct(selectors, product);
+    }
+
+    private CampaignProductDisplayResponse findPublicProduct(Selectors selectors, Product product) {
+        if (!itemRepository.existsActiveProductForSelectors(selectors.getId(), product.getId())) {
+            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
+        }
+        return CampaignProductDisplayResponse.of(product);
     }
 
     private SelectorsShopResponse toShopResponse(Selectors selectors) {

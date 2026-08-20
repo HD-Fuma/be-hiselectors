@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.purchase.service;
 
+import com.fuma.hiselectors.purchase.dto.AuthenticatedPurchaseRequest;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
@@ -50,6 +51,15 @@ public class PurchaseService {
         validateProductPrice(product);
 
         return createPurchase(request, selectorsId, product);
+    }
+
+    @Transactional
+    public PurchaseResponse purchase(String loginId, AuthenticatedPurchaseRequest request) {
+        Long buyerUserId = userRepository.findByHiId(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PURCHASE_USER_NOT_FOUND))
+                .getId();
+        return purchase(new PurchaseRequest(buyerUserId, request.selectorsCode(),
+                request.productCode(), request.quantity()));
     }
 
     private Long findSelectorsId(String selectorsCode) {
