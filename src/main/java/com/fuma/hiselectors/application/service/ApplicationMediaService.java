@@ -37,26 +37,37 @@ public class ApplicationMediaService {
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
         Application application = findApplication(applicationId);
-        LocalDateTime collectedAfter = LocalDateTime.now().minusDays(COLLECTION_DAYS);
+        try {
+            LocalDateTime collectedAt = LocalDateTime.now();
+            LocalDateTime collectedAfter = collectedAt.minusDays(COLLECTION_DAYS);
+            ContentPlatformClient client = findClient(application);
+            ContentPlatformClient.CollectionResult result = client
+                    .collect(application.getSnsAccountId(), collectedAfter);
+            List<ApplicationMedia> snapshot = createSnapshot(
+                    application, client, result.contents(), collectedAfter);
 
-        ContentPlatformClient client = findClient(application);
-        ContentPlatformClient.CollectionResult result = client
-                .collect(application.getSnsAccountId(), collectedAfter);
-        List<ApplicationMedia> snapshot = createSnapshot(
-                application, client, result.contents(), collectedAfter);
+            List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
+                mediaRepository.deleteByApplicationId(applicationId);
+                mediaRepository.flush();
+                List<ApplicationMedia> values = mediaRepository.saveAll(snapshot);
+                application.completeMediaCollection(collectedAt);
+                applicationRepository.save(application);
+                return values;
+            }));
 
-        List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
-            mediaRepository.deleteByApplicationId(applicationId);
-            mediaRepository.flush();
-            return mediaRepository.saveAll(snapshot);
-        }));
-
-        return new ApplicationMediaCollectionResponse(
-                applicationId,
-                application.getSnsCode(),
-                result.fetchedCount(),
-                saved.size(),
-                saved.stream().map(ApplicationMediaResponse::from).toList());
+            return new ApplicationMediaCollectionResponse(
+                    applicationId,
+                    application.getSnsCode(),
+                    result.fetchedCount(),
+                    saved.size(),
+                    saved.stream().map(ApplicationMediaResponse::from).toList());
+        } catch (RuntimeException e) {
+            transactionTemplate.executeWithoutResult(status -> {
+                application.failMediaCollection(e.getMessage());
+                applicationRepository.save(application);
+            });
+            throw e;
+        }
     }
 
     public List<ApplicationMediaResponse> findLatest(Long applicationId) {

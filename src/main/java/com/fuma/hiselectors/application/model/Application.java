@@ -62,6 +62,19 @@ public class Application extends BaseTimeEntity {
     @Column(name = "status", nullable = false, length = 20)
     private ApplicationStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "media_collection_status", nullable = false, length = 20)
+    private MediaCollectionStatus mediaCollectionStatus = MediaCollectionStatus.PENDING;
+
+    @Column(name = "media_collection_retry_count", nullable = false)
+    private int mediaCollectionRetryCount;
+
+    @Column(name = "media_collected_at")
+    private LocalDateTime mediaCollectedAt;
+
+    @Column(name = "media_collection_error", length = 500)
+    private String mediaCollectionError;
+
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
                         Long followerCount, LocalDateTime lastContentAt, BigDecimal engagementRate,
@@ -77,5 +90,16 @@ public class Application extends BaseTimeEntity {
         this.policyAgreedAt = policyAgreedAt;
         this.status = status;
     }
-}
 
+    public void completeMediaCollection(LocalDateTime collectedAt) {
+        this.mediaCollectionStatus = MediaCollectionStatus.DONE;
+        this.mediaCollectedAt = collectedAt;
+        this.mediaCollectionError = null;
+    }
+
+    public void failMediaCollection(String error) {
+        this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
+        this.mediaCollectionRetryCount++;
+        this.mediaCollectionError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+}

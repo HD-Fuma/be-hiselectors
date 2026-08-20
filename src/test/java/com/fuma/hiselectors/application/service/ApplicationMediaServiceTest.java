@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,6 +60,11 @@ class ApplicationMediaServiceTest {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
         });
+        lenient().doAnswer(invocation -> {
+            Consumer<TransactionStatus> callback = invocation.getArgument(0);
+            callback.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
                 List.of(instagramClient, youtubeClient), transactionTemplate);
@@ -116,6 +124,8 @@ class ApplicationMediaServiceTest {
         });
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
         verify(mediaRepository).flush();
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
+        assertThat(application.getMediaCollectedAt()).isNotNull();
     }
 
     @Test
@@ -129,6 +139,9 @@ class ApplicationMediaServiceTest {
 
         verify(mediaRepository, never()).deleteByApplicationId(any());
         verify(mediaRepository, never()).saveAll(any());
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
+        assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
+        assertThat(application.getMediaCollectionError()).isEqualTo("API failed");
     }
 
     @Test
