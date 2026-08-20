@@ -128,6 +128,10 @@ public class NewContentService {
             SelectorsSnsAccount account,
             List<RawContent> rawContents,
             LocalDateTime collectedAt) {
+        if (accountRepository.advanceCollectionCursorIfAccountUnchanged(
+                account.getId(), account.getSnsCode(), account.getAccountId(), collectedAt) != 1) {
+            throw new IllegalStateException("SNS 계정이 수집 중 변경됐습니다.");
+        }
         if (!rawContents.isEmpty()) {
             List<Content> contents = contentRepository.saveAll(rawContents.stream()
                     .map(raw -> Content.builder()
@@ -158,8 +162,6 @@ public class NewContentService {
             mediaRepository.saveAll(media);
         }
 
-        account.completeCollection(collectedAt);
-        accountRepository.save(account);
         return rawContents.size();
     }
 

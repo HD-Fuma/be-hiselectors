@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
@@ -24,6 +25,9 @@ class SelectorsSnsAccountRepositoryTest {
 
     @Autowired
     private SelectorsSnsAccountRepository accountRepository;
+
+    @Autowired
+    private ContentBatchAccountRepository batchAccountRepository;
 
     @Autowired
     private TestEntityManager entityManager;
@@ -85,6 +89,38 @@ class SelectorsSnsAccountRepositoryTest {
 
         SelectorsSnsAccount found = accountRepository.findById(account.getId()).orElseThrow();
         assertThat(found.getLastCollectedAt()).isEqualTo(collectedAt);
+    }
+
+    @Test
+    @DisplayName("수집 중 SNS 계정이 바뀌면 이전 계정의 커서를 저장하지 않는다")
+    void updateCursorOnlyForUnchangedAccount() {
+        SelectorsSnsAccount account = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("youtube-channel")
+                        .build());
+        LocalDateTime collectedAt = LocalDateTime.of(2026, 8, 13, 15, 0);
+
+        assertThat(batchAccountRepository.advanceCollectionCursorIfAccountUnchanged(
+                account.getId(), SnsPlatform.YOUTUBE, "youtube-channel", collectedAt)).isOne();
+        entityManager.clear();
+        assertThat(accountRepository.findById(account.getId()).orElseThrow()
+                .getLastCollectedAt()).isEqualTo(collectedAt);
+
+        SelectorsSnsAccount changed = accountRepository.findById(account.getId()).orElseThrow();
+        changed.synchronize(SnsPlatform.INSTAGRAM, "instagram-account", 100L);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(batchAccountRepository.advanceCollectionCursorIfAccountUnchanged(
+                account.getId(), SnsPlatform.YOUTUBE, "youtube-channel",
+                collectedAt.plusHours(1))).isZero();
+        entityManager.clear();
+        SelectorsSnsAccount found = accountRepository.findById(account.getId()).orElseThrow();
+        assertThat(found.getSnsCode()).isEqualTo(SnsPlatform.INSTAGRAM);
+        assertThat(found.getAccountId()).isEqualTo("instagram-account");
+        assertThat(found.getLastCollectedAt()).isNull();
     }
 
     @Test

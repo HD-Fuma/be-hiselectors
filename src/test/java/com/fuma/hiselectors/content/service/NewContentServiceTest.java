@@ -3,6 +3,7 @@ package com.fuma.hiselectors.content.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,6 +85,8 @@ class NewContentServiceTest {
                 Clock.fixed(
                         Instant.parse("2026-08-20T03:00:00Z"),
                         ZoneId.of("Asia/Seoul")));
+        lenient().when(accountRepository.advanceCollectionCursorIfAccountUnchanged(
+                any(), any(), any(), any())).thenReturn(1);
     }
 
     @Test
@@ -232,12 +235,12 @@ class NewContentServiceTest {
             assertThat(media.getSnsMediaId()).isEqualTo("image-1");
             assertThat(media.getSequenceNo()).isEqualTo(1);
         });
-        assertThat(account.getLastCollectedAt()).isEqualTo(collectedAt);
-        verify(accountRepository).save(account);
+        verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
+                account.getId(), SnsPlatform.INSTAGRAM, "instagram-account", collectedAt);
     }
 
     @Test
-    void countsFailedAccountAndDoesNotUpdateCursorWhenTransactionSaveFails() {
+    void countsFailedAccountWhenTransactionSaveFails() {
         LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         SelectorsSnsAccount account = instagramAccount(null);
@@ -273,8 +276,9 @@ class NewContentServiceTest {
 
         assertThat(service.collect()).isEqualTo(
                 new NewContentService.NewContentResult(0, 1));
-        assertThat(account.getLastCollectedAt()).isNull();
-        verify(accountRepository, never()).save(account);
+        verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
+                account.getId(), SnsPlatform.INSTAGRAM, "instagram-account",
+                LocalDateTime.of(2026, 8, 20, 12, 0));
     }
 
     @Test
@@ -316,8 +320,41 @@ class NewContentServiceTest {
 
         assertThat(service.collect()).isEqualTo(
                 new NewContentService.NewContentResult(1, 1));
-        verify(accountRepository).save(successfulAccount);
-        verify(accountRepository, never()).save(failedAccount);
+        verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
+                successfulAccount.getId(), SnsPlatform.INSTAGRAM, "successful-account",
+                LocalDateTime.of(2026, 8, 20, 12, 0));
+        verify(accountRepository, never()).advanceCollectionCursorIfAccountUnchanged(
+                failedAccount.getId(), SnsPlatform.INSTAGRAM, "failed-account",
+                LocalDateTime.of(2026, 8, 20, 12, 0));
+    }
+
+    @Test
+    void rejectsFetchedContentWhenAccountChangedBeforeSave() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount account = instagramAccount(null);
+        RawContent selected = raw("selected", "더현대 셀렉터스");
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(fetcher.fetchByAccount("instagram-account", generationStart))
+                .thenReturn(List.of(selected));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("selected"))).thenReturn(List.of());
+        when(classifier.isSelectorsContent(selected)).thenReturn(true);
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+        when(accountRepository.advanceCollectionCursorIfAccountUnchanged(
+                any(), any(), any(), any())).thenReturn(0);
+
+        assertThat(service.collect()).isEqualTo(
+                new NewContentService.NewContentResult(0, 1));
+        verify(contentRepository, never()).saveAll(any());
     }
 
     @Test
@@ -353,12 +390,14 @@ class NewContentServiceTest {
 
     private SelectorsSnsAccount instagramAccount(
             String accountId, LocalDateTime lastCollectedAt) {
-        return SelectorsSnsAccount.builder()
+        SelectorsSnsAccount account = SelectorsSnsAccount.builder()
                 .selectorsId(1L)
                 .snsCode(SnsPlatform.INSTAGRAM)
                 .accountId(accountId)
                 .lastCollectedAt(lastCollectedAt)
                 .build();
+        ReflectionTestUtils.setField(account, "id", (long) accountId.hashCode() & 0xffffffffL);
+        return account;
     }
 
     private RawContent raw(String id, String caption) {

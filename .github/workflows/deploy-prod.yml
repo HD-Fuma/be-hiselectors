@@ -75,8 +75,16 @@ jobs:
         if [ "$activity_end_column_count" = "0" ]; then
           mysql_query "ALTER TABLE generation ADD COLUMN activity_end_date DATETIME(6) NULL AFTER activity_start_date"
         fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE generation MODIFY COLUMN activity_start_date DATETIME(6) NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE generation MODIFY COLUMN activity_end_date DATETIME(6) NULL"
+        fi
         mysql_query "UPDATE generation SET activity_start_date = COALESCE(activity_start_date, start_date), activity_end_date = COALESCE(activity_end_date, end_date) WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
         mysql_query "UPDATE selectors_generation sg JOIN generation g ON g.generation_id = sg.generation_id SET sg.created_at = COALESCE(g.activity_start_date, g.start_date) WHERE sg.created_at IS NULL"
+
+        test "$(mysql_query "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date")" = "0"
 
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "0" ]; then
           mysql_query "ALTER TABLE generation ADD INDEX idx_generation_activity_period (activity_start_date, activity_end_date)"
@@ -171,16 +179,54 @@ jobs:
 
       - name: Deploy through SSM
         env:
-          IMAGE_URI: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          REMOTE_SCRIPT: |
+            set -eu
+            IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+            aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
+            docker pull "$IMAGE_URI"
+            docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
+            cd /srv/hiselectors
+            docker compose up -d --force-recreate --wait --wait-timeout 180 api
+
+            API_CONTAINER="$(docker compose ps -q api)"
+            test -n "$API_CONTAINER"
+            container_env() {
+              docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$API_CONTAINER" |
+                sed -n "s/^$1=//p" |
+                head -n 1
+            }
+            DB_HOST="$(container_env DB_HOST)"
+            DB_PORT="$(container_env DB_PORT)"
+            DB_NAME="$(container_env DB_NAME)"
+            DB_USERNAME="$(container_env DB_USERNAME)"
+            DB_PASSWORD="$(container_env DB_PASSWORD)"
+            DB_PORT="${DB_PORT:-3306}"
+            DB_NAME="${DB_NAME:-hiselectors}"
+            DB_USERNAME="${DB_USERNAME:-root}"
+            test -n "$DB_HOST"
+
+            export MYSQL_PWD="$DB_PASSWORD"
+            mysql_query() {
+              docker run --rm --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+                mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+                -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+            }
+            mysql_query "UPDATE generation SET activity_start_date = COALESCE(activity_start_date, start_date), activity_end_date = COALESCE(activity_end_date, end_date) WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
+            mysql_query "UPDATE selectors_generation sg JOIN generation g ON g.generation_id = sg.generation_id SET sg.created_at = COALESCE(g.activity_start_date, g.start_date) WHERE sg.created_at IS NULL"
+            test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
+            test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
+            test "$(mysql_query "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date")" = "0"
+            echo "008-post-deploy=verified"
+            docker image prune -f
         run: |
           test -n "$EC2_INSTANCE_ID"
-          REMOTE_COMMAND="aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY && docker pull $IMAGE_URI && docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest && cd /srv/hiselectors && docker compose up -d --force-recreate --wait --wait-timeout 180 api && docker image prune -f"
-          COMMAND_ID=$(aws ssm send-command \
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
+          COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
-            --parameters "commands=[\"$REMOTE_COMMAND\"],executionTimeout=[\"600\"]" \
+            --parameters "$PARAMETERS" \
             --query 'Command.CommandId' \
-            --output text)
+            --output text)"
           STATUS=
           for _ in {1..120}; do
             STATUS=$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)
