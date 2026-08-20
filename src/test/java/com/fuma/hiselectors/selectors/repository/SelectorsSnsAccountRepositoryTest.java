@@ -87,6 +87,36 @@ class SelectorsSnsAccountRepositoryTest {
         assertThat(found.getLastCollectedAt()).isEqualTo(collectedAt);
     }
 
+    @Test
+    @DisplayName("삭제된 SNS 계정은 새 행 없이 승인 정보로 재활성화한다")
+    void synchronizeDeletedAccountWithoutDuplicate() {
+        LocalDateTime collectedAt = LocalDateTime.of(2026, 8, 13, 15, 0);
+        SelectorsSnsAccount account = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .accountId("old-account")
+                        .followerCount(10L)
+                        .deleted(true)
+                        .lastCollectedAt(collectedAt)
+                        .profileImageUrl("https://old.example/profile.jpg")
+                        .build());
+
+        account.synchronize(SnsPlatform.YOUTUBE, "UC-approved", 12_345L);
+        entityManager.flush();
+        entityManager.clear();
+
+        SelectorsSnsAccount found = accountRepository.findBySelectorsId(1L).orElseThrow();
+        assertThat(found.getId()).isEqualTo(account.getId());
+        assertThat(found.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
+        assertThat(found.getAccountId()).isEqualTo("UC-approved");
+        assertThat(found.getFollowerCount()).isEqualTo(12_345L);
+        assertThat(found.isDeleted()).isFalse();
+        assertThat(found.getLastCollectedAt()).isNull();
+        assertThat(found.getProfileImageUrl()).isNull();
+        assertThat(accountRepository.count()).isOne();
+    }
+
     @TestConfiguration
     static class CacheConfig {
 

@@ -9,8 +9,10 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class ApplicationApprovalService {
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
+    private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     @Transactional
     public ApplicationResponse updateStatus(
@@ -58,6 +61,22 @@ public class ApplicationApprovalService {
                     .generationId(application.getGenerationId())
                     .build());
         }
+        synchronizeSnsAccount(selectors.getId(), application);
+    }
+
+    private void synchronizeSnsAccount(Long selectorsId, Application application) {
+        selectorsSnsAccountRepository.findBySelectorsId(selectorsId)
+                .ifPresentOrElse(account -> account.synchronize(
+                                application.getSnsCode(),
+                                application.getSnsAccountId(),
+                                application.getFollowerCount()),
+                        () -> selectorsSnsAccountRepository.save(
+                        SelectorsSnsAccount.builder()
+                                .selectorsId(selectorsId)
+                                .snsCode(application.getSnsCode())
+                                .accountId(application.getSnsAccountId())
+                                .followerCount(application.getFollowerCount())
+                                .build()));
     }
 
     private Selectors createSelectors(Application application, User user) {
