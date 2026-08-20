@@ -44,7 +44,11 @@ class ApplicationAdminRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        generation = em.persist(Generation.builder().generationName("2기").build());
+        generation = em.persist(Generation.builder()
+                .generationName("2기")
+                .activityStartDate(COLLECTED_AT.minusMonths(1))
+                .activityEndDate(COLLECTED_AT.plusMonths(1))
+                .build());
         regular = saveApplication("지안", "jian", SnsPlatform.INSTAGRAM,
                 ApplicationStatus.PENDING, 1_000L, true, 4);
         lowFollower = saveApplication("민희", "UC-low", SnsPlatform.YOUTUBE,
