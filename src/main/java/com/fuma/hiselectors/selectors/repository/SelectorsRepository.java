@@ -19,6 +19,10 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
 
     Optional<Selectors> findByUserId(Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Selectors s where s.userId = :userId")
+    Optional<Selectors> findByUserIdForUpdate(@Param("userId") Long userId);
+
     @Query("select s.id from Selectors s order by s.id")
     List<Long> findAllIds();
 
@@ -74,13 +78,12 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
               and exists (
                     select 1 from PenaltyHistory p
                     where p.selectorsId = s.id
+                      and (:generationId is null or p.generationId = :generationId)
                       and (:status is null or p.status = :status))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or (
-                    select count(p2.id) from PenaltyHistory p2
-                    where p2.selectorsId = s.id) >= :blacklistThreshold)
+              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """,
             countQuery = """
             select count(s) from Selectors s
@@ -88,18 +91,16 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
               and exists (
                     select 1 from PenaltyHistory p
                     where p.selectorsId = s.id
+                      and (:generationId is null or p.generationId = :generationId)
                       and (:status is null or p.status = :status))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or (
-                    select count(p2.id) from PenaltyHistory p2
-                    where p2.selectorsId = s.id) >= :blacklistThreshold)
+              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """)
     Page<Selectors> searchWithPenalties(
             @Param("generationId") Long generationId,
             @Param("status") PenaltyStatus status,
             @Param("blacklistOnly") boolean blacklistOnly,
-            @Param("blacklistThreshold") long blacklistThreshold,
             Pageable pageable);
 }

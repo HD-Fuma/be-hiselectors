@@ -9,6 +9,8 @@ public record SelectorsGenerationResponse(
         @Schema(description = "기수명", example = "3기") String generationName,
         @Schema(description = "모집 시작일") LocalDateTime startDate,
         @Schema(description = "모집 종료일") LocalDateTime endDate,
+        @Schema(description = "활동 시작일") LocalDateTime activityStartDate,
+        @Schema(description = "활동 종료일") LocalDateTime activityEndDate,
         @Schema(description = "기수 상태", example = "ACTIVE") String status,
         @Schema(description = "참여 등록 시각") LocalDateTime joinedAt
 ) {

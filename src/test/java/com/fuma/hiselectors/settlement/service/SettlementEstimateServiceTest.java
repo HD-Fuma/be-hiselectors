@@ -6,10 +6,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
-import com.fuma.hiselectors.user.model.User;
-import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -21,19 +19,16 @@ class SettlementEstimateServiceTest {
 
     @Test
     void getsOnlyTheAuthenticatedSelectorsHistoriesForTheRequestedYear() {
-        UserRepository userRepository = mock(UserRepository.class);
-        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
-        User user = mock(User.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
         Selectors selectors = mock(Selectors.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-16T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         SettlementEstimateService service = new SettlementEstimateService(
-                userRepository, selectorsRepository, historyRepository, clock);
+                historyRepository, clock, selectorAccessService);
 
-        when(user.getId()).thenReturn(3L);
         when(selectors.getId()).thenReturn(9L);
-        when(userRepository.findByHiId("selector-user")).thenReturn(java.util.Optional.of(user));
-        when(selectorsRepository.findByUserId(3L)).thenReturn(java.util.Optional.of(selectors));
+        when(selectorAccessService.requireSettlementHistoryReadable("selector-user"))
+                .thenReturn(selectors);
         when(historyRepository
                 .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
                         9L, LocalDateTime.of(2025, 1, 1, 0, 0), LocalDateTime.of(2026, 1, 1, 0, 0)))

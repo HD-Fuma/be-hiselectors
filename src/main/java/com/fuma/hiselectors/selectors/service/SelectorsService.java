@@ -109,15 +109,18 @@ public class SelectorsService {
     public Page<SelectorsPenaltyResponse> findPenalties(
             Long generationId, PenaltyStatus status, boolean blacklistOnly, Pageable pageable) {
         Page<Selectors> page = selectorsRepository.searchWithPenalties(
-                generationId, status, blacklistOnly, BLACKLIST_THRESHOLD, pageable);
+                generationId, status, blacklistOnly, pageable);
         if (page.isEmpty()) {
             return page.map(selectors -> SelectorsPenaltyResponse.of(
                     selectors, List.of(), BLACKLIST_THRESHOLD));
         }
 
         List<Long> selectorsIds = page.getContent().stream().map(Selectors::getId).toList();
-        Map<Long, List<PenaltyHistory>> historiesBySelectorsId = penaltyHistoryRepository
-                .findAllBySelectorsIds(selectorsIds).stream()
+        List<PenaltyHistory> histories = generationId == null
+                ? penaltyHistoryRepository.findAllBySelectorsIds(selectorsIds)
+                : penaltyHistoryRepository.findAllBySelectorsIdsAndGenerationId(
+                        selectorsIds, generationId);
+        Map<Long, List<PenaltyHistory>> historiesBySelectorsId = histories.stream()
                 .collect(Collectors.groupingBy(PenaltyHistory::getSelectorsId));
 
         return page.map(selectors -> SelectorsPenaltyResponse.of(

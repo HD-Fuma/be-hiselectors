@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.selectors.repository;
 
+import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.selectors.dto.SelectorsGenerationResponse;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import java.util.List;
@@ -14,14 +15,25 @@ public interface SelectorsGenerationRepository
     @Query("""
             select new com.fuma.hiselectors.selectors.dto.SelectorsGenerationResponse(
                        g.id, g.generationName, g.startDate, g.endDate,
+                       g.activityStartDate, g.activityEndDate,
                        cast(g.status as string), sg.createdAt)
             from SelectorsGeneration sg
             join Generation g on g.id = sg.generationId
             where sg.selectorsId = :selectorsId
-            order by g.startDate desc, g.id desc
+            order by g.activityStartDate desc, g.id desc
             """)
     List<SelectorsGenerationResponse> findGenerationsOf(
             @Param("selectorsId") Long selectorsId);
 
     boolean existsBySelectorsIdAndGenerationId(Long selectorsId, Long generationId);
+
+    List<SelectorsGeneration> findAllByGenerationId(Long generationId);
+
+    @Query("""
+            select g from SelectorsGeneration sg
+            join Generation g on g.id = sg.generationId
+            where sg.selectorsId = :selectorsId
+            order by g.activityStartDate desc, g.id desc
+            """)
+    List<Generation> findGenerationEntitiesOf(@Param("selectorsId") Long selectorsId);
 }

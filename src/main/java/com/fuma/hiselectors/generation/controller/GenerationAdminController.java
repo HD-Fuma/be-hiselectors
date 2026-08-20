@@ -57,7 +57,7 @@ public class GenerationAdminController {
     }
 
     @Operation(summary = "기수 정보 수정",
-            description = "기수명과 모집 기간을 수정한다. null인 필드는 변경하지 않는다.")
+            description = "기수명과 모집·활동 기간을 수정한다. null인 필드는 변경하지 않는다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "모집 기간 오류", content = @Content),

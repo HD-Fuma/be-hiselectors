@@ -58,7 +58,7 @@ public record SelectorsDetailResponse(
                 snsAccount,
                 penaltyHistories.size(),
                 activePenaltyCount,
-                penaltyHistories.size() >= blacklistThreshold,
+                selectors.isBlacklisted(),
                 contents.stream()
                         .limit(5)
                         .map(content -> ContentResponse.from(

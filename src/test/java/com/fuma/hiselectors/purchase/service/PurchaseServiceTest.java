@@ -19,6 +19,7 @@ import com.fuma.hiselectors.purchase.model.PurchaseProcessingResult;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -32,6 +33,7 @@ class PurchaseServiceTest {
     private UserRepository userRepository;
     private SelectorsRepository selectorsRepository;
     private ProductRepository productRepository;
+    private SelectorAccessService selectorAccessService;
     private PurchaseService purchaseService;
 
     @BeforeEach
@@ -40,8 +42,10 @@ class PurchaseServiceTest {
         userRepository = mock(UserRepository.class);
         selectorsRepository = mock(SelectorsRepository.class);
         productRepository = mock(ProductRepository.class);
+        selectorAccessService = mock(SelectorAccessService.class);
         purchaseService = new PurchaseService(
-                purchaseHistoryRepository, userRepository, selectorsRepository, productRepository);
+                purchaseHistoryRepository, userRepository, selectorsRepository, productRepository,
+                selectorAccessService);
     }
 
     @Test
@@ -100,6 +104,40 @@ class PurchaseServiceTest {
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
         verify(purchaseHistoryRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsPurchaseAttributionToBlacklistedSelector() {
+        Selectors selectors = mock(Selectors.class);
+        when(selectors.isBlacklisted()).thenReturn(true);
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(selectorsRepository.findBySelectorsCode("SELECTOR-1"))
+                .thenReturn(Optional.of(selectors));
+
+        assertThatThrownBy(() -> purchaseService.purchase(request()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.SELECTOR_NOT_FOUND);
+
+        verify(productRepository, never()).findByProductCode(any());
+        verify(purchaseHistoryRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsPurchaseAttributionToPreviousSelector() {
+        Selectors selectors = mock(Selectors.class);
+        when(userRepository.existsById(1L)).thenReturn(true);
+        when(selectorsRepository.findBySelectorsCode("SELECTOR-1"))
+                .thenReturn(Optional.of(selectors));
+        when(selectorAccessService.requireCurrent(selectors))
+                .thenThrow(new BusinessException(ErrorCode.ACCESS_DENIED));
+
+        assertThatThrownBy(() -> purchaseService.purchase(request()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+
+        verify(productRepository, never()).findByProductCode(any());
     }
 
     private void givenReferences(BigDecimal regularPrice, BigDecimal salePrice) {

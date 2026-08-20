@@ -23,6 +23,7 @@ import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.util.ArrayList;
@@ -51,14 +52,15 @@ public class ProductGroupService {
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
     private final ProductRepository productRepository;
+    private final SelectorAccessService selectorAccessService;
 
     public List<ProductGroupResponse> findMine(String loginId) {
-        return findBySelectors(findSelectors(loginId).getId());
+        return findBySelectors(selectorAccessService.requireReadable(loginId).getId());
     }
 
     public MySelectorsShopResponse findMineShop(String loginId) {
         User user = findUser(loginId);
-        Selectors selectors = findSelectors(user);
+        Selectors selectors = selectorAccessService.requireReadable(loginId);
         Optional<SelectorsSnsAccount> representativeAccount = findRepresentativeAccount(selectors.getId());
         String generationName = selectorsGenerationRepository.findGenerationsOf(selectors.getId()).stream()
                 .findFirst()
@@ -111,7 +113,7 @@ public class ProductGroupService {
 
     @Transactional
     public ProductGroupResponse create(String loginId, ProductGroupSaveRequest request) {
-        Selectors selectors = lockSelectors(findSelectors(loginId).getId());
+        Selectors selectors = lockSelectors(selectorAccessService.requireCurrent(loginId).getId());
         Campaign campaign = findCampaign(request.campaignId());
         List<Product> products = validateProducts(campaign.getId(), request.productIds());
         int nextGroupNoValue = groupRepository.findFirstBySelectorsIdOrderByGroupNoDesc(selectors.getId())
@@ -125,7 +127,7 @@ public class ProductGroupService {
 
     @Transactional
     public ProductGroupResponse update(String loginId, Long groupId, ProductGroupSaveRequest request) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireCurrent(loginId);
         ProductGroup group = findOwnedGroup(groupId, selectors.getId());
         Campaign campaign = findCampaign(request.campaignId());
         List<Product> products = validateProducts(campaign.getId(), request.productIds());
@@ -135,7 +137,7 @@ public class ProductGroupService {
 
     @Transactional
     public ProductGroupResponse addItems(String loginId, Long groupId, ProductGroupItemAddRequest request) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireCurrent(loginId);
         ProductGroup group = findOwnedGroup(groupId, selectors.getId());
         List<ProductGroupItem> existingItems = itemRepository
                 .findAllByGroupIdAndDeletedFalseOrderByDisplayOrderAsc(groupId);
@@ -158,7 +160,7 @@ public class ProductGroupService {
 
     @Transactional
     public void delete(String loginId, Long groupId) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireCurrent(loginId);
         ProductGroup group = findOwnedGroup(groupId, selectors.getId());
         itemRepository.findAllByGroupIdAndDeletedFalseOrderByDisplayOrderAsc(groupId)
                 .forEach(ProductGroupItem::softDelete);
@@ -243,18 +245,9 @@ public class ProductGroupService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CAMPAIGN_NOT_FOUND));
     }
 
-    private Selectors findSelectors(String loginId) {
-        return findSelectors(findUser(loginId));
-    }
-
     private User findUser(String loginId) {
         return userRepository.findByHiId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
-    }
-
-    private Selectors findSelectors(User user) {
-        return selectorsRepository.findByUserId(user.getId()).filter(value -> !value.isDeleted())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
     }
 
     private Optional<SelectorsSnsAccount> findRepresentativeAccount(Long selectorsId) {
@@ -262,9 +255,10 @@ public class ProductGroupService {
     }
 
     private Selectors findPublicSelectors(String selectorsCode) {
-        return selectorsRepository.findBySelectorsCode(selectorsCode)
-                .filter(value -> !value.isDeleted())
+        Selectors selectors = selectorsRepository.findBySelectorsCode(selectorsCode)
+                .filter(value -> !value.isDeleted() && !value.isBlacklisted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        return selectorAccessService.requireReadable(selectors);
     }
 
     private Selectors lockSelectors(Long selectorsId) {

@@ -7,16 +7,22 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "selectors")
+@Table(name = "selectors", uniqueConstraints = @UniqueConstraint(
+        name = "uq_selectors_user", columnNames = "user_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Selectors extends BaseTimeEntity {
+
+    public static final String ACTIVE_ROLE = "ACTIVE";
+    public static final String INACTIVE_ROLE = "INACTIVE";
+    public static final String BLACKLIST_ROLE = "BLACKLIST";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -65,5 +71,38 @@ public class Selectors extends BaseTimeEntity {
 
     public void restore() {
         this.deleted = false;
+    }
+
+    public boolean isBlacklisted() {
+        return BLACKLIST_ROLE.equalsIgnoreCase(selectorsRoleId);
+    }
+
+    public boolean isActive() {
+        return ACTIVE_ROLE.equalsIgnoreCase(selectorsRoleId);
+    }
+
+    public void activateForApplication(Long applicationId) {
+        if (isBlacklisted()) {
+            throw new IllegalStateException("blacklisted selectors cannot be activated");
+        }
+        this.applicationId = applicationId;
+        this.selectorsRoleId = ACTIVE_ROLE;
+        this.deleted = false;
+    }
+
+    public void activate() {
+        if (!isBlacklisted()) {
+            this.selectorsRoleId = ACTIVE_ROLE;
+        }
+    }
+
+    public void deactivate() {
+        if (!isBlacklisted()) {
+            this.selectorsRoleId = INACTIVE_ROLE;
+        }
+    }
+
+    public void blacklist() {
+        this.selectorsRoleId = BLACKLIST_ROLE;
     }
 }

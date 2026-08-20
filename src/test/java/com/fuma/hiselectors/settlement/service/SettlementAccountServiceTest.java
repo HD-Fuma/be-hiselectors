@@ -7,14 +7,13 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
-import com.fuma.hiselectors.user.model.User;
-import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -24,22 +23,19 @@ class SettlementAccountServiceTest {
 
     @Test
     void upsertReopensOnlyInformationHold() {
-        UserRepository userRepository = mock(UserRepository.class);
         SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
-        User user = mock(User.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
         Selectors selectors = mock(Selectors.class);
         SettlementAccount account = SettlementAccount.builder().selectorsId(9L).build();
         SettlementHistory infoHold = heldHistory(SettlementStatus.PAYMENT_HOLD_INFO);
         SettlementHistory blackHold = heldHistory(SettlementStatus.PAYMENT_HOLD_BLACK);
         SettlementAccountService service = new SettlementAccountService(
-                userRepository, selectorsRepository, accountRepository, historyRepository);
+                selectorsRepository, accountRepository, historyRepository, selectorAccessService);
 
-        when(user.getId()).thenReturn(3L);
         when(selectors.getId()).thenReturn(9L);
-        when(userRepository.findByHiId("selector-user")).thenReturn(Optional.of(user));
-        when(selectorsRepository.findByUserId(3L)).thenReturn(Optional.of(selectors));
+        when(selectorAccessService.requireCurrent("selector-user")).thenReturn(selectors);
         when(selectorsRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(selectors));
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.of(account));
