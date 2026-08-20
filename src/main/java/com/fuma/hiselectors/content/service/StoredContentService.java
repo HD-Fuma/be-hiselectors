@@ -4,9 +4,13 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.ContentFetcher.FetchResult;
 import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +26,24 @@ public class StoredContentService {
     private final GenerationService generationService;
     private final ContentRepository contentRepository;
     private final List<ContentFetcher> fetchers;
+    private final ContentEngagementRepository engagementRepository;
+    private final Clock clock;
+
+    /** 현재 기수 콘텐츠의 성과를 저장합니다. */
+    public int check() {
+        LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
+        List<ContentEngagement> engagements = fetchStoredContents().stream()
+                .filter(result -> result.fetched().status()
+                        == ContentFetcher.FetchStatus.FOUND)
+                .filter(result -> result.fetched().engagement() != null)
+                .map(result -> engagement(result, collectedAt))
+                .toList();
+
+        if (!engagements.isEmpty()) {
+            engagementRepository.saveAll(engagements);
+        }
+        return engagements.size();
+    }
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
     List<StoredContentResult> fetchStoredContents() {
@@ -68,6 +90,19 @@ public class StoredContentService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
                         "콘텐츠 Fetcher가 없습니다. platform=" + platform));
+    }
+
+    private ContentEngagement engagement(
+            StoredContentResult result, LocalDateTime collectedAt) {
+        ContentFetcher.Engagement engagement = result.fetched().engagement();
+        return ContentEngagement.builder()
+                .contentId(result.content().getId())
+                .viewCount(engagement.viewCount())
+                .likeCount(engagement.likeCount())
+                .commentCount(engagement.commentCount())
+                .shareCount(engagement.shareCount())
+                .createdAt(collectedAt)
+                .build();
     }
 
     record StoredContentResult(Content content, FetchResult fetched) {
