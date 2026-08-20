@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.ContentFetcher.FetchStatus;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
@@ -25,19 +26,19 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
-class YoutubeContentClientTest {
+class YoutubeContentFetcherTest {
 
     private static final String API_KEY = "test-api-key";
     private static final String CHANNEL_ID = "UC0000000000000000000000";
 
     private MockRestServiceServer server;
-    private YoutubeContentClient client;
+    private YoutubeContentFetcher client;
 
     @BeforeEach
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new YoutubeContentClient(
+        client = new YoutubeContentFetcher(
                 new YoutubeCollectionProperties(API_KEY),
                 builder.build());
     }
@@ -84,11 +85,9 @@ class YoutubeContentClientTest {
                         """, MediaType.APPLICATION_JSON));
         expectStatistics("video-new", "video-old");
 
-        ContentPlatformClient.CollectionResult collection = client.collect(
+        List<RawContent> result = fetchByAccount(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
-        List<RawContent> result = client.addStatistics(collection.contents());
 
-        assertThat(collection.fetchedCount()).isEqualTo(2);
         assertThat(result).hasSize(2);
         assertThat(result.getFirst()).satisfies(content -> {
             assertThat(content.snsCode()).isEqualTo(SnsPlatform.YOUTUBE);
@@ -127,8 +126,8 @@ class YoutubeContentClientTest {
                         MediaType.APPLICATION_JSON));
         expectStatistics("first", "second");
 
-        List<RawContent> result = client.addStatistics(client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents());
+        List<RawContent> result = fetchByAccount(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -159,11 +158,8 @@ class YoutubeContentClientTest {
                 .mapToObj(number -> "video-" + number)
                 .toArray(String[]::new));
 
-        ContentPlatformClient.CollectionResult collection = client.collect(
+        List<RawContent> result = fetchByAccount(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
-        List<RawContent> result = client.addStatistics(collection.contents());
-
-        assertThat(collection.fetchedCount()).isEqualTo(11);
         assertThat(result).hasSize(11);
         assertThat(result.getLast().snsContentId()).isEqualTo("video-11");
         server.verify();
@@ -182,7 +178,7 @@ class YoutubeContentClientTest {
                 .andRespond(withSuccess(playlistPage("second", "repeated-token"),
                         MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.collect(
+        assertThatThrownBy(() -> fetchByAccount(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
@@ -212,8 +208,8 @@ class YoutubeContentClientTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+        List<RawContent> result = fetchByAccount(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).isEmpty();
         server.verify();
@@ -222,10 +218,11 @@ class YoutubeContentClientTest {
     @Test
     @DisplayName("YouTube API 키가 없으면 API를 호출하지 않는다")
     void rejectMissingApiKey() {
-        YoutubeContentClient unconfiguredClient = new YoutubeContentClient(
+        YoutubeContentFetcher unconfiguredClient = new YoutubeContentFetcher(
                 new YoutubeCollectionProperties(""), RestClient.create());
 
-        assertThatThrownBy(() -> unconfiguredClient.collect(CHANNEL_ID, LocalDateTime.now()))
+        assertThatThrownBy(() -> unconfiguredClient.fetchByAccount(
+                CHANNEL_ID, LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.YOUTUBE_API_KEY_MISSING);
@@ -238,7 +235,7 @@ class YoutubeContentClientTest {
                         .isEqualTo("/youtube/v3/channels"))
                 .andRespond(withSuccess("{\"items\":[]}", MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> client.collect(CHANNEL_ID, LocalDateTime.now()))
+        assertThatThrownBy(() -> fetchByAccount(CHANNEL_ID, LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
@@ -254,10 +251,85 @@ class YoutubeContentClientTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"error\":{\"message\":\"invalid key\"}}"));
 
-        assertThatThrownBy(() -> client.collect(CHANNEL_ID, LocalDateTime.now()))
+        assertThatThrownBy(() -> fetchByAccount(CHANNEL_ID, LocalDateTime.now()))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.YOUTUBE_API_CALL_FAILED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("YouTube 영상 ID를 묶어서 최신 내용과 성과를 조회한다")
+    void fetchContentsByIds() {
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/videos");
+                    assertThat(decodedQuery(request.getURI().getRawQuery()))
+                            .contains("part=snippet,statistics")
+                            .doesNotContain("status")
+                            .contains("id=video-found,video-missing")
+                            .contains("key=" + API_KEY);
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "items": [{
+                            "id": "video-found",
+                            "snippet": {
+                              "title": "updated title",
+                              "description": "updated description",
+                              "publishedAt": "2026-08-13T05:00:00Z"
+                            },
+                            "statistics": {
+                              "viewCount": "100",
+                              "likeCount": "20",
+                              "commentCount": "3"
+                            }
+                          }]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("video-found", "video-missing"));
+
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).satisfies(found -> {
+            assertThat(found.snsContentId()).isEqualTo("video-found");
+            assertThat(found.status()).isEqualTo(FetchStatus.FOUND);
+            assertThat(found.content().caption())
+                    .isEqualTo("updated title\nupdated description");
+            assertThat(found.engagement().viewCount()).isEqualTo(100L);
+            assertThat(found.engagement().likeCount()).isEqualTo(20L);
+            assertThat(found.engagement().commentCount()).isEqualTo(3L);
+            assertThat(found.engagement().shareCount()).isNull();
+        });
+        assertThat(result.get(1)).satisfies(missing -> {
+            assertThat(missing.snsContentId()).isEqualTo("video-missing");
+            assertThat(missing.status()).isEqualTo(FetchStatus.NOT_FOUND);
+            assertThat(missing.content()).isNull();
+            assertThat(missing.engagement()).isNull();
+        });
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("YouTube 영상 ID는 API 제한에 맞춰 50개씩 조회한다")
+    void fetchContentsByIdsInBatchesOfFifty() {
+        List<String> ids = java.util.stream.IntStream.rangeClosed(1, 51)
+                .mapToObj(number -> "video-" + number)
+                .toList();
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=" + String.join(",", ids.subList(0, 50))))
+                .andRespond(withSuccess("{\"items\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=video-51"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        List<ContentFetcher.FetchResult> result = client.fetchByContentIds(ids);
+
+        assertThat(result).hasSize(51);
+        assertThat(result.subList(0, 50))
+                .extracting(ContentFetcher.FetchResult::status)
+                .containsOnly(FetchStatus.NOT_FOUND);
+        assertThat(result.getLast().status()).isEqualTo(FetchStatus.FAILED);
         server.verify();
     }
 
@@ -281,6 +353,11 @@ class YoutubeContentClientTest {
                           }]
                         }
                         """, MediaType.APPLICATION_JSON));
+    }
+
+    private List<RawContent> fetchByAccount(
+            String accountId, LocalDateTime since) {
+        return client.addStatistics(client.fetchByAccount(accountId, since));
     }
 
     private String playlistPage(String videoId, String nextPageToken) {

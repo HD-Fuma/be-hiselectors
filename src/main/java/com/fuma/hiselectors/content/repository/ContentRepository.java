@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface ContentRepository extends JpaRepository<Content, Long> {
 
@@ -16,4 +18,16 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
 
     Optional<Content> findBySnsCodeAndSnsContentId(
             SnsPlatform snsCode, String snsContentId);
+
+    /** 현재 기수 셀렉터스의 저장된 콘텐츠 조회 */
+    @Query("""
+            select content
+            from Content content, Selectors selectors, SelectorsGeneration sg
+            where content.selectorsId = selectors.id
+              and sg.selectorsId = selectors.id
+              and sg.generationId = :generationId
+              and selectors.deleted = false
+            order by content.id
+            """)
+    List<Content> findAllByGenerationId(@Param("generationId") Long generationId);
 }

@@ -39,7 +39,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Slf4j
 @Component
-public class YoutubeContentClient implements ContentPlatformClient {
+public class YoutubeContentFetcher implements ContentFetcher {
 
     private static final String CHANNELS_URI =
             "https://www.googleapis.com/youtube/v3/channels";
@@ -58,7 +58,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
     private final YoutubeCollectionProperties properties;
     private final RestClient restClient;
 
-    public YoutubeContentClient(
+    public YoutubeContentFetcher(
             YoutubeCollectionProperties properties,
             @Qualifier("contentRestClient") RestClient restClient) {
         this.properties = properties;
@@ -77,10 +77,8 @@ public class YoutubeContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
-
-        int fetchedCount = 0;
+    public List<RawContent> fetchByAccount(String accountId, LocalDateTime since) {
+        validateRequest(accountId, since);
 
         // 1. 채널 ID에 연결된 업로드 영상 목록 ID 조회
         String uploadsPlaylistId = requestUploadsPlaylistId(accountId);
@@ -98,10 +96,8 @@ public class YoutubeContentClient implements ContentPlatformClient {
             // 2. 실제 영상 목록 페이지 조회
             YoutubeContentResponse page = requestPlaylistPage(
                     uploadsPlaylistId, pageToken);
-            // 신규 여부와 관계없이 API가 반환한 영상 항목 수 합산 (로깅)
-            fetchedCount += page.items() == null ? 0 : page.items().size();
             boolean reachedBeforeGeneration = addGenerationContents(
-                    page.items(), collectedAfter, contents);
+                    page.items(), since, contents);
             if (reachedBeforeGeneration) {
                 break;
             }
@@ -112,17 +108,98 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 break;
             }
         }
-        return new CollectionResult(fetchedCount, contents);
+        return List.copyOf(contents);
     }
 
-    private void validateRequest(String channelId, LocalDateTime collectedAfter) {
+    @Override
+    public List<FetchResult> fetchByContentIds(List<String> snsContentIds) {
+        validateIds(snsContentIds);
+        List<FetchResult> results = new ArrayList<>(snsContentIds.size());
+        for (int start = 0; start < snsContentIds.size(); start += PAGE_SIZE) {
+            results.addAll(fetchBatch(snsContentIds.subList(
+                    start, Math.min(start + PAGE_SIZE, snsContentIds.size()))));
+        }
+        return results;
+    }
+
+    private List<FetchResult> fetchBatch(List<String> ids) {
+        URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
+                .queryParam("part", "snippet,statistics")
+                .queryParam("id", String.join(",", ids))
+                .queryParam("key", properties.apiKey())
+                .build()
+                .encode()
+                .toUri();
+        YoutubeContentResponse response;
+        try {
+            response = request(uri, YoutubeContentResponse.class);
+        } catch (BusinessException e) {
+            return ids.stream()
+                    .map(id -> new FetchResult(id, FetchStatus.FAILED, null, null))
+                    .toList();
+        }
+
+        Map<String, Item> itemsById = new HashMap<>();
+        if (response.items() != null) {
+            response.items().stream()
+                    .filter(item -> item != null && StringUtils.hasText(item.id()))
+                    .forEach(item -> itemsById.put(item.id(), item));
+        }
+        return ids.stream().map(id -> toFetchResult(id, itemsById.get(id))).toList();
+    }
+
+    private FetchResult toFetchResult(String id, Item item) {
+        if (item == null) {
+            return new FetchResult(id, FetchStatus.NOT_FOUND, null, null);
+        }
+        try {
+            YoutubeContentResponse.Snippet snippet = item.snippet();
+            if (snippet == null || !StringUtils.hasText(snippet.publishedAt())) {
+                return new FetchResult(id, FetchStatus.FAILED, null, null);
+            }
+            RawContent content = new RawContent(
+                    SnsPlatform.YOUTUBE,
+                    id,
+                    VIDEO_URL + id,
+                    ContentType.LONG_FORM,
+                    texts(item),
+                    parseCreatedAt(snippet.publishedAt()),
+                    List.of(new RawContentMedia(id, MediaType.VIDEO, null)));
+            YoutubeContentResponse.Statistics statistics = item.statistics();
+            Engagement engagement = new Engagement(
+                    count(statistics == null ? null : statistics.viewCount()),
+                    count(statistics == null ? null : statistics.likeCount()),
+                    count(statistics == null ? null : statistics.commentCount()),
+                    null);
+            return new FetchResult(id, FetchStatus.FOUND, content, engagement);
+        } catch (BusinessException | NumberFormatException e) {
+            log.warn("YouTube 영상 응답 변환 실패. ID={}", id);
+            return new FetchResult(id, FetchStatus.FAILED, null, null);
+        }
+    }
+
+    private Long count(String value) {
+        return StringUtils.hasText(value) ? Long.valueOf(value) : null;
+    }
+
+    private void validateIds(List<String> snsContentIds) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
+        }
+        if (snsContentIds == null
+                || snsContentIds.stream().anyMatch(id -> !StringUtils.hasText(id))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateRequest(String channelId, LocalDateTime since) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
         // channelId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(channelId) || collectedAfter == null) {
+        if (!StringUtils.hasText(channelId) || since == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -180,8 +257,10 @@ public class YoutubeContentClient implements ContentPlatformClient {
         }
     }
 
-    private boolean addGenerationContents(List<Item> items, LocalDateTime collectedAfter,
-                                          List<RawContent> contents) {
+    private boolean addGenerationContents(
+            List<Item> items,
+            LocalDateTime since,
+            List<RawContent> contents) {
         if (items == null) {
             return false;
         }
@@ -196,7 +275,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
             hasPublishedVideo = true;
             // createdAt: YouTube 영상 공개 시각
             LocalDateTime createdAt = parseCreatedAt(item.contentDetails().videoPublishedAt());
-            if (createdAt.isBefore(collectedAfter)) {
+            if (createdAt.isBefore(since)) {
                 continue;
             }
             contents.add(toRawContent(item, createdAt));

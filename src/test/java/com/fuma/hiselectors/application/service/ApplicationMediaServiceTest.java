@@ -15,7 +15,7 @@ import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
-import com.fuma.hiselectors.content.client.ContentPlatformClient;
+import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
@@ -45,9 +45,9 @@ class ApplicationMediaServiceTest {
     @Mock
     private ApplicationMediaRepository mediaRepository;
     @Mock
-    private ContentPlatformClient instagramClient;
+    private ContentFetcher instagramFetcher;
     @Mock
-    private ContentPlatformClient youtubeClient;
+    private ContentFetcher youtubeFetcher;
     @Mock
     private TransactionTemplate transactionTemplate;
 
@@ -55,8 +55,8 @@ class ApplicationMediaServiceTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(instagramClient.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        lenient().when(youtubeClient.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        lenient().when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        lenient().when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -68,7 +68,7 @@ class ApplicationMediaServiceTest {
         }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
-                List.of(instagramClient, youtubeClient), transactionTemplate);
+                List.of(instagramFetcher, youtubeFetcher), transactionTemplate);
     }
 
     @Test
@@ -84,9 +84,8 @@ class ApplicationMediaServiceTest {
         contents.add(raw(SnsPlatform.YOUTUBE, "video-0", now.minusDays(10)));
         contents.add(raw(SnsPlatform.YOUTUBE, "old", now.minusDays(91)));
         contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", now));
-        when(youtubeClient.collect(any(), any()))
-                .thenReturn(new ContentPlatformClient.CollectionResult(contents.size(), contents));
-        when(youtubeClient.addStatistics(any())).thenAnswer(invocation -> {
+        when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(contents);
+        when(youtubeFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected).extracting(RawContent::snsContentId)
                     .containsExactly(
@@ -144,9 +143,8 @@ class ApplicationMediaServiceTest {
                         "media-1",
                         RawContentMedia.MediaType.VIDEO,
                         "https://cdn.example.com/post-1.mp4")));
-        when(instagramClient.collect(any(), any()))
-                .thenReturn(new ContentPlatformClient.CollectionResult(1, List.of(content)));
-        when(instagramClient.addStatistics(any())).thenReturn(List.of(content));
+        when(instagramFetcher.fetchByAccount(any(), any())).thenReturn(List.of(content));
+        when(instagramFetcher.addStatistics(any())).thenReturn(List.of(content));
         when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var result = service.collect(APPLICATION_ID);
@@ -163,7 +161,8 @@ class ApplicationMediaServiceTest {
     void collectKeepsExistingSnapshotWhenClientFails() {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
-        when(youtubeClient.collect(any(), any())).thenThrow(new IllegalStateException("API failed"));
+        when(youtubeFetcher.fetchByAccount(any(), any()))
+                .thenThrow(new IllegalStateException("API failed"));
 
         assertThatThrownBy(() -> service.collect(APPLICATION_ID))
                 .isInstanceOf(IllegalStateException.class);
