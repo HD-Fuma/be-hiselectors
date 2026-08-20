@@ -47,9 +47,14 @@ public class User extends BaseTimeEntity {
     @Column(length = 20)
     private String phone;
 
+    /** 알림톡 수신 동의 여부 (Y/N). */
+    @Column(name = "alimtalk", length = 1)
+    private String alimtalk;
+
     @Builder
     private User(String hiId, String hiPassword, String name,
-                 LocalDate birthDate, String gender, String email, String phone) {
+                 LocalDate birthDate, String gender, String email, String phone,
+                 String alimtalk) {
         this.hiId = hiId;
         this.hiPassword = hiPassword;
         this.name = name;
@@ -57,5 +62,6 @@ public class User extends BaseTimeEntity {
         this.gender = gender;
         this.email = email;
         this.phone = phone;
+        this.alimtalk = alimtalk == null ? "N" : alimtalk;
     }
 }

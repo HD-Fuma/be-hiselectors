@@ -64,6 +64,10 @@ public enum ErrorCode {
     PURCHASE_CONFLICT(HttpStatus.CONFLICT, "기존 구매 정보와 요청 정보가 일치하지 않습니다."),
     INVALID_PURCHASE_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 구매 상태 변경입니다."),
 
+    // --- 캠페인 ---
+    CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "캠페인을 찾을 수 없습니다."),
+    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "종료된 캠페인만 삭제할 수 있습니다."),
+
     // --- 정산 ---
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),
     SETTLEMENT_RATE_SOURCE_NOT_FOUND(HttpStatus.CONFLICT, "수수료율 산정에 필요한 지원 정보를 찾을 수 없습니다."),
@@ -113,6 +117,9 @@ public enum ErrorCode {
     // --- 지원 ---
 
     APPLICATION_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "지원자를 찾을 수 없습니다."),
+    GENERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "기수를 찾을 수 없습니다."),
+    GENERATION_PERIOD_INVALID(HttpStatus.BAD_REQUEST, "모집 시작일은 종료일보다 빨라야 합니다."),
+    ACTIVE_GENERATION_OVERLAPPED(HttpStatus.CONFLICT, "모집 기간이 겹치는 활성 기수가 있습니다."),
     ACTIVE_GENERATION_NOT_FOUND(HttpStatus.CONFLICT, "현재 모집 중인 기수가 없어 지원할 수 없습니다."),
     DUPLICATE_APPLICATION(HttpStatus.CONFLICT, "이미 해당 기수에 지원했습니다."),
 

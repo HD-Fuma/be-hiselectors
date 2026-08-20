@@ -38,6 +38,15 @@ public class Selectors extends BaseTimeEntity {
     @Column(name = "selectors_nickname", length = 20)
     private String selectorsNickname;
 
+    /**
+     * 탈퇴·제명된 셀렉터스. 행을 지우지 않고 표시만 한다.
+     *
+     * <p>{@code selectors} 는 {@code selectors_generation},
+     * {@code selectors_sns_account} 등이 참조하는 중심 테이블이라 물리 삭제할 수 없다.
+     * 조회 API 는 항상 이 값이 false 인 행만 돌려준다.
+     */
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted;
 
     @Builder
     private Selectors(Long applicationId, Long userId, String selectorsRoleId,
@@ -47,5 +56,14 @@ public class Selectors extends BaseTimeEntity {
         this.selectorsRoleId = selectorsRoleId;
         this.selectorsCode = selectorsCode;
         this.selectorsNickname = selectorsNickname;
+        this.deleted = false;
+    }
+
+    public void softDelete() {
+        this.deleted = true;
+    }
+
+    public void restore() {
+        this.deleted = false;
     }
 }
