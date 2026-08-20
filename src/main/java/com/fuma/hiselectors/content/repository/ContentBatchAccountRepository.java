@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 public interface ContentBatchAccountRepository
         extends Repository<SelectorsSnsAccount, Long> {
 
+    SelectorsSnsAccount save(SelectorsSnsAccount account);
+
     @Query("""
             select account
             from SelectorsSnsAccount account, Selectors selectors, Application application
