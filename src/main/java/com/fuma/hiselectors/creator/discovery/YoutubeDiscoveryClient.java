@@ -41,6 +41,7 @@ public interface YoutubeDiscoveryClient {
             Long subscriberCount,
             Long totalViewCount,
             LocalDateTime lastUploadAt,
+            Integer recent90DayContentCount,
             long matchedVideoViews,
             long matchedVideoLikes,
             long matchedVideoComments
