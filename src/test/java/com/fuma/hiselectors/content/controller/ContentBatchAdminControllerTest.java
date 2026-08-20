@@ -45,4 +45,20 @@ class ContentBatchAdminControllerTest {
 
         verify(contentBatchService).run();
     }
+
+    @Test
+    void returnsOkWithZeroCountsAndFalseFlagsWhenBatchIsBusy() throws Exception {
+        ContentBatchResult result = new ContentBatchResult(0, 0, false, false);
+        when(contentBatchService.run()).thenReturn(result);
+
+        mockMvc.perform(post("/api/admin/content-batch/run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.newContentCount").value(0))
+                .andExpect(jsonPath("$.data.engagementCount").value(0))
+                .andExpect(jsonPath("$.data.newContentSucceeded").value(false))
+                .andExpect(jsonPath("$.data.storedContentSucceeded").value(false));
+
+        verify(contentBatchService).run();
+    }
 }
