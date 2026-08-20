@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -31,6 +32,7 @@ class SelectorsControllerTest {
     void setUp() {
         selectorsService = mock(SelectorsService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new SelectorsController(selectorsService))
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }

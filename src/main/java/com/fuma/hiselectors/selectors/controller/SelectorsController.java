@@ -67,7 +67,7 @@ public class SelectorsController {
             @RequestParam(required = false) Long generationId,
             @RequestParam(required = false) PenaltyStatus status,
             @RequestParam(defaultValue = "false") boolean blacklistOnly,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @PageableDefault(size = 20, sort = "id") Pageable pageable) {
         return ResponseEntity.ok(selectorsService.findPenalties(
                 generationId, status, blacklistOnly, pageable));
     }
