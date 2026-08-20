@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.productgroup.controller;
 
+import com.fuma.hiselectors.campaign.dto.CampaignProductDisplayResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupResponse;
 import com.fuma.hiselectors.productgroup.dto.SelectorsShopResponse;
 import com.fuma.hiselectors.productgroup.service.ProductGroupService;
@@ -46,5 +47,19 @@ public class ProductGroupPublicController {
     @GetMapping("/{selectorsCode}/product-groups")
     public ResponseEntity<List<ProductGroupResponse>> findPublic(@PathVariable String selectorsCode) {
         return ResponseEntity.ok(productGroupService.findPublic(selectorsCode));
+    }
+
+    @Operation(summary = "셀렉터스 샵 상품 상세 조회")
+    @GetMapping("/{selectorsCode}/products/{productId}")
+    public ResponseEntity<CampaignProductDisplayResponse> findProduct(
+            @PathVariable String selectorsCode, @PathVariable Long productId) {
+        return ResponseEntity.ok(productGroupService.findPublicProduct(selectorsCode, productId));
+    }
+
+    @Operation(summary = "셀렉터스 유입 상품코드 상세 조회")
+    @GetMapping("/{selectorsCode}/products/by-code/{productCode}")
+    public ResponseEntity<CampaignProductDisplayResponse> findProductByCode(
+            @PathVariable String selectorsCode, @PathVariable String productCode) {
+        return ResponseEntity.ok(productGroupService.findPublicProductByCode(selectorsCode, productCode));
     }
 }

@@ -39,7 +39,8 @@ public class SecurityConfig {
             "/actuator/health",
             "/error",
             "/api/auth/**",
-            "/api/purchases/**",
+            "/api/purchases",
+            "/api/view-logs",
             "/api/generations/active",  // 모집 중 기수 확인은 로그인 전에도 가능
             "/api/shops/**",            // 셀렉터스 샵 공개 조회
 
