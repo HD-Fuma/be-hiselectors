@@ -42,7 +42,11 @@ public class ApplicationMedia extends BaseTimeEntity {
     private String snsContentId;
 
     /** YouTube watch URL 또는 Instagram permalink. */
-    @Column(name = "media_url", nullable = false, columnDefinition = "TEXT")
+    @Column(name = "content_url", columnDefinition = "TEXT")
+    private String contentUrl;
+
+    /** Instagram 이미지·영상 CDN URL. YouTube는 제공하지 않아 null. */
+    @Column(name = "media_url", columnDefinition = "TEXT")
     private String mediaUrl;
 
     @Column(name = "sequence_no", nullable = false)
@@ -65,11 +69,13 @@ public class ApplicationMedia extends BaseTimeEntity {
 
     @Builder
     private ApplicationMedia(Long applicationId, SnsPlatform snsCode, String snsContentId,
-                             String mediaUrl, int sequenceNo, LocalDateTime publishedAt,
+                             String contentUrl, String mediaUrl, int sequenceNo,
+                             LocalDateTime publishedAt,
                              Long viewCount, Long likeCount, Long commentCount) {
         this.applicationId = applicationId;
         this.snsCode = snsCode;
         this.snsContentId = snsContentId;
+        this.contentUrl = contentUrl;
         this.mediaUrl = mediaUrl;
         this.sequenceNo = sequenceNo;
         this.publishedAt = publishedAt;

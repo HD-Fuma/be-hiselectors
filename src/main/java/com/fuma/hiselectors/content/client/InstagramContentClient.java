@@ -42,7 +42,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     // Meta API에서 받을 게시물 정보
     // children: 캐러셀 내부 이미지와 영상 (이미지, 영상 여러 개)
     private static final String MEDIA_FIELDS =
-            "id,caption,media_type,media_product_type,timestamp,media_url,"
+            "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
                     + "view_count,like_count,comments_count,children{id,media_type,media_url}";
 
     private static final int PAGE_SIZE = 25;
@@ -213,7 +213,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     }
 
     private RawContent toRawContent(Media media, LocalDateTime createdAt) {
-        if (media.id() == null) {
+        if (media.id() == null || media.permalink() == null) {
             throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         }
 
@@ -221,7 +221,7 @@ public class InstagramContentClient implements ContentPlatformClient {
         return new RawContent(
                 SnsPlatform.INSTAGRAM,
                 media.id(),
-                media.mediaUrl(),
+                media.permalink(),
                 contentType(media),
                 media.caption() == null ? "" : media.caption(),
                 createdAt,
