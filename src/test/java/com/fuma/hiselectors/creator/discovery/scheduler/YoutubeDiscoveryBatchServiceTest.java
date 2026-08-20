@@ -49,7 +49,7 @@ class YoutubeDiscoveryBatchServiceTest {
         when(discoveryPipelineService.runByKeyword(3L, 25))
                 .thenReturn(result("세 번째", 0, 0, 0, 100));
 
-        YoutubeDiscoveryBatchService service = service(306, 25, 10);
+        YoutubeDiscoveryBatchService service = service(606, 25, 10);
         YoutubeDiscoveryBatchResult batchResult = service.run();
 
         InOrder order = inOrder(discoveryPipelineService);
@@ -62,7 +62,7 @@ class YoutubeDiscoveryBatchServiceTest {
         assertThat(batchResult.attemptedKeywords()).isEqualTo(3);
         assertThat(batchResult.succeededKeywords()).isEqualTo(3);
         assertThat(batchResult.failedKeywords()).isZero();
-        assertThat(batchResult.reservedQuota()).isEqualTo(306);
+        assertThat(batchResult.reservedQuota()).isEqualTo(606);
         assertThat(batchResult.consumedQuota()).isEqualTo(302);
         assertThat(batchResult.discovered()).isEqualTo(3);
         assertThat(batchResult.created()).isEqualTo(2);
@@ -80,14 +80,14 @@ class YoutubeDiscoveryBatchServiceTest {
         when(discoveryPipelineService.runByKeyword(2L, 25))
                 .thenReturn(result("성공", 3, 2, 1, 102));
 
-        YoutubeDiscoveryBatchResult batchResult = service(204, 25, 10).run();
+        YoutubeDiscoveryBatchResult batchResult = service(404, 25, 10).run();
 
         verify(discoveryPipelineService).runByKeyword(1L, 25);
         verify(discoveryPipelineService).runByKeyword(2L, 25);
         assertThat(batchResult.attemptedKeywords()).isEqualTo(2);
         assertThat(batchResult.succeededKeywords()).isEqualTo(1);
         assertThat(batchResult.failedKeywords()).isEqualTo(1);
-        assertThat(batchResult.reservedQuota()).isEqualTo(204);
+        assertThat(batchResult.reservedQuota()).isEqualTo(404);
         assertThat(batchResult.consumedQuota()).isEqualTo(102);
     }
 

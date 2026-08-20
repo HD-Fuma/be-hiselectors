@@ -120,7 +120,7 @@ class DiscoveryPipelineServiceTest {
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_NEW", "새 크리에이터", "Instagram @new_creator",
                 120_000L, 3_000_000L, uploadedAt,
-                1_000L, 40L, 10L);
+                12, 1_000L, 40L, 10L);
         CreatorPool savedCreator = org.mockito.Mockito.mock(CreatorPool.class);
 
         when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
@@ -162,6 +162,7 @@ class DiscoveryPipelineServiceTest {
         verify(discoveryInfoRepository).save(infoCaptor.capture());
         assertThat(infoCaptor.getValue().getIgHandle()).isEqualTo("new_creator");
         assertThat(infoCaptor.getValue().getIgConfidence()).isEqualByComparingTo("0.75");
+        assertThat(infoCaptor.getValue().getRecent90DayContentCount()).isEqualTo(12);
         assertThat(infoCaptor.getValue().getDiscoveredAt()).isNotNull();
 
         ArgumentCaptor<CreatorDiscoverySource> sourceCaptor =
@@ -179,7 +180,7 @@ class DiscoveryPipelineServiceTest {
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_EXISTING", "기존 크리에이터", null,
                 50_000L, 1_000_000L, uploadedAt,
-                200L, 8L, 2L);
+                7, 200L, 8L, 2L);
         CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);
         CreatorDiscoveryInfo existingInfo = org.mockito.Mockito.mock(CreatorDiscoveryInfo.class);
         CreatorDiscoverySource existingSource =
@@ -208,6 +209,7 @@ class DiscoveryPipelineServiceTest {
                 50_000L, new BigDecimal("5.00"), uploadedAt);
         verify(existingCreator).restore();
         verify(existingInfo).refresh(2, "공식", null, null);
+        verify(existingInfo).updateRecent90DayContentCount(7);
         verify(existingSource).refresh(new BigDecimal("1.00000"));
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);

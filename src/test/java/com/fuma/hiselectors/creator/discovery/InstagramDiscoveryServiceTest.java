@@ -64,7 +64,7 @@ class InstagramDiscoveryServiceTest {
         when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
         when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
         when(info.getIgHandle()).thenReturn("nike");
-        when(metaGraphApiClient.discover("nike")).thenReturn(discovered);
+        when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
@@ -94,6 +94,7 @@ class InstagramDiscoveryServiceTest {
         assertThat(result.instagramCreatorId()).isEqualTo(20L);
         assertThat(result.created()).isTrue();
         assertThat(result.mediaCount()).isEqualTo(1_668L);
+        verify(discoveryInfoRepository).save(any(CreatorDiscoveryInfo.class));
     }
 
     @Test
@@ -106,7 +107,7 @@ class InstagramDiscoveryServiceTest {
         when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
         when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
         when(info.getIgHandle()).thenReturn("nike");
-        when(metaGraphApiClient.discover("nike")).thenReturn(discovered);
+        when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
@@ -139,7 +140,7 @@ class InstagramDiscoveryServiceTest {
         when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
         when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
         when(info.getIgHandle()).thenReturn("nike");
-        when(metaGraphApiClient.discover("nike")).thenReturn(discovered);
+        when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(

@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.InfluenceCandidate;
@@ -27,8 +28,8 @@ import org.springframework.data.domain.Pageable;
  * <p>발굴 결과는 수집 시점에 걸러내지 않고 전부 저장하므로, 브랜드 계정이나
  * 구독자 미달 계정을 빼는 일은 전적으로 이 쿼리가 담당한다.
  */
-@DataJpaTest
-@Import(JpaAuditingConfig.class)
+@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+@Import({JpaAuditingConfig.class, CacheConfig.class})
 
 class CreatorPoolSearchTest {
 
@@ -76,6 +77,7 @@ class CreatorPoolSearchTest {
                 .brandScore(brandScore)
                 .igHandle(igHandle)
                 .igConfidence(new BigDecimal(igConfidence))
+                .recent90DayContentCount(daysSinceContent > 90 ? 0 : 12)
                 .build());
     }
 
@@ -202,6 +204,19 @@ class CreatorPoolSearchTest {
         assertThat(result.getContent())
                 .extracting(CreatorSummary::creatorName)
                 .containsExactly("핏지피티 홈트");
+    }
+
+    @Test
+    @DisplayName("계정 검색과 ER 및 최근 90일 활동 수 조건을 함께 적용한다")
+    void filterQuantitativeCreatorPool() {
+        Page<CreatorSummary> result = creatorPoolRepository.search(
+                "핏지피티", "FITNESS", "YOUTUBE", 5_000L,
+                new BigDecimal("3.00"), 10, 1, null, null, FIRST_PAGE);
+
+        assertThat(result.getContent())
+                .extracting(CreatorSummary::creatorName)
+                .containsExactly("핏지피티 홈트");
+        assertThat(result.getContent().getFirst().recent90DayContentCount()).isEqualTo(12);
     }
 
     @Test

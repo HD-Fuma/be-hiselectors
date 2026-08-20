@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -56,6 +57,9 @@ public class CreatorAdminController {
     @GetMapping
     public ResponseEntity<Page<CreatorSummary>> search(
 
+            @Parameter(description = "계정명 또는 플랫폼 계정 ID")
+            @RequestParam(required = false) String keyword,
+
             @Parameter(description = "카테고리 코드", example = "BEAUTY")
             @RequestParam(required = false) String categoryCode,
 
@@ -64,6 +68,12 @@ public class CreatorAdminController {
 
             @Parameter(description = "최소 팔로워/구독자 수", example = "5000")
             @RequestParam(required = false) Long minFollower,
+
+            @Parameter(description = "최소 ER", example = "2.5")
+            @RequestParam(required = false) @DecimalMin("0") BigDecimal minEngagementRate,
+
+            @Parameter(description = "최근 90일 최소 공개 콘텐츠 수", example = "3")
+            @RequestParam(required = false) @Min(0) Integer minRecent90DayContentCount,
 
             @Parameter(description = "브랜드 신호 점수 상한. 1 을 주면 브랜드 계정(2점 이상)이 빠진다",
                     example = "1")
@@ -80,7 +90,8 @@ public class CreatorAdminController {
             Pageable pageable) {
 
         return ResponseEntity.ok(creatorDiscoveryService.search(
-                categoryCode, snsCode, minFollower, maxBrandScore,
+                keyword, categoryCode, snsCode, minFollower,
+                minEngagementRate, minRecent90DayContentCount, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
     }
 

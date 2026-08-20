@@ -27,6 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class InstagramDiscoveryService {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final int RECENT_MEDIA_LIMIT = 25;
+    private static final int ACTIVITY_WINDOW_DAYS = 90;
 
     private final MetaGraphApiClient metaGraphApiClient;
     private final InstagramEngagementCalculator engagementCalculator;
@@ -46,10 +48,12 @@ public class InstagramDiscoveryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.INSTAGRAM_HANDLE_NOT_FOUND));
 
         // 외부 네트워크 호출은 DB 저장 트랜잭션 밖에서 수행한다.
-        BusinessDiscovery discovered = metaGraphApiClient.discover(instagramHandle);
+        BusinessDiscovery discovered = metaGraphApiClient.discover(
+                instagramHandle, RECENT_MEDIA_LIMIT);
         BigDecimal engagementRate = engagementCalculator.calculate(
                 discovered.followersCount(), discovered.media());
         LocalDateTime lastContentAt = lastContentAt(discovered);
+        int recent90DayContentCount = recent90DayContentCount(discovered);
 
         try {
             return Objects.requireNonNull(transactionTemplate.execute(status -> persist(
@@ -57,14 +61,16 @@ public class InstagramDiscoveryService {
                     sourceCreator.getCategory(),
                     discovered,
                     engagementRate,
-                    lastContentAt
+                    lastContentAt,
+                    recent90DayContentCount
             )));
         } catch (DataIntegrityViolationException e) {
             // 같은 계정이 동시에 최초 발굴되면 DB 유니크 제약에서 한 요청만 성공한다.
             // 실패한 요청은 승리한 행을 다시 읽어 정상적인 갱신 결과로 반환한다.
             return Objects.requireNonNull(transactionTemplate.execute(status ->
                     updateAfterConcurrentInsert(
-                            youtubeCreatorId, discovered, engagementRate, lastContentAt)));
+                            youtubeCreatorId, discovered, engagementRate, lastContentAt,
+                            recent90DayContentCount)));
         }
     }
 
@@ -73,7 +79,8 @@ public class InstagramDiscoveryService {
             String sourceCategory,
             BusinessDiscovery discovered,
             BigDecimal engagementRate,
-            LocalDateTime lastContentAt) {
+            LocalDateTime lastContentAt,
+            int recent90DayContentCount) {
 
         String username = discovered.username();
         String instagramId = discovered.id();
@@ -111,6 +118,8 @@ public class InstagramDiscoveryService {
             }
         }
 
+        saveRecentActivity(creator, recent90DayContentCount);
+
         return new InstagramDiscoveryResult(
                 sourceCreatorId,
                 creator.getId(),
@@ -127,7 +136,8 @@ public class InstagramDiscoveryService {
             Long sourceCreatorId,
             BusinessDiscovery discovered,
             BigDecimal engagementRate,
-            LocalDateTime lastContentAt) {
+            LocalDateTime lastContentAt,
+            int recent90DayContentCount) {
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                         SnsPlatform.INSTAGRAM.name(), discovered.id())
@@ -137,6 +147,7 @@ public class InstagramDiscoveryService {
         if (creator.isDeleted()) {
             creator.restore();
         }
+        saveRecentActivity(creator, recent90DayContentCount);
         return new InstagramDiscoveryResult(
                 sourceCreatorId,
                 creator.getId(),
@@ -147,6 +158,32 @@ public class InstagramDiscoveryService {
                 engagementRate,
                 lastContentAt
         );
+    }
+
+    private void saveRecentActivity(CreatorPool creator, int recent90DayContentCount) {
+        discoveryInfoRepository.findById(creator.getId()).ifPresentOrElse(
+                info -> info.updateRecent90DayContentCount(recent90DayContentCount),
+                () -> discoveryInfoRepository.save(CreatorDiscoveryInfo.builder()
+                        .creatorPool(creator)
+                        .brandScore(0)
+                        .recent90DayContentCount(recent90DayContentCount)
+                        .build()));
+    }
+
+    private int recent90DayContentCount(BusinessDiscovery discovered) {
+        if (discovered.media() == null || discovered.media().data() == null) {
+            return 0;
+        }
+        LocalDateTime cutoff = LocalDateTime.now(SEOUL).minusDays(ACTIVITY_WINDOW_DAYS);
+        // ponytail: Meta 1회 응답의 최근 25건까지만 센다. 25건 초과 계정의 정확한 수가
+        // 필요해지면 media paging cursor를 따라 추가 조회한다.
+        return (int) discovered.media().data().stream()
+                .filter(Objects::nonNull)
+                .map(MediaItem::timestamp)
+                .map(this::parseTimestamp)
+                .filter(Objects::nonNull)
+                .filter(timestamp -> !timestamp.isBefore(cutoff))
+                .count();
     }
 
     private LocalDateTime lastContentAt(BusinessDiscovery discovered) {

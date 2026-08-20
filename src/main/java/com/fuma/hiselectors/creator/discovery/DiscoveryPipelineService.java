@@ -29,9 +29,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 발굴 파이프라인. 키워드 하나로 YouTube 를 검색해 채널을 찾고 DB 에 저장한다.
  *
  * <pre>
- * search.list(키워드)  100 units → 영상 ID
- * videos.list(배치)      1 unit  → 조회수·채널 ID
- * channels.list(배치)    1 unit  → 구독자수·채널 설명
+ * search.list(키워드)    100 units → 영상 ID
+ * videos.list(배치)        1 unit  → 조회수·채널 ID
+ * channels.list(배치)      1 unit  → 구독자수·채널 설명
+ * playlistItems.list       1+ unit → 최근 90일 활동 수
  *   → 채널 설명에서 인스타 핸들 추출
  *   → 브랜드 신호 점수 계산
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장
@@ -147,7 +148,8 @@ public class DiscoveryPipelineService {
             }
         }
 
-        saveDiscoveryInfo(creator, igHandle, brandScore);
+        saveDiscoveryInfo(creator, igHandle, brandScore,
+                channel.recent90DayContentCount());
         saveDiscoverySource(creator, keyword, channel, totalViews);
 
         // 발굴 출처가 쌓인 뒤에 대표 카테고리를 다시 정한다.
@@ -157,19 +159,23 @@ public class DiscoveryPipelineService {
         return isNew;
     }
 
-    private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore) {
+    private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore,
+                                   Integer recent90DayContentCount) {
         BigDecimal confidence = igHandle == null ? null : igHandle.confidence();
         String handle = igHandle == null ? null : igHandle.handle();
 
         discoveryInfoRepository.findById(creator.getId()).ifPresentOrElse(
-                info -> info.refresh(brandScore.score(), brandScore.hitsAsText(),
-                        handle, confidence),
+                info -> {
+                    info.refresh(brandScore.score(), brandScore.hitsAsText(), handle, confidence);
+                    info.updateRecent90DayContentCount(recent90DayContentCount);
+                },
                 () -> discoveryInfoRepository.save(CreatorDiscoveryInfo.builder()
                         .creatorPool(creator)
                         .brandScore(brandScore.score())
                         .brandHits(brandScore.hitsAsText())
                         .igHandle(handle)
                         .igConfidence(confidence)
+                        .recent90DayContentCount(recent90DayContentCount)
                         .build()));
     }
 

@@ -15,8 +15,11 @@ public record YoutubeDiscoveryProperties(
         Integer maxResultsPerKeyword
 ) {
 
-    /** 키워드 1개 발굴에 드는 쿼터. search.list 100 + videos/channels 배치 2. */
-    public static final int QUOTA_PER_KEYWORD = 102;
+    /** search.list 100 + videos/channels 배치 2. */
+    public static final int BASE_QUOTA_PER_KEYWORD = 102;
+    // ponytail: 채널당 200개까지만 센다. 더 필요하면 쿼터 예약과 함께 상한을 올린다.
+    public static final int MAX_ACTIVITY_PAGES_PER_CHANNEL = 4;
+    private static final int YOUTUBE_LIST_MAX_RESULTS = 50;
 
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
@@ -28,5 +31,12 @@ public record YoutubeDiscoveryProperties(
 
     public int maxResultsOrDefault() {
         return maxResultsPerKeyword == null ? 25 : maxResultsPerKeyword;
+    }
+
+    /** 최근 활동 조회의 채널별 최대 호출 수까지 포함한 키워드당 예약 쿼터. */
+    public int quotaPerKeyword() {
+        return BASE_QUOTA_PER_KEYWORD
+                + Math.min(maxResultsOrDefault(), YOUTUBE_LIST_MAX_RESULTS)
+                * MAX_ACTIVITY_PAGES_PER_CHANNEL;
     }
 }
