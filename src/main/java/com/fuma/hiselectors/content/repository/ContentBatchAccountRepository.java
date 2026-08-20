@@ -13,10 +13,11 @@ public interface ContentBatchAccountRepository
 
     @Query("""
             select account
-            from SelectorsSnsAccount account, Selectors selectors, Application application
+            from SelectorsSnsAccount account, Selectors selectors, SelectorsGeneration sg
             where account.selectorsId = selectors.id
-              and selectors.applicationId = application.id
-              and application.generationId = :generationId
+              and sg.selectorsId = selectors.id
+              and sg.generationId = :generationId
+              and selectors.deleted = false
               and account.deleted = false
             order by account.id
             """)

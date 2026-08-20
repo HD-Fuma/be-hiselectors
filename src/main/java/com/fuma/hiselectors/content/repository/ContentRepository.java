@@ -22,10 +22,11 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
     /** 현재 기수 셀렉터스의 저장된 콘텐츠 조회 */
     @Query("""
             select content
-            from Content content, Selectors selectors, Application application
+            from Content content, Selectors selectors, SelectorsGeneration sg
             where content.selectorsId = selectors.id
-              and selectors.applicationId = application.id
-              and application.generationId = :generationId
+              and sg.selectorsId = selectors.id
+              and sg.generationId = :generationId
+              and selectors.deleted = false
             order by content.id
             """)
     List<Content> findAllByGenerationId(@Param("generationId") Long generationId);
