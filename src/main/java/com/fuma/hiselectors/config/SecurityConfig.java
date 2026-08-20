@@ -41,6 +41,7 @@ public class SecurityConfig {
             "/api/auth/**",
             "/api/purchases/**",
             "/api/generations/active",  // 모집 중 기수 확인은 로그인 전에도 가능
+            "/api/shops/**",            // 셀렉터스 샵 공개 조회
 
             "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",
     };
