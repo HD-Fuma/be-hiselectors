@@ -242,6 +242,47 @@ class StoredContentServiceTest {
         verify(contentRepository).saveAll(List.of(changed));
     }
 
+    @Test
+    void updatesDeletionOnlyForFoundAndNotFoundContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content notFound = content(SnsPlatform.INSTAGRAM, "not-found");
+        Content found = content(SnsPlatform.INSTAGRAM, "found");
+        Content failed = content(SnsPlatform.INSTAGRAM, "failed");
+        ReflectionTestUtils.setField(notFound, "id", 10L);
+        ReflectionTestUtils.setField(found, "id", 20L);
+        ReflectionTestUtils.setField(failed, "id", 30L);
+        found.markDeleted();
+        failed.markDeleted();
+        RawContent foundRaw = raw("found", "동일 본문");
+
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(notFound, found, failed));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("not-found", "found", "failed")))
+                .thenReturn(List.of(
+                        new ContentFetcher.FetchResult(
+                                "not-found", ContentFetcher.FetchStatus.NOT_FOUND, null, null),
+                        new ContentFetcher.FetchResult(
+                                "found", ContentFetcher.FetchStatus.FOUND, foundRaw, null),
+                        new ContentFetcher.FetchResult(
+                                "failed", ContentFetcher.FetchStatus.FAILED, null, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(20L)))
+                .thenReturn(List.of(version(
+                        20L, snapshotFactory.contentHash(foundRaw))));
+        executeTransaction();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation ->
+                toList(invocation.getArgument(0)));
+
+        service.check();
+
+        assertThat(notFound.isDeleted()).isTrue();
+        assertThat(found.isDeleted()).isFalse();
+        assertThat(failed.isDeleted()).isTrue();
+        verify(contentRepository).saveAll(List.of(notFound, found));
+    }
+
     private Content content(SnsPlatform platform, String snsContentId) {
         return Content.builder()
                 .selectorsId(1L)

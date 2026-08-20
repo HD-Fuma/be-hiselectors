@@ -59,6 +59,7 @@ public class StoredContentService {
             engagementRepository.saveAll(engagements);
         }
         saveChangedVersions(results, collectedAt);
+        updateDeletionStatus(results);
         return engagements.size();
     }
 
@@ -178,6 +179,25 @@ public class StoredContentService {
                     changed.get(index).fetched().content()));
         }
         mediaRepository.saveAll(media);
+    }
+
+    private void updateDeletionStatus(List<StoredContentResult> results) {
+        List<Content> changed = new ArrayList<>();
+        for (StoredContentResult result : results) {
+            Content content = result.content();
+            if (result.fetched().status() == ContentFetcher.FetchStatus.NOT_FOUND
+                    && !content.isDeleted()) {
+                content.markDeleted();
+                changed.add(content);
+            } else if (result.fetched().status() == ContentFetcher.FetchStatus.FOUND
+                    && content.isDeleted()) {
+                content.restore();
+                changed.add(content);
+            }
+        }
+        if (!changed.isEmpty()) {
+            contentRepository.saveAll(changed);
+        }
     }
 
     record StoredContentResult(Content content, FetchResult fetched) {
