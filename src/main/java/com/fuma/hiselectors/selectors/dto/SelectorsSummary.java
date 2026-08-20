@@ -6,8 +6,7 @@ import java.time.LocalDateTime;
 /**
  * 셀렉터스 목록 한 줄.
  *
- * <p>대표 SNS 계정은 가장 최근에 수집된 계정 하나만 담는다. 계정이 여러 개인 셀렉터스의
- * 전체 목록은 상세 조회에서 본다.
+ * <p>셀렉터스에 연결된 SNS 계정을 담는다.
  */
 @Schema(description = "셀렉터스 목록 항목")
 public record SelectorsSummary(

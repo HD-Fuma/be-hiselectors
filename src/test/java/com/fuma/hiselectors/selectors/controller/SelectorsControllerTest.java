@@ -11,8 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.penalty.model.PenaltyStatus;
+import com.fuma.hiselectors.selectors.dto.SelectorsDetailResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsPenaltyResponse;
+import com.fuma.hiselectors.selectors.dto.SelectorsSnsAccountResponse;
 import com.fuma.hiselectors.selectors.service.SelectorsService;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,21 @@ class SelectorsControllerTest {
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
+    }
+
+    @Test
+    void returnsOneSnsAccountInDetail() throws Exception {
+        LocalDateTime now = LocalDateTime.of(2026, 8, 20, 12, 0);
+        when(selectorsService.findDetail(7L)).thenReturn(new SelectorsDetailResponse(
+                7L, "SEL-2601-007", "지안글로우", "INACTIVE", "비활성",
+                1L, 1L, now, now, List.of(),
+                new SelectorsSnsAccountResponse(
+                        10L, "YOUTUBE", "jianglow", 40_900L, null, now)));
+
+        mockMvc.perform(get("/api/admin/selectors/7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snsAccount.accountId").value("jianglow"))
+                .andExpect(jsonPath("$.data.snsAccounts").doesNotExist());
     }
 
     @Test

@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -17,7 +18,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "selectors_sns_account")
+@Table(name = "selectors_sns_account", uniqueConstraints = @UniqueConstraint(
+        name = "uq_selectors_sns_account_selectors_id", columnNames = "selectors_id"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SelectorsSnsAccount extends BaseTimeEntity {

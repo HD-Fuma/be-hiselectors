@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 셀렉터스 기본 정보 + 참여 기수 이력 + SNS 계정 전체. */
+/** 셀렉터스 기본 정보 + 참여 기수 이력 + SNS 계정. */
 @Schema(description = "셀렉터스 상세")
 public record SelectorsDetailResponse(
         @Schema(description = "셀렉터스 ID") Long id,
@@ -19,14 +19,14 @@ public record SelectorsDetailResponse(
         @Schema(description = "수정 시각") LocalDateTime updatedAt,
         @Schema(description = "참여 기수 이력 (최신순)")
         List<SelectorsGenerationResponse> generations,
-        @Schema(description = "SNS 계정 목록") List<SelectorsSnsAccountResponse> snsAccounts
+        @Schema(description = "SNS 계정") SelectorsSnsAccountResponse snsAccount
 ) {
 
     public static SelectorsDetailResponse of(
             Selectors selectors,
             String roleName,
             List<SelectorsGenerationResponse> generations,
-            List<SelectorsSnsAccountResponse> snsAccounts) {
+            SelectorsSnsAccountResponse snsAccount) {
         return new SelectorsDetailResponse(
                 selectors.getId(),
                 selectors.getSelectorsCode(),
@@ -38,7 +38,7 @@ public record SelectorsDetailResponse(
                 selectors.getCreatedAt(),
                 selectors.getUpdatedAt(),
                 generations,
-                snsAccounts
+                snsAccount
         );
     }
 }

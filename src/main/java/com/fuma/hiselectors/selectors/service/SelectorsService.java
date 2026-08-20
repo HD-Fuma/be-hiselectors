@@ -18,10 +18,8 @@ import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRoleRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -71,22 +69,21 @@ public class SelectorsService {
                         representatives));
     }
 
-    /** 기본 정보와 참여 기수 이력, SNS 계정 전체를 함께 조회한다. */
+    /** 기본 정보와 참여 기수 이력, SNS 계정을 함께 조회한다. */
     public SelectorsDetailResponse findDetail(Long selectorsId) {
         Selectors selectors = selectorsRepository.findByIdAndDeletedFalse(selectorsId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
 
         List<SelectorsGenerationResponse> generations =
                 selectorsGenerationRepository.findGenerationsOf(selectorsId);
-        List<SelectorsSnsAccountResponse> accounts = selectorsSnsAccountRepository
-                .findAllBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectorsId)
-                .stream()
+        SelectorsSnsAccountResponse account = selectorsSnsAccountRepository
+                .findBySelectorsIdAndDeletedFalse(selectorsId)
                 .map(SelectorsSnsAccountResponse::from)
-                .toList();
+                .orElse(null);
 
         return SelectorsDetailResponse.of(
                 selectors, roleNames().get(selectors.getSelectorsRoleId()),
-                generations, accounts);
+                generations, account);
     }
 
     public Page<SelectorsPenaltyResponse> findPenalties(
@@ -132,22 +129,12 @@ public class SelectorsService {
                 .collect(Collectors.toMap(SelectorsRole::getId, SelectorsRole::getRoleName));
     }
 
-    /**
-     * 셀렉터스별 대표 SNS 계정. 가장 최근에 수집된 계정을 쓰고, 수집 시각이 없으면
-     * 가장 나중에 등록된 계정을 쓴다.
-     */
     private Map<Long, SelectorsSnsAccount> representativeAccounts(List<Long> selectorsIds) {
-        Comparator<SelectorsSnsAccount> latest = Comparator
-                .comparing(SelectorsSnsAccount::getLastCollectedAt,
-                        Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(SelectorsSnsAccount::getId);
-
         return selectorsSnsAccountRepository
                 .findAllBySelectorsIdInAndDeletedFalse(selectorsIds).stream()
                 .collect(Collectors.toMap(
                         SelectorsSnsAccount::getSelectorsId,
-                        Function.identity(),
-                        (left, right) -> latest.compare(left, right) >= 0 ? left : right));
+                        account -> account));
     }
 
     private String blankToNull(String value) {

@@ -32,8 +32,7 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
     /**
      * 관리자 목록 조회. 조건이 null 이면 그 조건은 적용하지 않는다.
      *
-     * <p>기수·SNS 조건은 exists 로 건다. 조인하면 계정이 여러 개인 셀렉터스가
-     * 중복 행으로 나와 페이지 수가 어긋난다.
+     * <p>기수·SNS 조건은 exists 로 건다.
      */
     @Query(value = """
             select s from Selectors s

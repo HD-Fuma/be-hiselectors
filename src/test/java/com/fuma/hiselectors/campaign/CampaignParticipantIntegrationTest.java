@@ -70,10 +70,7 @@ class CampaignParticipantIntegrationTest {
         Campaign campaign = campaign("참여자", LocalDate.of(2026, 8, 18), LocalDate.of(2026, 8, 19));
         Selectors selector = selector("정상참여자");
         snsAccountRepository.save(SelectorsSnsAccount.builder().selectorsId(selector.getId())
-                .snsCode(SnsPlatform.INSTAGRAM).accountId("selector.old").followerCount(1234L)
-                .lastCollectedAt(LocalDateTime.of(2026, 8, 18, 9, 0)).build());
-        snsAccountRepository.save(SelectorsSnsAccount.builder().selectorsId(selector.getId())
-                .snsCode(SnsPlatform.YOUTUBE).accountId("selector.latest").followerCount(5678L)
+                .snsCode(SnsPlatform.YOUTUBE).accountId("selector").followerCount(5678L)
                 .lastCollectedAt(LocalDateTime.of(2026, 8, 18, 10, 0)).build());
         Long group = group(selector.getId(), campaign.getId(), false);
         item(group, LocalDateTime.of(2026, 8, 18, 0, 0), false);
@@ -103,7 +100,7 @@ class CampaignParticipantIntegrationTest {
                 .andExpect(jsonPath("$.data.content[0].selectorId").value(selector.getId()))
                 .andExpect(jsonPath("$.data.content[0].nickname").value("정상참여자"))
                 .andExpect(jsonPath("$.data.content[0].platform").value("YOUTUBE"))
-                .andExpect(jsonPath("$.data.content[0].accountId").value("selector.latest"))
+                .andExpect(jsonPath("$.data.content[0].accountId").value("selector"))
                 .andExpect(jsonPath("$.data.content[0].followerCount").value(5678))
                 .andExpect(jsonPath("$.data.content[?(@.nickname == '삭제아이템')]").isNotEmpty())
                 .andExpect(jsonPath("$.data.content[?(@.nickname == '삭제그룹')]").isNotEmpty())
