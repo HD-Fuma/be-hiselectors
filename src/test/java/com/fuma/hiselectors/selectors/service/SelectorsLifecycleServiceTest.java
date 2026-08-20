@@ -79,7 +79,11 @@ class SelectorsLifecycleServiceTest {
 
         assertThat(service.enrollQualifiedSelectors()).isEqualTo(1);
 
-        InOrder order = inOrder(selectorsRepository, membershipRepository);
+        InOrder order = inOrder(
+                generationRepository, selectorsRepository, membershipRepository);
+        order.verify(generationRepository).findAllForUpdate();
+        order.verify(generationRepository)
+                .findAllByActivityEndDateLessThanOrderByActivityEndDateAsc(NOW);
         order.verify(selectorsRepository).findByIdForUpdate(9L);
         order.verify(membershipRepository).existsBySelectorsIdAndGenerationId(9L, 2L);
         verify(membershipRepository).save(org.mockito.ArgumentMatchers.argThat(membership ->

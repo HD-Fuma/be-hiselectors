@@ -33,6 +33,7 @@ public class SelectorsLifecycleService {
 
     @Transactional
     public int enrollQualifiedSelectors() {
+        generationRepository.findAllForUpdate();
         LocalDateTime now = LocalDateTime.now(clock);
         int enrolled = 0;
         // ponytail: 종료 기수를 매일 재검사한다. 기수 수가 커지면 처리 시각 컬럼으로 범위를 줄인다.
