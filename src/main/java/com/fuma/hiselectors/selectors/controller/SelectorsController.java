@@ -1,7 +1,9 @@
 package com.fuma.hiselectors.selectors.controller;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.selectors.dto.SelectorsDetailResponse;
+import com.fuma.hiselectors.selectors.dto.SelectorsPenaltyResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsSummary;
 import com.fuma.hiselectors.selectors.service.SelectorsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,6 +58,18 @@ public class SelectorsController {
 
         return ResponseEntity.ok(selectorsService.search(
                 roleId, generationId, nickname, snsCode, pageable));
+    }
+
+    @Operation(summary = "패널티 및 블랙리스트 대상 조회",
+            description = "패널티 보유 셀렉터스를 조회한다. 누적 3회 이상은 블랙리스트 대상이다.")
+    @GetMapping("/penalties")
+    public ResponseEntity<Page<SelectorsPenaltyResponse>> findPenalties(
+            @RequestParam(required = false) Long generationId,
+            @RequestParam(required = false) PenaltyStatus status,
+            @RequestParam(defaultValue = "false") boolean blacklistOnly,
+            @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(selectorsService.findPenalties(
+                generationId, status, blacklistOnly, pageable));
     }
 
     @Operation(summary = "셀렉터스 상세 조회",
