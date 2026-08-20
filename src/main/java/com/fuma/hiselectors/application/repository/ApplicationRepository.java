@@ -33,13 +33,21 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
-              AND (:minimumCriteriaOnly = false
-                OR (a.followerCount IS NOT NULL AND a.followerCount <= 500)
-                OR (a.mediaCollectedAt IS NOT NULL
-                  AND (SELECT COUNT(m.id) FROM ApplicationMedia m
-                       WHERE m.applicationId = a.id
-                         AND m.publishedAt >= a.mediaCollectedAt - 90 day
-                         AND m.publishedAt <= a.mediaCollectedAt) <= 3))
+              AND (:minimumCriteriaOnly IS NULL
+                OR (:minimumCriteriaOnly = true AND (
+                  (a.followerCount IS NOT NULL AND a.followerCount <= 500)
+                  OR (a.mediaCollectedAt IS NOT NULL
+                    AND (SELECT COUNT(m.id) FROM ApplicationMedia m
+                         WHERE m.applicationId = a.id
+                           AND m.publishedAt >= a.mediaCollectedAt - 90 day
+                           AND m.publishedAt <= a.mediaCollectedAt) <= 3)))
+                OR (:minimumCriteriaOnly = false
+                  AND (a.followerCount IS NULL OR a.followerCount > 500)
+                  AND (a.mediaCollectedAt IS NULL
+                    OR (SELECT COUNT(m.id) FROM ApplicationMedia m
+                        WHERE m.applicationId = a.id
+                          AND m.publishedAt >= a.mediaCollectedAt - 90 day
+                          AND m.publishedAt <= a.mediaCollectedAt) > 3)))
             """,
             countQuery = """
             SELECT COUNT(a)
@@ -55,19 +63,27 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
-              AND (:minimumCriteriaOnly = false
-                OR (a.followerCount IS NOT NULL AND a.followerCount <= 500)
-                OR (a.mediaCollectedAt IS NOT NULL
-                  AND (SELECT COUNT(m.id) FROM ApplicationMedia m
-                       WHERE m.applicationId = a.id
-                         AND m.publishedAt >= a.mediaCollectedAt - 90 day
-                         AND m.publishedAt <= a.mediaCollectedAt) <= 3))
+              AND (:minimumCriteriaOnly IS NULL
+                OR (:minimumCriteriaOnly = true AND (
+                  (a.followerCount IS NOT NULL AND a.followerCount <= 500)
+                  OR (a.mediaCollectedAt IS NOT NULL
+                    AND (SELECT COUNT(m.id) FROM ApplicationMedia m
+                         WHERE m.applicationId = a.id
+                           AND m.publishedAt >= a.mediaCollectedAt - 90 day
+                           AND m.publishedAt <= a.mediaCollectedAt) <= 3)))
+                OR (:minimumCriteriaOnly = false
+                  AND (a.followerCount IS NULL OR a.followerCount > 500)
+                  AND (a.mediaCollectedAt IS NULL
+                    OR (SELECT COUNT(m.id) FROM ApplicationMedia m
+                        WHERE m.applicationId = a.id
+                          AND m.publishedAt >= a.mediaCollectedAt - 90 day
+                          AND m.publishedAt <= a.mediaCollectedAt) > 3)))
             """)
     Page<Application> searchAdmin(
             @Param("keyword") String keyword,
             @Param("snsCode") SnsPlatform snsCode,
             @Param("status") ApplicationStatus status,
             @Param("generationId") Long generationId,
-            @Param("minimumCriteriaOnly") boolean minimumCriteriaOnly,
+            @Param("minimumCriteriaOnly") Boolean minimumCriteriaOnly,
             Pageable pageable);
 }

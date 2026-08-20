@@ -53,7 +53,7 @@ public class ApplicationAdminService {
             SnsPlatform snsCode,
             ApplicationStatus status,
             Long generationId,
-            boolean minimumCriteriaOnly,
+            Boolean minimumCriteriaOnly,
             Pageable pageable) {
         Page<Application> applications = applicationRepository.searchAdmin(
                 normalize(keyword), snsCode, status, generationId, minimumCriteriaOnly, pageable);

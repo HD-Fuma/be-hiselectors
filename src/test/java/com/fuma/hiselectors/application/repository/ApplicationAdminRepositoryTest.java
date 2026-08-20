@@ -40,6 +40,7 @@ class ApplicationAdminRepositoryTest {
     private Application regular;
     private Application lowFollower;
     private Application sparse;
+    private Application unknown;
 
     @BeforeEach
     void setUp() {
@@ -50,6 +51,8 @@ class ApplicationAdminRepositoryTest {
                 ApplicationStatus.REJECTED, 400L, false, 0);
         sparse = saveApplication("수빈", "UC-sparse", SnsPlatform.YOUTUBE,
                 ApplicationStatus.PENDING, 1_000L, true, 3);
+        unknown = saveApplication("다온", "UC-unknown", SnsPlatform.YOUTUBE,
+                ApplicationStatus.PENDING, null, false, 0);
         mediaRepository.save(ApplicationMedia.builder()
                 .applicationId(sparse.getId())
                 .snsCode(SnsPlatform.YOUTUBE)
@@ -67,11 +70,25 @@ class ApplicationAdminRepositoryTest {
     void filtersKeywordPlatformStatusAndGenerationTogether() {
         var result = applicationRepository.searchAdmin(
                 "지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                generation.getId(), false, PageRequest.of(0, 20));
+                generation.getId(), null, PageRequest.of(0, 20));
 
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(regular.getId());
+    }
+
+    @Test
+    void omittedMinimumCriteriaReturnsAllApplicants() {
+        var result = applicationRepository.searchAdmin(
+                null, null, null, generation.getId(), null, PageRequest.of(0, 2));
+
+        assertThat(result.getTotalElements()).isEqualTo(4);
+        assertThat(result.getTotalPages()).isEqualTo(2);
+        assertThat(applicationRepository.searchAdmin(
+                null, null, null, generation.getId(), null, PageRequest.of(0, 20)))
+                .extracting(Application::getId)
+                .containsExactlyInAnyOrder(
+                        regular.getId(), lowFollower.getId(), sparse.getId(), unknown.getId());
     }
 
     @Test
@@ -86,6 +103,20 @@ class ApplicationAdminRepositoryTest {
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(lowFollower.getId(), sparse.getId())
                 .doesNotContain(regular.getId());
+    }
+
+    @Test
+    void falseMinimumCriteriaReturnsOnlyApplicantsWhoAreNotBelowCriteria() {
+        var result = applicationRepository.searchAdmin(
+                null, null, null, generation.getId(), false, PageRequest.of(0, 1));
+
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getTotalPages()).isEqualTo(2);
+        assertThat(applicationRepository.searchAdmin(
+                null, null, null, generation.getId(), false, PageRequest.of(0, 20)))
+                .extracting(Application::getId)
+                .containsExactlyInAnyOrder(regular.getId(), unknown.getId())
+                .doesNotContain(lowFollower.getId(), sparse.getId());
     }
 
     @Test

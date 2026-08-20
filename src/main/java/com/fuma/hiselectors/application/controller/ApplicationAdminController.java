@@ -35,7 +35,7 @@ public class ApplicationAdminController {
             @RequestParam(required = false) SnsPlatform snsCode,
             @RequestParam(required = false) ApplicationStatus status,
             @RequestParam(required = false) Long generationId,
-            @RequestParam(defaultValue = "false") boolean minimumCriteriaOnly,
+            @RequestParam(required = false) Boolean minimumCriteriaOnly,
             @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(applicationAdminService.search(

@@ -111,6 +111,20 @@ class ApplicationAdminServiceTest {
     }
 
     @Test
+    void searchForwardsOmittedMinimumCriteriaAsNull() {
+        var pageable = PageRequest.of(0, 20);
+        when(applicationRepository.searchAdmin(
+                null, null, null, null, null, pageable))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        var result = service.search(null, null, null, null, null, pageable);
+
+        assertThat(result).isEmpty();
+        verify(applicationRepository).searchAdmin(
+                null, null, null, null, null, pageable);
+    }
+
+    @Test
     void detailCalculatesMeasuredOnlyAveragesCadenceFormatsAndEngagement() {
         application.completeMediaCollection(COLLECTED_AT);
         List<ApplicationMedia> contents = List.of(
