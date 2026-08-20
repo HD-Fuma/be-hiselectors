@@ -17,6 +17,10 @@ public interface GenerationRepository extends JpaRepository<Generation, Long> {
     @Query("select g from Generation g order by g.id")
     List<Generation> findAllForUpdate();
 
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("select g from Generation g order by g.id")
+    List<Generation> findAllForRead();
+
     List<Generation> findAllByOrderByStartDateDescIdDesc();
 
     Optional<Generation>

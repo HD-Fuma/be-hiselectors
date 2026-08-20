@@ -81,7 +81,7 @@ class SelectorsLifecycleServiceTest {
 
         InOrder order = inOrder(
                 generationRepository, selectorsRepository, membershipRepository);
-        order.verify(generationRepository).findAllForUpdate();
+        order.verify(generationRepository).findAllForRead();
         order.verify(generationRepository)
                 .findAllByActivityEndDateLessThanOrderByActivityEndDateAsc(NOW);
         order.verify(selectorsRepository).findByIdForUpdate(9L);

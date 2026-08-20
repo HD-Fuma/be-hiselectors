@@ -10,6 +10,7 @@ import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.generation.model.Generation;
+import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +33,9 @@ class ApplicationAdminRepositoryTest {
 
     @Autowired
     private ApplicationMediaRepository mediaRepository;
+
+    @Autowired
+    private GenerationRepository generationRepository;
 
     @Autowired
     private TestEntityManager em;
@@ -79,6 +83,13 @@ class ApplicationAdminRepositoryTest {
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(regular.getId());
+    }
+
+    @Test
+    void readsGenerationsWithLifecycleSharedLock() {
+        assertThat(generationRepository.findAllForRead())
+                .extracting(Generation::getId)
+                .containsExactly(generation.getId());
     }
 
     @Test
