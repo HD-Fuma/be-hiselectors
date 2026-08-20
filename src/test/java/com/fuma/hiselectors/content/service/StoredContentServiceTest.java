@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -9,9 +10,13 @@ import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
+import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
+import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import java.time.Clock;
@@ -19,6 +24,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +32,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class StoredContentServiceTest {
@@ -40,11 +48,21 @@ class StoredContentServiceTest {
     private ContentEngagementRepository engagementRepository;
 
     @Mock
+    private ContentVersionRepository versionRepository;
+
+    @Mock
+    private ContentMediaRepository mediaRepository;
+
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
+    @Mock
     private ContentFetcher instagramFetcher;
 
     @Mock
     private ContentFetcher youtubeFetcher;
 
+    private final ContentSnapshotFactory snapshotFactory = new ContentSnapshotFactory();
     private StoredContentService service;
 
     @BeforeEach
@@ -54,6 +72,10 @@ class StoredContentServiceTest {
                 contentRepository,
                 List.of(instagramFetcher, youtubeFetcher),
                 engagementRepository,
+                versionRepository,
+                mediaRepository,
+                snapshotFactory,
+                transactionTemplate,
                 Clock.fixed(
                         Instant.parse("2026-08-20T03:00:00Z"),
                         ZoneId.of("Asia/Seoul")));
@@ -112,10 +134,11 @@ class StoredContentServiceTest {
         ReflectionTestUtils.setField(notFound, "id", 20L);
         ContentFetcher.Engagement engagement =
                 new ContentFetcher.Engagement(100L, 20L, 3L, 4L);
+        RawContent rawContent = raw("found", "같은 본문");
         ContentFetcher.FetchResult foundResult = new ContentFetcher.FetchResult(
                 "found",
                 ContentFetcher.FetchStatus.FOUND,
-                org.mockito.Mockito.mock(RawContent.class),
+                rawContent,
                 engagement);
         ContentFetcher.FetchResult notFoundResult = new ContentFetcher.FetchResult(
                 "not-found",
@@ -131,6 +154,14 @@ class StoredContentServiceTest {
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(instagramFetcher.fetchByContentIds(List.of("found", "not-found")))
                 .thenReturn(List.of(foundResult, notFoundResult));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(10L)
+                        .versionNo(1L)
+                        .contentHash(snapshotFactory.contentHash(rawContent))
+                        .createdAt(LocalDateTime.of(2026, 8, 19, 12, 0))
+                        .build()));
+        executeTransaction();
         when(engagementRepository.saveAll(any())).thenAnswer(invocation -> {
             List<ContentEngagement> values = toList(invocation.getArgument(0));
             saved.set(values);
@@ -151,6 +182,66 @@ class StoredContentServiceTest {
         });
     }
 
+    @Test
+    void savesNewVersionOnlyForModifiedContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content changed = content(SnsPlatform.INSTAGRAM, "changed");
+        Content unchanged = content(SnsPlatform.INSTAGRAM, "unchanged");
+        ReflectionTestUtils.setField(changed, "id", 10L);
+        ReflectionTestUtils.setField(unchanged, "id", 20L);
+        RawContent changedBefore = raw("changed", "수정 전");
+        RawContent changedNow = raw("changed", "수정 후");
+        RawContent unchangedNow = raw("unchanged", "동일 본문");
+        ContentFetcher.FetchResult changedResult = new ContentFetcher.FetchResult(
+                "changed", ContentFetcher.FetchStatus.FOUND, changedNow, null);
+        ContentFetcher.FetchResult unchangedResult = new ContentFetcher.FetchResult(
+                "unchanged", ContentFetcher.FetchStatus.FOUND, unchangedNow, null);
+        AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
+        AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
+
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(changed, unchanged));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("changed", "unchanged")))
+                .thenReturn(List.of(changedResult, unchangedResult));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L, 20L)))
+                .thenReturn(List.of(
+                        version(10L, snapshotFactory.contentHash(changedBefore)),
+                        version(20L, snapshotFactory.contentHash(unchangedNow))));
+        executeTransaction();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation ->
+                toList(invocation.getArgument(0)));
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            savedVersions.set(values);
+            return values;
+        });
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentMedia> values = toList(invocation.getArgument(0));
+            savedMedia.set(values);
+            return values;
+        });
+
+        service.check();
+
+        assertThat(changed.getLastVersionNo()).isEqualTo(2L);
+        assertThat(unchanged.getLastVersionNo()).isEqualTo(1L);
+        assertThat(savedVersions.get()).singleElement().satisfies(version -> {
+            assertThat(version.getContentId()).isEqualTo(10L);
+            assertThat(version.getVersionNo()).isEqualTo(2L);
+            assertThat(version.getContentHash())
+                    .isEqualTo(snapshotFactory.contentHash(changedNow));
+        });
+        assertThat(savedMedia.get()).singleElement().satisfies(media -> {
+            assertThat(media.getContentVersionId()).isEqualTo(100L);
+            assertThat(media.getBody()).containsExactlyEntriesOf(Map.of("text", "수정 후"));
+        });
+        verify(contentRepository).saveAll(List.of(changed));
+    }
+
     private Content content(SnsPlatform platform, String snsContentId) {
         return Content.builder()
                 .selectorsId(1L)
@@ -159,6 +250,33 @@ class StoredContentServiceTest {
                 .contentUrl("https://example.com/" + snsContentId)
                 .contentType(ContentType.FEED)
                 .build();
+    }
+
+    private RawContent raw(String snsContentId, String text) {
+        return new RawContent(
+                SnsPlatform.INSTAGRAM,
+                snsContentId,
+                "https://example.com/" + snsContentId,
+                ContentType.FEED,
+                text,
+                LocalDateTime.of(2026, 8, 20, 11, 0),
+                List.of());
+    }
+
+    private ContentVersion version(Long contentId, String hash) {
+        return ContentVersion.builder()
+                .contentId(contentId)
+                .versionNo(1L)
+                .contentHash(hash)
+                .createdAt(LocalDateTime.of(2026, 8, 19, 12, 0))
+                .build();
+    }
+
+    private void executeTransaction() {
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
     }
 
     private <T> List<T> toList(Iterable<T> values) {
