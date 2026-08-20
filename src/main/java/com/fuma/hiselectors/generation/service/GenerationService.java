@@ -5,6 +5,7 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,9 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class GenerationService {
 
     private final GenerationRepository generationRepository;
+    private final Clock clock;
 
     public Generation getActive() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         return generationRepository
                 .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
@@ -26,7 +28,7 @@ public class GenerationService {
     }
 
     public Generation getCurrentActivity() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         return generationRepository
                 .findFirstByActivityStartDateLessThanEqualAndActivityEndDateGreaterThanEqualOrderByActivityStartDateAsc(
                         now, now)
