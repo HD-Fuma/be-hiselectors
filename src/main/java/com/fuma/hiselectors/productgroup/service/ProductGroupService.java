@@ -234,7 +234,7 @@ public class ProductGroupService {
 
     private Optional<SelectorsSnsAccount> findRepresentativeAccount(Long selectorsId) {
         return selectorsSnsAccountRepository
-                .findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectorsId);
+                .findBySelectorsIdAndDeletedFalse(selectorsId);
     }
 
     private Selectors findPublicSelectors(String selectorsCode) {
