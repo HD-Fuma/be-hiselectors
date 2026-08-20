@@ -4,16 +4,6 @@ on:
   push:
     branches: [dev]
   workflow_dispatch:
-    inputs:
-      operation:
-        description: Production operation
-        required: true
-        default: deploy
-        type: choice
-        options:
-          - deploy
-          - inspect-007
-          - apply-007
 
 permissions:
   contents: read
@@ -31,7 +21,7 @@ env:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' || inputs.operation == 'deploy'
+    needs: database-007
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -92,10 +82,8 @@ jobs:
             --query '{Status:Status,Output:StandardOutputContent}'
 
   database-007:
-    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'deploy'
     runs-on: ubuntu-latest
     env:
-      OPERATION: ${{ inputs.operation }}
       REMOTE_SCRIPT: |
         set -eu
         cd /srv/hiselectors
@@ -130,10 +118,6 @@ jobs:
         echo "application.content_count=$application_count"
         echo "application_media.content_type=$media_count"
 
-        if [ "$OPERATION" = "inspect-007" ]; then
-          exit 0
-        fi
-
         if [ "$application_count" = "0" ]; then
           mysql_query "ALTER TABLE application ADD COLUMN content_count BIGINT NULL COMMENT '플랫폼이 제공한 전체 공개 콘텐츠 수' AFTER follower_count"
           echo "application.content_count=added"
@@ -155,8 +139,7 @@ jobs:
       - name: Run 007 through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
-          COMMAND_SCRIPT="OPERATION=$(printf '%q' "$OPERATION")"$'\n'"$REMOTE_SCRIPT"
-          PARAMETERS="$(jq -cn --arg command "$COMMAND_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
