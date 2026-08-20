@@ -3,8 +3,12 @@ package com.fuma.hiselectors.selectors.service;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.penalty.model.PenaltyHistory;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
+import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.selectors.dto.SelectorsDetailResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsGenerationResponse;
+import com.fuma.hiselectors.selectors.dto.SelectorsPenaltyResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsSnsAccountResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsSummary;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -35,10 +39,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SelectorsService {
 
+    private static final long BLACKLIST_THRESHOLD = 3;
+
     private final SelectorsRepository selectorsRepository;
     private final SelectorsRoleRepository selectorsRoleRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private final PenaltyHistoryRepository penaltyHistoryRepository;
 
     /**
      * 조건에 맞는 셀렉터스 목록. null 인 조건은 적용하지 않는다.
@@ -80,6 +87,26 @@ public class SelectorsService {
         return SelectorsDetailResponse.of(
                 selectors, roleNames().get(selectors.getSelectorsRoleId()),
                 generations, accounts);
+    }
+
+    public Page<SelectorsPenaltyResponse> findPenalties(
+            Long generationId, PenaltyStatus status, boolean blacklistOnly, Pageable pageable) {
+        Page<Selectors> page = selectorsRepository.searchWithPenalties(
+                generationId, status, blacklistOnly, BLACKLIST_THRESHOLD, pageable);
+        if (page.isEmpty()) {
+            return page.map(selectors -> SelectorsPenaltyResponse.of(
+                    selectors, List.of(), BLACKLIST_THRESHOLD));
+        }
+
+        List<Long> selectorsIds = page.getContent().stream().map(Selectors::getId).toList();
+        Map<Long, List<PenaltyHistory>> historiesBySelectorsId = penaltyHistoryRepository
+                .findAllBySelectorsIds(selectorsIds).stream()
+                .collect(Collectors.groupingBy(PenaltyHistory::getSelectorsId));
+
+        return page.map(selectors -> SelectorsPenaltyResponse.of(
+                selectors,
+                historiesBySelectorsId.getOrDefault(selectors.getId(), List.of()),
+                BLACKLIST_THRESHOLD));
     }
 
     private SelectorsSummary toSummary(Selectors selectors, String roleName,
