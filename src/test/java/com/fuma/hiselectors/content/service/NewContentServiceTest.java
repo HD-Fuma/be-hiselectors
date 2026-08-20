@@ -129,8 +129,7 @@ class NewContentServiceTest {
 
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", since))
-                .thenReturn(new ContentFetcher.CollectionResult(5, List.of(
-                        existing, duplicate, duplicate, rejected, selected)));
+                .thenReturn(List.of(existing, duplicate, duplicate, rejected, selected));
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM,
                 List.of("existing", "duplicate", "rejected", "selected")))
@@ -178,7 +177,7 @@ class NewContentServiceTest {
         when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", generationStart))
-                .thenReturn(new ContentFetcher.CollectionResult(1, List.of(selected)));
+                .thenReturn(List.of(selected));
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM, List.of("selected")))
                 .thenReturn(List.of());
@@ -249,7 +248,7 @@ class NewContentServiceTest {
         when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", generationStart))
-                .thenReturn(new ContentFetcher.CollectionResult(1, List.of(selected)));
+                .thenReturn(List.of(selected));
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM, List.of("selected")))
                 .thenReturn(List.of());

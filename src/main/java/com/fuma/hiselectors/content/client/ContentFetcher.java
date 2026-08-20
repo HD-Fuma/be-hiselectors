@@ -18,17 +18,10 @@ public interface ContentFetcher {
      * @param since 포함되는 조회 시작 시각
      * @return 신규·기존 여부를 판단하지 않은 수집 기준 시각 이후 콘텐츠
      */
-    CollectionResult fetchByAccount(String accountId, LocalDateTime since);
+    List<RawContent> fetchByAccount(String accountId, LocalDateTime since);
 
     /** SNS 콘텐츠 ID별 최신 내용과 성과 조회 */
     List<FetchResult> fetchByContentIds(List<String> snsContentIds);
-
-    record CollectionResult(int fetchedCount, List<RawContent> contents) {
-
-        public CollectionResult {
-            contents = List.copyOf(contents);
-        }
-    }
 
     record FetchResult(
             String snsContentId,

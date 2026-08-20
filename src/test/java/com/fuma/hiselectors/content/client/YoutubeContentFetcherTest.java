@@ -83,11 +83,9 @@ class YoutubeContentFetcherTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        ContentFetcher.CollectionResult collection = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
-        List<RawContent> result = collection.contents();
 
-        assertThat(collection.fetchedCount()).isEqualTo(2);
         assertThat(result).hasSize(2);
         assertThat(result.getFirst()).satisfies(content -> {
             assertThat(content.snsCode()).isEqualTo(SnsPlatform.YOUTUBE);
@@ -123,7 +121,7 @@ class YoutubeContentFetcherTest {
                         MediaType.APPLICATION_JSON));
 
         List<RawContent> result = fetchByAccount(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -151,12 +149,11 @@ class YoutubeContentFetcherTest {
                             MediaType.APPLICATION_JSON));
         }
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(11);
-        assertThat(result.contents()).hasSize(11);
-        assertThat(result.contents().getLast().snsContentId()).isEqualTo("video-11");
+        assertThat(result).hasSize(11);
+        assertThat(result.getLast().snsContentId()).isEqualTo("video-11");
         server.verify();
     }
 
@@ -204,7 +201,7 @@ class YoutubeContentFetcherTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = fetchByAccount(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).isEmpty();
         server.verify();
@@ -350,7 +347,7 @@ class YoutubeContentFetcherTest {
                         """, MediaType.APPLICATION_JSON));
     }
 
-    private ContentFetcher.CollectionResult fetchByAccount(
+    private List<RawContent> fetchByAccount(
             String accountId, LocalDateTime since) {
         return client.fetchByAccount(accountId, since);
     }

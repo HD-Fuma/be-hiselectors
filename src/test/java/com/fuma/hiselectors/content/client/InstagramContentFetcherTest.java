@@ -96,11 +96,9 @@ class InstagramContentFetcherTest {
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        ContentFetcher.CollectionResult collection = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 12, 0));
-        List<RawContent> result = collection.contents();
 
-        assertThat(collection.fetchedCount()).isEqualTo(3);
         assertThat(result).hasSize(3);
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("reel-new", "feed-old", "video-new");
@@ -165,7 +163,7 @@ class InstagramContentFetcherTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = fetchByAccount(
-                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).singleElement().satisfies(content -> {
             assertThat(content.contentUrl())
@@ -230,7 +228,7 @@ class InstagramContentFetcherTest {
                         """, MediaType.APPLICATION_JSON));
 
         List<RawContent> result = fetchByAccount(
-                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+                "pharrell", LocalDateTime.of(2026, 8, 13, 13, 0));
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -248,11 +246,10 @@ class InstagramContentFetcherTest {
         expectNextPage(nextUrl, List.of(
                 mediaJson("current", "2026-08-13T05:00:00+0000")), null);
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(4);
-        assertThat(result.contents()).extracting(RawContent::snsContentId)
+        assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("current");
         server.verify();
     }
@@ -266,11 +263,10 @@ class InstagramContentFetcherTest {
                 mediaJson("old-3", "2026-08-13T02:58:00+0000"),
                 mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(4);
-        assertThat(result.contents()).isEmpty();
+        assertThat(result).isEmpty();
         server.verify();
     }
 
@@ -287,11 +283,10 @@ class InstagramContentFetcherTest {
         expectNextPage(nextUrl, List.of(
                 mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(6);
-        assertThat(result.contents()).extracting(RawContent::snsContentId)
+        assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("current-1", "current-2");
         server.verify();
     }
@@ -307,11 +302,10 @@ class InstagramContentFetcherTest {
         expectNextPage(secondPageUrl, List.of(
                 mediaJson("old-4", "2026-08-13T02:57:00+0000")), nextUrl("unused"));
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(4);
-        assertThat(result.contents()).isEmpty();
+        assertThat(result).isEmpty();
         server.verify();
     }
 
@@ -330,11 +324,10 @@ class InstagramContentFetcherTest {
         expectNextPage(thirdPageUrl, List.of(
                 mediaJson("current-2", "2026-08-13T04:59:00+0000")), null);
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(6);
-        assertThat(result.contents()).extracting(RawContent::snsContentId)
+        assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("current-1", "current-2");
         server.verify();
     }
@@ -353,11 +346,10 @@ class InstagramContentFetcherTest {
             }
         }
 
-        ContentFetcher.CollectionResult result = fetchByAccount(
+        List<RawContent> result = fetchByAccount(
                 "nike", LocalDateTime.of(2026, 8, 13, 13, 0));
 
-        assertThat(result.fetchedCount()).isEqualTo(11);
-        assertThat(result.contents()).hasSize(11);
+        assertThat(result).hasSize(11);
         server.verify();
     }
 
@@ -529,7 +521,7 @@ class InstagramContentFetcherTest {
                         MediaType.APPLICATION_JSON));
     }
 
-    private ContentFetcher.CollectionResult fetchByAccount(
+    private List<RawContent> fetchByAccount(
             String accountId, LocalDateTime since) {
         return client.fetchByAccount(accountId, since);
     }

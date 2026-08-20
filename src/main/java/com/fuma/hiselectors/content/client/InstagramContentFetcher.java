@@ -79,10 +79,9 @@ public class InstagramContentFetcher implements ContentFetcher {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult fetchByAccount(String accountId, LocalDateTime since) {
+    public List<RawContent> fetchByAccount(String accountId, LocalDateTime since) {
         validateRequest(accountId, since);
 
-        int fetchedCount = 0;
         int consecutiveOutOfPeriodCount = 0;
         List<RawContent> contents = new ArrayList<>();
         Set<String> requestedNextUrls = new HashSet<>();
@@ -91,9 +90,7 @@ public class InstagramContentFetcher implements ContentFetcher {
         MediaPage page = requestFirstPage(accountId);
 
         while (true) {
-            // API가 반환한 게시글 수 합산 (로깅)
             List<Media> media = page.data();
-            fetchedCount += media == null ? 0 : media.size();
             if (media == null || media.isEmpty()) {
                 break;
             }
@@ -117,7 +114,7 @@ public class InstagramContentFetcher implements ContentFetcher {
             page = requestNextPage(nextUrl);
         }
 
-        return new CollectionResult(fetchedCount, contents);
+        return List.copyOf(contents);
     }
 
     @Override

@@ -75,10 +75,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult fetchByAccount(String accountId, LocalDateTime since) {
+    public List<RawContent> fetchByAccount(String accountId, LocalDateTime since) {
         validateRequest(accountId, since);
-
-        int fetchedCount = 0;
 
         // 1. 채널 ID에 연결된 업로드 영상 목록 ID 조회
         String uploadsPlaylistId = requestUploadsPlaylistId(accountId);
@@ -96,8 +94,6 @@ public class YoutubeContentFetcher implements ContentFetcher {
             // 2. 실제 영상 목록 페이지 조회
             YoutubeContentResponse page = requestPlaylistPage(
                     uploadsPlaylistId, pageToken);
-            // 신규 여부와 관계없이 API가 반환한 영상 항목 수 합산 (로깅)
-            fetchedCount += page.items() == null ? 0 : page.items().size();
             boolean reachedBeforeGeneration = addGenerationContents(
                     page.items(), since, contents);
             if (reachedBeforeGeneration) {
@@ -110,7 +106,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 break;
             }
         }
-        return new CollectionResult(fetchedCount, contents);
+        return List.copyOf(contents);
     }
 
     @Override

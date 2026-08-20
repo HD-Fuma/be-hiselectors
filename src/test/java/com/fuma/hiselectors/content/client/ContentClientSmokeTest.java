@@ -3,7 +3,6 @@ package com.fuma.hiselectors.content.client;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
-import com.fuma.hiselectors.content.client.ContentFetcher.CollectionResult;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
@@ -46,18 +45,18 @@ class ContentClientSmokeTest {
 
     @Test
     void collectInstagramContentsFromRealApi() {
-        CollectionResult result = instagramContentFetcher.fetchByAccount(
+        List<RawContent> result = instagramContentFetcher.fetchByAccount(
                 INSTAGRAM_USERNAME, CONTENT_COLLECTION_START_AT);
 
-        assertRawContents(result.contents(), SnsPlatform.INSTAGRAM);
+        assertRawContents(result, SnsPlatform.INSTAGRAM);
     }
 
     @Test
     void collectYoutubeContentsFromRealApi() {
-        CollectionResult result = youtubeContentFetcher.fetchByAccount(
+        List<RawContent> result = youtubeContentFetcher.fetchByAccount(
                 YOUTUBE_CHANNEL_ID, CONTENT_COLLECTION_START_AT);
 
-        assertRawContents(result.contents(), SnsPlatform.YOUTUBE);
+        assertRawContents(result, SnsPlatform.YOUTUBE);
     }
 
     private void assertRawContents(List<RawContent> contents, SnsPlatform platform) {

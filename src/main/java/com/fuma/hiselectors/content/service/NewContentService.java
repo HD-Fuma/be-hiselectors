@@ -79,7 +79,7 @@ public class NewContentService {
                 .orElseThrow(() -> new IllegalStateException(
                         "콘텐츠 Fetcher가 없습니다. platform=" + account.getSnsCode()));
         List<RawContent> contents = Objects.requireNonNull(
-                fetcher.fetchByAccount(account.getAccountId(), target.since()).contents());
+                fetcher.fetchByAccount(account.getAccountId(), target.since()));
 
         // 같은 응답에 중복된 SNS 콘텐츠 제거
         Set<String> collectedIds = new HashSet<>();
