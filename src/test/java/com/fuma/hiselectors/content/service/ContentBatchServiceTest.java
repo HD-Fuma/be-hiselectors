@@ -26,7 +26,8 @@ class ContentBatchServiceTest {
 
     @Test
     void runsNewCollectionBeforeStoredContentCheck() {
-        when(newContentService.collect()).thenReturn(2);
+        when(newContentService.collect()).thenReturn(
+                new NewContentService.NewContentResult(2, 0));
         when(storedContentService.check()).thenReturn(3);
 
         ContentBatchService.ContentBatchResult result = service.run();
@@ -48,5 +49,17 @@ class ContentBatchServiceTest {
         verify(storedContentService).check();
         assertThat(result).isEqualTo(
                 new ContentBatchService.ContentBatchResult(0, 3, false, true));
+    }
+
+    @Test
+    void preservesSavedCountButMarksNewCollectionFailedForAccountFailures() {
+        when(newContentService.collect()).thenReturn(
+                new NewContentService.NewContentResult(1, 1));
+        when(storedContentService.check()).thenReturn(3);
+
+        ContentBatchService.ContentBatchResult result = service.run();
+
+        assertThat(result).isEqualTo(
+                new ContentBatchService.ContentBatchResult(1, 3, false, true));
     }
 }

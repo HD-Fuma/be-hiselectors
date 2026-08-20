@@ -42,9 +42,10 @@ public class NewContentService {
     private final Clock clock;
 
     /** 신규 셀렉터스 콘텐츠와 최초 버전을 저장합니다. */
-    public int collect() {
+    public NewContentResult collect() {
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
         int savedCount = 0;
+        int failedAccountCount = 0;
 
         for (CollectionTarget target : collectionTargets()) {
             try {
@@ -53,11 +54,12 @@ public class NewContentService {
                         save(target.account(), candidates, collectedAt));
                 savedCount += saved == null ? 0 : saved;
             } catch (RuntimeException exception) {
+                failedAccountCount++;
                 log.error("신규 콘텐츠 수집에 실패했습니다. accountId={}",
                         target.account().getAccountId(), exception);
             }
         }
-        return savedCount;
+        return new NewContentResult(savedCount, failedAccountCount);
     }
 
     /** 현재 기수의 계정별 수집 시작 시각 결정 */
@@ -162,5 +164,8 @@ public class NewContentService {
     }
 
     record CollectionTarget(SelectorsSnsAccount account, LocalDateTime since) {
+    }
+
+    public record NewContentResult(int savedContentCount, int failedAccountCount) {
     }
 }

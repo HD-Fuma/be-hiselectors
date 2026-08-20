@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -204,9 +205,9 @@ class NewContentServiceTest {
             return values;
         });
 
-        int savedCount = service.collect();
+        NewContentService.NewContentResult result = service.collect();
 
-        assertThat(savedCount).isEqualTo(1);
+        assertThat(result).isEqualTo(new NewContentService.NewContentResult(1, 0));
         assertThat(savedContents.get()).singleElement().satisfies(content -> {
             assertThat(content.getSelectorsId()).isEqualTo(1L);
             assertThat(content.getSnsContentId()).isEqualTo("selected");
@@ -236,7 +237,7 @@ class NewContentServiceTest {
     }
 
     @Test
-    void doesNotUpdateCursorWhenSavingMediaFails() {
+    void countsFailedAccountAndDoesNotUpdateCursorWhenTransactionSaveFails() {
         LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         SelectorsSnsAccount account = instagramAccount(null);
@@ -270,9 +271,72 @@ class NewContentServiceTest {
         when(mediaRepository.saveAll(any()))
                 .thenThrow(new IllegalStateException("media save failed"));
 
-        assertThat(service.collect()).isZero();
+        assertThat(service.collect()).isEqualTo(
+                new NewContentService.NewContentResult(0, 1));
         assertThat(account.getLastCollectedAt()).isNull();
         verify(accountRepository, never()).save(account);
+    }
+
+    @Test
+    void preservesSuccessfulSavedCountWhenAnotherAccountFetchFails() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount successfulAccount = instagramAccount("successful-account", null);
+        SelectorsSnsAccount failedAccount = instagramAccount("failed-account", null);
+        RawContent selected = raw("selected", "더현대 셀렉터스");
+
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(successfulAccount, failedAccount));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(fetcher.fetchByAccount("successful-account", generationStart))
+                .thenReturn(List.of(selected));
+        when(fetcher.fetchByAccount("failed-account", generationStart))
+                .thenThrow(new IllegalStateException("fetch failed"));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("selected")))
+                .thenReturn(List.of());
+        when(classifier.isSelectorsContent(selected)).thenReturn(true);
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
+        when(contentRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Content> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            return values;
+        });
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 200L);
+            return values;
+        });
+
+        assertThat(service.collect()).isEqualTo(
+                new NewContentService.NewContentResult(1, 1));
+        verify(accountRepository).save(successfulAccount);
+        verify(accountRepository, never()).save(failedAccount);
+    }
+
+    @Test
+    void propagatesGenerationTargetFailure() {
+        IllegalStateException failure = new IllegalStateException("generation target failed");
+        when(generationService.getActive()).thenThrow(failure);
+
+        assertThatThrownBy(service::collect).isSameAs(failure);
+    }
+
+    @Test
+    void propagatesAccountTargetLookupFailure() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        IllegalStateException failure = new IllegalStateException("account target lookup failed");
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(accountRepository.findAllByGenerationId(3L)).thenThrow(failure);
+
+        assertThatThrownBy(service::collect).isSameAs(failure);
     }
 
     private SelectorsSnsAccount account(LocalDateTime lastCollectedAt) {
@@ -284,10 +348,15 @@ class NewContentServiceTest {
     }
 
     private SelectorsSnsAccount instagramAccount(LocalDateTime lastCollectedAt) {
+        return instagramAccount("instagram-account", lastCollectedAt);
+    }
+
+    private SelectorsSnsAccount instagramAccount(
+            String accountId, LocalDateTime lastCollectedAt) {
         return SelectorsSnsAccount.builder()
                 .selectorsId(1L)
                 .snsCode(SnsPlatform.INSTAGRAM)
-                .accountId("instagram-account")
+                .accountId(accountId)
                 .lastCollectedAt(lastCollectedAt)
                 .build();
     }

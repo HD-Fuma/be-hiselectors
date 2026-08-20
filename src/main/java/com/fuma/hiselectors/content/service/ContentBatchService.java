@@ -20,7 +20,9 @@ public class ContentBatchService {
         boolean storedContentSucceeded = true;
 
         try {
-            newContentCount = newContentService.collect();
+            NewContentService.NewContentResult result = newContentService.collect();
+            newContentCount = result.savedContentCount();
+            newContentSucceeded = result.failedAccountCount() == 0;
         } catch (RuntimeException exception) {
             newContentSucceeded = false;
             log.error("신규 콘텐츠 수집 배치에 실패했습니다.", exception);
