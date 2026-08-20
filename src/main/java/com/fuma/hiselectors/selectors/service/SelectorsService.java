@@ -1,6 +1,10 @@
 package com.fuma.hiselectors.selectors.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
+import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
@@ -20,6 +24,7 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRoleRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -44,6 +49,8 @@ public class SelectorsService {
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
     private final PenaltyHistoryRepository penaltyHistoryRepository;
+    private final ContentRepository contentRepository;
+    private final ContentEngagementRepository contentEngagementRepository;
 
     /**
      * 조건에 맞는 셀렉터스 목록. null 인 조건은 적용하지 않는다.
@@ -80,10 +87,23 @@ public class SelectorsService {
                 .findBySelectorsIdAndDeletedFalse(selectorsId)
                 .map(SelectorsSnsAccountResponse::from)
                 .orElse(null);
+        List<PenaltyHistory> penalties = penaltyHistoryRepository
+                .findAllBySelectorsIds(List.of(selectorsId));
+
+        // ponytail: 상세 조회에서 전체 콘텐츠를 합산한다. 건수가 커져 병목이면 DB 집계로 교체한다.
+        List<Content> contents = contentRepository
+                .findAllBySelectorsIdAndDeletedFalseOrderByCreatedAtDescIdDesc(selectorsId);
+        Map<Long, ContentEngagement> latestEngagements = contents.isEmpty()
+                ? Map.of()
+                : contentEngagementRepository.findLatestByContentIds(
+                                contents.stream().map(Content::getId).toList()).stream()
+                        .collect(Collectors.toMap(
+                                ContentEngagement::getContentId, Function.identity()));
 
         return SelectorsDetailResponse.of(
                 selectors, roleNames().get(selectors.getSelectorsRoleId()),
-                generations, account);
+                generations, account, penalties, contents, latestEngagements,
+                BLACKLIST_THRESHOLD);
     }
 
     public Page<SelectorsPenaltyResponse> findPenalties(

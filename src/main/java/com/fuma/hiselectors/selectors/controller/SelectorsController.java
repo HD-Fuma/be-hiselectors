@@ -73,7 +73,7 @@ public class SelectorsController {
     }
 
     @Operation(summary = "셀렉터스 상세 조회",
-            description = "기본 정보와 참여 기수 이력, SNS 계정을 함께 돌려준다.")
+            description = "기본 정보, 기수 이력, SNS 계정, 패널티, 최근 콘텐츠와 성과를 돌려준다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "셀렉터스 없음", content = @Content)

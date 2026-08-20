@@ -47,12 +47,24 @@ class SelectorsControllerTest {
                 7L, "SEL-2601-007", "지안글로우", "INACTIVE", "비활성",
                 1L, 1L, now, now, List.of(),
                 new SelectorsSnsAccountResponse(
-                        10L, "YOUTUBE", "jianglow", 40_900L, null, now)));
+                        10L, "YOUTUBE", "jianglow", 40_900L, null, now),
+                3, 2, true,
+                List.of(new SelectorsDetailResponse.ContentResponse(
+                        20L, "YOUTUBE", "https://youtube.com/shorts/20", "SHORTS",
+                        now, 1_000L, 100L, 10L)),
+                new SelectorsDetailResponse.PerformanceResponse(6, 9_000, 900, 90)));
 
         mockMvc.perform(get("/api/admin/selectors/7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.snsAccount.accountId").value("jianglow"))
-                .andExpect(jsonPath("$.data.snsAccounts").doesNotExist());
+                .andExpect(jsonPath("$.data.snsAccounts").doesNotExist())
+                .andExpect(jsonPath("$.data.totalPenaltyCount").value(3))
+                .andExpect(jsonPath("$.data.activePenaltyCount").value(2))
+                .andExpect(jsonPath("$.data.blacklistTarget").value(true))
+                .andExpect(jsonPath("$.data.contents[0].snsCode").value("YOUTUBE"))
+                .andExpect(jsonPath("$.data.contents[0].viewCount").value(1000))
+                .andExpect(jsonPath("$.data.performance.contentCount").value(6))
+                .andExpect(jsonPath("$.data.performance.totalViewCount").value(9000));
     }
 
     @Test
