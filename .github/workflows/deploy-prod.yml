@@ -184,8 +184,25 @@ jobs:
             IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
             aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
             docker pull "$IMAGE_URI"
-            docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             cd /srv/hiselectors
+            OLD_API_CONTAINER="$(docker compose ps -q api)"
+            test -n "$OLD_API_CONTAINER"
+            OLD_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$OLD_API_CONTAINER")"
+            test -n "$OLD_IMAGE_ID"
+            DEPLOY_VERIFIED=false
+            rollback() {
+              status=$?
+              trap - 0
+              if [ "$DEPLOY_VERIFIED" != "true" ]; then
+                echo "Deployment verification failed; restoring the previous API image" >&2
+                docker tag "$OLD_IMAGE_ID" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest' || true
+                docker compose up -d --force-recreate --wait --wait-timeout 180 api || true
+              fi
+              exit "$status"
+            }
+            trap rollback 0
+
+            docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
 
             API_CONTAINER="$(docker compose ps -q api)"
@@ -217,6 +234,8 @@ jobs:
             test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
             test "$(mysql_query "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date")" = "0"
             echo "008-post-deploy=verified"
+            DEPLOY_VERIFIED=true
+            trap - 0
             docker image prune -f
         run: |
           test -n "$EC2_INSTANCE_ID"
