@@ -66,6 +66,14 @@ class CreatorPoolSearchTest {
     private void save(String snsCode, String accountId, String name, Long followers,
                       String category, int daysSinceContent,
                       int brandScore, String igHandle, String igConfidence) {
+        save(snsCode, accountId, name, followers, category, daysSinceContent,
+                brandScore, igHandle, igConfidence, daysSinceContent > 90 ? 0 : 12);
+    }
+
+    private void save(String snsCode, String accountId, String name, Long followers,
+                      String category, int daysSinceContent,
+                      int brandScore, String igHandle, String igConfidence,
+                      int recent90DayContentCount) {
         CreatorPool creator = creatorPoolRepository.save(CreatorPool.builder()
                 .snsCode(snsCode).accountId(accountId).creatorName(name)
                 .followerCount(followers).category(category)
@@ -77,7 +85,7 @@ class CreatorPoolSearchTest {
                 .brandScore(brandScore)
                 .igHandle(igHandle)
                 .igConfidence(new BigDecimal(igConfidence))
-                .recent90DayContentCount(daysSinceContent > 90 ? 0 : 12)
+                .recent90DayContentCount(recent90DayContentCount)
                 .build());
     }
 
@@ -209,6 +217,11 @@ class CreatorPoolSearchTest {
     @Test
     @DisplayName("계정 검색과 ER 및 최근 90일 활동 수 조건을 함께 적용한다")
     void filterQuantitativeCreatorPool() {
+        save("YOUTUBE", "UC_fit_low", "핏지피티 저활동", 120_000L,
+                "FITNESS", 1, 0, "fitgpt_low", "0.95", 9);
+        em.flush();
+        em.clear();
+
         Page<CreatorSummary> result = creatorPoolRepository.search(
                 "핏지피티", "FITNESS", "YOUTUBE", 5_000L,
                 new BigDecimal("3.00"), 10, 1, null, null, FIRST_PAGE);

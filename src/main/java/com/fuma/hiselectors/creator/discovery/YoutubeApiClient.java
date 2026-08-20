@@ -224,6 +224,12 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
             pageToken = response.nextPageToken();
         } while (pageToken != null && !pageToken.isBlank()
                 && fetchedPages < YoutubeDiscoveryProperties.MAX_ACTIVITY_PAGES_PER_CHANNEL);
+
+        if (pageToken != null && !pageToken.isBlank()) {
+            // ponytail: 201은 200건 초과를 뜻하는 포화값이다. 관리자 최소 필터는
+            // 200까지 허용하므로 고활동 채널을 과소 집계로 제외하지 않는다.
+            return YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT + 1;
+        }
         return count;
     }
 

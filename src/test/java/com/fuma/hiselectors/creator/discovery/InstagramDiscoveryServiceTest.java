@@ -3,9 +3,9 @@ package com.fuma.hiselectors.creator.discovery;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -22,6 +22,8 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,9 +33,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class InstagramDiscoveryServiceTest {
@@ -131,6 +133,39 @@ class InstagramDiscoveryServiceTest {
     }
 
     @Test
+    void 최근_90일_경계에_따라_활동_수를_저장한다() {
+        CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
+        CreatorDiscoveryInfo sourceInfo = mock(CreatorDiscoveryInfo.class);
+        CreatorPool savedInstagram = mock(CreatorPool.class);
+        ZoneId seoul = ZoneId.of("Asia/Seoul");
+        BusinessDiscovery discovered = discoveredAccount(List.of(
+                mediaItem("recent", OffsetDateTime.now(seoul).minusDays(89).toString()),
+                mediaItem("old", OffsetDateTime.now(seoul).minusDays(91).toString())
+        ));
+
+        when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
+        when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(sourceInfo));
+        when(sourceInfo.getIgHandle()).thenReturn("nike");
+        when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
+        when(engagementCalculator.calculate(291_530_362L, discovered.media()))
+                .thenReturn(new BigDecimal("0.04"));
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "17841400602400210")).thenReturn(Optional.empty());
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "nike")).thenReturn(Optional.empty());
+        when(creatorPoolRepository.saveAndFlush(any(CreatorPool.class)))
+                .thenReturn(savedInstagram);
+        when(savedInstagram.getId()).thenReturn(20L);
+
+        service.discoverFromYoutubeCreator(10L);
+
+        ArgumentCaptor<CreatorDiscoveryInfo> captor =
+                ArgumentCaptor.forClass(CreatorDiscoveryInfo.class);
+        verify(discoveryInfoRepository).save(captor.capture());
+        assertThat(captor.getValue().getRecent90DayContentCount()).isEqualTo(1);
+    }
+
+    @Test
     void 동시_최초_저장_충돌이_나면_이미_생긴_계정을_갱신한다() {
         CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
         CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
@@ -189,9 +224,17 @@ class InstagramDiscoveryServiceTest {
                 "media-id", null, "VIDEO", null,
                 "2026-08-11T17:00:58+0000", 36_307L, 358L
         );
+        return discoveredAccount(List.of(mediaItem));
+    }
+
+    private BusinessDiscovery discoveredAccount(List<MediaItem> mediaItems) {
         return new BusinessDiscovery(
                 "17841400602400210", "nike", "Nike", "Just Do It.", null,
-                291_530_362L, 1_668L, new Media(List.of(mediaItem))
+                291_530_362L, 1_668L, new Media(mediaItems)
         );
+    }
+
+    private MediaItem mediaItem(String id, String timestamp) {
+        return new MediaItem(id, null, "VIDEO", null, timestamp, 1L, 1L);
     }
 }

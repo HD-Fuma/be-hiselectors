@@ -124,6 +124,19 @@ class YoutubeDiscoveryBatchServiceTest {
         verify(keywordRepository, never()).findRunnable();
     }
 
+    @Test
+    @DisplayName("키워드당 검색 개수는 YouTube API 허용 범위여야 한다")
+    void rejectInvalidMaxResults() {
+        assertThatThrownBy(() -> new YoutubeDiscoveryProperties("test-key", 10_000, 0)
+                .maxResultsOrDefault())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("between 1 and 50");
+        assertThatThrownBy(() -> new YoutubeDiscoveryProperties("test-key", 10_000, 51)
+                .maxResultsOrDefault())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("between 1 and 50");
+    }
+
     private YoutubeDiscoveryBatchService service(
             int dailyQuota, int maxResults, int maxKeywords) {
         YoutubeDiscoveryProperties discovery =

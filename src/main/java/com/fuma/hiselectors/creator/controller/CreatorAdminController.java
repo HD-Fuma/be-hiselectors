@@ -1,13 +1,14 @@
 package com.fuma.hiselectors.creator.controller;
 
+import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
-import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
+import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -72,8 +73,10 @@ public class CreatorAdminController {
             @Parameter(description = "최소 ER", example = "2.5")
             @RequestParam(required = false) @DecimalMin("0") BigDecimal minEngagementRate,
 
-            @Parameter(description = "최근 90일 최소 공개 콘텐츠 수", example = "3")
-            @RequestParam(required = false) @Min(0) Integer minRecent90DayContentCount,
+            @Parameter(description = "최근 90일 최소 공개 콘텐츠 수 (0~200)", example = "3")
+            @RequestParam(required = false) @Min(0)
+            @Max(YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT)
+            Integer minRecent90DayContentCount,
 
             @Parameter(description = "브랜드 신호 점수 상한. 1 을 주면 브랜드 계정(2점 이상)이 빠진다",
                     example = "1")
