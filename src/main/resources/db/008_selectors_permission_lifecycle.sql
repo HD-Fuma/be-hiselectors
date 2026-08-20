@@ -5,14 +5,14 @@ ALTER TABLE generation
 
 -- 기존 기수는 종전 기간을 활동 기간으로 보존한다. 관리 화면에서 실제 활동 기간으로 보정한다.
 UPDATE generation
-SET activity_start_date = start_date,
-    activity_end_date = end_date
+SET activity_start_date = COALESCE(activity_start_date, start_date),
+    activity_end_date = COALESCE(activity_end_date, end_date)
 WHERE activity_start_date IS NULL
    OR activity_end_date IS NULL;
 
+-- 구버전 API도 배포 전까지 기수를 생성할 수 있도록 nullable 상태로 확장한다.
+-- NOT NULL 전환은 신버전 API 배포가 끝난 뒤 deploy-prod workflow가 수행한다.
 ALTER TABLE generation
-    MODIFY COLUMN activity_start_date DATETIME(6) NOT NULL,
-    MODIFY COLUMN activity_end_date DATETIME(6) NOT NULL,
     ADD INDEX idx_generation_activity_period (activity_start_date, activity_end_date);
 
 -- 승인·자동 연장 재시도에도 한 셀렉터스가 같은 기수에 한 번만 속한다.
