@@ -17,6 +17,7 @@ import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.client.ContentPlatformClient;
 import com.fuma.hiselectors.content.client.dto.RawContent;
+import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -126,6 +127,36 @@ class ApplicationMediaServiceTest {
         verify(mediaRepository).flush();
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
         assertThat(application.getMediaCollectedAt()).isNotNull();
+    }
+
+    @Test
+    void collectStoresPostAndCdnUrlsSeparately() {
+        Application application = application(SnsPlatform.INSTAGRAM, "username");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        RawContent content = new RawContent(
+                SnsPlatform.INSTAGRAM,
+                "post-1",
+                "https://www.instagram.com/reel/post-1",
+                ContentType.SHORT_FORM,
+                List.of(),
+                LocalDateTime.now(),
+                List.of(new RawContentMedia(
+                        "media-1",
+                        RawContentMedia.MediaType.VIDEO,
+                        "https://cdn.example.com/post-1.mp4")));
+        when(instagramClient.collect(any(), any()))
+                .thenReturn(new ContentPlatformClient.CollectionResult(1, List.of(content)));
+        when(instagramClient.addStatistics(any())).thenReturn(List.of(content));
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.collect(APPLICATION_ID);
+
+        assertThat(result.media()).singleElement().satisfies(media -> {
+            assertThat(media.contentUrl())
+                    .isEqualTo("https://www.instagram.com/reel/post-1");
+            assertThat(media.mediaUrl())
+                    .isEqualTo("https://cdn.example.com/post-1.mp4");
+        });
     }
 
     @Test

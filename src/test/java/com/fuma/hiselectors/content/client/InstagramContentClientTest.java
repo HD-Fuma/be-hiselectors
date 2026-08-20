@@ -56,7 +56,7 @@ class InstagramContentClientTest {
                             .contains("media_product_type")
                             .contains("view_count,like_count,comments_count")
                             .contains("children{id,media_type,media_url}")
-                            .doesNotContain("permalink");
+                            .contains("permalink");
                     assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
                             .isEqualTo("Bearer " + ACCESS_TOKEN);
                 })
@@ -110,7 +110,7 @@ class InstagramContentClientTest {
                 .containsExactly("reel-new", "feed-old", "video-new");
         assertThat(result.getFirst().snsCode()).isEqualTo(SnsPlatform.INSTAGRAM);
         assertThat(result.getFirst().contentUrl())
-                .isEqualTo("https://cdn.example.com/reel-new.mp4");
+                .isEqualTo("https://www.instagram.com/reel/new");
         assertThat(result.getFirst().contentType()).isEqualTo(ContentType.SHORT_FORM);
         assertThat(result.getFirst().texts()).containsExactly("new reel caption");
         assertThat(result.getFirst().caption()).isEqualTo("new reel caption");
@@ -124,7 +124,8 @@ class InstagramContentClientTest {
                 RawContentMedia.MediaType.VIDEO,
                 "https://cdn.example.com/reel-new.mp4"));
         assertThat(result.get(2).contentType()).isEqualTo(ContentType.FEED);
-        assertThat(result.get(2).contentUrl()).isNull();
+        assertThat(result.get(2).contentUrl())
+                .isEqualTo("https://www.instagram.com/p/video");
         assertThat(result.get(2).media()).containsExactly(new RawContentMedia(
                 "video-new",
                 RawContentMedia.MediaType.VIDEO,
@@ -176,7 +177,7 @@ class InstagramContentClientTest {
 
         assertThat(result).singleElement().satisfies(content -> {
             assertThat(content.contentUrl())
-                    .isEqualTo("https://cdn.example.com/carousel-cover.jpg");
+                    .isEqualTo("https://www.instagram.com/p/carousel");
             assertThat(content.contentType()).isEqualTo(ContentType.FEED);
             assertThat(content.caption()).isEqualTo("carousel caption");
             assertThat(content.createdAt()).isEqualTo(LocalDateTime.of(2026, 8, 13, 14, 0));
