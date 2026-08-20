@@ -86,7 +86,7 @@ class YoutubeContentClientTest {
 
         ContentPlatformClient.CollectionResult collection = client.collect(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
-        List<RawContent> result = collection.contents();
+        List<RawContent> result = client.addStatistics(collection.contents());
 
         assertThat(collection.fetchedCount()).isEqualTo(2);
         assertThat(result).hasSize(2);
@@ -127,8 +127,8 @@ class YoutubeContentClientTest {
                         MediaType.APPLICATION_JSON));
         expectStatistics("first", "second");
 
-        List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+        List<RawContent> result = client.addStatistics(client.collect(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents());
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -159,12 +159,13 @@ class YoutubeContentClientTest {
                 .mapToObj(number -> "video-" + number)
                 .toArray(String[]::new));
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentPlatformClient.CollectionResult collection = client.collect(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+        List<RawContent> result = client.addStatistics(collection.contents());
 
-        assertThat(result.fetchedCount()).isEqualTo(11);
-        assertThat(result.contents()).hasSize(11);
-        assertThat(result.contents().getLast().snsContentId()).isEqualTo("video-11");
+        assertThat(collection.fetchedCount()).isEqualTo(11);
+        assertThat(result).hasSize(11);
+        assertThat(result.getLast().snsContentId()).isEqualTo("video-11");
         server.verify();
     }
 

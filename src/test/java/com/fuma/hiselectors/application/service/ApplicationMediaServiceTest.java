@@ -63,22 +63,32 @@ class ApplicationMediaServiceTest {
     }
 
     @Test
-    void collectStoresLatestTenDistinctContents() {
+    void collectRequestsStatisticsOnlyForLatestTenDistinctContents() {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
 
         LocalDateTime now = LocalDateTime.now();
         List<RawContent> contents = new ArrayList<>();
-        for (int i = 0; i < 12; i++) {
-            contents.add(i == 0
-                    ? raw(SnsPlatform.YOUTUBE, "video-0", now, 100L, 20L, 3L)
-                    : raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusDays(i)));
+        for (int i = 0; i < 52; i++) {
+            contents.add(raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusHours(i)));
         }
-        contents.add(raw(SnsPlatform.YOUTUBE, "video-0", now.minusHours(1)));
+        contents.add(raw(SnsPlatform.YOUTUBE, "video-0", now.minusDays(10)));
         contents.add(raw(SnsPlatform.YOUTUBE, "old", now.minusDays(91)));
         contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", now));
         when(youtubeClient.collect(any(), any()))
                 .thenReturn(new ContentPlatformClient.CollectionResult(contents.size(), contents));
+        when(youtubeClient.addStatistics(any())).thenAnswer(invocation -> {
+            List<RawContent> selected = invocation.getArgument(0);
+            assertThat(selected).extracting(RawContent::snsContentId)
+                    .containsExactly(
+                            "video-0", "video-1", "video-2", "video-3", "video-4",
+                            "video-5", "video-6", "video-7", "video-8", "video-9");
+            return selected.stream()
+                    .map(content -> "video-0".equals(content.snsContentId())
+                            ? content.withMetrics(100L, 20L, 3L)
+                            : content)
+                    .toList();
+        });
 
         AtomicReference<List<ApplicationMedia>> saved = new AtomicReference<>();
         when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {

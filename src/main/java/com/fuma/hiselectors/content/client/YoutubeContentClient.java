@@ -112,7 +112,7 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 break;
             }
         }
-        return new CollectionResult(fetchedCount, addStatistics(contents));
+        return new CollectionResult(fetchedCount, contents);
     }
 
     private void validateRequest(String channelId, LocalDateTime collectedAfter) {
@@ -228,7 +228,8 @@ public class YoutubeContentClient implements ContentPlatformClient {
                 List.of(new RawContentMedia(videoId, MediaType.VIDEO, null)));
     }
 
-    private List<RawContent> addStatistics(List<RawContent> contents) {
+    @Override
+    public List<RawContent> addStatistics(List<RawContent> contents) {
         if (contents.isEmpty()) {
             return contents;
         }

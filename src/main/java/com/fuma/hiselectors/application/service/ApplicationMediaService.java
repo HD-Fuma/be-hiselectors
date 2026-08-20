@@ -39,9 +39,11 @@ public class ApplicationMediaService {
         Application application = findApplication(applicationId);
         LocalDateTime collectedAfter = LocalDateTime.now().minusDays(COLLECTION_DAYS);
 
-        ContentPlatformClient.CollectionResult result = findClient(application)
+        ContentPlatformClient client = findClient(application);
+        ContentPlatformClient.CollectionResult result = client
                 .collect(application.getSnsAccountId(), collectedAfter);
-        List<ApplicationMedia> snapshot = createSnapshot(application, result.contents(), collectedAfter);
+        List<ApplicationMedia> snapshot = createSnapshot(
+                application, client, result.contents(), collectedAfter);
 
         List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
             mediaRepository.deleteByApplicationId(applicationId);
@@ -78,7 +80,8 @@ public class ApplicationMediaService {
     }
 
     private List<ApplicationMedia> createSnapshot(
-            Application application, List<RawContent> contents, LocalDateTime collectedAfter) {
+            Application application, ContentPlatformClient client,
+            List<RawContent> contents, LocalDateTime collectedAfter) {
         Map<String, RawContent> latestById = contents.stream()
                 .filter(content -> content != null
                         && content.snsCode() == application.getSnsCode()
@@ -95,7 +98,8 @@ public class ApplicationMediaService {
                         (first, ignored) -> first,
                         LinkedHashMap::new));
 
-        List<RawContent> selected = latestById.values().stream().limit(STORE_LIMIT).toList();
+        List<RawContent> selected = client.addStatistics(
+                latestById.values().stream().limit(STORE_LIMIT).toList());
         return IntStream.range(0, selected.size())
                 .mapToObj(index -> toEntity(application, selected.get(index), index))
                 .toList();
