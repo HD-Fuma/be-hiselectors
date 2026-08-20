@@ -10,8 +10,13 @@ SET activity_start_date = COALESCE(activity_start_date, start_date),
 WHERE activity_start_date IS NULL
    OR activity_end_date IS NULL;
 
--- 구버전 API도 배포 전까지 기수를 생성할 수 있도록 nullable 상태로 확장한다.
--- NOT NULL 전환은 신버전 API 배포가 끝난 뒤 deploy-prod workflow가 수행한다.
+-- 기존 멤버십은 활동 시작일을 가입 시점으로 사용한다.
+UPDATE selectors_generation sg
+JOIN generation g ON g.generation_id = sg.generation_id
+SET sg.created_at = COALESCE(g.activity_start_date, g.start_date)
+WHERE sg.created_at IS NULL;
+
+-- 구버전 API로 롤백해도 기수를 생성할 수 있도록 nullable 상태를 유지한다.
 ALTER TABLE generation
     ADD INDEX idx_generation_activity_period (activity_start_date, activity_end_date);
 
