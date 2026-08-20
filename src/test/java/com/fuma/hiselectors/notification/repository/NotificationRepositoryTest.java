@@ -2,12 +2,18 @@ package com.fuma.hiselectors.notification.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.notification.dto.NotificationHistoryResponse;
+import com.fuma.hiselectors.kakao.model.UserKakaoRecipient;
 import com.fuma.hiselectors.notification.model.Notification;
 import com.fuma.hiselectors.notification.model.NotificationChannel;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
+import com.fuma.hiselectors.user.model.User;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
@@ -39,5 +45,42 @@ class NotificationRepositoryTest {
 
         assertThat(found.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
         assertThat(found.getNotificationPurposeCode()).isEqualTo("SELECTION_APPROVED");
+    }
+
+    @Test
+    @DisplayName("카카오 수신 UUID로 연결한 사용자 이름과 Hi ID를 발송 이력에서 검색한다")
+    void searchHistoryWithLinkedRecipient() {
+        User user = em.persist(User.builder()
+                .hiId("hi-selector")
+                .name("김하이")
+                .build());
+        em.persist(UserKakaoRecipient.builder()
+                .userId(user.getId())
+                .kakaoUserId(101L)
+                .kakaoMessageUuid("recipient-uuid")
+                .build());
+        notificationRepository.save(Notification.builder()
+                .notificationPurposeCode("SELECTION_APPROVED")
+                .notificationChannel(NotificationChannel.KAKAO_MESSAGE)
+                .receiver("recipient-uuid")
+                .body("선정 결과를 확인해 주세요.")
+                .requestAt(LocalDateTime.of(2026, 8, 15, 9, 0))
+                .build());
+        em.flush();
+        em.clear();
+
+        Page<NotificationHistoryResponse> history = notificationRepository.searchHistory(
+                "SELECTION_APPROVED",
+                NotificationStatus.REQUESTED,
+                LocalDateTime.of(2026, 8, 15, 0, 0),
+                LocalDateTime.of(2026, 8, 16, 0, 0),
+                "hi-selector",
+                PageRequest.of(0, 20, Sort.by(Sort.Order.desc("requestAt"))));
+
+        assertThat(history.getTotalElements()).isEqualTo(1);
+        NotificationHistoryResponse result = history.getContent().getFirst();
+        assertThat(result.recipientName()).isEqualTo("김하이");
+        assertThat(result.recipientHiId()).isEqualTo("hi-selector");
+        assertThat(result.receiver()).isEqualTo("recipient-uuid");
     }
 }

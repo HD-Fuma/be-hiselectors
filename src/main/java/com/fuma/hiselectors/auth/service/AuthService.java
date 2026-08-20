@@ -34,7 +34,7 @@ public class AuthService {
         }
 
         String token = jwtTokenProvider.createToken(user.getHiId(), "USER");
-        return TokenResponse.of(token, user.getHiId(), "USER");
+        return TokenResponse.of(token, user.getHiId(), "USER", user.getAlimtalk());
     }
 
     /** 관리자 로그인 (Admin 테이블, login_id/password). */

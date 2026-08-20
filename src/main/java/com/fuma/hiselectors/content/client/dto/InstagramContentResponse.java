@@ -33,10 +33,11 @@ public record InstagramContentResponse(
             String timestamp,
             // 이미지나 영상 파일 직접 주소이며 응답에 없을 수 있음
             @JsonProperty("media_url") String mediaUrl,
-            // 캐러셀 내부 이미지와 영상 목록
-            Children children,
+            @JsonProperty("view_count") Long viewCount,
             @JsonProperty("like_count") Long likeCount,
-            @JsonProperty("comments_count") Long commentsCount
+            @JsonProperty("comments_count") Long commentsCount,
+            // 캐러셀 내부 이미지와 영상 목록
+            Children children
     ) {
     }
 

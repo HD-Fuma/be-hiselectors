@@ -69,3 +69,8 @@ application-secret.properties
 Thumbs.db
 /.serena/
 /.claude/
+
+### Python (stt-worker) ###
+stt-worker/.venv/
+__pycache__/
+*.pyc

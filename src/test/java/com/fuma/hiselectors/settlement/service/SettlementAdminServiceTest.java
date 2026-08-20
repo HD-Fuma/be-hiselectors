@@ -93,7 +93,7 @@ class SettlementAdminServiceTest {
 
         when(selectorsRepository.findById(15L)).thenReturn(Optional.of(selectors));
         when(snsAccountRepository
-                .findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(15L))
+                .findBySelectorsIdAndDeletedFalse(15L))
                 .thenReturn(Optional.of(snsAccount));
         when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
                 15L, List.of(PurchaseStatus.PURCHASED, PurchaseStatus.PURCHASE_CONFIRMED)))

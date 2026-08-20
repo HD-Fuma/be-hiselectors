@@ -13,6 +13,7 @@ import com.fuma.hiselectors.application.dto.ApplicationCreateRequest;
 import com.fuma.hiselectors.application.dto.ApplicationResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -66,6 +67,10 @@ class ApplicationServiceTest {
         assertThat(response.alarmYn()).isTrue();
         assertThat(response.policyAgreedAt()).isNotNull();
         assertThat(response.status()).isEqualTo(ApplicationStatus.PENDING);
+        var saved = org.mockito.ArgumentCaptor.forClass(Application.class);
+        verify(applicationRepository).save(saved.capture());
+        assertThat(saved.getValue().getMediaCollectionStatus())
+                .isEqualTo(MediaCollectionStatus.PENDING);
     }
 
     @Test

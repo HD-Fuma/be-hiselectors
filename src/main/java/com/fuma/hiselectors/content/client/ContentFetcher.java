@@ -20,6 +20,11 @@ public interface ContentFetcher {
      */
     List<RawContent> fetchByAccount(String accountId, LocalDateTime since);
 
+    /** 저장 대상으로 선택된 콘텐츠의 수집 시점 성과 조회 */
+    default List<RawContent> addStatistics(List<RawContent> contents) {
+        return contents;
+    }
+
     /** SNS 콘텐츠 ID별 최신 내용과 성과 조회 */
     List<FetchResult> fetchByContentIds(List<String> snsContentIds);
 

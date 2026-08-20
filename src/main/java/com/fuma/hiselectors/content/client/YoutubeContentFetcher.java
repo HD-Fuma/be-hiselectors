@@ -9,6 +9,8 @@ import com.fuma.hiselectors.content.client.dto.YoutubeContentResponse;
 import com.fuma.hiselectors.content.client.dto.YoutubeContentResponse.Item;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.creator.discovery.dto.YoutubeVideoListResponse;
+import com.fuma.hiselectors.creator.discovery.dto.YoutubeVideoListResponse.Statistics;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.net.URI;
@@ -303,6 +305,50 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 createdAt,
                 // YouTube는 영상 파일 직접 주소를 제공하지 않아 mediaUrl은 null
                 List.of(new RawContentMedia(videoId, MediaType.VIDEO, null)));
+    }
+
+    @Override
+    public List<RawContent> addStatistics(List<RawContent> contents) {
+        if (contents.isEmpty()) {
+            return contents;
+        }
+
+        Map<String, Statistics> statisticsById = new HashMap<>();
+        for (int start = 0; start < contents.size(); start += PAGE_SIZE) {
+            List<String> videoIds = contents.subList(start, Math.min(start + PAGE_SIZE, contents.size()))
+                    .stream()
+                    .map(RawContent::snsContentId)
+                    .toList();
+            URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
+                    .queryParam("part", "statistics")
+                    .queryParam("id", String.join(",", videoIds))
+                    .queryParam("key", properties.apiKey())
+                    .build()
+                    .encode()
+                    .toUri();
+            YoutubeVideoListResponse response = request(uri, YoutubeVideoListResponse.class);
+            if (response.items() != null) {
+                response.items().stream()
+                        .filter(item -> item != null && item.id() != null)
+                        .forEach(item -> statisticsById.put(item.id(), item.statistics()));
+            }
+        }
+
+        return contents.stream().map(content -> {
+            Statistics statistics = statisticsById.get(content.snsContentId());
+            return statistics == null ? content : content.withMetrics(
+                    parseCount(statistics.viewCount()),
+                    parseCount(statistics.likeCount()),
+                    parseCount(statistics.commentCount()));
+        }).toList();
+    }
+
+    private Long parseCount(String count) {
+        try {
+            return count == null ? null : Long.parseLong(count);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private List<String> texts(Item item) {
