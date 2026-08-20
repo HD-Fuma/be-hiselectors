@@ -4,6 +4,16 @@ on:
   push:
     branches: [dev]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Production operation
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - inspect-007
+          - apply-007
 
 permissions:
   contents: read
@@ -21,6 +31,7 @@ env:
 
 jobs:
   deploy:
+    if: github.event_name == 'push' || inputs.operation == 'deploy'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -75,6 +86,96 @@ jobs:
             aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" || true
             exit 1
           fi
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --query '{Status:Status,Output:StandardOutputContent}'
+
+  database-007:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation != 'deploy'
+    runs-on: ubuntu-latest
+    env:
+      OPERATION: ${{ inputs.operation }}
+      REMOTE_SCRIPT: |
+        set -eu
+        cd /srv/hiselectors
+        API_CONTAINER="$(docker compose ps -q api)"
+        test -n "$API_CONTAINER"
+
+        container_env() {
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$API_CONTAINER" |
+            sed -n "s/^$1=//p" |
+            head -n 1
+        }
+
+        DB_HOST="$(container_env DB_HOST)"
+        DB_PORT="$(container_env DB_PORT)"
+        DB_NAME="$(container_env DB_NAME)"
+        DB_USERNAME="$(container_env DB_USERNAME)"
+        DB_PASSWORD="$(container_env DB_PASSWORD)"
+        DB_PORT="${DB_PORT:-3306}"
+        DB_NAME="${DB_NAME:-hiselectors}"
+        DB_USERNAME="${DB_USERNAME:-root}"
+        test -n "$DB_HOST"
+
+        export MYSQL_PWD="$DB_PASSWORD"
+        mysql_query() {
+          docker run --rm --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+        }
+
+        application_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'content_count'")"
+        media_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'content_type'")"
+        echo "application.content_count=$application_count"
+        echo "application_media.content_type=$media_count"
+
+        if [ "$OPERATION" = "inspect-007" ]; then
+          exit 0
+        fi
+
+        if [ "$application_count" = "0" ]; then
+          mysql_query "ALTER TABLE application ADD COLUMN content_count BIGINT NULL COMMENT '플랫폼이 제공한 전체 공개 콘텐츠 수' AFTER follower_count"
+          echo "application.content_count=added"
+        fi
+        if [ "$media_count" = "0" ]; then
+          mysql_query "ALTER TABLE application_media ADD COLUMN content_type VARCHAR(20) NULL COMMENT 'SHORT_FORM / LONG_FORM / SHORTS / FEED' AFTER media_url"
+          echo "application_media.content_type=added"
+        fi
+
+        valid_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'application' AND column_name = 'content_count' AND data_type = 'bigint' AND is_nullable = 'YES') OR (table_name = 'application_media' AND column_name = 'content_type' AND data_type = 'varchar' AND character_maximum_length = 20 AND is_nullable = 'YES'))")"
+        test "$valid_count" = "2"
+        echo "007=verified"
+    steps:
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run 007 through SSM
+        run: |
+          test -n "$EC2_INSTANCE_ID"
+          COMMAND_SCRIPT="OPERATION=$(printf '%q' "$OPERATION")"$'\n'"$REMOTE_SCRIPT"
+          PARAMETERS="$(jq -cn --arg command "$COMMAND_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)"
+          STATUS=
+          for _ in {1..120}; do
+            STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID"
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          test "$STATUS" = "Success"
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
             --instance-id "$EC2_INSTANCE_ID" \
