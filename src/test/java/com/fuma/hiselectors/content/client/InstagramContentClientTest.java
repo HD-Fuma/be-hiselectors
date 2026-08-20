@@ -54,6 +54,7 @@ class InstagramContentClientTest {
                             .contains("business_discovery.username(nike)")
                             .contains("media.limit(25)")
                             .contains("media_product_type")
+                            .contains("view_count,like_count,comments_count")
                             .contains("children{id,media_type,media_url}");
                     assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
                             .isEqualTo("Bearer " + ACCESS_TOKEN);
@@ -70,6 +71,9 @@ class InstagramContentClientTest {
                                   "media_product_type": "REELS",
                                   "media_url": "https://cdn.example.com/reel-new.mp4",
                                   "permalink": "https://www.instagram.com/reel/new",
+                                  "view_count": 1500,
+                                  "like_count": 120,
+                                  "comments_count": 7,
                                   "timestamp": "2026-08-13T05:00:00+0000"
                                 },
                                 {
@@ -111,6 +115,9 @@ class InstagramContentClientTest {
         assertThat(result.getFirst().caption()).isEqualTo("new reel caption");
         assertThat(result.getFirst().createdAt())
                 .isEqualTo(LocalDateTime.of(2026, 8, 13, 14, 0));
+        assertThat(result.getFirst().viewCount()).isEqualTo(1500L);
+        assertThat(result.getFirst().likeCount()).isEqualTo(120L);
+        assertThat(result.getFirst().commentCount()).isEqualTo(7L);
         assertThat(result.getFirst().media()).containsExactly(new RawContentMedia(
                 "reel-new",
                 RawContentMedia.MediaType.VIDEO,

@@ -20,6 +20,11 @@ public interface ContentPlatformClient {
      */
     CollectionResult collect(String accountId, LocalDateTime collectedAfter);
 
+    /** 저장 대상으로 선택된 콘텐츠의 수집 시점 지표 조회 */
+    default List<RawContent> addStatistics(List<RawContent> contents) {
+        return contents;
+    }
+
     record CollectionResult(int fetchedCount, List<RawContent> contents) {
 
         public CollectionResult {

@@ -16,6 +16,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,10 +82,11 @@ class YoutubeContentClientTest {
                           ]
                         }
                         """, MediaType.APPLICATION_JSON));
+        expectStatistics("video-new", "video-old");
 
         ContentPlatformClient.CollectionResult collection = client.collect(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 12, 0));
-        List<RawContent> result = collection.contents();
+        List<RawContent> result = client.addStatistics(collection.contents());
 
         assertThat(collection.fetchedCount()).isEqualTo(2);
         assertThat(result).hasSize(2);
@@ -100,6 +102,9 @@ class YoutubeContentClientTest {
                     .isEqualTo("new video title\nnew video description");
             assertThat(content.createdAt())
                     .isEqualTo(LocalDateTime.of(2026, 8, 13, 14, 0));
+            assertThat(content.viewCount()).isEqualTo(100L);
+            assertThat(content.likeCount()).isEqualTo(20L);
+            assertThat(content.commentCount()).isEqualTo(3L);
             assertThat(content.media()).containsExactly(new RawContentMedia(
                     "video-new",
                     RawContentMedia.MediaType.VIDEO,
@@ -120,9 +125,10 @@ class YoutubeContentClientTest {
                         .contains("pageToken=next-page"))
                 .andRespond(withSuccess(playlistPage("second", null),
                         MediaType.APPLICATION_JSON));
+        expectStatistics("first", "second");
 
-        List<RawContent> result = client.collect(
-                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents();
+        List<RawContent> result = client.addStatistics(client.collect(
+                CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0)).contents());
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
@@ -149,13 +155,17 @@ class YoutubeContentClientTest {
                             playlistPage("video-" + currentPage, nextToken),
                             MediaType.APPLICATION_JSON));
         }
+        expectStatistics(IntStream.rangeClosed(1, 11)
+                .mapToObj(number -> "video-" + number)
+                .toArray(String[]::new));
 
-        ContentPlatformClient.CollectionResult result = client.collect(
+        ContentPlatformClient.CollectionResult collection = client.collect(
                 CHANNEL_ID, LocalDateTime.of(2026, 8, 13, 13, 0));
+        List<RawContent> result = client.addStatistics(collection.contents());
 
-        assertThat(result.fetchedCount()).isEqualTo(11);
-        assertThat(result.contents()).hasSize(11);
-        assertThat(result.contents().getLast().snsContentId()).isEqualTo("video-11");
+        assertThat(collection.fetchedCount()).isEqualTo(11);
+        assertThat(result).hasSize(11);
+        assertThat(result.getLast().snsContentId()).isEqualTo("video-11");
         server.verify();
     }
 
@@ -292,6 +302,26 @@ class YoutubeContentClientTest {
                   }]
                 }
                 """.formatted(nextPage, videoId, videoId, videoId);
+    }
+
+    private void expectStatistics(String... videoIds) {
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/videos");
+                    String query = decodedQuery(request.getURI().getRawQuery());
+                    assertThat(query)
+                            .contains("part=statistics")
+                            .contains("id=" + String.join(",", videoIds))
+                            .contains("key=" + API_KEY);
+                })
+                .andRespond(withSuccess("""
+                        {"items":[%s]}
+                        """.formatted(String.join(",", List.of(videoIds).stream()
+                        .map(videoId -> """
+                                {"id":"%s","statistics":{
+                                  "viewCount":"100","likeCount":"20","commentCount":"3"
+                                }}
+                                """.formatted(videoId))
+                        .toList())), MediaType.APPLICATION_JSON));
     }
 
     private String decodedQuery(String query) {

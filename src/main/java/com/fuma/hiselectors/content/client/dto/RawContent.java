@@ -30,7 +30,11 @@ public record RawContent(
         LocalDateTime createdAt,
 
         // 콘텐츠에 포함된 이미지와 영상 목록
-        List<RawContentMedia> media
+        List<RawContentMedia> media,
+
+        Long viewCount,
+        Long likeCount,
+        Long commentCount
 ) {
     public RawContent {
         texts = texts == null ? List.of() : texts.stream()
@@ -44,12 +48,29 @@ public record RawContent(
             String snsContentId,
             String contentUrl,
             ContentType contentType,
+            List<String> texts,
+            LocalDateTime createdAt,
+            List<RawContentMedia> media) {
+        this(snsCode, snsContentId, contentUrl, contentType, texts, createdAt, media,
+                null, null, null);
+    }
+
+    public RawContent(
+            SnsPlatform snsCode,
+            String snsContentId,
+            String contentUrl,
+            ContentType contentType,
             String caption,
             LocalDateTime createdAt,
             List<RawContentMedia> media) {
         this(snsCode, snsContentId, contentUrl, contentType,
                 caption == null ? List.of() : List.of(caption),
-                createdAt, media);
+                createdAt, media, null, null, null);
+    }
+
+    public RawContent withMetrics(Long viewCount, Long likeCount, Long commentCount) {
+        return new RawContent(snsCode, snsContentId, contentUrl, contentType, texts, createdAt,
+                media, viewCount, likeCount, commentCount);
     }
 
     /** 셀렉터스 콘텐츠 판별용 전체 TEXT 결합 */
