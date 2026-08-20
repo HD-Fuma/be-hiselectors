@@ -73,7 +73,7 @@ public class CreatorAdminController {
             @Parameter(description = "최소 ER", example = "2.5")
             @RequestParam(required = false) @DecimalMin("0") BigDecimal minEngagementRate,
 
-            @Parameter(description = "최근 90일 최소 공개 콘텐츠 수 (0~200)", example = "3")
+            @Parameter(description = "최근 90일 최소 공개 콘텐츠 수 (0~25)", example = "3")
             @RequestParam(required = false) @Min(0)
             @Max(YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT)
             Integer minRecent90DayContentCount,

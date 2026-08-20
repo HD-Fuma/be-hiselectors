@@ -186,51 +186,24 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         }
 
         LocalDateTime cutoff = LocalDateTime.now(SEOUL).minusDays(ACTIVITY_WINDOW_DAYS);
-        int count = 0;
-        int fetchedPages = 0;
-        String pageToken = null;
-        do {
-            UriComponentsBuilder uri = UriComponentsBuilder.fromUriString(PLAYLIST_ITEMS_URI)
-                    .queryParam("part", "contentDetails")
-                    .queryParam("playlistId", uploads)
-                    .queryParam("maxResults", BATCH_SIZE)
-                    .queryParam("key", properties.apiKey());
-            if (pageToken != null) {
-                uri.queryParam("pageToken", pageToken);
-            }
-
-            YoutubePlaylistItemListResponse response = call(
-                    uri.build().toUriString(), YoutubePlaylistItemListResponse.class, LIST_COST);
-            fetchedPages++;
-            if (response == null || response.items() == null) {
-                return count;
-            }
-
-            boolean reachedOlderContent = false;
-            for (YoutubePlaylistItemListResponse.Item item : response.items()) {
-                LocalDateTime publishedAt = parsePublishedAt(item);
-                if (publishedAt == null) {
-                    continue;
-                }
-                if (publishedAt.isBefore(cutoff)) {
-                    reachedOlderContent = true;
-                } else {
-                    count++;
-                }
-            }
-            if (reachedOlderContent) {
-                return count;
-            }
-            pageToken = response.nextPageToken();
-        } while (pageToken != null && !pageToken.isBlank()
-                && fetchedPages < YoutubeDiscoveryProperties.MAX_ACTIVITY_PAGES_PER_CHANNEL);
-
-        if (pageToken != null && !pageToken.isBlank()) {
-            // ponytail: 201은 200건 초과를 뜻하는 포화값이다. 관리자 최소 필터는
-            // 200까지 허용하므로 고활동 채널을 과소 집계로 제외하지 않는다.
-            return YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT + 1;
+        String uri = UriComponentsBuilder.fromUriString(PLAYLIST_ITEMS_URI)
+                .queryParam("part", "contentDetails")
+                .queryParam("playlistId", uploads)
+                .queryParam("maxResults",
+                        YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT)
+                .queryParam("key", properties.apiKey())
+                .build().toUriString();
+        YoutubePlaylistItemListResponse response = call(
+                uri, YoutubePlaylistItemListResponse.class, LIST_COST);
+        if (response == null || response.items() == null) {
+            return 0;
         }
-        return count;
+        // Meta와 같은 25건 공개 범위로 맞춘다. 관리자 최소 필터도 25가 상한이므로
+        // 고활동 채널은 정확한 총량 대신 "25건 이상"으로 다룬다.
+        return (int) response.items().stream()
+                .map(this::parsePublishedAt)
+                .filter(publishedAt -> publishedAt != null && !publishedAt.isBefore(cutoff))
+                .count();
     }
 
     private LocalDateTime parsePublishedAt(YoutubePlaylistItemListResponse.Item item) {

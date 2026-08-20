@@ -17,10 +17,8 @@ public record YoutubeDiscoveryProperties(
 
     /** search.list 100 + videos/channels 배치 2. */
     public static final int BASE_QUOTA_PER_KEYWORD = 102;
-    public static final int MAX_ACTIVITY_PAGES_PER_CHANNEL = 4;
     private static final int YOUTUBE_LIST_MAX_RESULTS = 50;
-    public static final int MAX_FILTERABLE_RECENT_ACTIVITY_COUNT =
-            MAX_ACTIVITY_PAGES_PER_CHANNEL * YOUTUBE_LIST_MAX_RESULTS;
+    public static final int MAX_FILTERABLE_RECENT_ACTIVITY_COUNT = 25;
 
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
@@ -42,6 +40,6 @@ public record YoutubeDiscoveryProperties(
     /** 최근 활동 조회의 채널별 최대 호출 수까지 포함한 키워드당 예약 쿼터. */
     public int quotaPerKeyword() {
         return BASE_QUOTA_PER_KEYWORD
-                + maxResultsOrDefault() * MAX_ACTIVITY_PAGES_PER_CHANNEL;
+                + maxResultsOrDefault();
     }
 }
