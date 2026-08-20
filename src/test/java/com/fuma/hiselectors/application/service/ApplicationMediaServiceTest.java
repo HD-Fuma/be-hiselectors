@@ -70,7 +70,9 @@ class ApplicationMediaServiceTest {
         LocalDateTime now = LocalDateTime.now();
         List<RawContent> contents = new ArrayList<>();
         for (int i = 0; i < 12; i++) {
-            contents.add(raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusDays(i)));
+            contents.add(i == 0
+                    ? raw(SnsPlatform.YOUTUBE, "video-0", now, 100L, 20L, 3L)
+                    : raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusDays(i)));
         }
         contents.add(raw(SnsPlatform.YOUTUBE, "video-0", now.minusHours(1)));
         contents.add(raw(SnsPlatform.YOUTUBE, "old", now.minusDays(91)));
@@ -97,6 +99,11 @@ class ApplicationMediaServiceTest {
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getSequenceNo)
                 .containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+        assertThat(saved.get().getFirst()).satisfies(media -> {
+            assertThat(media.getViewCount()).isEqualTo(100L);
+            assertThat(media.getLikeCount()).isEqualTo(20L);
+            assertThat(media.getCommentCount()).isEqualTo(3L);
+        });
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
         verify(mediaRepository).flush();
     }
@@ -143,6 +150,11 @@ class ApplicationMediaServiceTest {
     }
 
     private RawContent raw(SnsPlatform platform, String contentId, LocalDateTime createdAt) {
+        return raw(platform, contentId, createdAt, null, null, null);
+    }
+
+    private RawContent raw(SnsPlatform platform, String contentId, LocalDateTime createdAt,
+                           Long viewCount, Long likeCount, Long commentCount) {
         return new RawContent(
                 platform,
                 contentId,
@@ -150,7 +162,10 @@ class ApplicationMediaServiceTest {
                 ContentType.FEED,
                 List.of(),
                 createdAt,
-                List.of());
+                List.of(),
+                viewCount,
+                likeCount,
+                commentCount);
     }
 
     private ApplicationMedia media(String contentId, int sequenceNo) {

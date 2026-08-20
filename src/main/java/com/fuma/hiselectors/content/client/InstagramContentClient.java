@@ -43,7 +43,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     // children: 캐러셀 내부 이미지와 영상 (이미지, 영상 여러 개)
     private static final String MEDIA_FIELDS =
             "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
-                    + "children{id,media_type,media_url}";
+                    + "view_count,like_count,comments_count,children{id,media_type,media_url}";
 
     private static final int PAGE_SIZE = 25;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
@@ -225,7 +225,8 @@ public class InstagramContentClient implements ContentPlatformClient {
                 contentType(media),
                 media.caption() == null ? "" : media.caption(),
                 createdAt,
-                rawMedia(media));
+                rawMedia(media))
+                .withMetrics(media.viewCount(), media.likeCount(), media.commentsCount());
     }
 
     private ContentType contentType(Media media) {

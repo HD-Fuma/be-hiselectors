@@ -109,6 +109,9 @@ public class ApplicationMediaService {
                 .mediaUrl(content.contentUrl())
                 .sequenceNo(sequenceNo)
                 .publishedAt(content.createdAt())
+                .viewCount(content.viewCount())
+                .likeCount(content.likeCount())
+                .commentCount(content.commentCount())
                 .build();
     }
 }
