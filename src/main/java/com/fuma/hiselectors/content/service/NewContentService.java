@@ -3,11 +3,9 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.content.classifier.SelectorsContentClassifier;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
-import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
-import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -15,16 +13,11 @@ import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +37,7 @@ public class NewContentService {
     private final ContentRepository contentRepository;
     private final ContentVersionRepository versionRepository;
     private final ContentMediaRepository mediaRepository;
+    private final ContentSnapshotFactory snapshotFactory;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
@@ -146,18 +140,18 @@ public class NewContentService {
 
             List<ContentVersion> versions = new ArrayList<>();
             for (int index = 0; index < contents.size(); index++) {
-                versions.add(ContentVersion.builder()
-                        .contentId(contents.get(index).getId())
-                        .versionNo(1L)
-                        .contentHash(contentHash(rawContents.get(index)))
-                        .createdAt(collectedAt)
-                        .build());
+                versions.add(snapshotFactory.createVersion(
+                        contents.get(index).getId(),
+                        1L,
+                        rawContents.get(index),
+                        collectedAt));
             }
             versions = versionRepository.saveAll(versions);
 
             List<ContentMedia> media = new ArrayList<>();
             for (int index = 0; index < versions.size(); index++) {
-                addMedia(media, versions.get(index).getId(), rawContents.get(index));
+                media.addAll(snapshotFactory.createMedia(
+                        versions.get(index).getId(), rawContents.get(index)));
             }
             mediaRepository.saveAll(media);
         }
@@ -165,64 +159,6 @@ public class NewContentService {
         account.completeCollection(collectedAt);
         accountRepository.save(account);
         return rawContents.size();
-    }
-
-    private void addMedia(
-            List<ContentMedia> target, Long versionId, RawContent rawContent) {
-        int sequenceNo = 0;
-        for (String text : rawContent.texts()) {
-            target.add(ContentMedia.create(
-                    versionId, MediaType.TEXT, null, null, sequenceNo++,
-                    Map.of("text", text)));
-        }
-        for (RawContentMedia rawMedia : rawContent.media()) {
-            if (rawMedia.mediaType() == RawContentMedia.MediaType.TEXT) {
-                throw new IllegalStateException(
-                        "RawContentMedia.TEXT는 본문을 제공하지 않아 저장할 수 없습니다.");
-            }
-            target.add(ContentMedia.create(
-                    versionId,
-                    MediaType.valueOf(rawMedia.mediaType().name()),
-                    rawMedia.mediaUrl(),
-                    rawMedia.snsMediaId(),
-                    sequenceNo++,
-                    Map.of()));
-        }
-    }
-
-    private String contentHash(RawContent rawContent) {
-        StringBuilder canonical = new StringBuilder();
-        appendHashValue(canonical, "content-hash-v2");
-        appendHashValue(canonical, "texts");
-        appendHashValue(canonical, String.valueOf(rawContent.texts().size()));
-        for (int sequenceNo = 0; sequenceNo < rawContent.texts().size(); sequenceNo++) {
-            appendHashValue(canonical, String.valueOf(sequenceNo));
-            appendHashValue(canonical, rawContent.texts().get(sequenceNo));
-        }
-
-        appendHashValue(canonical, "assets");
-        appendHashValue(canonical, String.valueOf(rawContent.media().size()));
-        int sequenceNo = rawContent.texts().size();
-        for (RawContentMedia media : rawContent.media()) {
-            if (media.snsMediaId() == null) {
-                throw new IllegalStateException("미디어 SNS ID는 비어 있을 수 없습니다.");
-            }
-            appendHashValue(canonical, String.valueOf(sequenceNo++));
-            appendHashValue(canonical, media.mediaType().name());
-            appendHashValue(canonical, media.snsMediaId());
-        }
-
-        try {
-            byte[] value = canonical.toString().getBytes(StandardCharsets.UTF_8);
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(value));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256을 사용할 수 없습니다.", exception);
-        }
-    }
-
-    private void appendHashValue(StringBuilder target, String value) {
-        target.append(value.length()).append(':').append(value);
     }
 
     record CollectionTarget(SelectorsSnsAccount account, LocalDateTime since) {

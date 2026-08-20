@@ -78,6 +78,7 @@ class NewContentServiceTest {
                 contentRepository,
                 versionRepository,
                 mediaRepository,
+                new ContentSnapshotFactory(),
                 transactionTemplate,
                 Clock.fixed(
                         Instant.parse("2026-08-20T03:00:00Z"),
