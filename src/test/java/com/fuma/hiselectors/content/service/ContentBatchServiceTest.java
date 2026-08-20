@@ -28,7 +28,8 @@ class ContentBatchServiceTest {
     void runsNewCollectionBeforeStoredContentCheck() {
         when(newContentService.collect()).thenReturn(
                 new NewContentService.NewContentResult(2, 0));
-        when(storedContentService.check()).thenReturn(3);
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(3, 0));
 
         ContentBatchService.ContentBatchResult result = service.run();
 
@@ -42,7 +43,8 @@ class ContentBatchServiceTest {
     @Test
     void continuesStoredContentCheckWhenNewCollectionFails() {
         when(newContentService.collect()).thenThrow(new IllegalStateException("failed"));
-        when(storedContentService.check()).thenReturn(3);
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(3, 0));
 
         ContentBatchService.ContentBatchResult result = service.run();
 
@@ -55,11 +57,25 @@ class ContentBatchServiceTest {
     void preservesSavedCountButMarksNewCollectionFailedForAccountFailures() {
         when(newContentService.collect()).thenReturn(
                 new NewContentService.NewContentResult(1, 1));
-        when(storedContentService.check()).thenReturn(3);
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(3, 0));
 
         ContentBatchService.ContentBatchResult result = service.run();
 
         assertThat(result).isEqualTo(
                 new ContentBatchService.ContentBatchResult(1, 3, false, true));
+    }
+
+    @Test
+    void preservesEngagementCountButMarksStoredContentFailedForContentFailures() {
+        when(newContentService.collect()).thenReturn(
+                new NewContentService.NewContentResult(2, 0));
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(3, 1));
+
+        ContentBatchService.ContentBatchResult result = service.run();
+
+        assertThat(result).isEqualTo(
+                new ContentBatchService.ContentBatchResult(2, 3, true, false));
     }
 }

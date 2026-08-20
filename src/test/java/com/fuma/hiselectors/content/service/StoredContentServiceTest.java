@@ -1,8 +1,11 @@
 package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -117,12 +120,12 @@ class StoredContentServiceTest {
                 List.of("youtube-found", "youtube-missing")))
                 .thenReturn(List.of(youtubeFoundResult, youtubeMissingResult));
 
-        List<StoredContentService.StoredContentResult> result = service.fetchStoredContents();
+        List<StoredContentService.StoredContentFetch> result = service.fetchStoredContents();
 
         assertThat(result).containsExactly(
-                new StoredContentService.StoredContentResult(instagram, instagramResult),
-                new StoredContentService.StoredContentResult(youtubeFound, youtubeFoundResult),
-                new StoredContentService.StoredContentResult(youtubeMissing, youtubeMissingResult));
+                new StoredContentService.StoredContentFetch(instagram, instagramResult),
+                new StoredContentService.StoredContentFetch(youtubeFound, youtubeFoundResult),
+                new StoredContentService.StoredContentFetch(youtubeMissing, youtubeMissingResult));
     }
 
     @Test
@@ -168,9 +171,9 @@ class StoredContentServiceTest {
             return values;
         });
 
-        int savedCount = service.check();
+        StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(savedCount).isEqualTo(1);
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(1, 0));
         assertThat(saved.get()).singleElement().satisfies(snapshot -> {
             assertThat(snapshot.getContentId()).isEqualTo(10L);
             assertThat(snapshot.getViewCount()).isEqualTo(100L);
@@ -206,10 +209,12 @@ class StoredContentServiceTest {
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(instagramFetcher.fetchByContentIds(List.of("changed", "unchanged")))
                 .thenReturn(List.of(changedResult, unchangedResult));
-        when(versionRepository.findCurrentByContentIdIn(List.of(10L, 20L)))
-                .thenReturn(List.of(
-                        version(10L, snapshotFactory.contentHash(changedBefore)),
-                        version(20L, snapshotFactory.contentHash(unchangedNow))));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(version(
+                        10L, snapshotFactory.contentHash(changedBefore))));
+        when(versionRepository.findCurrentByContentIdIn(List.of(20L)))
+                .thenReturn(List.of(version(
+                        20L, snapshotFactory.contentHash(unchangedNow))));
         executeTransaction();
         when(contentRepository.saveAll(any())).thenAnswer(invocation ->
                 toList(invocation.getArgument(0)));
@@ -275,12 +280,128 @@ class StoredContentServiceTest {
         when(contentRepository.saveAll(any())).thenAnswer(invocation ->
                 toList(invocation.getArgument(0)));
 
-        service.check();
+        StoredContentService.StoredContentResult result = service.check();
 
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 0));
         assertThat(notFound.isDeleted()).isTrue();
         assertThat(found.isDeleted()).isFalse();
         assertThat(failed.isDeleted()).isTrue();
-        verify(contentRepository).saveAll(List.of(notFound, found));
+        verify(contentRepository).saveAll(List.of(notFound));
+        verify(contentRepository).saveAll(List.of(found));
+    }
+
+    @Test
+    void skipsDuplicateEngagementButStillSavesChangedVersionAndRestoresContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "duplicate");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        content.markDeleted();
+        RawContent before = raw("duplicate", "수정 전");
+        RawContent now = raw("duplicate", "수정 후");
+
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("duplicate")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "duplicate",
+                        ContentFetcher.FetchStatus.FOUND,
+                        now,
+                        new ContentFetcher.Engagement(100L, 20L, 3L, 4L))));
+        when(engagementRepository.existsByContentIdAndCreatedAt(
+                10L, LocalDateTime.of(2026, 8, 20, 12, 0)))
+                .thenReturn(true);
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(version(10L, snapshotFactory.contentHash(before))));
+        executeTransaction();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation ->
+                toList(invocation.getArgument(0)));
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            return values;
+        });
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 0));
+        assertThat(content.getLastVersionNo()).isEqualTo(2L);
+        assertThat(content.isDeleted()).isFalse();
+        verify(engagementRepository, never()).saveAll(any());
+        verify(versionRepository).saveAll(any());
+        verify(mediaRepository).saveAll(any());
+        verify(contentRepository).saveAll(List.of(content));
+    }
+
+    @Test
+    void continuesAfterFirstContentPersistenceFails() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.INSTAGRAM, "first");
+        Content second = content(SnsPlatform.INSTAGRAM, "second");
+        ReflectionTestUtils.setField(first, "id", 10L);
+        ReflectionTestUtils.setField(second, "id", 20L);
+        RawContent firstRaw = raw("first", "본문 1");
+        RawContent secondRaw = raw("second", "본문 2");
+
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("first", "second")))
+                .thenReturn(List.of(
+                        new ContentFetcher.FetchResult(
+                                "first", ContentFetcher.FetchStatus.FOUND, firstRaw,
+                                new ContentFetcher.Engagement(100L, 20L, 3L, 4L)),
+                        new ContentFetcher.FetchResult(
+                                "second", ContentFetcher.FetchStatus.FOUND, secondRaw,
+                                new ContentFetcher.Engagement(200L, 30L, 4L, 5L))));
+        when(engagementRepository.existsByContentIdAndCreatedAt(any(), any()))
+                .thenReturn(false);
+        when(engagementRepository.saveAll(any()))
+                .thenThrow(new IllegalStateException("first failed"))
+                .thenAnswer(invocation -> toList(invocation.getArgument(0)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(20L)))
+                .thenReturn(List.of(version(20L, snapshotFactory.contentHash(secondRaw))));
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(1, 1));
+        verify(versionRepository).findCurrentByContentIdIn(List.of(20L));
+    }
+
+    @Test
+    void propagatesFetcherExceptionBeforeStartingTransactions() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "fetch-fails");
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("fetch-fails")))
+                .thenThrow(new IllegalStateException("fetch failed"));
+
+        assertThatThrownBy(service::check)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("fetch failed");
+        verifyNoInteractions(transactionTemplate);
+    }
+
+    @Test
+    void propagatesMissingFetchResultBeforeStartingTransactions() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "missing");
+        when(generationService.getActive()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByContentIds(List.of("missing"))).thenReturn(List.of());
+
+        assertThatThrownBy(service::check)
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("missing");
+        verifyNoInteractions(transactionTemplate);
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {

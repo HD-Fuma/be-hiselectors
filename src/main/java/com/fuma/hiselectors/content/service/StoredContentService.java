@@ -15,18 +15,19 @@ import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class StoredContentService {
 
     private final GenerationService generationService;
@@ -40,31 +41,45 @@ public class StoredContentService {
     private final Clock clock;
 
     /** 현재 기수 콘텐츠의 성과와 수정 내용을 저장합니다. */
-    public int check() {
+    public StoredContentResult check() {
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
-        List<StoredContentResult> results = fetchStoredContents();
-        Integer savedCount = transactionTemplate.execute(status -> save(results, collectedAt));
-        return savedCount == null ? 0 : savedCount;
+        List<StoredContentFetch> results = fetchStoredContents();
+        int savedEngagementCount = 0;
+        int failedContentCount = 0;
+
+        for (StoredContentFetch result : results) {
+            try {
+                Integer savedCount = transactionTemplate.execute(
+                        status -> save(result, collectedAt));
+                savedEngagementCount += savedCount == null ? 0 : savedCount;
+            } catch (RuntimeException exception) {
+                failedContentCount++;
+                log.error(
+                        "기존 콘텐츠 저장에 실패했습니다. contentId={}",
+                        result.content().getId(),
+                        exception);
+            }
+        }
+
+        return new StoredContentResult(savedEngagementCount, failedContentCount);
     }
 
-    private int save(List<StoredContentResult> results, LocalDateTime collectedAt) {
-        List<ContentEngagement> engagements = results.stream()
-                .filter(result -> result.fetched().status()
-                        == ContentFetcher.FetchStatus.FOUND)
-                .filter(result -> result.fetched().engagement() != null)
-                .map(result -> engagement(result, collectedAt))
-                .toList();
-
-        if (!engagements.isEmpty()) {
-            engagementRepository.saveAll(engagements);
+    private int save(StoredContentFetch result, LocalDateTime collectedAt) {
+        if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
+            return 0;
         }
-        saveChangedVersions(results, collectedAt);
-        updateDeletionStatus(results);
-        return engagements.size();
+
+        int savedEngagementCount = saveEngagement(result, collectedAt);
+        boolean versionChanged = saveChangedVersion(result, collectedAt);
+        boolean deletionStatusChanged = updateDeletionStatus(result);
+        if (versionChanged || deletionStatusChanged) {
+            contentRepository.saveAll(List.of(result.content()));
+        }
+        return savedEngagementCount;
     }
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
-    List<StoredContentResult> fetchStoredContents() {
+    List<StoredContentFetch> fetchStoredContents() {
         Generation generation = generationService.getActive();
 
         // 현재 기수에 저장된 콘텐츠 조회
@@ -98,7 +113,7 @@ public class StoredContentService {
 
         // DB 콘텐츠와 SNS 조회 결과 연결
         return contents.stream()
-                .map(content -> new StoredContentResult(content, fetchedByContent.get(content)))
+                .map(content -> new StoredContentFetch(content, fetchedByContent.get(content)))
                 .toList();
     }
 
@@ -111,7 +126,7 @@ public class StoredContentService {
     }
 
     private ContentEngagement engagement(
-            StoredContentResult result, LocalDateTime collectedAt) {
+            StoredContentFetch result, LocalDateTime collectedAt) {
         ContentFetcher.Engagement engagement = result.fetched().engagement();
         return ContentEngagement.builder()
                 .contentId(result.content().getId())
@@ -123,83 +138,69 @@ public class StoredContentService {
                 .build();
     }
 
-    private void saveChangedVersions(
-            List<StoredContentResult> results, LocalDateTime collectedAt) {
-        List<StoredContentResult> found = results.stream()
-                .filter(result -> result.fetched().status()
-                        == ContentFetcher.FetchStatus.FOUND)
-                .toList();
-        if (found.isEmpty()) {
-            return;
+    private int saveEngagement(StoredContentFetch result, LocalDateTime collectedAt) {
+        if (result.fetched().status() != ContentFetcher.FetchStatus.FOUND
+                || result.fetched().engagement() == null
+                || engagementRepository.existsByContentIdAndCreatedAt(
+                        result.content().getId(), collectedAt)) {
+            return 0;
+        }
+        engagementRepository.saveAll(List.of(engagement(result, collectedAt)));
+        return 1;
+    }
+
+    private boolean saveChangedVersion(
+            StoredContentFetch result, LocalDateTime collectedAt) {
+        if (result.fetched().status() != ContentFetcher.FetchStatus.FOUND) {
+            return false;
         }
 
-        List<Long> contentIds = found.stream()
-                .map(result -> result.content().getId())
-                .toList();
-        Map<Long, ContentVersion> currentVersions = versionRepository
-                .findCurrentByContentIdIn(contentIds)
+        Long contentId = result.content().getId();
+        ContentVersion current = versionRepository
+                .findCurrentByContentIdIn(List.of(contentId))
                 .stream()
-                .collect(Collectors.toMap(ContentVersion::getContentId, version -> version));
-
-        List<StoredContentResult> changed = found.stream()
-                .filter(result -> {
-                    ContentVersion current = Objects.requireNonNull(
-                            currentVersions.get(result.content().getId()),
-                            "현재 콘텐츠 버전이 없습니다. contentId="
-                                    + result.content().getId());
-                    return !current.getContentHash().equals(
-                            snapshotFactory.contentHash(Objects.requireNonNull(
-                                    result.fetched().content(),
-                                    "조회된 콘텐츠 정보가 없습니다. contentId="
-                                            + result.content().getId())));
-                })
-                .toList();
-        if (changed.isEmpty()) {
-            return;
+                .findFirst()
+                .orElseThrow(() -> new NullPointerException(
+                        "현재 콘텐츠 버전이 없습니다. contentId=" + contentId));
+        var fetchedContent = Objects.requireNonNull(
+                result.fetched().content(),
+                "조회된 콘텐츠 정보가 없습니다. contentId=" + contentId);
+        if (current.getContentHash().equals(snapshotFactory.contentHash(fetchedContent))) {
+            return false;
         }
 
-        List<Content> changedContents = changed.stream()
-                .map(StoredContentResult::content)
-                .toList();
-        List<ContentVersion> newVersions = changed.stream()
-                .map(result -> snapshotFactory.createVersion(
-                        result.content().getId(),
-                        result.content().advanceVersion(),
-                        result.fetched().content(),
-                        collectedAt))
-                .toList();
-
-        contentRepository.saveAll(changedContents);
-        newVersions = versionRepository.saveAll(newVersions);
-
-        List<ContentMedia> media = new ArrayList<>();
-        for (int index = 0; index < newVersions.size(); index++) {
-            media.addAll(snapshotFactory.createMedia(
-                    newVersions.get(index).getId(),
-                    changed.get(index).fetched().content()));
+        ContentVersion newVersion = snapshotFactory.createVersion(
+                contentId,
+                result.content().advanceVersion(),
+                fetchedContent,
+                collectedAt);
+        newVersion = versionRepository.saveAll(List.of(newVersion)).getFirst();
+        List<ContentMedia> media = snapshotFactory.createMedia(
+                newVersion.getId(), fetchedContent);
+        if (!media.isEmpty()) {
+            mediaRepository.saveAll(media);
         }
-        mediaRepository.saveAll(media);
+        return true;
     }
 
-    private void updateDeletionStatus(List<StoredContentResult> results) {
-        List<Content> changed = new ArrayList<>();
-        for (StoredContentResult result : results) {
-            Content content = result.content();
-            if (result.fetched().status() == ContentFetcher.FetchStatus.NOT_FOUND
-                    && !content.isDeleted()) {
-                content.markDeleted();
-                changed.add(content);
-            } else if (result.fetched().status() == ContentFetcher.FetchStatus.FOUND
-                    && content.isDeleted()) {
-                content.restore();
-                changed.add(content);
-            }
+    private boolean updateDeletionStatus(StoredContentFetch result) {
+        Content content = result.content();
+        if (result.fetched().status() == ContentFetcher.FetchStatus.NOT_FOUND
+                && !content.isDeleted()) {
+            content.markDeleted();
+            return true;
         }
-        if (!changed.isEmpty()) {
-            contentRepository.saveAll(changed);
+        if (result.fetched().status() == ContentFetcher.FetchStatus.FOUND
+                && content.isDeleted()) {
+            content.restore();
+            return true;
         }
+        return false;
     }
 
-    record StoredContentResult(Content content, FetchResult fetched) {
+    record StoredContentFetch(Content content, FetchResult fetched) {
+    }
+
+    public record StoredContentResult(int savedEngagementCount, int failedContentCount) {
     }
 }

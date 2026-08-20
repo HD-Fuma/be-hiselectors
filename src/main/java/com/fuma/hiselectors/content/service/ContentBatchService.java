@@ -29,7 +29,9 @@ public class ContentBatchService {
         }
 
         try {
-            engagementCount = storedContentService.check();
+            StoredContentService.StoredContentResult result = storedContentService.check();
+            engagementCount = result.savedEngagementCount();
+            storedContentSucceeded = result.failedContentCount() == 0;
         } catch (RuntimeException exception) {
             storedContentSucceeded = false;
             log.error("기존 콘텐츠 검수 배치에 실패했습니다.", exception);
