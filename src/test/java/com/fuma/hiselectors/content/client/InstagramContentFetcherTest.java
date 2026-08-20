@@ -495,6 +495,68 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    @DisplayName("Instagram Graph 오류 코드 100과 하위 코드 33이면 없는 게시물로 처리한다")
+    void treatObjectNotFoundGraphErrorAsNotFound() {
+        expectContentError("media-missing", """
+                {"error":{"message":"Unsupported get request","code":100,"error_subcode":33}}
+                """);
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-missing"));
+
+        assertThat(result).singleElement()
+                .extracting(ContentFetcher.FetchResult::status)
+                .isEqualTo(FetchStatus.NOT_FOUND);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Instagram Graph 오류 코드가 100이 아니면 하위 코드 33이어도 조회 실패로 처리한다")
+    void failWhenGraphErrorCodeDoesNotMatch() {
+        expectContentError("media-failed", """
+                {"error":{"message":"Other error","code":190,"error_subcode":33}}
+                """);
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-failed"));
+
+        assertThat(result).singleElement()
+                .extracting(ContentFetcher.FetchResult::status)
+                .isEqualTo(FetchStatus.FAILED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Instagram Graph 하위 오류 코드가 33이 아니면 오류 코드 100이어도 조회 실패로 처리한다")
+    void failWhenGraphErrorSubcodeDoesNotMatch() {
+        expectContentError("media-failed", """
+                {"error":{"message":"Other error","code":100,"error_subcode":34}}
+                """);
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-failed"));
+
+        assertThat(result).singleElement()
+                .extracting(ContentFetcher.FetchResult::status)
+                .isEqualTo(FetchStatus.FAILED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Instagram Graph 400 응답 본문이 JSON이 아니면 조회 실패로 처리한다")
+    void failWhenBadRequestBodyIsNotJson() {
+        expectContentError("media-failed", "not-json");
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-failed"));
+
+        assertThat(result).singleElement()
+                .extracting(ContentFetcher.FetchResult::status)
+                .isEqualTo(FetchStatus.FAILED);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("Instagram 게시물 하나의 조회 실패가 다른 게시물 조회를 막지 않는다")
     void continueAfterContentFailure() {
         server.expect(request -> assertThat(request.getURI().getPath())
@@ -519,6 +581,14 @@ class InstagramContentFetcherTest {
                         .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID))
                 .andRespond(withSuccess(firstPageJson(media, nextUrl),
                         MediaType.APPLICATION_JSON));
+    }
+
+    private void expectContentError(String snsContentId, String body) {
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/v24.0/" + snsContentId))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body));
     }
 
     private List<RawContent> fetchByAccount(

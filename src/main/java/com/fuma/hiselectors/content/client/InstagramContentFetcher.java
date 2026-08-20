@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse;
+import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.GraphErrorResponse;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.Media;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.MediaPage;
 import com.fuma.hiselectors.content.client.dto.RawContent;
@@ -148,6 +149,9 @@ public class InstagramContentFetcher implements ContentFetcher {
             if (e.getStatusCode().value() == 404) {
                 return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
             }
+            if (e.getStatusCode().value() == 400 && isObjectNotFoundError(e)) {
+                return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
+            }
             log.warn("Instagram 게시물 조회 실패. ID={} HTTP상태={}",
                     snsContentId, e.getStatusCode().value());
             return failed(snsContentId);
@@ -155,6 +159,18 @@ public class InstagramContentFetcher implements ContentFetcher {
             log.warn("Instagram 게시물 조회 실패. ID={} 원인={}",
                     snsContentId, e.getClass().getSimpleName());
             return failed(snsContentId);
+        }
+    }
+
+    private boolean isObjectNotFoundError(RestClientResponseException exception) {
+        try {
+            GraphErrorResponse response = exception.getResponseBodyAs(GraphErrorResponse.class);
+            return response != null
+                    && response.error() != null
+                    && Integer.valueOf(100).equals(response.error().code())
+                    && Integer.valueOf(33).equals(response.error().errorSubcode());
+        } catch (RuntimeException deserializationFailure) {
+            return false;
         }
     }
 
