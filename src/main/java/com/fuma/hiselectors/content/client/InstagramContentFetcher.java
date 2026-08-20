@@ -44,6 +44,8 @@ public class InstagramContentFetcher implements ContentFetcher {
     private static final String MEDIA_FIELDS =
             "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
                     + "children{id,media_type,media_url}";
+    private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS
+            + ",like_count,comments_count";
 
     private static final int PAGE_SIZE = 25;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
@@ -116,6 +118,61 @@ public class InstagramContentFetcher implements ContentFetcher {
         }
 
         return new CollectionResult(fetchedCount, contents);
+    }
+
+    @Override
+    public List<FetchResult> fetchByContentIds(List<String> snsContentIds) {
+        validateIds(snsContentIds);
+        return snsContentIds.stream().map(this::fetchById).toList();
+    }
+
+    private FetchResult fetchById(String snsContentId) {
+        URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), snsContentId)
+                .queryParam("fields", MEDIA_DETAIL_FIELDS)
+                .build()
+                .encode()
+                .toUri();
+        try {
+            Media media = restClient.get()
+                    .uri(uri)
+                    .headers(headers -> headers.setBearerAuth(properties.accessToken()))
+                    .retrieve()
+                    .body(Media.class);
+            if (media == null || media.timestamp() == null) {
+                return failed(snsContentId);
+            }
+            return new FetchResult(
+                    snsContentId,
+                    FetchStatus.FOUND,
+                    toRawContent(media, parseTimestamp(media.timestamp())),
+                    new Engagement(null, media.likeCount(), media.commentsCount(), null));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
+            }
+            log.warn("Instagram 게시물 조회 실패. ID={} HTTP상태={}",
+                    snsContentId, e.getStatusCode().value());
+            return failed(snsContentId);
+        } catch (RestClientException | IllegalArgumentException | BusinessException e) {
+            log.warn("Instagram 게시물 조회 실패. ID={} 원인={}",
+                    snsContentId, e.getClass().getSimpleName());
+            return failed(snsContentId);
+        }
+    }
+
+    private FetchResult failed(String snsContentId) {
+        return new FetchResult(snsContentId, FetchStatus.FAILED, null, null);
+    }
+
+    private void validateIds(List<String> snsContentIds) {
+        if (!properties.isConfigured()) {
+            throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
+        }
+        if (snsContentIds == null
+                || snsContentIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private void validateRequest(String username, LocalDateTime since) {

@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.ContentFetcher.FetchStatus;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.config.YoutubeCollectionProperties;
@@ -249,6 +250,81 @@ class YoutubeContentFetcherTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.YOUTUBE_API_CALL_FAILED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("YouTube 영상 ID를 묶어서 최신 내용과 성과를 조회한다")
+    void fetchContentsByIds() {
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/videos");
+                    assertThat(decodedQuery(request.getURI().getRawQuery()))
+                            .contains("part=snippet,statistics")
+                            .doesNotContain("status")
+                            .contains("id=video-found,video-missing")
+                            .contains("key=" + API_KEY);
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "items": [{
+                            "id": "video-found",
+                            "snippet": {
+                              "title": "updated title",
+                              "description": "updated description",
+                              "publishedAt": "2026-08-13T05:00:00Z"
+                            },
+                            "statistics": {
+                              "viewCount": "100",
+                              "likeCount": "20",
+                              "commentCount": "3"
+                            }
+                          }]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("video-found", "video-missing"));
+
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).satisfies(found -> {
+            assertThat(found.snsContentId()).isEqualTo("video-found");
+            assertThat(found.status()).isEqualTo(FetchStatus.FOUND);
+            assertThat(found.content().caption())
+                    .isEqualTo("updated title\nupdated description");
+            assertThat(found.engagement().viewCount()).isEqualTo(100L);
+            assertThat(found.engagement().likeCount()).isEqualTo(20L);
+            assertThat(found.engagement().commentCount()).isEqualTo(3L);
+            assertThat(found.engagement().shareCount()).isNull();
+        });
+        assertThat(result.get(1)).satisfies(missing -> {
+            assertThat(missing.snsContentId()).isEqualTo("video-missing");
+            assertThat(missing.status()).isEqualTo(FetchStatus.NOT_FOUND);
+            assertThat(missing.content()).isNull();
+            assertThat(missing.engagement()).isNull();
+        });
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("YouTube 영상 ID는 API 제한에 맞춰 50개씩 조회한다")
+    void fetchContentsByIdsInBatchesOfFifty() {
+        List<String> ids = java.util.stream.IntStream.rangeClosed(1, 51)
+                .mapToObj(number -> "video-" + number)
+                .toList();
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=" + String.join(",", ids.subList(0, 50))))
+                .andRespond(withSuccess("{\"items\":[]}", MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=video-51"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        List<ContentFetcher.FetchResult> result = client.fetchByContentIds(ids);
+
+        assertThat(result).hasSize(51);
+        assertThat(result.subList(0, 50))
+                .extracting(ContentFetcher.FetchResult::status)
+                .containsOnly(FetchStatus.NOT_FOUND);
+        assertThat(result.getLast().status()).isEqualTo(FetchStatus.FAILED);
         server.verify();
     }
 

@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.ContentFetcher.FetchStatus;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
@@ -446,6 +447,78 @@ class InstagramContentFetcherTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.INSTAGRAM_API_CALL_FAILED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Instagram 게시물 ID별로 최신 내용과 성과를 조회한다")
+    void fetchContentsByIds() {
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath()).isEqualTo("/v24.0/media-found");
+                    assertThat(URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8))
+                            .contains("fields=id,caption,media_type,media_product_type,permalink,"
+                                    + "timestamp,media_url,children{id,media_type,media_url},"
+                                    + "like_count,comments_count");
+                    assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
+                            .isEqualTo("Bearer " + ACCESS_TOKEN);
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "id": "media-found",
+                          "caption": "updated caption",
+                          "media_type": "IMAGE",
+                          "media_product_type": "FEED",
+                          "media_url": "https://cdn.example.com/media-found.jpg",
+                          "permalink": "https://www.instagram.com/p/media-found",
+                          "timestamp": "2026-08-13T05:00:00+0000",
+                          "like_count": 20,
+                          "comments_count": 3
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/v24.0/media-missing"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-found", "media-missing"));
+
+        assertThat(result).hasSize(2);
+        assertThat(result.getFirst()).satisfies(found -> {
+            assertThat(found.snsContentId()).isEqualTo("media-found");
+            assertThat(found.status()).isEqualTo(FetchStatus.FOUND);
+            assertThat(found.content().caption()).isEqualTo("updated caption");
+            assertThat(found.engagement().viewCount()).isNull();
+            assertThat(found.engagement().likeCount()).isEqualTo(20L);
+            assertThat(found.engagement().commentCount()).isEqualTo(3L);
+            assertThat(found.engagement().shareCount()).isNull();
+        });
+        assertThat(result.get(1)).satisfies(missing -> {
+            assertThat(missing.snsContentId()).isEqualTo("media-missing");
+            assertThat(missing.status()).isEqualTo(FetchStatus.NOT_FOUND);
+            assertThat(missing.content()).isNull();
+            assertThat(missing.engagement()).isNull();
+        });
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Instagram 게시물 하나의 조회 실패가 다른 게시물 조회를 막지 않는다")
+    void continueAfterContentFailure() {
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/v24.0/media-failed"))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/v24.0/media-found"))
+                .andRespond(withSuccess(mediaJson(
+                        "media-found", "2026-08-13T05:00:00+0000"),
+                        MediaType.APPLICATION_JSON));
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("media-failed", "media-found"));
+
+        assertThat(result).extracting(ContentFetcher.FetchResult::status)
+                .containsExactly(FetchStatus.FAILED, FetchStatus.FOUND);
         server.verify();
     }
 

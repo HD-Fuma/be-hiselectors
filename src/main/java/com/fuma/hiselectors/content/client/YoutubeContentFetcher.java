@@ -17,8 +17,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -41,6 +43,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
             "https://www.googleapis.com/youtube/v3/channels";
     private static final String PLAYLIST_ITEMS_URI =
             "https://www.googleapis.com/youtube/v3/playlistItems";
+    private static final String VIDEOS_URI =
+            "https://www.googleapis.com/youtube/v3/videos";
 
     private static final String VIDEO_URL = "https://www.youtube.com/watch?v=";
 
@@ -107,6 +111,87 @@ public class YoutubeContentFetcher implements ContentFetcher {
             }
         }
         return new CollectionResult(fetchedCount, contents);
+    }
+
+    @Override
+    public List<FetchResult> fetchByContentIds(List<String> snsContentIds) {
+        validateIds(snsContentIds);
+        List<FetchResult> results = new ArrayList<>(snsContentIds.size());
+        for (int start = 0; start < snsContentIds.size(); start += PAGE_SIZE) {
+            results.addAll(fetchBatch(snsContentIds.subList(
+                    start, Math.min(start + PAGE_SIZE, snsContentIds.size()))));
+        }
+        return results;
+    }
+
+    private List<FetchResult> fetchBatch(List<String> ids) {
+        URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
+                .queryParam("part", "snippet,statistics")
+                .queryParam("id", String.join(",", ids))
+                .queryParam("key", properties.apiKey())
+                .build()
+                .encode()
+                .toUri();
+        YoutubeContentResponse response;
+        try {
+            response = request(uri, YoutubeContentResponse.class);
+        } catch (BusinessException e) {
+            return ids.stream()
+                    .map(id -> new FetchResult(id, FetchStatus.FAILED, null, null))
+                    .toList();
+        }
+
+        Map<String, Item> itemsById = new HashMap<>();
+        if (response.items() != null) {
+            response.items().stream()
+                    .filter(item -> item != null && StringUtils.hasText(item.id()))
+                    .forEach(item -> itemsById.put(item.id(), item));
+        }
+        return ids.stream().map(id -> toFetchResult(id, itemsById.get(id))).toList();
+    }
+
+    private FetchResult toFetchResult(String id, Item item) {
+        if (item == null) {
+            return new FetchResult(id, FetchStatus.NOT_FOUND, null, null);
+        }
+        try {
+            YoutubeContentResponse.Snippet snippet = item.snippet();
+            if (snippet == null || !StringUtils.hasText(snippet.publishedAt())) {
+                return new FetchResult(id, FetchStatus.FAILED, null, null);
+            }
+            RawContent content = new RawContent(
+                    SnsPlatform.YOUTUBE,
+                    id,
+                    VIDEO_URL + id,
+                    ContentType.LONG_FORM,
+                    texts(item),
+                    parseCreatedAt(snippet.publishedAt()),
+                    List.of(new RawContentMedia(id, MediaType.VIDEO, null)));
+            YoutubeContentResponse.Statistics statistics = item.statistics();
+            Engagement engagement = new Engagement(
+                    count(statistics == null ? null : statistics.viewCount()),
+                    count(statistics == null ? null : statistics.likeCount()),
+                    count(statistics == null ? null : statistics.commentCount()),
+                    null);
+            return new FetchResult(id, FetchStatus.FOUND, content, engagement);
+        } catch (BusinessException | NumberFormatException e) {
+            log.warn("YouTube 영상 응답 변환 실패. ID={}", id);
+            return new FetchResult(id, FetchStatus.FAILED, null, null);
+        }
+    }
+
+    private Long count(String value) {
+        return StringUtils.hasText(value) ? Long.valueOf(value) : null;
+    }
+
+    private void validateIds(List<String> snsContentIds) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
+        }
+        if (snsContentIds == null
+                || snsContentIds.stream().anyMatch(id -> !StringUtils.hasText(id))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
     }
 
     private void validateRequest(String channelId, LocalDateTime since) {

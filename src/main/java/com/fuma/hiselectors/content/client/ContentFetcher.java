@@ -20,10 +20,33 @@ public interface ContentFetcher {
      */
     CollectionResult fetchByAccount(String accountId, LocalDateTime since);
 
+    /** SNS 콘텐츠 ID별 최신 내용과 성과 조회 */
+    List<FetchResult> fetchByContentIds(List<String> snsContentIds);
+
     record CollectionResult(int fetchedCount, List<RawContent> contents) {
 
         public CollectionResult {
             contents = List.copyOf(contents);
         }
+    }
+
+    record FetchResult(
+            String snsContentId,
+            FetchStatus status,
+            RawContent content,
+            Engagement engagement) {
+    }
+
+    enum FetchStatus {
+        FOUND,
+        NOT_FOUND,
+        FAILED
+    }
+
+    record Engagement(
+            Long viewCount,
+            Long likeCount,
+            Long commentCount,
+            Long shareCount) {
     }
 }
