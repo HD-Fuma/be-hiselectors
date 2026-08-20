@@ -24,4 +24,12 @@ public class GenerationService {
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
     }
+
+    public Generation getCurrentActivity() {
+        LocalDateTime now = LocalDateTime.now();
+        return generationRepository
+                .findFirstByActivityStartDateLessThanEqualAndActivityEndDateGreaterThanEqualOrderByActivityStartDateAsc(
+                        now, now)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
+    }
 }

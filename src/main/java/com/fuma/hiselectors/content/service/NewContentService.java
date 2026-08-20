@@ -64,10 +64,10 @@ public class NewContentService {
 
     /** 현재 기수의 계정별 수집 시작 시각 결정 */
     List<CollectionTarget> collectionTargets() {
-        Generation generation = generationService.getActive();
+        Generation generation = generationService.getCurrentActivity();
         return accountRepository.findAllByGenerationId(generation.getId()).stream()
                 .map(account -> new CollectionTarget(
-                        account, since(account, generation.getStartDate())))
+                        account, since(account, generation.getActivityStartDate())))
                 .toList();
     }
 

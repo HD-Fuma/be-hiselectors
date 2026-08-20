@@ -46,6 +46,7 @@ class SelectorAccessServiceTest {
         ReflectionTestUtils.setField(selectors, "id", 9L);
         when(userRepository.findByHiId("hi-user")).thenReturn(Optional.of(user));
         when(selectorsRepository.findByUserId(7L)).thenReturn(Optional.of(selectors));
+        ReflectionTestUtils.setField(service, "lifecycleEnabled", true);
     }
 
     @Test
@@ -95,6 +96,17 @@ class SelectorAccessServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
+    }
+
+    @Test
+    void disabledLifecycleKeepsActiveSelectorCurrentUntilPeriodsAreCorrected() {
+        ReflectionTestUtils.setField(service, "lifecycleEnabled", false);
+        when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of(generation(
+                NOW.minusYears(2), NOW.minusYears(1), null)));
+
+        assertThat(service.getAccess("hi-user").accessLevel())
+                .isEqualTo(SelectorAccessLevel.CURRENT);
+        assertThat(service.requireCurrent("hi-user")).isSameAs(selectors);
     }
 
     private SelectorsGenerationResponse generation(

@@ -23,6 +23,10 @@ public interface GenerationRepository extends JpaRepository<Generation, Long> {
     findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
             LocalDateTime startBound, LocalDateTime endBound, GenerationStatus status);
 
+    Optional<Generation>
+    findFirstByActivityStartDateLessThanEqualAndActivityEndDateGreaterThanEqualOrderByActivityStartDateAsc(
+            LocalDateTime startBound, LocalDateTime endBound);
+
     @Query("""
             select count(g) > 0
             from Generation g

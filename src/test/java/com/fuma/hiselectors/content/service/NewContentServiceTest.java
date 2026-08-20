@@ -91,14 +91,14 @@ class NewContentServiceTest {
         LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         when(generation.getId()).thenReturn(3L);
-        when(generation.getStartDate()).thenReturn(generationStart);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
 
         SelectorsSnsAccount neverCollected = account(null);
         SelectorsSnsAccount collectedBeforeGeneration =
                 account(generationStart.minusDays(1));
         SelectorsSnsAccount collectedDuringGeneration =
                 account(generationStart.plusHours(2));
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(
                 neverCollected, collectedBeforeGeneration, collectedDuringGeneration));
 
@@ -172,9 +172,9 @@ class NewContentServiceTest {
         AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
         AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
-        when(generation.getStartDate()).thenReturn(generationStart);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
         when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", generationStart))
@@ -243,9 +243,9 @@ class NewContentServiceTest {
         SelectorsSnsAccount account = instagramAccount(null);
         RawContent selected = raw("selected", "더현대 셀렉터스");
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
-        when(generation.getStartDate()).thenReturn(generationStart);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
         when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", generationStart))
@@ -285,9 +285,9 @@ class NewContentServiceTest {
         SelectorsSnsAccount failedAccount = instagramAccount("failed-account", null);
         RawContent selected = raw("selected", "더현대 셀렉터스");
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
-        when(generation.getStartDate()).thenReturn(generationStart);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
         when(accountRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(successfulAccount, failedAccount));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
@@ -323,7 +323,7 @@ class NewContentServiceTest {
     @Test
     void propagatesGenerationTargetFailure() {
         IllegalStateException failure = new IllegalStateException("generation target failed");
-        when(generationService.getActive()).thenThrow(failure);
+        when(generationService.getCurrentActivity()).thenThrow(failure);
 
         assertThatThrownBy(service::collect).isSameAs(failure);
     }
@@ -332,7 +332,7 @@ class NewContentServiceTest {
     void propagatesAccountTargetLookupFailure() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         IllegalStateException failure = new IllegalStateException("account target lookup failed");
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(accountRepository.findAllByGenerationId(3L)).thenThrow(failure);
 

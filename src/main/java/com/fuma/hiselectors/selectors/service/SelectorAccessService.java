@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +27,9 @@ public class SelectorAccessService {
     private final SelectorsRepository selectorsRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final Clock clock;
+
+    @Value("${selectors.lifecycle.enabled:false}")
+    private boolean lifecycleEnabled;
 
     public SelectorAccessResponse getAccess(String loginId) {
         return resolve(loginId).response();
@@ -89,6 +93,11 @@ public class SelectorAccessService {
             return new ResolvedAccess(selectors,
                     SelectorAccessResponse.of(
                             SelectorAccessLevel.BLACKLIST, selectors.getId(), latest));
+        }
+        if (!lifecycleEnabled && selectors.isActive() && latest != null) {
+            return new ResolvedAccess(selectors,
+                    SelectorAccessResponse.of(
+                            SelectorAccessLevel.CURRENT, selectors.getId(), latest));
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
