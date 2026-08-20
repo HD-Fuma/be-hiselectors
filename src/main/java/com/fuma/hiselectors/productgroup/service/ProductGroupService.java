@@ -7,6 +7,7 @@ import com.fuma.hiselectors.campaign.repository.CampaignRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
+import com.fuma.hiselectors.productgroup.dto.MySelectorsShopResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupItemAddRequest;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupSaveRequest;
@@ -16,7 +17,9 @@ import com.fuma.hiselectors.productgroup.model.ProductGroupItem;
 import com.fuma.hiselectors.productgroup.repository.ProductGroupItemRepository;
 import com.fuma.hiselectors.productgroup.repository.ProductGroupRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
@@ -24,6 +27,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -42,10 +46,26 @@ public class ProductGroupService {
     private final CampaignProductRepository campaignProductRepository;
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
+    private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     public List<ProductGroupResponse> findMine(String loginId) {
         return findBySelectors(findSelectors(loginId).getId());
+    }
+
+    public MySelectorsShopResponse findMineShop(String loginId) {
+        User user = findUser(loginId);
+        Selectors selectors = findSelectors(user);
+        Optional<SelectorsSnsAccount> representativeAccount = findRepresentativeAccount(selectors.getId());
+        String generationName = selectorsGenerationRepository.findGenerationsOf(selectors.getId()).stream()
+                .findFirst()
+                .map(generation -> generation.generationName())
+                .orElse(null);
+        return new MySelectorsShopResponse(selectors.getSelectorsCode(), selectors.getSelectorsNickname(),
+                representativeAccount.map(SelectorsSnsAccount::getProfileImageUrl).orElse(null),
+                generationName, user.getName(),
+                representativeAccount.map(SelectorsSnsAccount::getAccountId).orElse(null),
+                findBySelectors(selectors.getId()));
     }
 
     public List<ProductGroupResponse> findPublic(String selectorsCode) {
@@ -54,11 +74,12 @@ public class ProductGroupService {
     }
 
     public SelectorsShopResponse findPublicShop(String selectorsCode) {
-        Selectors selectors = findPublicSelectors(selectorsCode);
-        String profileImageUrl = selectorsSnsAccountRepository
-                .findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectors.getId())
-                .map(account -> account.getProfileImageUrl())
-                .orElse(null);
+        return toShopResponse(findPublicSelectors(selectorsCode));
+    }
+
+    private SelectorsShopResponse toShopResponse(Selectors selectors) {
+        String profileImageUrl = findRepresentativeAccount(selectors.getId())
+                .map(SelectorsSnsAccount::getProfileImageUrl).orElse(null);
         return new SelectorsShopResponse(selectors.getSelectorsCode(), selectors.getSelectorsNickname(),
                 profileImageUrl, findBySelectors(selectors.getId()));
     }
@@ -121,7 +142,7 @@ public class ProductGroupService {
 
     private List<ProductGroupResponse> findBySelectors(Long selectorsId) {
         List<ProductGroup> groups = groupRepository
-                .findAllBySelectorsIdAndDeletedFalseOrderByGroupNoAsc(selectorsId);
+                .findAllBySelectorsIdAndDeletedFalseOrderByGroupNoAscIdAsc(selectorsId);
         if (groups.isEmpty()) return List.of();
         Map<Long, List<ProductGroupItem>> itemsByGroup = itemRepository
                 .findAllByGroupIdInAndDeletedFalseOrderByGroupIdAscDisplayOrderAsc(
@@ -198,10 +219,22 @@ public class ProductGroupService {
     }
 
     private Selectors findSelectors(String loginId) {
-        User user = userRepository.findByHiId(loginId)
+        return findSelectors(findUser(loginId));
+    }
+
+    private User findUser(String loginId) {
+        return userRepository.findByHiId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+    }
+
+    private Selectors findSelectors(User user) {
         return selectorsRepository.findByUserId(user.getId()).filter(value -> !value.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+    }
+
+    private Optional<SelectorsSnsAccount> findRepresentativeAccount(Long selectorsId) {
+        return selectorsSnsAccountRepository
+                .findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectorsId);
     }
 
     private Selectors findPublicSelectors(String selectorsCode) {

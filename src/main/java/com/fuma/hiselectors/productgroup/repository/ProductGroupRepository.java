@@ -6,7 +6,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ProductGroupRepository extends JpaRepository<ProductGroup, Long> {
-    List<ProductGroup> findAllBySelectorsIdAndDeletedFalseOrderByGroupNoAsc(Long selectorsId);
+    List<ProductGroup> findAllBySelectorsIdAndDeletedFalseOrderByGroupNoAscIdAsc(Long selectorsId);
     Optional<ProductGroup> findByIdAndSelectorsIdAndDeletedFalse(Long id, Long selectorsId);
     Optional<ProductGroup> findFirstBySelectorsIdOrderByGroupNoDesc(Long selectorsId);
 }

@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.productgroup.controller;
 
 import com.fuma.hiselectors.productgroup.dto.ProductGroupItemAddRequest;
+import com.fuma.hiselectors.productgroup.dto.MySelectorsShopResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupResponse;
 import com.fuma.hiselectors.productgroup.dto.ProductGroupSaveRequest;
 import com.fuma.hiselectors.productgroup.service.ProductGroupService;
@@ -42,6 +43,18 @@ public class ProductGroupController {
     @GetMapping("/me")
     public ResponseEntity<List<ProductGroupResponse>> findMine(Principal principal) {
         return ResponseEntity.ok(productGroupService.findMine(principal.getName()));
+    }
+
+    @Operation(summary = "내 셀렉터스 샵 조회",
+            description = "로그인한 셀렉터스의 코드·닉네임·기수·실명·대표 SNS 정보와 상품 그룹을 한 번에 조회한다. 실명은 공개 샵 API에 포함되지 않는다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 실패", content = @Content),
+            @ApiResponse(responseCode = "404", description = "셀렉터스 없음", content = @Content)
+    })
+    @GetMapping("/me/shop")
+    public ResponseEntity<MySelectorsShopResponse> findMyShop(Principal principal) {
+        return ResponseEntity.ok(productGroupService.findMineShop(principal.getName()));
     }
 
     @Operation(summary = "상품 그룹 생성",
