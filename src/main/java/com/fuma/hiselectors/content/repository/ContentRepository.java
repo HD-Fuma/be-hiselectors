@@ -30,4 +30,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
             order by content.id
             """)
     List<Content> findAllByGenerationId(@Param("generationId") Long generationId);
+
+    List<Content> findAllBySelectorsIdAndDeletedFalseOrderByCreatedAtDescIdDesc(
+            Long selectorsId);
 }
