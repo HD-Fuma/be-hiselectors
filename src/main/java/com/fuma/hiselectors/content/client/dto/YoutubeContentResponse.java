@@ -11,11 +11,15 @@ public record YoutubeContentResponse(
 ) {
 
     /** 영상 목록의 항목 한 개 */
-    public record Item(Snippet snippet, ContentDetails contentDetails) {
+    public record Item(
+            String id,
+            Snippet snippet,
+            ContentDetails contentDetails,
+            Statistics statistics) {
     }
 
     /** 영상 제목과 설명 */
-    public record Snippet(String title, String description) {
+    public record Snippet(String title, String description, String publishedAt) {
     }
 
     public record ContentDetails(
@@ -24,5 +28,8 @@ public record YoutubeContentResponse(
             // 실제 영상 공개 시각
             String videoPublishedAt
     ) {
+    }
+
+    public record Statistics(String viewCount, String likeCount, String commentCount) {
     }
 }

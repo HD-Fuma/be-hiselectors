@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse;
+import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.GraphErrorResponse;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.Media;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.MediaPage;
 import com.fuma.hiselectors.content.client.dto.RawContent;
@@ -35,7 +36,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Slf4j
 @Component
-public class InstagramContentClient implements ContentPlatformClient {
+public class InstagramContentFetcher implements ContentFetcher {
 
     private static final String GRAPH_API_HOST = "https://graph.facebook.com";
 
@@ -44,6 +45,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     private static final String MEDIA_FIELDS =
             "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
                     + "view_count,like_count,comments_count,children{id,media_type,media_url}";
+    private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS;
 
     private static final int PAGE_SIZE = 25;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
@@ -58,7 +60,7 @@ public class InstagramContentClient implements ContentPlatformClient {
     private final InstagramCollectionProperties properties;
     private final RestClient restClient;
 
-    public InstagramContentClient(
+    public InstagramContentFetcher(
             InstagramCollectionProperties properties,
             @Qualifier("contentRestClient") RestClient restClient) {
         this.properties = properties;
@@ -77,10 +79,9 @@ public class InstagramContentClient implements ContentPlatformClient {
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
-    public CollectionResult collect(String accountId, LocalDateTime collectedAfter) {
-        validateRequest(accountId, collectedAfter);
+    public List<RawContent> fetchByAccount(String accountId, LocalDateTime since) {
+        validateRequest(accountId, since);
 
-        int fetchedCount = 0;
         int consecutiveOutOfPeriodCount = 0;
         List<RawContent> contents = new ArrayList<>();
         Set<String> requestedNextUrls = new HashSet<>();
@@ -89,16 +90,14 @@ public class InstagramContentClient implements ContentPlatformClient {
         MediaPage page = requestFirstPage(accountId);
 
         while (true) {
-            // API가 반환한 게시글 수 합산 (로깅)
             List<Media> media = page.data();
-            fetchedCount += media == null ? 0 : media.size();
             if (media == null || media.isEmpty()) {
                 break;
             }
 
             // 이미 받은 페이지는 끝까지 확인하고, 페이지 끝의 연속 횟수로 다음 요청 결정
             consecutiveOutOfPeriodCount = addCollectedContents(
-                    media, collectedAfter, contents, consecutiveOutOfPeriodCount);
+                    media, since, contents, consecutiveOutOfPeriodCount);
             if (consecutiveOutOfPeriodCount >= OUT_OF_PERIOD_STOP_THRESHOLD) {
                 break;
             }
@@ -115,10 +114,80 @@ public class InstagramContentClient implements ContentPlatformClient {
             page = requestNextPage(nextUrl);
         }
 
-        return new CollectionResult(fetchedCount, contents);
+        return List.copyOf(contents);
     }
 
-    private void validateRequest(String username, LocalDateTime collectedAfter) {
+    @Override
+    public List<FetchResult> fetchByContentIds(List<String> snsContentIds) {
+        validateIds(snsContentIds);
+        return snsContentIds.stream().map(this::fetchById).toList();
+    }
+
+    private FetchResult fetchById(String snsContentId) {
+        URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), snsContentId)
+                .queryParam("fields", MEDIA_DETAIL_FIELDS)
+                .build()
+                .encode()
+                .toUri();
+        try {
+            Media media = restClient.get()
+                    .uri(uri)
+                    .headers(headers -> headers.setBearerAuth(properties.accessToken()))
+                    .retrieve()
+                    .body(Media.class);
+            if (media == null || media.timestamp() == null) {
+                return failed(snsContentId);
+            }
+            return new FetchResult(
+                    snsContentId,
+                    FetchStatus.FOUND,
+                    toRawContent(media, parseTimestamp(media.timestamp())),
+                    new Engagement(null, media.likeCount(), media.commentsCount(), null));
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
+            }
+            if (e.getStatusCode().value() == 400 && isObjectNotFoundError(e)) {
+                return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
+            }
+            log.warn("Instagram 게시물 조회 실패. ID={} HTTP상태={}",
+                    snsContentId, e.getStatusCode().value());
+            return failed(snsContentId);
+        } catch (RestClientException | IllegalArgumentException | BusinessException e) {
+            log.warn("Instagram 게시물 조회 실패. ID={} 원인={}",
+                    snsContentId, e.getClass().getSimpleName());
+            return failed(snsContentId);
+        }
+    }
+
+    private boolean isObjectNotFoundError(RestClientResponseException exception) {
+        try {
+            GraphErrorResponse response = exception.getResponseBodyAs(GraphErrorResponse.class);
+            return response != null
+                    && response.error() != null
+                    && Integer.valueOf(100).equals(response.error().code())
+                    && Integer.valueOf(33).equals(response.error().errorSubcode());
+        } catch (RuntimeException deserializationFailure) {
+            return false;
+        }
+    }
+
+    private FetchResult failed(String snsContentId) {
+        return new FetchResult(snsContentId, FetchStatus.FAILED, null, null);
+    }
+
+    private void validateIds(List<String> snsContentIds) {
+        if (!properties.isConfigured()) {
+            throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
+        }
+        if (snsContentIds == null
+                || snsContentIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateRequest(String username, LocalDateTime since) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
@@ -126,7 +195,7 @@ public class InstagramContentClient implements ContentPlatformClient {
 
         // username, collectedAfter가 정상인지 확인
         if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()
-                || collectedAfter == null) {
+                || since == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -193,7 +262,7 @@ public class InstagramContentClient implements ContentPlatformClient {
 
     private int addCollectedContents(
             List<Media> media,
-            LocalDateTime collectedAfter,
+            LocalDateTime since,
             List<RawContent> contents,
             int consecutiveOutOfPeriodCount) {
         for (Media item : media) {
@@ -202,7 +271,7 @@ public class InstagramContentClient implements ContentPlatformClient {
             }
             // createdAt은 DB 저장 시각이 아닌 Instagram 게시글 작성 시각
             LocalDateTime createdAt = parseTimestamp(item.timestamp());
-            if (createdAt.isBefore(collectedAfter)) {
+            if (createdAt.isBefore(since)) {
                 consecutiveOutOfPeriodCount++;
                 continue;
             }

@@ -6,7 +6,7 @@ import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
-import com.fuma.hiselectors.content.client.ContentPlatformClient;
+import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -32,7 +32,7 @@ public class ApplicationMediaService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationMediaRepository mediaRepository;
-    private final List<ContentPlatformClient> contentClients;
+    private final List<ContentFetcher> contentFetchers;
     private final TransactionTemplate transactionTemplate;
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
@@ -40,11 +40,11 @@ public class ApplicationMediaService {
         try {
             LocalDateTime collectedAt = LocalDateTime.now();
             LocalDateTime collectedAfter = collectedAt.minusDays(COLLECTION_DAYS);
-            ContentPlatformClient client = findClient(application);
-            ContentPlatformClient.CollectionResult result = client
-                    .collect(application.getSnsAccountId(), collectedAfter);
+            ContentFetcher fetcher = findFetcher(application);
+            List<RawContent> contents = fetcher.fetchByAccount(
+                    application.getSnsAccountId(), collectedAfter);
             List<ApplicationMedia> snapshot = createSnapshot(
-                    application, client, result.contents(), collectedAfter);
+                    application, fetcher, contents, collectedAfter);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 mediaRepository.deleteByApplicationId(applicationId);
@@ -58,7 +58,7 @@ public class ApplicationMediaService {
             return new ApplicationMediaCollectionResponse(
                     applicationId,
                     application.getSnsCode(),
-                    result.fetchedCount(),
+                    contents.size(),
                     saved.size(),
                     saved.stream().map(ApplicationMediaResponse::from).toList());
         } catch (RuntimeException e) {
@@ -82,16 +82,16 @@ public class ApplicationMediaService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.APPLICATION_USER_NOT_FOUND));
     }
 
-    private ContentPlatformClient findClient(Application application) {
-        return contentClients.stream()
-                .filter(client -> client.supports() == application.getSnsCode())
+    private ContentFetcher findFetcher(Application application) {
+        return contentFetchers.stream()
+                .filter(fetcher -> fetcher.supports() == application.getSnsCode())
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.INVALID_INPUT, "지원하지 않는 SNS 플랫폼입니다."));
     }
 
     private List<ApplicationMedia> createSnapshot(
-            Application application, ContentPlatformClient client,
+            Application application, ContentFetcher fetcher,
             List<RawContent> contents, LocalDateTime collectedAfter) {
         Map<String, RawContent> latestById = contents.stream()
                 .filter(content -> content != null
@@ -109,7 +109,7 @@ public class ApplicationMediaService {
                         (first, ignored) -> first,
                         LinkedHashMap::new));
 
-        List<RawContent> selected = client.addStatistics(
+        List<RawContent> selected = fetcher.addStatistics(
                 latestById.values().stream().limit(STORE_LIMIT).toList());
         return IntStream.range(0, selected.size())
                 .mapToObj(index -> toEntity(application, selected.get(index), index))
