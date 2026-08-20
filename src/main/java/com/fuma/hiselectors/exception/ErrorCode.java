@@ -15,6 +15,7 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
+    OAUTH_VERIFICATION_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 SNS 계정 인증입니다."),
 
     // --- 카카오 OAuth / 메시지 ---
     KAKAO_CONFIGURATION_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "카카오 연동 설정이 올바르지 않습니다."),

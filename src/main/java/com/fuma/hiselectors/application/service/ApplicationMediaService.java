@@ -4,12 +4,14 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaCollectionResponse;
 import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -28,23 +30,24 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ApplicationMediaService {
 
     private static final int COLLECTION_DAYS = 90;
-    private static final int STORE_LIMIT = 10;
+    private static final int STATISTICS_LIMIT = 10;
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationMediaRepository mediaRepository;
     private final List<ContentFetcher> contentFetchers;
     private final TransactionTemplate transactionTemplate;
+    private final Clock clock;
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
         Application application = findApplication(applicationId);
         try {
-            LocalDateTime collectedAt = LocalDateTime.now();
+            LocalDateTime collectedAt = LocalDateTime.now(clock);
             LocalDateTime collectedAfter = collectedAt.minusDays(COLLECTION_DAYS);
             ContentFetcher fetcher = findFetcher(application);
             List<RawContent> contents = fetcher.fetchByAccount(
                     application.getSnsAccountId(), collectedAfter);
             List<ApplicationMedia> snapshot = createSnapshot(
-                    application, fetcher, contents, collectedAfter);
+                    application, fetcher, contents, collectedAfter, collectedAt);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 mediaRepository.deleteByApplicationId(applicationId);
@@ -92,7 +95,9 @@ public class ApplicationMediaService {
 
     private List<ApplicationMedia> createSnapshot(
             Application application, ContentFetcher fetcher,
-            List<RawContent> contents, LocalDateTime collectedAfter) {
+            List<RawContent> contents,
+            LocalDateTime collectedAfter,
+            LocalDateTime collectedAt) {
         Map<String, RawContent> latestById = contents.stream()
                 .filter(content -> content != null
                         && content.snsCode() == application.getSnsCode()
@@ -101,7 +106,8 @@ public class ApplicationMediaService {
                         && content.contentUrl() != null
                         && !content.contentUrl().isBlank()
                         && content.createdAt() != null
-                        && !content.createdAt().isBefore(collectedAfter))
+                        && !content.createdAt().isBefore(collectedAfter)
+                        && !content.createdAt().isAfter(collectedAt))
                 .sorted(Comparator.comparing(RawContent::createdAt).reversed())
                 .collect(Collectors.toMap(
                         RawContent::snsContentId,
@@ -109,14 +115,32 @@ public class ApplicationMediaService {
                         (first, ignored) -> first,
                         LinkedHashMap::new));
 
-        List<RawContent> selected = fetcher.addStatistics(
-                latestById.values().stream().limit(STORE_LIMIT).toList());
-        return IntStream.range(0, selected.size())
-                .mapToObj(index -> toEntity(application, selected.get(index), index))
+        List<RawContent> filtered = List.copyOf(latestById.values());
+        List<RawContent> statisticsTargets = filtered.stream()
+                .limit(STATISTICS_LIMIT)
+                .toList();
+        Map<String, RawContent> enrichedById = fetcher.addStatistics(statisticsTargets).stream()
+                .filter(Objects::nonNull)
+                .filter(content -> latestById.containsKey(content.snsContentId()))
+                .collect(Collectors.toMap(
+                        RawContent::snsContentId,
+                        Function.identity(),
+                        (first, ignored) -> first));
+        List<RawContent> snapshot = filtered.stream()
+                .map(content -> enrichedById.getOrDefault(content.snsContentId(), content))
+                .toList();
+
+        return IntStream.range(0, snapshot.size())
+                .mapToObj(index -> toEntity(
+                        application, snapshot.get(index), index, collectedAt))
                 .toList();
     }
 
-    private ApplicationMedia toEntity(Application application, RawContent content, int sequenceNo) {
+    private ApplicationMedia toEntity(
+            Application application,
+            RawContent content,
+            int sequenceNo,
+            LocalDateTime collectedAt) {
         return ApplicationMedia.builder()
                 .applicationId(application.getId())
                 .snsCode(application.getSnsCode())
@@ -127,11 +151,15 @@ public class ApplicationMediaService {
                         .filter(url -> url != null && !url.isBlank())
                         .findFirst()
                         .orElse(null))
+                // videos.list duration만으로는 Shorts의 세로 비율을 확인할 수 없다.
+                .contentType(application.getSnsCode() == SnsPlatform.YOUTUBE
+                        ? null : content.contentType())
                 .sequenceNo(sequenceNo)
                 .publishedAt(content.createdAt())
-                .viewCount(content.viewCount())
-                .likeCount(content.likeCount())
-                .commentCount(content.commentCount())
+                .viewCount(sequenceNo < STATISTICS_LIMIT ? content.viewCount() : null)
+                .likeCount(sequenceNo < STATISTICS_LIMIT ? content.likeCount() : null)
+                .commentCount(sequenceNo < STATISTICS_LIMIT ? content.commentCount() : null)
+                .collectedAt(collectedAt)
                 .build();
     }
 }

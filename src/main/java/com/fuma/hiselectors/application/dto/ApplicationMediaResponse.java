@@ -2,6 +2,7 @@ package com.fuma.hiselectors.application.dto;
 
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.model.ContentType;
 import java.time.LocalDateTime;
 
 public record ApplicationMediaResponse(
@@ -11,6 +12,7 @@ public record ApplicationMediaResponse(
         String snsContentId,
         String contentUrl,
         String mediaUrl,
+        ContentType contentType,
         int sequenceNo,
         LocalDateTime publishedAt,
         Long viewCount,
@@ -26,6 +28,7 @@ public record ApplicationMediaResponse(
                 media.getSnsContentId(),
                 media.getContentUrl(),
                 media.getMediaUrl(),
+                media.getContentType(),
                 media.getSequenceNo(),
                 media.getPublishedAt(),
                 media.getViewCount(),

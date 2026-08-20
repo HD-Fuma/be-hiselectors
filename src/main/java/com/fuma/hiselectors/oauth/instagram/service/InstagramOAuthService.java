@@ -1,12 +1,13 @@
 package com.fuma.hiselectors.oauth.instagram.service;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import com.fuma.hiselectors.oauth.instagram.config.InstagramOAuthProperties;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramProfileResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramTokenResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyResponse;
-import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -54,7 +55,18 @@ public class InstagramOAuthService {
 
         String accessToken = exchangeCodeForAccessToken(code);
         InstagramProfileResponse profile = fetchMyProfile(accessToken);
-        return InstagramVerifyResponse.of(profile.id(), profile.username(), profile.followersCount());
+        String verificationToken = stateProvider.createVerificationToken(
+                requesterHiId,
+                SnsPlatform.INSTAGRAM,
+                profile.username(),
+                profile.followersCount(),
+                profile.mediaCount());
+        return InstagramVerifyResponse.of(
+                profile.id(),
+                profile.username(),
+                profile.followersCount(),
+                profile.mediaCount(),
+                verificationToken);
     }
 
     private String resolveHiId(String state) {
@@ -96,7 +108,7 @@ public class InstagramOAuthService {
         try {
             profile = restClient.get()
                     .uri(UriComponentsBuilder.fromUriString(INSTAGRAM_ME_URI)
-                            .queryParam("fields", "id,username,followers_count")
+                            .queryParam("fields", "id,username,followers_count,media_count")
                             .queryParam("access_token", accessToken)
                             .encode()
                             .build()
@@ -107,7 +119,8 @@ public class InstagramOAuthService {
             throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         }
 
-        if (profile == null || profile.id() == null) {
+        if (profile == null || profile.id() == null
+                || profile.username() == null || profile.username().isBlank()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_ACCOUNT_NOT_FOUND);
         }
         return profile;

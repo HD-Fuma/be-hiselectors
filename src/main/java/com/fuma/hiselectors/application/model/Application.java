@@ -45,6 +45,10 @@ public class Application extends BaseTimeEntity {
     @Column(name = "follower_count")
     private Long followerCount;
 
+    /** OAuth 인증 시점의 전체 공개 콘텐츠 수. 플랫폼이 제공하지 않으면 null. */
+    @Column(name = "content_count")
+    private Long contentCount;
+
     /** 최근 활동일(프론트 전달). */
     @Column(name = "last_content_at")
     private LocalDateTime lastContentAt;
@@ -77,13 +81,15 @@ public class Application extends BaseTimeEntity {
 
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
-                        Long followerCount, LocalDateTime lastContentAt, BigDecimal engagementRate,
+                        Long followerCount, Long contentCount,
+                        LocalDateTime lastContentAt, BigDecimal engagementRate,
                         boolean alarmYn, LocalDateTime policyAgreedAt, ApplicationStatus status) {
         this.userId = userId;
         this.generationId = generationId;
         this.snsCode = snsCode;
         this.snsAccountId = snsAccountId;
         this.followerCount = followerCount;
+        this.contentCount = contentCount;
         this.lastContentAt = lastContentAt;
         this.engagementRate = engagementRate;
         this.alarmYn = alarmYn;

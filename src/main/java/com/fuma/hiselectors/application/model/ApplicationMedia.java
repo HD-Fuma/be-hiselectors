@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.application.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
+import com.fuma.hiselectors.content.model.ContentType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -49,6 +50,10 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Column(name = "media_url", columnDefinition = "TEXT")
     private String mediaUrl;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "content_type", length = 20)
+    private ContentType contentType;
+
     @Column(name = "sequence_no", nullable = false)
     private int sequenceNo;
 
@@ -69,20 +74,23 @@ public class ApplicationMedia extends BaseTimeEntity {
 
     @Builder
     private ApplicationMedia(Long applicationId, SnsPlatform snsCode, String snsContentId,
-                             String contentUrl, String mediaUrl, int sequenceNo,
+                             String contentUrl, String mediaUrl, ContentType contentType,
+                             int sequenceNo,
                              LocalDateTime publishedAt,
-                             Long viewCount, Long likeCount, Long commentCount) {
+                             Long viewCount, Long likeCount, Long commentCount,
+                             LocalDateTime collectedAt) {
         this.applicationId = applicationId;
         this.snsCode = snsCode;
         this.snsContentId = snsContentId;
         this.contentUrl = contentUrl;
         this.mediaUrl = mediaUrl;
+        this.contentType = contentType;
         this.sequenceNo = sequenceNo;
         this.publishedAt = publishedAt;
         this.viewCount = viewCount;
         this.likeCount = likeCount;
         this.commentCount = commentCount;
-        this.collectedAt = LocalDateTime.now();
+        this.collectedAt = collectedAt;
     }
 
 }

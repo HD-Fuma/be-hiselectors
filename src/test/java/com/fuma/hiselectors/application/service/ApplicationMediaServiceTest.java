@@ -19,12 +19,16 @@ import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +43,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 class ApplicationMediaServiceTest {
 
     private static final Long APPLICATION_ID = 1L;
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final Clock CLOCK = Clock.fixed(
+            Instant.parse("2026-08-20T03:00:00Z"), SEOUL);
+    private static final LocalDateTime COLLECTED_AT = LocalDateTime.now(CLOCK);
 
     @Mock
     private ApplicationRepository applicationRepository;
@@ -68,7 +76,7 @@ class ApplicationMediaServiceTest {
         }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
-                List.of(instagramFetcher, youtubeFetcher), transactionTemplate);
+                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK);
     }
 
     @Test
@@ -76,7 +84,7 @@ class ApplicationMediaServiceTest {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = COLLECTED_AT;
         List<RawContent> contents = new ArrayList<>();
         for (int i = 0; i < 52; i++) {
             contents.add(raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusHours(i)));
@@ -108,24 +116,67 @@ class ApplicationMediaServiceTest {
         var result = service.collect(APPLICATION_ID);
 
         assertThat(result.fetchedCount()).isEqualTo(contents.size());
-        assertThat(result.storedCount()).isEqualTo(10);
+        assertThat(result.storedCount()).isEqualTo(52);
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getSnsContentId)
-                .containsExactly(
-                        "video-0", "video-1", "video-2", "video-3", "video-4",
-                        "video-5", "video-6", "video-7", "video-8", "video-9");
+                .containsExactlyElementsOf(IntStream.range(0, 52)
+                        .mapToObj(index -> "video-" + index)
+                        .toList());
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getSequenceNo)
-                .containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+                .containsExactlyElementsOf(IntStream.range(0, 52).boxed().toList());
         assertThat(saved.get().getFirst()).satisfies(media -> {
             assertThat(media.getViewCount()).isEqualTo(100L);
             assertThat(media.getLikeCount()).isEqualTo(20L);
             assertThat(media.getCommentCount()).isEqualTo(3L);
+            assertThat(media.getContentType()).isNull();
         });
+        assertThat(saved.get().get(10).getViewCount()).isNull();
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
         verify(mediaRepository).flush();
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
-        assertThat(application.getMediaCollectedAt()).isNotNull();
+        assertThat(application.getMediaCollectedAt()).isEqualTo(COLLECTED_AT);
+        assertThat(saved.get())
+                .extracting(ApplicationMedia::getCollectedAt)
+                .containsOnly(COLLECTED_AT);
+    }
+
+    @Test
+    void collectDropsInstagramMetricsOutsideLatestTenSamples() {
+        Application application = application(SnsPlatform.INSTAGRAM, "username");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        List<RawContent> contents = IntStream.range(0, 11)
+                .mapToObj(index -> raw(
+                        SnsPlatform.INSTAGRAM,
+                        "post-" + index,
+                        COLLECTED_AT.minusDays(index),
+                        1_000L + index,
+                        100L + index,
+                        10L + index))
+                .toList();
+        when(instagramFetcher.fetchByAccount(any(), any())).thenReturn(contents);
+        when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AtomicReference<List<ApplicationMedia>> saved = new AtomicReference<>();
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ApplicationMedia> values = invocation.getArgument(0);
+            saved.set(values);
+            return values;
+        });
+
+        service.collect(APPLICATION_ID);
+
+        assertThat(saved.get()).hasSize(11);
+        assertThat(saved.get().get(9)).satisfies(media -> {
+            assertThat(media.getViewCount()).isEqualTo(1_009L);
+            assertThat(media.getLikeCount()).isEqualTo(109L);
+            assertThat(media.getCommentCount()).isEqualTo(19L);
+        });
+        assertThat(saved.get().get(10)).satisfies(media -> {
+            assertThat(media.getViewCount()).isNull();
+            assertThat(media.getLikeCount()).isNull();
+            assertThat(media.getCommentCount()).isNull();
+        });
     }
 
     @Test
@@ -138,7 +189,7 @@ class ApplicationMediaServiceTest {
                 "https://www.instagram.com/reel/post-1",
                 ContentType.SHORT_FORM,
                 List.of(),
-                LocalDateTime.now(),
+                COLLECTED_AT,
                 List.of(new RawContentMedia(
                         "media-1",
                         RawContentMedia.MediaType.VIDEO,
@@ -154,6 +205,7 @@ class ApplicationMediaServiceTest {
                     .isEqualTo("https://www.instagram.com/reel/post-1");
             assertThat(media.mediaUrl())
                     .isEqualTo("https://cdn.example.com/post-1.mp4");
+            assertThat(media.contentType()).isEqualTo(ContentType.SHORT_FORM);
         });
     }
 
@@ -195,7 +247,7 @@ class ApplicationMediaServiceTest {
                 .snsCode(platform)
                 .snsAccountId(accountId)
                 .alarmYn(true)
-                .policyAgreedAt(LocalDateTime.now())
+                .policyAgreedAt(COLLECTED_AT.minusDays(30))
                 .status(ApplicationStatus.PENDING)
                 .build();
         ReflectionTestUtils.setField(application, "id", APPLICATION_ID);
@@ -228,7 +280,8 @@ class ApplicationMediaServiceTest {
                 .snsContentId(contentId)
                 .mediaUrl("https://example.com/" + contentId)
                 .sequenceNo(sequenceNo)
-                .publishedAt(LocalDateTime.now().minusDays(sequenceNo))
+                .publishedAt(COLLECTED_AT.minusDays(sequenceNo))
+                .collectedAt(COLLECTED_AT)
                 .build();
     }
 }
