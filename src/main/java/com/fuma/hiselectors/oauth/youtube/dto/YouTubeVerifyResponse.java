@@ -11,10 +11,20 @@ public record YouTubeVerifyResponse(
         @Schema(description = "채널명", example = "내 채널")
         String channelTitle,
         @Schema(description = "구독자 수 (지원서 follower_count 에 저장, 비공개면 null)", example = "12345")
-        Long followerCount
+        Long followerCount,
+        @Schema(description = "전체 공개 영상 수", example = "120")
+        Long contentCount,
+        @Schema(description = "지원서 제출용 서명 검증 토큰")
+        String verificationToken
 ) {
 
-    public static YouTubeVerifyResponse of(String channelId, String channelTitle, Long followerCount) {
-        return new YouTubeVerifyResponse(true, channelId, channelTitle, followerCount);
+    public static YouTubeVerifyResponse of(
+            String channelId,
+            String channelTitle,
+            Long followerCount,
+            Long contentCount,
+            String verificationToken) {
+        return new YouTubeVerifyResponse(
+                true, channelId, channelTitle, followerCount, contentCount, verificationToken);
     }
 }
