@@ -94,6 +94,11 @@ purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
 
+content:
+  batch:
+    cron: ${CONTENT_BATCH_CRON:-}
+    zone: ${CONTENT_BATCH_ZONE:Asia/Seoul}
+
 settlement:
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
   estimate:
