@@ -42,6 +42,26 @@ spring:
         format_sql: ${FORMAT_SQL:true}
     open-in-view: false
 
+  # 크리에이터 제안 메일 발송(Gmail SMTP). 앱 비밀번호를 MAIL_PASSWORD 로 주입한다.
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# 액추에이터 헬스체크가 매번 SMTP 연결을 시도해 실패 로그를 남기지 않도록 끈다.
+# (실제 발송은 제안 API 호출 시에만 일어난다.)
+management:
+  health:
+    mail:
+      enabled: false
+
 jwt:
   secret: ${JWT_SECRET}
   access-token-validity-seconds: ${JWT_EXPIRE_SECONDS:3600}
@@ -118,6 +138,12 @@ kakao:
 purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
+
+proposal:
+  mail:
+    admin-position: ${PROPOSAL_ADMIN_POSITION:매니저}
+    admin-email: ${PROPOSAL_ADMIN_EMAIL:official@hiselectors.shop}
+    apply-url: ${PROPOSAL_APPLY_URL:https://hiselectors.shop/#/apply}
 
 selectors:
   lifecycle:

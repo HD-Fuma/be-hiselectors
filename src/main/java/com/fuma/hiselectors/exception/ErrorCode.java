@@ -162,7 +162,12 @@ public enum ErrorCode {
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다."),
-    INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다.");
+    INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다."),
+
+    // --- 크리에이터 제안 ---
+    ADMIN_NOT_FOUND(HttpStatus.NOT_FOUND, "관리자를 찾을 수 없습니다."),
+    CREATOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "크리에이터에게 등록된 이메일이 없어 제안 메일을 보낼 수 없습니다."),
+    PROPOSAL_MAIL_SEND_FAILED(HttpStatus.BAD_GATEWAY, "제안 메일 발송에 실패했습니다.");
 
     private final HttpStatus status;
     private final String message;
