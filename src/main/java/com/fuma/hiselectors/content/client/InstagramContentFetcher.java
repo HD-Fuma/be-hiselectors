@@ -2,7 +2,6 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse;
-import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.GraphErrorResponse;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.Media;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.MediaPage;
 import com.fuma.hiselectors.content.client.dto.RawContent;
@@ -20,7 +19,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -123,6 +124,49 @@ public class InstagramContentFetcher implements ContentFetcher {
         return snsContentIds.stream().map(this::fetchById).toList();
     }
 
+    /** 타 계정 게시물은 ID 직접 조회 대신 Business Discovery 안에서 조회한다. */
+    @Override
+    public List<FetchResult> fetchByAccountContentIds(
+            String accountId, List<String> snsContentIds) {
+        validateAccountId(accountId);
+        validateIds(snsContentIds);
+
+        Set<String> requestedIds = new HashSet<>(snsContentIds);
+        Map<String, FetchResult> foundById = new LinkedHashMap<>();
+        Set<String> requestedNextUrls = new HashSet<>();
+        MediaPage page = requestFirstPage(accountId);
+
+        while (true) {
+            List<Media> media = page.data();
+            if (media == null || media.isEmpty()) {
+                break;
+            }
+            for (Media item : media) {
+                if (item != null && requestedIds.contains(item.id())) {
+                    foundById.put(item.id(), found(item));
+                }
+            }
+            if (foundById.keySet().containsAll(requestedIds)) {
+                break;
+            }
+
+            String nextUrl = page.paging() == null ? null : page.paging().next();
+            if (nextUrl == null) {
+                break;
+            }
+            if (!requestedNextUrls.add(nextUrl)) {
+                log.warn("Instagram 페이지 URL 반복 감지");
+                throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
+            }
+            page = requestNextPage(nextUrl);
+        }
+
+        return snsContentIds.stream()
+                .map(id -> foundById.getOrDefault(
+                        id, new FetchResult(id, FetchStatus.NOT_FOUND, null, null)))
+                .toList();
+    }
+
     private FetchResult fetchById(String snsContentId) {
         URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
                 .pathSegment(properties.apiVersion(), snsContentId)
@@ -139,16 +183,9 @@ public class InstagramContentFetcher implements ContentFetcher {
             if (media == null || media.timestamp() == null) {
                 return failed(snsContentId);
             }
-            return new FetchResult(
-                    snsContentId,
-                    FetchStatus.FOUND,
-                    toRawContent(media, parseTimestamp(media.timestamp())),
-                    new Engagement(null, media.likeCount(), media.commentsCount(), null));
+            return found(media);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
-                return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
-            }
-            if (e.getStatusCode().value() == 400 && isObjectNotFoundError(e)) {
                 return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
             }
             log.warn("Instagram 게시물 조회 실패. ID={} HTTP상태={}",
@@ -161,16 +198,17 @@ public class InstagramContentFetcher implements ContentFetcher {
         }
     }
 
-    private boolean isObjectNotFoundError(RestClientResponseException exception) {
-        try {
-            GraphErrorResponse response = exception.getResponseBodyAs(GraphErrorResponse.class);
-            return response != null
-                    && response.error() != null
-                    && Integer.valueOf(100).equals(response.error().code())
-                    && Integer.valueOf(33).equals(response.error().errorSubcode());
-        } catch (RuntimeException deserializationFailure) {
-            return false;
-        }
+    private FetchResult found(Media media) {
+        RawContent content = toRawContent(media, parseTimestamp(media.timestamp()));
+        return new FetchResult(
+                media.id(),
+                FetchStatus.FOUND,
+                content,
+                new Engagement(
+                        content.viewCount(),
+                        content.likeCount(),
+                        content.commentCount(),
+                        null));
     }
 
     private FetchResult failed(String snsContentId) {
@@ -194,8 +232,14 @@ public class InstagramContentFetcher implements ContentFetcher {
         }
 
         // username, collectedAfter가 정상인지 확인
-        if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()
-                || since == null) {
+        validateAccountId(username);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountId(String username) {
+        if (username == null || !INSTAGRAM_USERNAME.matcher(username).matches()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }

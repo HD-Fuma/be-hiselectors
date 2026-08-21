@@ -452,6 +452,39 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    @DisplayName("기존 Instagram 콘텐츠를 계정별 Business Discovery 응답에서 찾는다")
+    void fetchStoredContentsByAccount() {
+        String nextUrl = nextUrl("stored-next");
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath())
+                            .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query)
+                            .contains("business_discovery.username(selector.insta)")
+                            .contains("media.limit(25)");
+                })
+                .andRespond(withSuccess(firstPageJson(
+                        List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
+                        nextUrl), MediaType.APPLICATION_JSON));
+        expectNextPage(
+                nextUrl,
+                List.of(mediaJson("stored", "2026-08-12T05:00:00+0000")),
+                null);
+
+        List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
+                "selector.insta", List.of("stored", "missing"));
+
+        assertThat(result).extracting(
+                        ContentFetcher.FetchResult::snsContentId,
+                        ContentFetcher.FetchResult::status)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("stored", FetchStatus.FOUND),
+                        org.assertj.core.groups.Tuple.tuple("missing", FetchStatus.NOT_FOUND));
+        server.verify();
+    }
+
+    @Test
     @DisplayName("Instagram 게시물 ID별로 최신 내용과 성과를 조회한다")
     void fetchContentsByIds() {
         server.expect(request -> {
@@ -504,8 +537,8 @@ class InstagramContentFetcherTest {
     }
 
     @Test
-    @DisplayName("Instagram Graph 오류 코드 100과 하위 코드 33이면 없는 게시물로 처리한다")
-    void treatObjectNotFoundGraphErrorAsNotFound() {
+    @DisplayName("Instagram Graph 오류 코드 100과 하위 코드 33은 권한 오류일 수 있어 조회 실패로 처리한다")
+    void treatObjectNotFoundGraphErrorAsFailure() {
         expectContentError("media-missing", """
                 {"error":{"message":"Unsupported get request","code":100,"error_subcode":33}}
                 """);
@@ -515,7 +548,7 @@ class InstagramContentFetcherTest {
 
         assertThat(result).singleElement()
                 .extracting(ContentFetcher.FetchResult::status)
-                .isEqualTo(FetchStatus.NOT_FOUND);
+                .isEqualTo(FetchStatus.FAILED);
         server.verify();
     }
 
