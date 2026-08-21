@@ -1,7 +1,7 @@
 package com.fuma.hiselectors.inspection.controller;
 
-import com.fuma.hiselectors.inspection.service.ContentInspectionService;
-import com.fuma.hiselectors.inspection.service.ContentInspectionService.InspectionResult;
+import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService;
+import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService.InspectionResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AdminContentInspectionController {
 
-    private final ContentInspectionService inspectionService;
+    private final ContentInspectionExecutionService inspectionService;
 
     @Operation(summary = "콘텐츠 버전 검수 실행")
     @PostMapping("/{contentVersionId}/inspect")

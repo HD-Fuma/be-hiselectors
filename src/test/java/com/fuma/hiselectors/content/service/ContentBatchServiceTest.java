@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.inspection.service.StaleContentInspectionService;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,6 +30,9 @@ class ContentBatchServiceTest {
     @Mock
     private StoredContentService storedContentService;
 
+    @Mock
+    private StaleContentInspectionService staleContentInspectionService;
+
     @InjectMocks
     private ContentBatchService service;
 
@@ -41,9 +45,11 @@ class ContentBatchServiceTest {
 
         ContentBatchService.ContentBatchResult result = service.run();
 
-        InOrder order = inOrder(newContentService, storedContentService);
+        InOrder order = inOrder(
+                newContentService, storedContentService, staleContentInspectionService);
         order.verify(newContentService).collect();
         order.verify(storedContentService).check();
+        order.verify(staleContentInspectionService).reinspectStale(null);
         assertThat(result).isEqualTo(
                 new ContentBatchService.ContentBatchResult(2, 3, true, true));
     }

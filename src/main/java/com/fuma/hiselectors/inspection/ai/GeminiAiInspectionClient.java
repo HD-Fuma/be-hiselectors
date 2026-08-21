@@ -7,8 +7,10 @@ import com.fuma.hiselectors.inspection.model.ContentReportData;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
+import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
+import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
 import java.time.Duration;
 import java.util.List;
@@ -28,53 +30,16 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
 
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
-    private static final String PROMPT = """
-            당신은 현대백화점 셀렉터스 콘텐츠 검수자입니다.
-            입력 콘텐츠에서 다음 유형만 판단하세요:
-            ABUSIVE_LANGUAGE, HATE_DISCRIMINATION, VIOLENCE_THREAT, SEXUAL_CONTENT,
-            POLITICAL_CONTENT, SOCIAL_CONTROVERSY, FALSE_EXAGGERATED_CLAIM,
-            BRAND_REPUTATION_DAMAGE.
-            광고 표시와 제휴 링크는 별도 규칙이 검사하므로 반환하지 마세요.
-            반드시 아래 JSON 형태로만 응답하세요.
-            {
-              "report": {
-                "summary": "콘텐츠 요약",
-                "purpose": "콘텐츠 목적",
-                "flow": "콘텐츠 흐름",
-                "overallAssessment": "전체 판단"
-              },
-              "violations": [{
-                "violationType": "위 유형 중 하나",
-                "reason": "판단 근거",
-                "confidence": 0.0,
-                "locations": []
-              }]
-            }
-            locations는 문자열 배열이 아니라 반드시 객체 배열로 반환하세요.
-            텍스트 근거는 다음 형태를 사용하세요.
-            [{
-              "contentMediaId": 1,
-              "mediaType": "TEXT",
-              "startIndex": 0,
-              "endIndex": 10,
-              "excerpt": "위반에 해당하는 원문"
-            }]
-            locations 객체에는 contentMediaId, mediaType, startIndex, endIndex,
-            startTime, endTime, bbox, excerpt 필드를 사용할 수 있습니다.
-            값이 없는 선택 필드는 생략하고, 정확한 위치를 판단할 수 없으면
-            locations를 빈 배열로 반환하세요. locations에 문자열을 직접 넣지 마세요.
-
-            검수 대상:
-            %s
-            """;
-
     private final GeminiProperties properties;
     private final ObjectMapper objectMapper;
+    private final InspectionPromptProvider promptProvider;
     private final RestClient restClient;
 
-    public GeminiAiInspectionClient(GeminiProperties properties, ObjectMapper objectMapper) {
+    public GeminiAiInspectionClient(GeminiProperties properties, ObjectMapper objectMapper,
+                                    InspectionPromptProvider promptProvider) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.promptProvider = promptProvider;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         factory.setReadTimeout(Duration.ofMinutes(2));
@@ -82,7 +47,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     }
 
     @Override
-    public AiInspectionResult inspect(InspectionContext context) {
+    public AiInspectionResult inspect(InspectionContext context, InspectionPolicy policy) {
         Map<String, Object> input = Map.of(
                 "sns", context.content().getSnsCode(),
                 "contentUrl", context.content().getContentUrl(),
@@ -90,7 +55,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "contentMediaId", media.getId(),
                         "mediaType", media.getMediaType(),
                         "body", media.bodyOrEmpty())).toList());
-        return inspectInput(input);
+        return inspectInput(input, policy.getAiModelName(), policy.getAiPrompt());
     }
 
     @Override
@@ -102,10 +67,11 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "contentMediaId", 0,
                         "mediaType", "TEXT",
                         "body", Map.of("text", text))));
-        return inspectInput(input);
+        return inspectInput(input, properties.modelOrDefault(), promptProvider.aiPrompt());
     }
 
-    private AiInspectionResult inspectInput(Map<String, Object> inputData) {
+    private AiInspectionResult inspectInput(Map<String, Object> inputData, String modelName,
+                                            String prompt) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
@@ -113,13 +79,13 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
             String input = objectMapper.writeValueAsString(inputData);
             Map<String, Object> body = Map.of(
                     "contents", List.of(Map.of("parts", List.of(
-                            Map.of("text", PROMPT.formatted(input))))),
+                            Map.of("text", prompt.formatted(input))))),
                     "generationConfig", Map.of(
                             "responseMimeType", "application/json",
                             "responseJsonSchema", responseJsonSchema(),
                             "maxOutputTokens", properties.maxOutputTokensOrDefault()));
             GeminiResponse response = restClient.post()
-                    .uri(ENDPOINT.formatted(properties.modelOrDefault()))
+                    .uri(ENDPOINT.formatted(modelName))
                     .header("x-goog-api-key", properties.apiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
@@ -132,7 +98,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
         }
     }
 
-    private AiInspectionResult mapResponse(String json) throws JacksonException {
+    AiInspectionResult mapResponse(String json) throws JacksonException {
         RawInspection raw = objectMapper.readValue(json, RawInspection.class);
         ContentReportData report = raw.report() == null
                 ? ContentReportData.empty()
@@ -158,7 +124,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                 .reduce("", String::concat);
     }
 
-    private Map<String, Object> responseJsonSchema() {
+    Map<String, Object> responseJsonSchema() {
         Map<String, Object> boundingBox = Map.of(
                 "type", "object",
                 "additionalProperties", false,

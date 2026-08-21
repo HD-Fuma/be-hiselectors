@@ -18,21 +18,13 @@ public interface ViolationItemRepository extends JpaRepository<ViolationItem, Lo
     Optional<ViolationItem> findByIdForUpdate(@Param("id") Long id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-            select vi from ViolationItem vi, ContentVersion cv
-            where vi.contentVersionId = cv.id
-              and cv.contentId = :contentId
-              and vi.status in :statuses
-            """)
-    List<ViolationItem> findOpenByContentIdForUpdate(
-            @Param("contentId") Long contentId,
-            @Param("statuses") Collection<ViolationStatus> statuses);
+    @Query("select vi from ViolationItem vi where vi.contentId = :contentId")
+    List<ViolationItem> findAllByContentIdForUpdate(@Param("contentId") Long contentId);
 
     @Query("""
             select case when count(vi) > 0 then true else false end
-            from ViolationItem vi, ContentVersion cv, Content c
-            where vi.contentVersionId = cv.id
-              and cv.contentId = c.id
+            from ViolationItem vi, Content c
+            where vi.contentId = c.id
               and c.selectorsId = :selectorsId
               and vi.status in :statuses
             """)

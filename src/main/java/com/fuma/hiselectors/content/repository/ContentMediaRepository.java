@@ -11,4 +11,6 @@ public interface ContentMediaRepository extends JpaRepository<ContentMedia, Long
 
     List<ContentMedia> findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
             Collection<Long> contentVersionIds);
+
+    List<ContentMedia> findAllByContentVersionIdOrderById(Long contentVersionId);
 }

@@ -24,12 +24,8 @@ public class ContentSnapshotFactory {
             Long versionNo,
             RawContent rawContent,
             LocalDateTime createdAt) {
-        return ContentVersion.builder()
-                .contentId(contentId)
-                .versionNo(versionNo)
-                .contentHash(contentHash(rawContent))
-                .createdAt(createdAt)
-                .build();
+        return ContentVersion.create(
+                contentId, versionNo, contentHash(rawContent), createdAt);
     }
 
     List<ContentMedia> createMedia(Long versionId, RawContent rawContent) {

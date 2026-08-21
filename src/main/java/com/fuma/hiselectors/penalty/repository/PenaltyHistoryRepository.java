@@ -34,10 +34,7 @@ public interface PenaltyHistoryRepository extends JpaRepository<PenaltyHistory, 
             @Param("selectorsIds") Collection<Long> selectorsIds,
             @Param("generationId") Long generationId);
 
-    long countBySelectorsIdAndGenerationIdAndStatus(
-            Long selectorsId, Long generationId, PenaltyStatus status);
-
-    long countBySelectorsIdAndGenerationId(Long selectorsId, Long generationId);
+    long countBySelectorsId(Long selectorsId);
 
     List<PenaltyHistory> findAllBySelectorsIdAndGenerationIdAndStatus(
             Long selectorsId, Long generationId, PenaltyStatus status);

@@ -9,6 +9,7 @@ import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -37,10 +38,12 @@ public class ContentVersionService {
                                          List<MediaInput> mediaInputs) {
         ContentVersion version = contentVersionRepository.save(ContentVersion.create(
                 content.getId(), content.nextVersionNo(), contentHash));
-        List<ContentMedia> media = mediaInputs.stream()
-                .map(input -> ContentMedia.create(
-                        version.getId(), input.mediaUrl(), input.mediaType(), input.body()))
-                .toList();
+        List<ContentMedia> media = new ArrayList<>(mediaInputs.size());
+        for (int i = 0; i < mediaInputs.size(); i++) {
+            MediaInput input = mediaInputs.get(i);
+            media.add(ContentMedia.create(
+                    version.getId(), input.mediaUrl(), input.mediaType(), input.body(), i));
+        }
         contentMediaRepository.saveAll(media);
         return new VersionCreationResult(version.getId(), true);
     }

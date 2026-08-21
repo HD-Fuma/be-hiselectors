@@ -6,5 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ContentReportRepository extends JpaRepository<ContentReport, Long> {
 
-    Optional<ContentReport> findByContentVersionId(Long contentVersionId);
+    Optional<ContentReport> findFirstByContentVersionIdOrderByIdDesc(Long contentVersionId);
 }

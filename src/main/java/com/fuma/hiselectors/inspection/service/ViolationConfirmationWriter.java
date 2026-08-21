@@ -1,9 +1,7 @@
 package com.fuma.hiselectors.inspection.service;
 
 import com.fuma.hiselectors.content.model.Content;
-import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentRepository;
-import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
@@ -22,7 +20,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ViolationConfirmationWriter {
 
     private final ViolationItemRepository violationItemRepository;
-    private final ContentVersionRepository contentVersionRepository;
     private final ContentRepository contentRepository;
     private final SelectorsRepository selectorsRepository;
     private final PenaltyService penaltyService;
@@ -30,9 +27,7 @@ public class ViolationConfirmationWriter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ConfirmationPreparation prepare(Long violationId) {
         ViolationItem item = requireViolationForUpdate(violationId);
-        ContentVersion firstVersion = contentVersionRepository.findById(item.getContentVersionId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        Content content = contentRepository.findById(firstVersion.getContentId())
+        Content content = contentRepository.findById(item.getContentId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         Selectors selectors = selectorsRepository.findByIdForUpdate(content.getSelectorsId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
@@ -65,9 +60,7 @@ public class ViolationConfirmationWriter {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ViolationStatus dismiss(Long violationId) {
         ViolationItem item = requireViolationForUpdate(violationId);
-        ContentVersion firstVersion = contentVersionRepository.findById(item.getContentVersionId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        Content content = contentRepository.findById(firstVersion.getContentId())
+        Content content = contentRepository.findById(item.getContentId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         selectorsRepository.findByIdForUpdate(content.getSelectorsId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));

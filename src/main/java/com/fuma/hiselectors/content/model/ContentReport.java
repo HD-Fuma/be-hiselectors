@@ -23,7 +23,7 @@ public class ContentReport extends BaseTimeEntity {
     @Column(name = "content_report_id")
     private Long id;
 
-    @Column(name = "content_version_id", nullable = false, unique = true)
+    @Column(name = "content_version_id", nullable = false)
     private Long contentVersionId;
 
     @Column(name = "summary", columnDefinition = "text")
@@ -38,17 +38,19 @@ public class ContentReport extends BaseTimeEntity {
     @Column(name = "overall_assessment", columnDefinition = "text")
     private String overallAssessment;
 
-    public static ContentReport create(Long contentVersionId, ContentReportData data) {
+    // 마이그레이션 이전 리포트는 null일 수 있으며 새 검수 결과부터 항상 채운다.
+    @Column(name = "inspection_policy_id")
+    private Long inspectionPolicyId;
+
+    public static ContentReport create(Long contentVersionId, ContentReportData data,
+                                       Long inspectionPolicyId) {
         ContentReport report = new ContentReport();
         report.contentVersionId = contentVersionId;
-        report.update(data);
+        report.summary = data.summary();
+        report.purpose = data.purpose();
+        report.flow = data.flow();
+        report.overallAssessment = data.overallAssessment();
+        report.inspectionPolicyId = inspectionPolicyId;
         return report;
-    }
-
-    public void update(ContentReportData data) {
-        this.summary = data.summary();
-        this.purpose = data.purpose();
-        this.flow = data.flow();
-        this.overallAssessment = data.overallAssessment();
     }
 }
