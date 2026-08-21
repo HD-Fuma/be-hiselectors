@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.application.service;
 
+import com.fuma.hiselectors.application.dto.AdminAiReportResponse;
 import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse;
 import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse.ContentFormatCount;
 import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse.MetricAverage;
@@ -10,8 +11,10 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -45,8 +48,55 @@ public class ApplicationAdminService {
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationMediaRepository mediaRepository;
+    private final ApplicationReportRepository reportRepository;
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
+
+    // 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감(주입 아님).
+    private final tools.jackson.databind.ObjectMapper objectMapper =
+            new tools.jackson.databind.ObjectMapper();
+
+    /** 지원자 상세의 AI 리포트. 없으면 404(아직 미분석). */
+    public AdminAiReportResponse findAiReport(Long applicationId) {
+        ApplicationReport r = reportRepository
+                .findFirstByApplicationIdOrderByCreatedAtDesc(applicationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
+        return new AdminAiReportResponse(
+                r.getApplicationId(),
+                decodeSummary(r.getSummary()),
+                r.getCategory(),
+                splitCsv(r.getKeywords()),
+                r.getContentStyle(),
+                r.getTone(),
+                r.getStrength(),
+                r.getWarning(),
+                r.getBrandHistory(),
+                r.getStatus(),
+                r.getCreatedAt());
+    }
+
+    /** summary 는 json 컬럼(문자열 리터럴)로 저장됨 → 사람이 읽는 평문으로 디코드. 실패/빈값이면 원본/ null. */
+    private String decodeSummary(String summary) {
+        if (summary == null || summary.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(summary, String.class);
+        } catch (RuntimeException e) {
+            return summary;
+        }
+    }
+
+    /** 콤마문자열 → 트리밍된 리스트. 없으면 빈 리스트. */
+    private List<String> splitCsv(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
 
     public Page<AdminApplicationSummaryResponse> search(
             String keyword,
