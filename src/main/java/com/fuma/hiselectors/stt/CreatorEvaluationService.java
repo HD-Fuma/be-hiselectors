@@ -1,15 +1,25 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
+import com.fuma.hiselectors.application.service.ReportStatus;
 import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient;
 import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient.MediaUrls;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 지원자 종합 평가(A안 + DB 백업). 콘텐츠별 분석(비쌈)은 content_key 로 멱등 저장 →
@@ -23,10 +33,18 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CreatorEvaluationService {
 
+    private static final int TEXT_MAX = 500;
+    private static final int STYLE_MAX = 19;
+
+    // summary(json 컬럼)용 인코더. 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감.
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     private final InstagramSttClient instagramClient;
     private final GeminiEvalClient evalClient;
     private final ApplicationContentAnalysisRepository repository;
+    private final ApplicationReportRepository reportRepository;
     private final MetaGraphApiClient metaGraphApiClient;
+    private final TransactionTemplate transactionTemplate;
 
     /** 콘텐츠 1건 분석 후 적재. content_key 가 이미 있으면 재분석하지 않고 저장분을 돌려준다(멱등). */
     public InstagramAnalysisResult addContent(Long applicantId, ContentAddRequest req) {
@@ -64,10 +82,14 @@ public class CreatorEvaluationService {
         }
     }
 
-    /** 지원자의 저장된 콘텐츠를 합쳐 Gemini 1회 평가. 평가 후 삭제(무저장 원칙). */
-    public ApplicantEvaluation evaluate(Long applicantId) {
+    /**
+     * 지원자의 저장된 콘텐츠를 취합해 application_report 1건으로 저장한다.
+     * category·keywords 는 로컬 분석의 결정적 취합(최빈·병합), 강점·스타일·톤 등 insight 는 Gemini 1회.
+     * 평가 후 콘텐츠(application_content_analysis)는 파기(무저장).
+     */
+    public ApplicationReport evaluate(Long applicationId) {
         // 1) 짧은 읽기.
-        List<ApplicationContentAnalysis> rows = repository.findByApplicantId(applicantId);
+        List<ApplicationContentAnalysis> rows = repository.findByApplicantId(applicationId);
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
@@ -79,12 +101,92 @@ public class CreatorEvaluationService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "콘텐츠에 전사·자막 내용이 없습니다.");
         }
 
-        // 2) Gemini 호출 — 트랜잭션 밖(커넥션 미보유).
-        ApplicantEvaluation evaluation = evalClient.evaluate(merged);
+        // 2) Gemini insight — 트랜잭션 밖(커넥션 미보유).
+        ApplicantInsight insight = evalClient.insight(merged);
 
-        // 3) 짧은 삭제.
-        repository.deleteByApplicantId(applicantId);
-        return evaluation;
+        ApplicationReport report = ApplicationReport.builder()
+                .applicationId(applicationId)
+                .summary(toJson(insight.summary()))
+                .category(mode(rows, ApplicationContentAnalysis::getCategory))
+                .keywords(clip(union(rows, ApplicationContentAnalysis::getKeywords), TEXT_MAX))
+                .contentStyle(clip(insight.contentStyle(), STYLE_MAX))
+                .tone(clip(insight.tone(), TEXT_MAX))
+                .strength(clip(join(insight.strengths()), TEXT_MAX))
+                .warning(clip(join(mergeWarnings(insight)), TEXT_MAX))
+                .brandHistory(clip(join(insight.collabBrands()), TEXT_MAX))
+                .status(ReportStatus.AI_COMPLETED.name())
+                .build();
+
+        // 3) 쓰기만 짧은 트랜잭션: 기존 리포트 교체 + 저장 + 콘텐츠 파기.
+        return transactionTemplate.execute(status -> {
+            reportRepository.deleteByApplicationId(applicationId);
+            ApplicationReport saved = reportRepository.save(report);
+            repository.deleteByApplicantId(applicationId);
+            return saved;
+        });
+    }
+
+    /** 콘텐츠별 값 최빈(non-blank). 없으면 null. */
+    private String mode(List<ApplicationContentAnalysis> rows,
+                        Function<ApplicationContentAnalysis, String> getter) {
+        return rows.stream()
+                .map(getter)
+                .filter(v -> v != null && !v.isBlank())
+                .collect(Collectors.groupingBy(v -> v, Collectors.counting()))
+                .entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+    }
+
+    /** 콤마로 이어진 값들을 펼쳐 순서보존 중복제거 후 다시 잇는다. 없으면 null. */
+    private String union(List<ApplicationContentAnalysis> rows,
+                         Function<ApplicationContentAnalysis, String> getter) {
+        Set<String> merged = new LinkedHashSet<>();
+        for (ApplicationContentAnalysis row : rows) {
+            String value = getter.apply(row);
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            for (String part : value.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    merged.add(trimmed);
+                }
+            }
+        }
+        return merged.isEmpty() ? null : String.join(", ", merged);
+    }
+
+    /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
+    private List<String> mergeWarnings(ApplicantInsight insight) {
+        List<String> merged = new ArrayList<>();
+        if (insight.cautions() != null) {
+            merged.addAll(insight.cautions());
+        }
+        if (insight.risks() != null) {
+            merged.addAll(insight.risks());
+        }
+        if (insight.hateConfirmed()) {
+            merged.add("욕설/혐오");
+        }
+        return merged;
+    }
+
+    private String join(List<String> values) {
+        return values == null ? "" : String.join(", ", values);
+    }
+
+    /** 요약을 json 컬럼용 유효 JSON 문자열로(따옴표 포함). 없으면 null. */
+    private String toJson(String summary) {
+        return summary == null || summary.isBlank() ? null : objectMapper.writeValueAsString(summary);
+    }
+
+    private String clip(String value, int max) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     private String safe(String s) {

@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -82,8 +83,8 @@ public class SttTestController {
             @ApiResponse(responseCode = "502", description = "Gemini 호출·해석 실패", content = @Content)
     })
     @PostMapping("/applicant/{applicantId}/evaluate")
-    public ResponseEntity<ApplicantEvaluation> evaluate(
-            @Parameter(description = "지원자 ID") @PathVariable Long applicantId) {
+    public ResponseEntity<ApplicationReport> evaluate(
+            @Parameter(description = "지원(application) ID") @PathVariable Long applicantId) {
         return ResponseEntity.ok(evaluationService.evaluate(applicantId));
     }
 }
