@@ -44,8 +44,9 @@ public class InstagramContentFetcher implements ContentFetcher {
     // Meta API에서 받을 게시물 정보
     // children: 캐러셀 내부 이미지와 영상 (이미지, 영상 여러 개)
     private static final String MEDIA_FIELDS =
-            "id,caption,media_type,media_product_type,permalink,timestamp,media_url,"
-                    + "view_count,like_count,comments_count,children{id,media_type,media_url}";
+            "id,caption,media_type,media_product_type,permalink,timestamp,media_url,thumbnail_url,"
+                    + "view_count,like_count,comments_count,"
+                    + "children{id,media_type,media_url,thumbnail_url}";
     private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS;
 
     private static final int PAGE_SIZE = 25;
@@ -373,7 +374,12 @@ public class InstagramContentFetcher implements ContentFetcher {
             case "VIDEO" -> MediaType.VIDEO;
             default -> throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         };
-        return new RawContentMedia(media.id(), mediaType, media.mediaUrl());
+        List<String> thumbnailUrls = media.thumbnailUrl() == null
+                || media.thumbnailUrl().isBlank()
+                ? List.of()
+                : List.of(media.thumbnailUrl());
+        return new RawContentMedia(
+                media.id(), mediaType, media.mediaUrl(), thumbnailUrls);
     }
 
     private LocalDateTime parseTimestamp(String timestamp) {

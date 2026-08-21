@@ -56,7 +56,7 @@ class InstagramContentFetcherTest {
                             .contains("media.limit(25)")
                             .contains("media_product_type")
                             .contains("view_count,like_count,comments_count")
-                            .contains("children{id,media_type,media_url}")
+                            .contains("children{id,media_type,media_url,thumbnail_url}")
                             .contains("permalink");
                     assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
                             .isEqualTo("Bearer " + ACCESS_TOKEN);
@@ -72,6 +72,7 @@ class InstagramContentFetcherTest {
                                   "media_type": "VIDEO",
                                   "media_product_type": "REELS",
                                   "media_url": "https://cdn.example.com/reel-new.mp4",
+                                  "thumbnail_url": "https://cdn.example.com/reel-new.jpg",
                                   "permalink": "https://www.instagram.com/reel/new",
                                   "view_count": 1500,
                                   "like_count": 120,
@@ -121,7 +122,8 @@ class InstagramContentFetcherTest {
         assertThat(result.getFirst().media()).containsExactly(new RawContentMedia(
                 "reel-new",
                 RawContentMedia.MediaType.VIDEO,
-                "https://cdn.example.com/reel-new.mp4"));
+                "https://cdn.example.com/reel-new.mp4",
+                List.of("https://cdn.example.com/reel-new.jpg")));
         assertThat(result.get(2).contentType()).isEqualTo(ContentType.FEED);
         assertThat(result.get(2).contentUrl())
                 .isEqualTo("https://www.instagram.com/p/video");
@@ -138,7 +140,7 @@ class InstagramContentFetcherTest {
         server.expect(request -> assertThat(URLDecoder.decode(
                         request.getURI().getRawQuery(), StandardCharsets.UTF_8))
                         .contains("business_discovery.username(pharrell)")
-                        .contains("children{id,media_type,media_url}"))
+                        .contains("children{id,media_type,media_url,thumbnail_url}"))
                 .andRespond(withSuccess("""
                         {
                           "business_discovery": {
@@ -161,7 +163,8 @@ class InstagramContentFetcherTest {
                                     {
                                       "id": "carousel-video",
                                       "media_type": "VIDEO",
-                                      "media_url": "https://cdn.example.com/video.mp4"
+                                      "media_url": "https://cdn.example.com/video.mp4",
+                                      "thumbnail_url": "https://cdn.example.com/video.jpg"
                                     }
                                   ]
                                 }
@@ -188,7 +191,8 @@ class InstagramContentFetcherTest {
                     new RawContentMedia(
                             "carousel-video",
                             RawContentMedia.MediaType.VIDEO,
-                            "https://cdn.example.com/video.mp4"));
+                            "https://cdn.example.com/video.mp4",
+                            List.of("https://cdn.example.com/video.jpg")));
         });
         server.verify();
     }
@@ -492,8 +496,9 @@ class InstagramContentFetcherTest {
                     assertThat(URLDecoder.decode(
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8))
                             .contains("fields=id,caption,media_type,media_product_type,permalink,"
-                                    + "timestamp,media_url,view_count,like_count,comments_count,"
-                                    + "children{id,media_type,media_url}");
+                                    + "timestamp,media_url,thumbnail_url,"
+                                    + "view_count,like_count,comments_count,"
+                                    + "children{id,media_type,media_url,thumbnail_url}");
                     assertThat(request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION))
                             .isEqualTo("Bearer " + ACCESS_TOKEN);
                 })
