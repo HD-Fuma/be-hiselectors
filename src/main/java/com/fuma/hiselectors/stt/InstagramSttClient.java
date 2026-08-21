@@ -3,6 +3,7 @@ package com.fuma.hiselectors.stt;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -32,13 +33,33 @@ public class InstagramSttClient {
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    /** @param reelUrl 릴스 permalink. @return 취득·STT·OCR·분석 결과. 저장하지 않는다. */
+    /** 릴스 permalink만으로 취득(yt-dlp). media_url 없이 부를 때. */
     public InstagramAnalysisResult analyze(String reelUrl) {
+        return analyze(reelUrl, null, null);
+    }
+
+    /**
+     * @param reelUrl      릴스 permalink(yt-dlp 폴백용)
+     * @param mediaUrl     Graph API media_url. 있으면 워커가 CDN 직다운(yt-dlp 안 씀)
+     * @param thumbnailUrl Graph API thumbnail_url. 영상 취득 실패 시 폴백
+     * @return 취득·STT·OCR·분석 결과. 저장하지 않는다.
+     */
+    public InstagramAnalysisResult analyze(String reelUrl, String mediaUrl, String thumbnailUrl) {
+        Map<String, Object> body = new HashMap<>();
+        if (reelUrl != null) {
+            body.put("url", reelUrl);
+        }
+        if (mediaUrl != null) {
+            body.put("media_url", mediaUrl);
+        }
+        if (thumbnailUrl != null) {
+            body.put("thumbnail_url", thumbnailUrl);
+        }
         try {
             InstagramAnalysisResult result = restClient.post()
                     .uri(properties.baseUrlOrDefault() + "/reel")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("url", reelUrl))
+                    .body(body)
                     .retrieve()
                     .body(InstagramAnalysisResult.class);
 

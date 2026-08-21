@@ -22,7 +22,9 @@ class AnalyzeRequest(BaseModel):
 
 
 class ReelRequest(BaseModel):
-    url: str
+    url: str | None = None
+    media_url: str | None = None       # Graph API media_url 있으면 CDN 직다운(yt-dlp 안 씀)
+    thumbnail_url: str | None = None   # 영상 취득 실패 시 폴백
 
 
 @app.post("/analyze")
@@ -34,7 +36,7 @@ def do_analyze(req: AnalyzeRequest) -> dict:
 def do_reel(req: ReelRequest) -> dict:
     """릴스 URL → 취득 → STT/OCR → 분석. 무저장."""
     try:
-        return pipeline.run(req.url)
+        return pipeline.run(url=req.url, media_url=req.media_url, thumbnail_url=req.thumbnail_url)
     except Exception as e:
         logging.error("reel 실패: %s\n%s", e, traceback.format_exc())
         # 원인을 500 본문에 실어 Java 로그에서 바로 보이게 한다.

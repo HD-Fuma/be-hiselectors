@@ -1,32 +1,33 @@
 package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fuma.hiselectors.exception.BusinessException;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
-/** 캐시 누적/파기 로직과 Gemini 평가 JSON 매핑 검증(네트워크 없음). */
 class CreatorEvaluationTest {
 
-    private InstagramAnalysisResult content(String stt) {
-        return new InstagramAnalysisResult("video", stt, "", null);
+    private CreatorEvaluationService service() {
+        GeminiProperties props = new GeminiProperties("dummy", null, null, null);
+        return new CreatorEvaluationService(new GeminiEvalClient(props));
     }
 
     @Test
-    void 지원자별로_콘텐츠가_누적되고_clear로_파기된다() {
-        TranscriptCache cache = new TranscriptCache();
+    void 콘텐츠가_없으면_Gemini_호출_전에_거부한다() {
+        assertThatThrownBy(() -> service().evaluate(List.of()))
+                .isInstanceOf(BusinessException.class);
+    }
 
-        cache.add(1L, content("첫 콘텐츠"));
-        cache.add(1L, content("둘째 콘텐츠"));
-        cache.add(2L, content("다른 지원자"));
+    @Test
+    void 전사_자막이_전부_비면_거부한다() {
+        List<InstagramAnalysisResult> blank =
+                List.of(new InstagramAnalysisResult("thumbnail", "", "  ", null));
 
-        assertThat(cache.get(1L)).hasSize(2);
-        assertThat(cache.get(2L)).hasSize(1);
-        assertThat(cache.get(99L)).isEmpty();
-
-        cache.clear(1L);
-        assertThat(cache.get(1L)).isEmpty();
-        assertThat(cache.get(2L)).hasSize(1);
+        assertThatThrownBy(() -> service().evaluate(blank))
+                .isInstanceOf(BusinessException.class);
     }
 
     @Test

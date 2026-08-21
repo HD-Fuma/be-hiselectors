@@ -11,9 +11,11 @@ import analyze
 import media_stt
 
 
-def run(url: str, include_hate: bool = True) -> dict:
-    """{source, stt, ocr, analysis}. 다운로드 파일은 분석 후 삭제(비동의 원문 미보관)."""
-    path = acquire.fetch(url)
+def run(url: str | None = None, media_url: str | None = None,
+        thumbnail_url: str | None = None, include_hate: bool = True) -> dict:
+    """{source, stt, ocr, analysis}. media_url 있으면 CDN 직다운(yt-dlp 안 씀), 없으면 url 로 yt-dlp.
+    다운로드 파일은 분석 후 삭제(비동의 원문 미보관)."""
+    path = acquire.fetch(url=url, media_url=media_url, thumbnail_url=thumbnail_url)
     work_dir = os.path.dirname(path)
     try:
         t = media_stt.transcribe(path)
