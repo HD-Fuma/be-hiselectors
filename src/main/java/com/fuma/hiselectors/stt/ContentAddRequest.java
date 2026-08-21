@@ -9,12 +9,9 @@ public record ContentAddRequest(
                 Schema.RequiredMode.REQUIRED)
         String contentKey,
 
-        @Schema(description = "릴스 permalink(yt-dlp 폴백용)")
-        String reelUrl,
-
-        @Schema(description = "Graph API media_url. 있으면 CDN 직다운(yt-dlp 생략)")
+        @Schema(description = "Graph API media_url. 워커가 CDN 직다운")
         String mediaUrl,
 
-        @Schema(description = "Graph API thumbnail_url. 영상 실패 시 폴백")
+        @Schema(description = "Graph API thumbnail_url. media_url 없을 때 폴백")
         String thumbnailUrl) {
 }

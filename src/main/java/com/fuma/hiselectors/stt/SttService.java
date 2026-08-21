@@ -21,11 +21,10 @@ public class SttService {
     }
 
     /**
-     * 인스타 릴스: 파이썬 워커가 취득·STT·OCR·분석까지 수행.
-     * media_url 있으면 워커가 CDN 직다운(yt-dlp 생략), 없으면 reelUrl 로 yt-dlp.
+     * 인스타 릴스: 파이썬 워커가 Graph API media_url(공식 API)로 취득·STT·OCR·분석까지 수행.
+     * media_url 없으면(저작권 릴스) thumbnail_url 로 폴백. 스크래핑(yt-dlp) 미사용.
      */
-    public InstagramAnalysisResult analyzeInstagramReel(
-            String reelUrl, String mediaUrl, String thumbnailUrl) {
-        return instagramClient.analyze(reelUrl, mediaUrl, thumbnailUrl);
+    public InstagramAnalysisResult analyzeInstagramReel(String mediaUrl, String thumbnailUrl) {
+        return instagramClient.analyze(mediaUrl, thumbnailUrl);
     }
 }

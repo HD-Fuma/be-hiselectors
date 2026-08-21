@@ -35,7 +35,7 @@ public class CreatorEvaluationService {
 
         // 2) 오래 걸리는 워커 호출 — 트랜잭션 밖(커넥션 미보유).
         InstagramAnalysisResult result = instagramClient.analyze(
-                req.reelUrl(), req.mediaUrl(), req.thumbnailUrl());
+                req.mediaUrl(), req.thumbnailUrl());
 
         // 3) 짧은 저장. 동시요청이 먼저 같은 content_key 를 저장했으면 중복은 성공으로 간주(멱등).
         try {
