@@ -20,11 +20,11 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
     @Query("select h from SettlementHistory h where h.id = :settlementId")
     Optional<SettlementHistory> findByIdForUpdate(@Param("settlementId") Long settlementId);
 
-    Optional<SettlementHistory> findBySelectorsIdAndActivityMonth(
-            Long selectorsId, LocalDateTime activityMonth);
+    Optional<SettlementHistory> findBySelectorsIdAndActivityYearMonth(
+            Long selectorsId, Integer activityYearMonth);
 
-    List<SettlementHistory> findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
-            SettlementStatus status, LocalDateTime activityMonth);
+    List<SettlementHistory> findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+            SettlementStatus status, Integer activityYearMonth);
 
     List<SettlementHistory> findAllByStatusIn(Collection<SettlementStatus> statuses);
 
@@ -62,12 +62,12 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             select h
             from SettlementHistory h
             where h.selectorsId = :selectorsId
-              and h.activityMonth = :activityMonth
+              and h.activityYearMonth = :activityYearMonth
               and h.status in :statuses
             """)
-    Optional<SettlementHistory> findBySelectorsIdAndActivityMonthAndStatusIn(
+    Optional<SettlementHistory> findBySelectorsIdAndActivityYearMonthAndStatusIn(
             @Param("selectorsId") Long selectorsId,
-            @Param("activityMonth") LocalDateTime activityMonth,
+            @Param("activityYearMonth") Integer activityYearMonth,
             @Param("statuses") Collection<SettlementStatus> statuses);
 
     @Query("select min(h.activityMonth) from SettlementHistory h")
@@ -76,12 +76,12 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
     @Query("""
             select h
             from SettlementHistory h
-            where h.activityMonth = :activityMonth
+            where h.activityYearMonth = :activityYearMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
             """)
     Page<SettlementHistory> search(
-            @Param("activityMonth") LocalDateTime activityMonth,
+            @Param("activityYearMonth") Integer activityYearMonth,
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status,
             Pageable pageable);

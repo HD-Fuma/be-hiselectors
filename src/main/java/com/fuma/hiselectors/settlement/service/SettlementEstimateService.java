@@ -25,16 +25,17 @@ public class SettlementEstimateService {
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final Clock clock;
     private final SelectorAccessService selectorAccessService;
+    private final SettlementProvisionalEstimateService provisionalEstimateService;
 
     public SettlementEstimateResponse getEstimate(String loginId, YearMonth requestedMonth) {
         Selectors selectors = selectorAccessService.requireCurrent(loginId);
         YearMonth activityMonth = resolveReadableMonth(requestedMonth);
         SettlementHistory history = settlementHistoryRepository
-                .findBySelectorsIdAndActivityMonth(
-                        selectors.getId(), activityMonth.atDay(1).atStartOfDay())
+                .findBySelectorsIdAndActivityYearMonth(
+                        selectors.getId(), toYearMonthKey(activityMonth))
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.SETTLEMENT_NOT_CALCULATED));
-        return SettlementEstimateResponse.of(history, selectors);
+        return toResponse(history, selectors);
     }
 
     public SettlementHistoryListResponse getHistories(String loginId, Integer requestedYear) {
@@ -46,7 +47,7 @@ public class SettlementEstimateService {
                 .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
                         selectors.getId(), startMonth, endMonth)
                 .stream()
-                .map(history -> SettlementEstimateResponse.of(history, selectors))
+                .map(history -> toResponse(history, selectors))
                 .toList();
 
         return new SettlementHistoryListResponse(
@@ -56,13 +57,25 @@ public class SettlementEstimateService {
     }
 
     private YearMonth resolveReadableMonth(YearMonth requestedMonth) {
-        YearMonth previousMonth = YearMonth.from(LocalDate.now(clock)).minusMonths(1);
-        YearMonth resolved = requestedMonth == null ? previousMonth : requestedMonth;
-        if (resolved.isAfter(previousMonth)) {
+        YearMonth currentMonth = YearMonth.from(LocalDate.now(clock));
+        YearMonth resolved = requestedMonth == null ? currentMonth : requestedMonth;
+        if (resolved.isAfter(currentMonth)) {
             throw new BusinessException(
                     ErrorCode.INVALID_INPUT,
                     "현재 활동월 이후의 정산 예상액은 조회할 수 없습니다.");
         }
         return resolved;
+    }
+
+    private SettlementEstimateResponse toResponse(
+            SettlementHistory history, Selectors selectors) {
+        return SettlementEstimateResponse.of(
+                history,
+                selectors,
+                provisionalEstimateService.calculate(history));
+    }
+
+    private int toYearMonthKey(YearMonth yearMonth) {
+        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
     }
 }

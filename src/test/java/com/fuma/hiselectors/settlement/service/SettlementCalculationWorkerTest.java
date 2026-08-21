@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,9 +65,12 @@ class SettlementCalculationWorkerTest {
 
     @Test
     void calculatesAndFinalizesPreviousMonth() {
-        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(
-                1L, LocalDateTime.of(2026, 7, 1, 0, 0)))
-                .thenReturn(Optional.empty());
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        1L,
+                        LocalDateTime.of(2026, 7, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(List.of());
         PurchaseSettlementSummary purchaseSummary = summary("12345.00", 2L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 1L,
@@ -89,8 +93,10 @@ class SettlementCalculationWorkerTest {
 
     @Test
     void rejectsFractionalWonWithoutSaving() {
-        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(any(), any()))
-                .thenReturn(Optional.empty());
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        any(), any(), any()))
+                .thenReturn(List.of());
         PurchaseSettlementSummary purchaseSummary = summary("100.50", 1L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 any(), any(), any(), any()))
@@ -112,8 +118,10 @@ class SettlementCalculationWorkerTest {
                 100L, 1L, new BigDecimal("3.00"), 3L,
                 LocalDateTime.now());
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
-        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(any(), any()))
-                .thenReturn(Optional.of(history));
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        any(), any(), any()))
+                .thenReturn(List.of(history));
 
         SettlementCalculationResult result = worker.calculate(
                 1L, JULY, false);
@@ -130,9 +138,12 @@ class SettlementCalculationWorkerTest {
                 0L, 0L, new BigDecimal("3.00"), 0L,
                 LocalDateTime.now());
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());
-        when(settlementHistoryRepository.findBySelectorsIdAndActivityMonth(
-                1L, LocalDateTime.of(2026, 7, 1, 0, 0)))
-                .thenReturn(Optional.of(history));
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        1L,
+                        LocalDateTime.of(2026, 7, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(List.of(history));
         PurchaseSettlementSummary purchaseSummary = summary("10000.00", 1L);
         when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
                 1L,
@@ -147,6 +158,25 @@ class SettlementCalculationWorkerTest {
         assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.FINALIZED);
         assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(history.getTotalSales()).isEqualTo(10_000L);
+    }
+
+    @Test
+    void rejectsDuplicateHistoriesWithinTheSameLogicalActivityMonth() {
+        SettlementHistory first = SettlementHistory.create(
+                1L, LocalDateTime.of(2026, 7, 1, 0, 0));
+        SettlementHistory second = mock(SettlementHistory.class);
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        1L,
+                        LocalDateTime.of(2026, 7, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(List.of(first, second));
+
+        assertThatThrownBy(() -> worker.calculate(1L, JULY, false))
+                .isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).getErrorCode())
+                .isEqualTo(ErrorCode.SETTLEMENT_ACTIVITY_MONTH_DUPLICATED);
+        verifyNoInteractions(applicationRepository, purchaseHistoryRepository);
     }
 
     private void givenRateSource(SnsPlatform platform, Long followerCount) {

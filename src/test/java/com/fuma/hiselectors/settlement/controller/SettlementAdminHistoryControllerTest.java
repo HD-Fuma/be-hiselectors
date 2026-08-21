@@ -119,6 +119,7 @@ class SettlementAdminHistoryControllerTest {
                 10_000L,
                 new BigDecimal("3.00"),
                 300L,
+                null,
                 SettlementStatus.PAYMENT_PENDING,
                 LocalDateTime.of(2026, 8, 1, 3, 0),
                 LocalDateTime.of(2026, 8, 1, 3, 0));

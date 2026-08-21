@@ -36,6 +36,7 @@ public class SettlementAdminService {
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final Clock clock;
+    private final SettlementProvisionalEstimateService provisionalEstimateService;
 
     private static final List<PurchaseStatus> VALID_PURCHASE_CONVERSION_STATUSES = List.of(
             PurchaseStatus.PURCHASED, PurchaseStatus.PURCHASE_CONFIRMED);
@@ -51,13 +52,13 @@ public class SettlementAdminService {
                 ? YearMonth.from(LocalDate.now(clock)).minusMonths(1)
                 : requestedMonth;
         Page<SettlementHistory> histories = settlementHistoryRepository.search(
-                activityMonth.atDay(1).atStartOfDay(), selectorsId, status, pageable);
+                toYearMonthKey(activityMonth), selectorsId, status, pageable);
         Map<Long, Selectors> selectorsById = selectorsRepository
                 .findAllById(histories.stream().map(SettlementHistory::getSelectorsId).toList())
                 .stream()
                 .collect(Collectors.toMap(Selectors::getId, Function.identity()));
 
-        return histories.map(history -> SettlementEstimateResponse.of(
+        return histories.map(history -> toResponse(
                 history,
                 requireSelectors(selectorsById, history.getSelectorsId())));
     }
@@ -79,9 +80,9 @@ public class SettlementAdminService {
         YearMonth paymentMonth = currentMonth;
         YearMonth payableActivityMonth = currentMonth.minusMonths(2);
         SettlementHistory nextPaymentHistory = settlementHistoryRepository
-                .findBySelectorsIdAndActivityMonthAndStatusIn(
+                .findBySelectorsIdAndActivityYearMonthAndStatusIn(
                         selectorsId,
-                        payableActivityMonth.atDay(1).atStartOfDay(),
+                        toYearMonthKey(payableActivityMonth),
                         NEXT_PAYMENT_ELIGIBLE_STATUSES)
                 .orElse(null);
 
@@ -111,7 +112,7 @@ public class SettlementAdminService {
             Long selectorsId, Selectors selectors, Pageable pageable) {
         return settlementHistoryRepository
                 .findAllBySelectorsIdOrderByActivityMonthDesc(selectorsId, pageable)
-                .map(history -> SettlementEstimateResponse.of(history, selectors));
+                .map(history -> toResponse(history, selectors));
     }
 
     private Selectors requireSelectors(Map<Long, Selectors> selectorsById, Long selectorsId) {
@@ -120,5 +121,17 @@ public class SettlementAdminService {
             throw new BusinessException(ErrorCode.SELECTOR_NOT_FOUND);
         }
         return selectors;
+    }
+
+    private SettlementEstimateResponse toResponse(
+            SettlementHistory history, Selectors selectors) {
+        return SettlementEstimateResponse.of(
+                history,
+                selectors,
+                provisionalEstimateService.calculate(history));
+    }
+
+    private int toYearMonthKey(YearMonth yearMonth) {
+        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
     }
 }

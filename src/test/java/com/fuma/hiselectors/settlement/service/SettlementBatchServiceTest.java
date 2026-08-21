@@ -24,6 +24,32 @@ class SettlementBatchServiceTest {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     @Test
+    void calculatesPreviousAndCurrentActivityMonthsEveryDay() {
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        Clock clock = Clock.fixed(Instant.parse("2026-08-10T18:00:00Z"), SEOUL);
+        SettlementBatchService service = new SettlementBatchService(
+                selectorsRepository, worker, historyRepository,
+                new SettlementSchedulePolicy(), clock);
+        when(selectorsRepository.findAllIds()).thenReturn(List.of(1L));
+        when(worker.calculate(1L, YearMonth.of(2026, 7), false)).thenReturn(
+                new SettlementCalculationResult(mock(SettlementHistory.class),
+                        SettlementCalculationOutcome.UPDATED));
+        when(worker.calculate(1L, YearMonth.of(2026, 8), false)).thenReturn(
+                new SettlementCalculationResult(mock(SettlementHistory.class),
+                        SettlementCalculationOutcome.CREATED));
+
+        SettlementBatchService.SettlementBatchResult result =
+                service.calculateOpenActivityMonth();
+
+        assertThat(result.activityMonth()).isEqualTo(YearMonth.of(2026, 8));
+        assertThat(result.processedCount()).isEqualTo(2);
+        verify(worker).calculate(1L, YearMonth.of(2026, 7), false);
+        verify(worker).calculate(1L, YearMonth.of(2026, 8), false);
+    }
+
+    @Test
     void finalizesOnTheTwentyFirstBusinessDayAndContinuesAfterIndividualFailure() {
         SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
@@ -33,8 +59,9 @@ class SettlementBatchServiceTest {
                 new SettlementBatchService(selectorsRepository, worker, historyRepository,
                         new SettlementSchedulePolicy(), clock);
         when(selectorsRepository.findAllIds()).thenReturn(List.of(1L, 2L));
-        when(historyRepository.findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
-                SettlementStatus.CALCULATING, LocalDateTime.of(2026, 7, 1, 0, 0)))
+        when(historyRepository
+                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+                        SettlementStatus.CALCULATING, 202607))
                 .thenReturn(List.of());
         SettlementHistory history = mock(SettlementHistory.class);
         when(worker.calculate(
@@ -68,8 +95,9 @@ class SettlementBatchServiceTest {
         SettlementHistory overdueHistory = mock(SettlementHistory.class);
         when(overdueHistory.getSelectorsId()).thenReturn(7L);
         when(overdueHistory.getActivityMonth()).thenReturn(LocalDateTime.of(2026, 7, 1, 0, 0));
-        when(historyRepository.findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
-                SettlementStatus.CALCULATING, LocalDateTime.of(2026, 8, 1, 0, 0)))
+        when(historyRepository
+                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+                        SettlementStatus.CALCULATING, 202608))
                 .thenReturn(List.of(overdueHistory));
         when(worker.calculate(7L, YearMonth.of(2026, 7), true)).thenReturn(
                 new SettlementCalculationResult(mock(SettlementHistory.class),

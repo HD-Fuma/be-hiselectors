@@ -22,22 +22,28 @@ public class SettlementPaymentService {
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementPaymentWorker settlementPaymentWorker;
     private final SettlementMissingNotificationService settlementMissingNotificationService;
+    private final SettlementSchedulePolicy settlementSchedulePolicy;
     private final Clock clock;
 
     /** 지급월 실행일에 처리 가능한 모든 활동월 정산을 내부 지급 처리한다. */
     public SettlementPaymentResponse processCurrentPaymentMonth() {
-        YearMonth paymentMonth = YearMonth.from(LocalDate.now(clock));
-        return process(paymentMonth);
+        LocalDate today = LocalDate.now(clock);
+        YearMonth paymentMonth = YearMonth.from(today);
+        return process(paymentMonth, settlementSchedulePolicy.latestPayableActivityMonth(today));
     }
 
     /** 관리자 수동 실행 및 스케줄러가 공유하는 지급 상태 처리. */
     public SettlementPaymentResponse process(YearMonth paymentMonth) {
-        YearMonth latestEligibleActivityMonth = paymentMonth.minusMonths(2);
+        return process(paymentMonth, paymentMonth.minusMonths(2));
+    }
+
+    private SettlementPaymentResponse process(
+            YearMonth paymentMonth, YearMonth latestEligibleActivityMonth) {
         reopenResolvedHolds();
         List<SettlementHistory> histories = settlementHistoryRepository
-                .findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
+                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
                         SettlementStatus.PAYMENT_PENDING,
-                        latestEligibleActivityMonth.atDay(1).atStartOfDay());
+                        toYearMonthKey(latestEligibleActivityMonth));
         int settledCount = 0;
         int heldCount = 0;
         int skippedCount = 0;
@@ -72,6 +78,10 @@ public class SettlementPaymentService {
         return new SettlementPaymentResponse(
                 paymentMonth, latestEligibleActivityMonth, processedCount, settledCount, heldCount,
                 skippedCount, failedCount);
+    }
+
+    private int toYearMonthKey(YearMonth yearMonth) {
+        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
     }
 
     private void reopenResolvedHolds() {

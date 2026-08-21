@@ -27,8 +27,13 @@ public class SettlementBatchService {
 
     public SettlementBatchResult calculateOpenActivityMonth() {
         LocalDate today = LocalDate.now(clock);
-        YearMonth activityMonth = YearMonth.from(today).minusMonths(1);
-        return calculate(allSelectorsFor(activityMonth), activityMonth, false);
+        YearMonth currentActivityMonth = YearMonth.from(today);
+        Set<SettlementTarget> targets = new LinkedHashSet<>();
+        for (Long selectorsId : selectorsRepository.findAllIds()) {
+            targets.add(new SettlementTarget(selectorsId, currentActivityMonth.minusMonths(1)));
+            targets.add(new SettlementTarget(selectorsId, currentActivityMonth));
+        }
+        return calculate(targets, currentActivityMonth, false);
     }
 
     public SettlementBatchResult finalizeOpenActivityMonth() {
@@ -55,17 +60,20 @@ public class SettlementBatchService {
 
     private Set<SettlementTarget> overdueCalculatingTargets(
             LocalDate today, YearMonth latestActivityMonth) {
-        LocalDateTime latestMonthStart = latestActivityMonth.atDay(1).atStartOfDay();
         Set<SettlementTarget> targets = new LinkedHashSet<>();
         for (SettlementHistory history : settlementHistoryRepository
-                .findAllByStatusAndActivityMonthLessThanEqualOrderByActivityMonthAsc(
-                        SettlementStatus.CALCULATING, latestMonthStart)) {
+                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+                        SettlementStatus.CALCULATING, toYearMonthKey(latestActivityMonth))) {
             YearMonth activityMonth = YearMonth.from(history.getActivityMonth());
             if (!today.isBefore(schedulePolicy.finalizationDate(activityMonth))) {
                 targets.add(new SettlementTarget(history.getSelectorsId(), activityMonth));
             }
         }
         return targets;
+    }
+
+    private int toYearMonthKey(YearMonth yearMonth) {
+        return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
     }
 
     private SettlementBatchResult calculate(
