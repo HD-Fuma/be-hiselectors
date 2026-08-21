@@ -72,6 +72,19 @@ class SelectorAccessServiceTest {
     }
 
     @Test
+    void generationEndedMoreThanOneYearAgoHasNoSelectorAccess() {
+        when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of(generation(
+                NOW.minusYears(2), NOW.minusYears(1).minusNanos(1), NOW.minusYears(2))));
+
+        assertThat(service.getAccess("hi-user").accessLevel())
+                .isEqualTo(SelectorAccessLevel.NONE);
+        assertThatThrownBy(() -> service.requireReadable("hi-user"))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+    }
+
+    @Test
     void blacklistOverridesPastMembership() {
         ReflectionTestUtils.setField(selectors, "selectorsRoleId", Selectors.BLACKLIST_ROLE);
         when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of(generation(

@@ -13,6 +13,7 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.repository.ViolationTypeRepository;
 import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.selectors.dto.SelectorsGenerationResponse;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -59,13 +60,38 @@ class PenaltyServiceTest {
 
     @Test
     void thirdPenaltyInSameGenerationBlacklistsSelector() {
-        when(penaltyRepository.countBySelectorsIdAndGenerationId(9L, 2L)).thenReturn(3L);
+        when(penaltyRepository.countBySelectorsIdAndGenerationIdAndStatus(
+                9L, 2L, PenaltyStatus.ACTIVE)).thenReturn(3L);
 
         var response = service.create(9L, new PenaltyCreateRequest(4L));
 
         assertThat(response.generationId()).isEqualTo(2L);
         assertThat(selectors.isBlacklisted()).isTrue();
-        verify(penaltyRepository).countBySelectorsIdAndGenerationId(9L, 2L);
+        verify(penaltyRepository).countBySelectorsIdAndGenerationIdAndStatus(
+                9L, 2L, PenaltyStatus.ACTIVE);
+    }
+
+    @Test
+    void secondActivePenaltyDoesNotBlacklistSelector() {
+        when(penaltyRepository.countBySelectorsIdAndGenerationIdAndStatus(
+                9L, 2L, PenaltyStatus.ACTIVE)).thenReturn(2L);
+
+        service.create(9L, new PenaltyCreateRequest(4L));
+
+        assertThat(selectors.isBlacklisted()).isFalse();
+    }
+
+    @Test
+    void noCurrentActivityRejectsPenaltyBeforeSave() {
+        when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.create(9L, new PenaltyCreateRequest(4L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCESS_DENIED);
+        verify(penaltyRepository, never()).save(any());
+        verify(penaltyRepository, never()).countBySelectorsIdAndGenerationIdAndStatus(
+                any(), any(), any());
     }
 
     @Test

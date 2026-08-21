@@ -167,6 +167,18 @@ class GenerationAdminServiceTest {
     }
 
     @Test
+    void rejectsPartialActivityUpdateThatInvertsMergedPeriod() {
+        when(generationRepository.findById(1L)).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> generationAdminService.update(
+                1L, new GenerationUpdateRequest(
+                        null, null, null, ACTIVITY_END.plusDays(1), null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.GENERATION_PERIOD_INVALID);
+    }
+
+    @Test
     void rejectsUpdateWithOverlappingActiveActivityPeriod() {
         generation.changeStatus(GenerationStatus.ACTIVE);
         LocalDateTime changedActivityEnd = ACTIVITY_END.plusDays(1);

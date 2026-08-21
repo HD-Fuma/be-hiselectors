@@ -1,4 +1,5 @@
 -- 모집 기간과 별도로 셀렉터스 권한·실적 산정에 쓰는 활동 기간을 둔다.
+-- 구버전 API로 롤백해도 기수를 생성할 수 있도록 nullable 상태를 유지한다.
 ALTER TABLE generation
     ADD COLUMN activity_start_date DATETIME(6) NULL AFTER end_date,
     ADD COLUMN activity_end_date DATETIME(6) NULL AFTER activity_start_date;
@@ -16,7 +17,7 @@ JOIN generation g ON g.generation_id = sg.generation_id
 SET sg.created_at = COALESCE(g.activity_start_date, g.start_date)
 WHERE sg.created_at IS NULL;
 
--- 구버전 API로 롤백해도 기수를 생성할 수 있도록 nullable 상태를 유지한다.
+-- 현재 활동 기수와 종료 기수 조회를 위한다.
 ALTER TABLE generation
     ADD INDEX idx_generation_activity_period (activity_start_date, activity_end_date);
 

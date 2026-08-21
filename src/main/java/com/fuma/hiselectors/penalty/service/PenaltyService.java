@@ -5,6 +5,7 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.repository.ViolationTypeRepository;
 import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.selectors.dto.PenaltyHistoryResponse;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -51,8 +52,9 @@ public class PenaltyService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACCESS_DENIED));
         PenaltyHistory saved = penaltyHistoryRepository.save(PenaltyHistory.activate(
                 selectorsId, generation.generationId(), request.violationTypeId(), now));
-        if (penaltyHistoryRepository.countBySelectorsIdAndGenerationId(
-                selectorsId, generation.generationId()) >= BLACKLIST_THRESHOLD) {
+        if (penaltyHistoryRepository.countBySelectorsIdAndGenerationIdAndStatus(
+                selectorsId, generation.generationId(), PenaltyStatus.ACTIVE)
+                >= BLACKLIST_THRESHOLD) {
             selectors.blacklist();
         }
         return PenaltyHistoryResponse.from(saved);
