@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -166,7 +167,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
                     ContentType.LONG_FORM,
                     texts(item),
                     parseCreatedAt(snippet.publishedAt()),
-                    List.of(new RawContentMedia(id, MediaType.VIDEO, null)));
+                    List.of(new RawContentMedia(
+                            id, MediaType.VIDEO, null, thumbnailUrls(snippet))));
             YoutubeContentResponse.Statistics statistics = item.statistics();
             Engagement engagement = new Engagement(
                     count(statistics == null ? null : statistics.viewCount()),
@@ -386,7 +388,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 texts(item),
                 createdAt,
                 // YouTube는 영상 파일 직접 주소를 제공하지 않아 mediaUrl은 null
-                List.of(new RawContentMedia(videoId, MediaType.VIDEO, null)));
+                List.of(new RawContentMedia(
+                        videoId, MediaType.VIDEO, null, thumbnailUrls(item.snippet()))));
     }
 
     @Override
@@ -448,6 +451,18 @@ public class YoutubeContentFetcher implements ContentFetcher {
             texts.add(description);
         }
         return texts;
+    }
+
+    private List<String> thumbnailUrls(YoutubeContentResponse.Snippet snippet) {
+        if (snippet == null || snippet.thumbnails() == null) {
+            return List.of();
+        }
+        return snippet.thumbnails().values().stream()
+                .filter(Objects::nonNull)
+                .map(YoutubeContentResponse.Thumbnail::url)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
     }
 
     private LocalDateTime parseCreatedAt(String publishedAt) {

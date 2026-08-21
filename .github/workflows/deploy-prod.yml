@@ -120,13 +120,25 @@ jobs:
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'")" = "selectors_id,generation_id"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND column_name = 'generation_id' AND referenced_table_name = 'generation' AND referenced_column_name = 'generation_id'")" = "1"
         echo "008-expand=verified"
+
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_media_url'")" = "0" ]; then
+          mysql_query "CREATE TABLE application_media_url (application_media_id BIGINT NOT NULL, sequence_no INT NOT NULL, url_type VARCHAR(20) NOT NULL, url TEXT NOT NULL, PRIMARY KEY (application_media_id, sequence_no), CONSTRAINT FK_ApplicationMedia_TO_ApplicationMediaUrl_1 FOREIGN KEY (application_media_id) REFERENCES application_media (application_media_id) ON DELETE CASCADE) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci"
+        fi
+        mysql_query "INSERT INTO application_media_url (application_media_id, sequence_no, url_type, url) SELECT am.application_media_id, 0, 'MEDIA', am.media_url FROM application_media am WHERE am.media_url IS NOT NULL AND am.media_url <> '' AND NOT EXISTS (SELECT 1 FROM application_media_url amu WHERE amu.application_media_id = am.application_media_id)"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media_url' AND ((column_name = 'application_media_id' AND data_type = 'bigint' AND is_nullable = 'NO') OR (column_name = 'sequence_no' AND data_type = 'int' AND is_nullable = 'NO') OR (column_name = 'url_type' AND data_type = 'varchar' AND character_maximum_length = 20 AND is_nullable = 'NO') OR (column_name = 'url' AND data_type = 'text' AND is_nullable = 'NO'))")" = "4"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_media_url' AND index_name = 'PRIMARY'")" = "application_media_id,sequence_no"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'application_media_url' AND constraint_name = 'FK_ApplicationMedia_TO_ApplicationMediaUrl_1' AND referenced_table_name = 'application_media' AND delete_rule = 'CASCADE'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'application_media_url' AND constraint_name = 'FK_ApplicationMedia_TO_ApplicationMediaUrl_1' AND column_name = 'application_media_id' AND referenced_table_name = 'application_media' AND referenced_column_name = 'application_media_id'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM application_media_url amu LEFT JOIN application_media am ON am.application_media_id = amu.application_media_id WHERE am.application_media_id IS NULL OR amu.url_type NOT IN ('MEDIA', 'THUMBNAIL') OR amu.url IS NULL OR TRIM(amu.url) = ''")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM application_media am WHERE am.media_url IS NOT NULL AND am.media_url <> '' AND NOT EXISTS (SELECT 1 FROM application_media_url amu WHERE amu.application_media_id = am.application_media_id AND amu.url_type = 'MEDIA' AND amu.url = am.media_url)")" = "0"
+        echo "010-expand=verified"
     steps:
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Expand 008 through SSM
+      - name: Expand database through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
           PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
@@ -235,6 +247,9 @@ jobs:
                 mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
                 -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
             }
+            mysql_query "INSERT INTO application_media_url (application_media_id, sequence_no, url_type, url) SELECT am.application_media_id, 0, 'MEDIA', am.media_url FROM application_media am WHERE am.media_url IS NOT NULL AND am.media_url <> '' AND NOT EXISTS (SELECT 1 FROM application_media_url amu WHERE amu.application_media_id = am.application_media_id)"
+            test "$(mysql_query "SELECT COUNT(*) FROM application_media am WHERE am.media_url IS NOT NULL AND am.media_url <> '' AND NOT EXISTS (SELECT 1 FROM application_media_url amu WHERE amu.application_media_id = am.application_media_id AND amu.url_type = 'MEDIA' AND amu.url = am.media_url)")" = "0"
+            echo "010-pre-deploy=verified"
             mysql_query "UPDATE generation SET activity_start_date = COALESCE(activity_start_date, start_date), activity_end_date = COALESCE(activity_end_date, end_date) WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
             mysql_query "UPDATE selectors_generation sg JOIN generation g ON g.generation_id = sg.generation_id SET sg.created_at = COALESCE(g.activity_start_date, g.start_date) WHERE sg.created_at IS NULL"
             test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"

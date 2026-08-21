@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.ContentType;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record ApplicationMediaResponse(
         Long id,
@@ -12,6 +13,8 @@ public record ApplicationMediaResponse(
         String snsContentId,
         String contentUrl,
         String mediaUrl,
+        List<String> mediaUrls,
+        List<String> thumbnailUrls,
         ContentType contentType,
         int sequenceNo,
         LocalDateTime publishedAt,
@@ -28,6 +31,8 @@ public record ApplicationMediaResponse(
                 media.getSnsContentId(),
                 media.getContentUrl(),
                 media.getMediaUrl(),
+                media.getMediaUrls(),
+                media.getThumbnailUrls(),
                 media.getContentType(),
                 media.getSequenceNo(),
                 media.getPublishedAt(),

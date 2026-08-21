@@ -63,7 +63,11 @@ class YoutubeContentFetcherTest {
                             {
                               "snippet": {
                                 "title": "new video title",
-                                "description": "new video description"
+                                "description": "new video description",
+                                "thumbnails": {
+                                  "default": {"url": "https://i.ytimg.com/video-new/default.jpg"},
+                                  "high": {"url": "https://i.ytimg.com/video-new/high.jpg"}
+                                }
                               },
                               "contentDetails": {
                                 "videoId": "video-new",
@@ -107,7 +111,10 @@ class YoutubeContentFetcherTest {
             assertThat(content.media()).containsExactly(new RawContentMedia(
                     "video-new",
                     RawContentMedia.MediaType.VIDEO,
-                    null));
+                    null,
+                    List.of(
+                            "https://i.ytimg.com/video-new/default.jpg",
+                            "https://i.ytimg.com/video-new/high.jpg")));
         });
         server.verify();
     }
