@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.creator.discovery;
 
 import com.fuma.hiselectors.creator.discovery.dto.YoutubeChannelListResponse;
+import com.fuma.hiselectors.creator.discovery.dto.YoutubePlaylistItemListResponse;
 import com.fuma.hiselectors.creator.discovery.dto.YoutubeSearchResponse;
 import com.fuma.hiselectors.creator.discovery.dto.YoutubeVideoListResponse;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -24,8 +25,8 @@ import org.springframework.web.util.UriComponentsBuilder;
  *
  * <p><b>쿼터가 이 기능의 가장 큰 제약이다.</b> 일일 한도 10,000 units 인데
  * {@code search.list} 가 1회 100 units 를 쓴다. 나머지는 1 unit(id 50개 배치)이라
- * 키워드 1개 발굴에 약 102 units 가 들고, 하루에 약 98개 키워드가 상한이다.
- * 검색을 아끼고 배치 조회를 늘리는 것이 유일한 최적화 방향이다.
+ * 키워드 검색·통계 조회에 약 102 units, 최근 90일 활동 수 조회에 채널별 최소
+ * 1 unit가 추가된다. 검색을 아끼고 배치 조회를 늘리는 것이 최적화 방향이다.
  */
 @Slf4j
 @Component
@@ -34,6 +35,10 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
     private static final String SEARCH_URI = "https://www.googleapis.com/youtube/v3/search";
     private static final String VIDEOS_URI = "https://www.googleapis.com/youtube/v3/videos";
     private static final String CHANNELS_URI = "https://www.googleapis.com/youtube/v3/channels";
+    private static final String PLAYLIST_ITEMS_URI =
+            "https://www.googleapis.com/youtube/v3/playlistItems";
+    private static final int ACTIVITY_WINDOW_DAYS = 90;
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     /** id 를 한 번에 넘길 수 있는 최대 개수. 이 단위로 묶어야 1 unit 으로 끝난다. */
     private static final int BATCH_SIZE = 50;
@@ -134,7 +139,7 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
 
         for (List<String> batch : partition(List.copyOf(byChannel.keySet()))) {
             String uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                    .queryParam("part", "snippet,statistics")
+                    .queryParam("part", "snippet,statistics,contentDetails")
                     .queryParam("id", String.join(",", batch))
                     .queryParam("key", properties.apiKey())
                     .build().toUriString();
@@ -167,7 +172,52 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                 stats == null ? null : parseLongOrNull(stats.subscriberCount()),
                 stats == null ? null : parseLongOrNull(stats.viewCount()),
                 acc.lastUploadAt,
+                fetchRecent90DayContentCount(item),
                 acc.views, acc.likes, acc.comments);
+    }
+
+    private Integer fetchRecent90DayContentCount(YoutubeChannelListResponse.Item channel) {
+        String uploads = channel.contentDetails() == null
+                || channel.contentDetails().relatedPlaylists() == null
+                ? null
+                : channel.contentDetails().relatedPlaylists().uploads();
+        if (uploads == null || uploads.isBlank()) {
+            return null;
+        }
+
+        LocalDateTime cutoff = LocalDateTime.now(SEOUL).minusDays(ACTIVITY_WINDOW_DAYS);
+        String uri = UriComponentsBuilder.fromUriString(PLAYLIST_ITEMS_URI)
+                .queryParam("part", "contentDetails")
+                .queryParam("playlistId", uploads)
+                .queryParam("maxResults",
+                        YoutubeDiscoveryProperties.MAX_FILTERABLE_RECENT_ACTIVITY_COUNT)
+                .queryParam("key", properties.apiKey())
+                .build().toUriString();
+        YoutubePlaylistItemListResponse response = call(
+                uri, YoutubePlaylistItemListResponse.class, LIST_COST);
+        if (response == null || response.items() == null) {
+            return null;
+        }
+        // Meta와 같은 25건 공개 범위로 맞춘다. 관리자 최소 필터도 25가 상한이므로
+        // 고활동 채널은 정확한 총량 대신 "25건 이상"으로 다룬다.
+        return (int) response.items().stream()
+                .map(this::parsePublishedAt)
+                .filter(publishedAt -> publishedAt != null && !publishedAt.isBefore(cutoff))
+                .count();
+    }
+
+    private LocalDateTime parsePublishedAt(YoutubePlaylistItemListResponse.Item item) {
+        if (item == null || item.contentDetails() == null
+                || item.contentDetails().videoPublishedAt() == null) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(item.contentDetails().videoPublishedAt())
+                    .atZoneSameInstant(SEOUL)
+                    .toLocalDateTime();
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
     /** 영상들을 채널별로 묶으면서 조회수·좋아요·댓글을 합산한다. */

@@ -28,6 +28,9 @@ public class PenaltyHistory extends BaseTimeEntity {
     @Column(name = "selectors_id", nullable = false)
     private Long selectorsId;
 
+    @Column(name = "generation_id")
+    private Long generationId;
+
     @Column(name = "violation_type_id", nullable = false)
     private Long violationTypeId;
 
@@ -43,8 +46,14 @@ public class PenaltyHistory extends BaseTimeEntity {
 
     public static PenaltyHistory activate(Long selectorsId, Long violationTypeId,
                                           LocalDateTime startedAt) {
+        return activate(selectorsId, null, violationTypeId, startedAt);
+    }
+
+    public static PenaltyHistory activate(Long selectorsId, Long generationId,
+                                          Long violationTypeId, LocalDateTime startedAt) {
         PenaltyHistory history = new PenaltyHistory();
         history.selectorsId = selectorsId;
+        history.generationId = generationId;
         history.violationTypeId = violationTypeId;
         history.startedAt = startedAt;
         history.status = PenaltyStatus.ACTIVE;

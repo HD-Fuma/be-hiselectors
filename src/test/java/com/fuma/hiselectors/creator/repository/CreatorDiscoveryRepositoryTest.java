@@ -16,6 +16,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 
 /**
@@ -24,6 +29,7 @@ import org.springframework.test.context.TestPropertySource;
  */
 @DataJpaTest
 @TestPropertySource(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+@Import(CreatorDiscoveryRepositoryTest.CacheConfig.class)
 class CreatorDiscoveryRepositoryTest {
 
     @Autowired
@@ -307,5 +313,14 @@ class CreatorDiscoveryRepositoryTest {
         em.clear();
 
         assertThat(sourceRepository.findCategoryShares(creator.getId())).isEmpty();
+    }
+
+    @TestConfiguration
+    static class CacheConfig {
+
+        @Bean
+        CacheManager cacheManager() {
+            return new ConcurrentMapCacheManager();
+        }
     }
 }

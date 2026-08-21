@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.selectors.repository;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import jakarta.persistence.LockModeType;
 import java.util.List;
@@ -18,6 +19,10 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
 
     Optional<Selectors> findByUserId(Long userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Selectors s where s.userId = :userId")
+    Optional<Selectors> findByUserIdForUpdate(@Param("userId") Long userId);
+
     @Query("select s.id from Selectors s order by s.id")
     List<Long> findAllIds();
 
@@ -31,8 +36,7 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
     /**
      * 관리자 목록 조회. 조건이 null 이면 그 조건은 적용하지 않는다.
      *
-     * <p>기수·SNS 조건은 exists 로 건다. 조인하면 계정이 여러 개인 셀렉터스가
-     * 중복 행으로 나와 페이지 수가 어긋난다.
+     * <p>기수·SNS 조건은 exists 로 건다.
      */
     @Query(value = """
             select s from Selectors s
@@ -67,4 +71,36 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
                            @Param("nickname") String nickname,
                            @Param("snsCode") SnsPlatform snsCode,
                            Pageable pageable);
+
+    @Query(value = """
+            select s from Selectors s
+            where s.deleted = false
+              and exists (
+                    select 1 from PenaltyHistory p
+                    where p.selectorsId = s.id
+                      and (:generationId is null or p.generationId = :generationId)
+                      and (:status is null or p.status = :status))
+              and (:generationId is null or exists (
+                    select 1 from SelectorsGeneration sg
+                    where sg.selectorsId = s.id and sg.generationId = :generationId))
+              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
+            """,
+            countQuery = """
+            select count(s) from Selectors s
+            where s.deleted = false
+              and exists (
+                    select 1 from PenaltyHistory p
+                    where p.selectorsId = s.id
+                      and (:generationId is null or p.generationId = :generationId)
+                      and (:status is null or p.status = :status))
+              and (:generationId is null or exists (
+                    select 1 from SelectorsGeneration sg
+                    where sg.selectorsId = s.id and sg.generationId = :generationId))
+              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
+            """)
+    Page<Selectors> searchWithPenalties(
+            @Param("generationId") Long generationId,
+            @Param("status") PenaltyStatus status,
+            @Param("blacklistOnly") boolean blacklistOnly,
+            Pageable pageable);
 }

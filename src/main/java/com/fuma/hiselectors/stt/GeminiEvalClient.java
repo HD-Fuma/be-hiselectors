@@ -1,0 +1,133 @@
+package com.fuma.hiselectors.stt;
+
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * Instagram 취합 단계 LLM. 지원자 콘텐츠들의 전사·자막(application_content_analysis)을 합쳐
+ * Gemini에 1회 던져 정성 insight(스타일·톤·강점·유의·위험·브랜드)를 뽑는다.
+ * 콘텐츠별로 LLM을 안 태우고(=취득 자유로운 인스타의 이점) 취합 시 한 번만 태워 비용을 아낀다.
+ * category·keywords 는 로컬 분석(콘텐츠별)에서 결정적으로 취합하므로 여기서 다루지 않는다.
+ */
+@Slf4j
+@Component
+public class GeminiEvalClient {
+
+    private static final String ENDPOINT =
+            "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
+
+    private static final String PROMPT = """
+            아래는 한 지원자의 여러 콘텐츠에서 추출한 음성 전사와 화면 텍스트를 합친 것이다
+            (OCR 노이즈가 섞일 수 있으니 감안해라). 이 지원자를 종합 평가해 아래 JSON 하나만 출력해라.
+            설명·마크다운·코드펜스 없이 JSON 객체만 낸다.
+            {
+              "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
+              "tone": "유쾌코믹|차분잔잔|진지전문|친근수다|감성무드|자극과장|시니컬솔직 중 하나",
+              "strengths": ["크리에이터·콘텐츠의 강점"],
+              "cautions": ["브랜드 협업 시 유의점"],
+              "risks": ["정치종교논란|허위과장광고|미검증건강주장|선정성|저작권|사행성 중 해당되는 것만, 없으면 빈 배열"],
+              "hateConfirmed": false,
+              "collabBrands": ["협찬·협업으로 보이는 브랜드명만. 플랫폼·크리에이터 본인은 제외. 없으면 빈 배열"]
+            }
+            [콘텐츠 모음]
+            %s""";
+
+    private final GeminiProperties properties;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestClient restClient;
+
+    public GeminiEvalClient(GeminiProperties properties) {
+        this.properties = properties;
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(Duration.ofMinutes(2));
+        this.restClient = RestClient.builder().requestFactory(factory).build();
+    }
+
+    /** 합본 transcript → 정성 insight. 실패해도 상류가 살릴 수 있도록 파싱 실패는 예외로 명시한다. */
+    public ContentInsight insight(String mergedTranscript) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
+        }
+
+        String prompt = PROMPT.formatted(mergedTranscript);
+        Map<String, Object> body = Map.of(
+                "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+
+        return parse(rawText(call(body)));
+    }
+
+    private GeminiResponse call(Map<String, Object> body) {
+        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        try {
+            return restClient.post()
+                    .uri(uri)
+                    .header("x-goog-api-key", properties.apiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(GeminiResponse.class);
+        } catch (RestClientException e) {
+            log.warn("Gemini 취합 호출 실패. model={}", properties.modelOrDefault(), e);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+    }
+
+    private String rawText(GeminiResponse r) {
+        if (r == null || r.candidates() == null || r.candidates().isEmpty()) {
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Candidate candidate = r.candidates().get(0);
+        String finish = candidate.finishReason();
+        if (finish != null && !"STOP".equals(finish)) {
+            log.warn("Gemini 취합 정상 종료 아님. finishReason={}", finish);
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        GeminiResponse.Content content = candidate.content();
+        if (content == null || content.parts() == null || content.parts().isEmpty()) {
+            throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (GeminiResponse.Part part : content.parts()) {
+            if (part.text() != null) {
+                sb.append(part.text());
+            }
+        }
+        return sb.toString();
+    }
+
+    private ContentInsight parse(String json) {
+        try {
+            return objectMapper.readValue(stripCodeFence(json), ContentInsight.class);
+        } catch (RuntimeException e) {
+            log.warn("Gemini 취합 JSON 파싱 실패. body={}", json, e);
+            throw new BusinessException(ErrorCode.GEMINI_EVAL_PARSE_FAILED);
+        }
+    }
+
+    /** LLM이 ```json …``` 코드펜스로 감싸 보내는 환각 대비. 펜스만 벗겨 순수 JSON을 남긴다. */
+    private String stripCodeFence(String s) {
+        return s.replace("```json", "").replace("```", "").trim();
+    }
+
+    record GeminiResponse(List<Candidate> candidates) {
+        record Candidate(Content content, String finishReason) { }
+
+        record Content(List<Part> parts) { }
+
+        record Part(String text) { }
+    }
+}

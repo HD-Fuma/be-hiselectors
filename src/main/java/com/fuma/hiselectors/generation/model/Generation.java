@@ -34,20 +34,30 @@ public class Generation {
     @Column(name = "end_date")
     private LocalDateTime endDate;
 
+    @Column(name = "activity_start_date", nullable = false)
+    private LocalDateTime activityStartDate;
+
+    @Column(name = "activity_end_date", nullable = false)
+    private LocalDateTime activityEndDate;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20)
     private GenerationStatus status;
 
     @Builder
     private Generation(String generationName, LocalDateTime startDate,
-                       LocalDateTime endDate, GenerationStatus status) {
+                       LocalDateTime endDate, LocalDateTime activityStartDate,
+                       LocalDateTime activityEndDate, GenerationStatus status) {
         this.generationName = generationName;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.activityStartDate = activityStartDate;
+        this.activityEndDate = activityEndDate;
         this.status = status;
     }
 
-    public void update(String generationName, LocalDateTime startDate, LocalDateTime endDate) {
+    public void update(String generationName, LocalDateTime startDate, LocalDateTime endDate,
+                       LocalDateTime activityStartDate, LocalDateTime activityEndDate) {
         if (generationName != null) {
             this.generationName = generationName;
         }
@@ -56,6 +66,12 @@ public class Generation {
         }
         if (endDate != null) {
             this.endDate = endDate;
+        }
+        if (activityStartDate != null) {
+            this.activityStartDate = activityStartDate;
+        }
+        if (activityEndDate != null) {
+            this.activityEndDate = activityEndDate;
         }
     }
 

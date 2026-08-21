@@ -3,11 +3,13 @@ package com.fuma.hiselectors.campaign.controller;
 import com.fuma.hiselectors.campaign.dto.CampaignDetailResponse;
 import com.fuma.hiselectors.campaign.dto.CampaignListResponse;
 import com.fuma.hiselectors.campaign.service.CampaignClientService;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.security.Principal;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +25,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CampaignController {
 
     private final CampaignClientService campaignClientService;
+    private final SelectorAccessService selectorAccessService;
 
     @Operation(summary = "캠페인 목록 조회", description = "삭제되지 않은 캠페인 목록과 연결 상품을 최신순으로 조회한다.")
     @GetMapping
-    public ResponseEntity<List<CampaignListResponse>> findAll() {
+    public ResponseEntity<List<CampaignListResponse>> findAll(Principal principal) {
+        selectorAccessService.requireCurrent(principal.getName());
         return ResponseEntity.ok(campaignClientService.findAll());
     }
 
@@ -36,7 +40,9 @@ public class CampaignController {
             @ApiResponse(responseCode = "404", description = "캠페인 없음", content = @Content)
     })
     @GetMapping("/{campaignId}")
-    public ResponseEntity<CampaignDetailResponse> findOne(@PathVariable Long campaignId) {
+    public ResponseEntity<CampaignDetailResponse> findOne(
+            @PathVariable Long campaignId, Principal principal) {
+        selectorAccessService.requireCurrent(principal.getName());
         return ResponseEntity.ok(campaignClientService.findOne(campaignId));
     }
 }

@@ -14,6 +14,10 @@ public record GenerationUpdateRequest(
 
         LocalDateTime startDate,
 
-        LocalDateTime endDate
+        LocalDateTime endDate,
+
+        LocalDateTime activityStartDate,
+
+        LocalDateTime activityEndDate
 ) {
 }

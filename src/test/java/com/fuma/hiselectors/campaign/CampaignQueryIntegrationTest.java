@@ -3,6 +3,7 @@ package com.fuma.hiselectors.campaign;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.mock;
 
 import com.fuma.hiselectors.campaign.model.Campaign;
 import com.fuma.hiselectors.campaign.model.CampaignProduct;
@@ -13,6 +14,7 @@ import com.fuma.hiselectors.product.model.Product;
 import com.fuma.hiselectors.product.model.ProductStatus;
 import com.fuma.hiselectors.product.repository.ProductRepository;
 import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -168,6 +170,10 @@ class CampaignQueryIntegrationTest {
     static class FixedClockConfiguration {
         @Bean @Primary MutableClock clock() {
             return new MutableClock(Instant.parse("2026-08-18T00:00:00Z"));
+        }
+
+        @Bean @Primary SelectorAccessService selectorAccessService() {
+            return mock(SelectorAccessService.class);
         }
     }
 

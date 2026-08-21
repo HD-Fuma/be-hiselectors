@@ -33,6 +33,9 @@ public record InstagramContentResponse(
             String timestamp,
             // 이미지나 영상 파일 직접 주소이며 응답에 없을 수 있음
             @JsonProperty("media_url") String mediaUrl,
+            @JsonProperty("view_count") Long viewCount,
+            @JsonProperty("like_count") Long likeCount,
+            @JsonProperty("comments_count") Long commentsCount,
             // 캐러셀 내부 이미지와 영상 목록
             Children children
     ) {
@@ -44,5 +47,16 @@ public record InstagramContentResponse(
 
     /** 다음 페이지 URL */
     public record Paging(String next) {
+    }
+
+    /** Instagram Graph API 오류 응답 */
+    public record GraphErrorResponse(GraphError error) {
+    }
+
+    /** 게시물 미존재 여부 판별에 사용하는 Instagram Graph API 오류 코드 */
+    public record GraphError(
+            Integer code,
+            @JsonProperty("error_subcode") Integer errorSubcode
+    ) {
     }
 }

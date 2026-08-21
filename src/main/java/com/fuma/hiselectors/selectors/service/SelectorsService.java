@@ -1,10 +1,18 @@
 package com.fuma.hiselectors.selectors.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
+import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.penalty.model.PenaltyHistory;
+import com.fuma.hiselectors.penalty.model.PenaltyStatus;
+import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.selectors.dto.SelectorsDetailResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsGenerationResponse;
+import com.fuma.hiselectors.selectors.dto.SelectorsPenaltyResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsSnsAccountResponse;
 import com.fuma.hiselectors.selectors.dto.SelectorsSummary;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -14,7 +22,6 @@ import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRoleRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -35,10 +42,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SelectorsService {
 
+    private static final long BLACKLIST_THRESHOLD = 3;
+
     private final SelectorsRepository selectorsRepository;
     private final SelectorsRoleRepository selectorsRoleRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private final PenaltyHistoryRepository penaltyHistoryRepository;
+    private final ContentRepository contentRepository;
+    private final ContentEngagementRepository contentEngagementRepository;
 
     /**
      * 조건에 맞는 셀렉터스 목록. null 인 조건은 적용하지 않는다.
@@ -64,22 +76,57 @@ public class SelectorsService {
                         representatives));
     }
 
-    /** 기본 정보와 참여 기수 이력, SNS 계정 전체를 함께 조회한다. */
+    /** 기본 정보와 참여 기수 이력, SNS 계정을 함께 조회한다. */
     public SelectorsDetailResponse findDetail(Long selectorsId) {
         Selectors selectors = selectorsRepository.findByIdAndDeletedFalse(selectorsId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
 
         List<SelectorsGenerationResponse> generations =
                 selectorsGenerationRepository.findGenerationsOf(selectorsId);
-        List<SelectorsSnsAccountResponse> accounts = selectorsSnsAccountRepository
-                .findAllBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectorsId)
-                .stream()
+        SelectorsSnsAccountResponse account = selectorsSnsAccountRepository
+                .findBySelectorsIdAndDeletedFalse(selectorsId)
                 .map(SelectorsSnsAccountResponse::from)
-                .toList();
+                .orElse(null);
+        List<PenaltyHistory> penalties = penaltyHistoryRepository
+                .findAllBySelectorsIds(List.of(selectorsId));
+
+        // ponytail: 상세 조회에서 전체 콘텐츠를 합산한다. 건수가 커져 병목이면 DB 집계로 교체한다.
+        List<Content> contents = contentRepository
+                .findAllBySelectorsIdAndDeletedFalseOrderByCreatedAtDescIdDesc(selectorsId);
+        Map<Long, ContentEngagement> latestEngagements = contents.isEmpty()
+                ? Map.of()
+                : contentEngagementRepository.findLatestByContentIds(
+                                contents.stream().map(Content::getId).toList()).stream()
+                        .collect(Collectors.toMap(
+                                ContentEngagement::getContentId, Function.identity()));
 
         return SelectorsDetailResponse.of(
                 selectors, roleNames().get(selectors.getSelectorsRoleId()),
-                generations, accounts);
+                generations, account, penalties, contents, latestEngagements,
+                BLACKLIST_THRESHOLD);
+    }
+
+    public Page<SelectorsPenaltyResponse> findPenalties(
+            Long generationId, PenaltyStatus status, boolean blacklistOnly, Pageable pageable) {
+        Page<Selectors> page = selectorsRepository.searchWithPenalties(
+                generationId, status, blacklistOnly, pageable);
+        if (page.isEmpty()) {
+            return page.map(selectors -> SelectorsPenaltyResponse.of(
+                    selectors, List.of(), BLACKLIST_THRESHOLD));
+        }
+
+        List<Long> selectorsIds = page.getContent().stream().map(Selectors::getId).toList();
+        List<PenaltyHistory> histories = generationId == null
+                ? penaltyHistoryRepository.findAllBySelectorsIds(selectorsIds)
+                : penaltyHistoryRepository.findAllBySelectorsIdsAndGenerationId(
+                        selectorsIds, generationId);
+        Map<Long, List<PenaltyHistory>> historiesBySelectorsId = histories.stream()
+                .collect(Collectors.groupingBy(PenaltyHistory::getSelectorsId));
+
+        return page.map(selectors -> SelectorsPenaltyResponse.of(
+                selectors,
+                historiesBySelectorsId.getOrDefault(selectors.getId(), List.of()),
+                BLACKLIST_THRESHOLD));
     }
 
     private SelectorsSummary toSummary(Selectors selectors, String roleName,
@@ -105,22 +152,12 @@ public class SelectorsService {
                 .collect(Collectors.toMap(SelectorsRole::getId, SelectorsRole::getRoleName));
     }
 
-    /**
-     * 셀렉터스별 대표 SNS 계정. 가장 최근에 수집된 계정을 쓰고, 수집 시각이 없으면
-     * 가장 나중에 등록된 계정을 쓴다.
-     */
     private Map<Long, SelectorsSnsAccount> representativeAccounts(List<Long> selectorsIds) {
-        Comparator<SelectorsSnsAccount> latest = Comparator
-                .comparing(SelectorsSnsAccount::getLastCollectedAt,
-                        Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(SelectorsSnsAccount::getId);
-
         return selectorsSnsAccountRepository
                 .findAllBySelectorsIdInAndDeletedFalse(selectorsIds).stream()
                 .collect(Collectors.toMap(
                         SelectorsSnsAccount::getSelectorsId,
-                        Function.identity(),
-                        (left, right) -> latest.compare(left, right) >= 0 ? left : right));
+                        account -> account));
     }
 
     private String blankToNull(String value) {

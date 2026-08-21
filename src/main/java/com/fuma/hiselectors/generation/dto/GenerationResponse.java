@@ -9,6 +9,8 @@ public record GenerationResponse(
         String generationName,
         LocalDateTime startDate,
         LocalDateTime endDate,
+        LocalDateTime activityStartDate,
+        LocalDateTime activityEndDate,
         GenerationStatus status
 ) {
 
@@ -18,6 +20,8 @@ public record GenerationResponse(
                 generation.getGenerationName(),
                 generation.getStartDate(),
                 generation.getEndDate(),
+                generation.getActivityStartDate(),
+                generation.getActivityEndDate(),
                 generation.getStatus()
         );
     }

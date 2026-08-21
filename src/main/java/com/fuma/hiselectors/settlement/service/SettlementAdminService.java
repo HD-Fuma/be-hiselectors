@@ -73,7 +73,7 @@ public class SettlementAdminService {
         Selectors selectors = selectorsRepository.findById(selectorsId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         SelectorsSnsAccount snsAccount = selectorsSnsAccountRepository
-                .findFirstBySelectorsIdAndDeletedFalseOrderByLastCollectedAtDescIdDesc(selectorsId)
+                .findBySelectorsIdAndDeletedFalse(selectorsId)
                 .orElse(null);
         YearMonth currentMonth = YearMonth.from(LocalDate.now(clock));
         YearMonth paymentMonth = currentMonth;

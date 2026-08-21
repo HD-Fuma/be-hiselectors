@@ -10,15 +10,20 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 @Entity
-@Table(name = "selectors_sns_account")
+@Table(name = "selectors_sns_account", uniqueConstraints = @UniqueConstraint(
+        name = "uq_selectors_sns_account_selectors_id", columnNames = "selectors_id"))
 @Getter
+@DynamicUpdate
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SelectorsSnsAccount extends BaseTimeEntity {
 
@@ -64,5 +69,16 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
 
     public void completeCollection(LocalDateTime collectedAt) {
         this.lastCollectedAt = collectedAt;
+    }
+
+    public void synchronize(SnsPlatform snsCode, String accountId, Long followerCount) {
+        if (this.snsCode != snsCode || !Objects.equals(this.accountId, accountId)) {
+            this.lastCollectedAt = null;
+            this.profileImageUrl = null;
+        }
+        this.snsCode = snsCode;
+        this.accountId = accountId;
+        this.followerCount = followerCount;
+        this.deleted = false;
     }
 }

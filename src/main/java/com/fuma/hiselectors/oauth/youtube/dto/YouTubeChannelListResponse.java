@@ -28,7 +28,8 @@ public record YouTubeChannelListResponse(
     public record Statistics(
             // 구독자 수. 문자열로 오며, 비공개(hiddenSubscriberCount)면 없을 수 있다.
             @JsonProperty("subscriberCount") String subscriberCount,
-            @JsonProperty("hiddenSubscriberCount") Boolean hiddenSubscriberCount
+            @JsonProperty("hiddenSubscriberCount") Boolean hiddenSubscriberCount,
+            @JsonProperty("videoCount") String videoCount
     ) {
     }
 }

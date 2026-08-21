@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -10,6 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SttTestController {
 
     private final SttService sttService;
+    private final CreatorEvaluationService evaluationService;
 
     @Operation(summary = "콘텐츠 음성·자막 추출",
             description = "유튜브 videoId 로 Gemini 를 호출해 음성(오디오)과 자막(화면 텍스트)을 "
@@ -40,5 +45,48 @@ public class SttTestController {
                     required = true)
             @RequestParam String snsContentId) {
         return ResponseEntity.ok(sttService.transcribe(snsCode, snsContentId));
+    }
+
+    @Operation(summary = "인스타 릴스 분석",
+            description = "릴스 URL 을 파이썬 워커에 넘겨 취득·STT·OCR·정성분석(키워드·카테고리·"
+                    + "욕설혐오)까지 수행한다. 저장하지 않는다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "분석 성공"),
+            @ApiResponse(responseCode = "502", description = "STT 워커 호출 실패", content = @Content)
+    })
+    @GetMapping("/instagram")
+    public ResponseEntity<InstagramAnalysisResult> analyzeInstagram(
+            @Parameter(description = "릴스 permalink(yt-dlp 폴백용)")
+            @RequestParam(required = false) String reelUrl,
+            @Parameter(description = "Graph API media_url. 있으면 CDN 직다운(yt-dlp 생략)")
+            @RequestParam(required = false) String mediaUrl,
+            @Parameter(description = "Graph API thumbnail_url. 영상 실패 시 폴백")
+            @RequestParam(required = false) String thumbnailUrl) {
+        return ResponseEntity.ok(
+                sttService.analyzeInstagramReel(reelUrl, mediaUrl, thumbnailUrl));
+    }
+
+    @Operation(summary = "지원자 콘텐츠 분석·적재",
+            description = "릴스 1건을 분석해 DB에 적재한다(content_key 멱등 — 같은 키 재요청 시 재분석 안 함). "
+                    + "여러 번 호출로 지원자 콘텐츠를 쌓는다. 크래시·실패 후 재개 시 done 항목은 skip.")
+    @PostMapping("/applicant/{applicantId}/content")
+    public ResponseEntity<InstagramAnalysisResult> addContent(
+            @Parameter(description = "지원자 ID") @PathVariable Long applicantId,
+            @RequestBody ContentAddRequest request) {
+        return ResponseEntity.ok(evaluationService.addContent(applicantId, request));
+    }
+
+    @Operation(summary = "지원자 종합 평가",
+            description = "적재된 콘텐츠(application_content_analysis)를 취합해 category·keywords 는 결정적으로, "
+                    + "강점·스타일·톤 등 insight 는 Gemini 1회로 뽑아 application_report 에 저장한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "평가 성공"),
+            @ApiResponse(responseCode = "404", description = "적재된 콘텐츠 없음", content = @Content),
+            @ApiResponse(responseCode = "502", description = "Gemini 호출·해석 실패", content = @Content)
+    })
+    @PostMapping("/applicant/{applicationId}/evaluate")
+    public ResponseEntity<ApplicationReport> evaluate(
+            @Parameter(description = "지원(application) ID") @PathVariable Long applicationId) {
+        return ResponseEntity.ok(evaluationService.evaluate(applicationId));
     }
 }

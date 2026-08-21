@@ -1,14 +1,18 @@
 package com.fuma.hiselectors.penalty.service;
 
-import com.fuma.hiselectors.inspection.model.ViolationStatus;
-import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.repository.ViolationTypeRepository;
+import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
 import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
+import com.fuma.hiselectors.selectors.dto.PenaltyHistoryResponse;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.EnumSet;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,37 +21,42 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PenaltyService {
 
-    private static final Set<ViolationStatus> OPEN_STATUSES = EnumSet.of(
-            ViolationStatus.PENDING,
-            ViolationStatus.VIOLATION_CONFIRMED,
-            ViolationStatus.EDIT_REQUESTED);
+    private static final long BLACKLIST_THRESHOLD = 3;
 
+    private final SelectorsRepository selectorsRepository;
+    private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final PenaltyHistoryRepository penaltyHistoryRepository;
-    private final ViolationItemRepository violationItemRepository;
+    private final ViolationTypeRepository violationTypeRepository;
     private final Clock clock;
 
     @Transactional
-    public boolean activateIfAbsent(Long selectorsId, Long violationTypeId) {
-        if (penaltyHistoryRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
-                selectorsId, PenaltyStatus.ACTIVE).isPresent()) {
-            return false;
+    public PenaltyHistoryResponse create(Long selectorsId, PenaltyCreateRequest request) {
+        if (!violationTypeRepository.existsById(request.violationTypeId())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
-        penaltyHistoryRepository.save(PenaltyHistory.activate(
-                selectorsId, violationTypeId, LocalDateTime.now(clock)));
-        return true;
-    }
+        Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId)
+                .filter(value -> !value.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        if (selectors.isBlacklisted()) {
+            throw new BusinessException(ErrorCode.BLACKLISTED_SELECTOR);
+        }
 
-    @Transactional
-    public boolean releaseIfEligible(Long selectorsId) {
-        if (violationItemRepository.existsOpenBySelectorsId(selectorsId, OPEN_STATUSES)) {
-            return false;
+        LocalDateTime now = LocalDateTime.now(clock);
+        var generation = selectorsGenerationRepository
+                .findGenerationsOf(selectorsId).stream()
+                .filter(value -> value.joinedAt() != null
+                        && value.activityEndDate() != null
+                        && !value.joinedAt().isAfter(now)
+                        && !value.activityEndDate().isBefore(now))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACCESS_DENIED));
+        PenaltyHistory saved = penaltyHistoryRepository.save(PenaltyHistory.activate(
+                selectorsId, generation.generationId(), request.violationTypeId(), now));
+        if (penaltyHistoryRepository.countBySelectorsIdAndGenerationIdAndStatus(
+                selectorsId, generation.generationId(), PenaltyStatus.ACTIVE)
+                >= BLACKLIST_THRESHOLD) {
+            selectors.blacklist();
         }
-        return penaltyHistoryRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
-                        selectorsId, PenaltyStatus.ACTIVE)
-                .map(penalty -> {
-                    penalty.release(LocalDateTime.now(clock));
-                    return true;
-                })
-                .orElse(false);
+        return PenaltyHistoryResponse.from(saved);
     }
 }

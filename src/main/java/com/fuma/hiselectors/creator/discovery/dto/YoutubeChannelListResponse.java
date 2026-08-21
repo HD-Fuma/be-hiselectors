@@ -13,7 +13,8 @@ import java.util.List;
 public record YoutubeChannelListResponse(List<Item> items) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Item(String id, Snippet snippet, Statistics statistics) {
+    public record Item(String id, Snippet snippet, Statistics statistics,
+                       ContentDetails contentDetails) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -22,5 +23,13 @@ public record YoutubeChannelListResponse(List<Item> items) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Statistics(String subscriberCount, String viewCount, String videoCount) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ContentDetails(RelatedPlaylists relatedPlaylists) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record RelatedPlaylists(String uploads) {
     }
 }

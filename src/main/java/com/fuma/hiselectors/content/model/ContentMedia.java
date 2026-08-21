@@ -48,12 +48,19 @@ public class ContentMedia extends BaseTimeEntity {
     @Column(name = "sequence_no", nullable = false)
     private Integer sequenceNo;
 
-    public static ContentMedia create(Long contentVersionId, String mediaUrl,
-                                      MediaType mediaType, Map<String, Object> body) {
+    public static ContentMedia create(
+            Long contentVersionId,
+            MediaType mediaType,
+            String mediaUrl,
+            String snsMediaId,
+            Integer sequenceNo,
+            Map<String, Object> body) {
         ContentMedia media = new ContentMedia();
         media.contentVersionId = contentVersionId;
-        media.mediaUrl = mediaUrl;
         media.mediaType = mediaType;
+        media.mediaUrl = mediaUrl;
+        media.snsMediaId = snsMediaId;
+        media.sequenceNo = sequenceNo;
         media.replaceBody(body);
         return media;
     }

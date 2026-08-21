@@ -34,12 +34,18 @@ public class GenerationAdminService {
 
     @Transactional
     public GenerationResponse create(GenerationCreateRequest request) {
-        validatePeriod(request.startDate(), request.endDate());
+        generationRepository.findAllForUpdate();
+        validatePeriods(request.startDate(), request.endDate(),
+                request.activityStartDate(), request.activityEndDate());
+        validateNoActiveActivityOverlap(
+                request.activityStartDate(), request.activityEndDate(), null);
 
         Generation generation = generationRepository.save(Generation.builder()
                 .generationName(request.generationName().trim())
                 .startDate(request.startDate())
                 .endDate(request.endDate())
+                .activityStartDate(request.activityStartDate())
+                .activityEndDate(request.activityEndDate())
                 .status(GenerationStatus.INACTIVE)
                 .build());
         return GenerationResponse.from(generation);
@@ -47,29 +53,40 @@ public class GenerationAdminService {
 
     @Transactional
     public GenerationResponse update(Long generationId, GenerationUpdateRequest request) {
+        generationRepository.findAllForUpdate();
         Generation generation = getGeneration(generationId);
         String name = request.generationName() == null ? null : request.generationName().trim();
         LocalDateTime startDate = request.startDate() == null
                 ? generation.getStartDate() : request.startDate();
         LocalDateTime endDate = request.endDate() == null
                 ? generation.getEndDate() : request.endDate();
+        LocalDateTime activityStartDate = request.activityStartDate() == null
+                ? generation.getActivityStartDate() : request.activityStartDate();
+        LocalDateTime activityEndDate = request.activityEndDate() == null
+                ? generation.getActivityEndDate() : request.activityEndDate();
 
-        validatePeriod(startDate, endDate);
+        validatePeriods(startDate, endDate, activityStartDate, activityEndDate);
+        validateNoActiveActivityOverlap(activityStartDate, activityEndDate, generationId);
         if (generation.getStatus() == GenerationStatus.ACTIVE) {
             validateNoActiveOverlap(startDate, endDate, generationId);
         }
 
-        generation.update(name, request.startDate(), request.endDate());
+        generation.update(name, request.startDate(), request.endDate(),
+                request.activityStartDate(), request.activityEndDate());
         return GenerationResponse.from(generation);
     }
 
     @Transactional
     public GenerationResponse updateStatus(
             Long generationId, GenerationStatusUpdateRequest request) {
+        generationRepository.findAllForUpdate();
         Generation generation = getGeneration(generationId);
         if (request.status() == GenerationStatus.ACTIVE) {
             validateNoActiveOverlap(
                     generation.getStartDate(), generation.getEndDate(), generationId);
+            validateNoActiveActivityOverlap(
+                    generation.getActivityStartDate(), generation.getActivityEndDate(),
+                    generationId);
         }
 
         generation.changeStatus(request.status());
@@ -81,8 +98,11 @@ public class GenerationAdminService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.GENERATION_NOT_FOUND));
     }
 
-    private void validatePeriod(LocalDateTime startDate, LocalDateTime endDate) {
-        if (!startDate.isBefore(endDate)) {
+    private void validatePeriods(LocalDateTime startDate, LocalDateTime endDate,
+                                 LocalDateTime activityStartDate,
+                                 LocalDateTime activityEndDate) {
+        if (!startDate.isBefore(endDate)
+                || !activityStartDate.isBefore(activityEndDate)) {
             throw new BusinessException(ErrorCode.GENERATION_PERIOD_INVALID);
         }
     }
@@ -92,6 +112,14 @@ public class GenerationAdminService {
         if (generationRepository.existsOverlapping(
                 startDate, endDate, GenerationStatus.ACTIVE, excludedId)) {
             throw new BusinessException(ErrorCode.ACTIVE_GENERATION_OVERLAPPED);
+        }
+    }
+
+    private void validateNoActiveActivityOverlap(
+            LocalDateTime activityStartDate, LocalDateTime activityEndDate, Long excludedId) {
+        if (generationRepository.existsActivityOverlapping(
+                activityStartDate, activityEndDate, excludedId)) {
+            throw new BusinessException(ErrorCode.GENERATION_ACTIVITY_OVERLAPPED);
         }
     }
 }

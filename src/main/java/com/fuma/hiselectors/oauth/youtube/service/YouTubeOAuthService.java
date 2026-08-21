@@ -1,12 +1,13 @@
 package com.fuma.hiselectors.oauth.youtube.service;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import com.fuma.hiselectors.oauth.youtube.config.YouTubeOAuthProperties;
 import com.fuma.hiselectors.oauth.youtube.dto.GoogleTokenResponse;
 import com.fuma.hiselectors.oauth.youtube.dto.YouTubeChannelListResponse;
 import com.fuma.hiselectors.oauth.youtube.dto.YouTubeVerifyResponse;
-import com.fuma.hiselectors.oauth.OAuthStateProvider;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -61,7 +62,16 @@ public class YouTubeOAuthService {
 
         String title = channel.snippet() != null ? channel.snippet().title() : null;
         Long followerCount = extractSubscriberCount(channel);
-        return YouTubeVerifyResponse.of(channel.id(), title, followerCount);
+        Long contentCount = channel.statistics() == null
+                ? null : parseLong(channel.statistics().videoCount());
+        String verificationToken = stateProvider.createVerificationToken(
+                requesterHiId,
+                SnsPlatform.YOUTUBE,
+                channel.id(),
+                followerCount,
+                contentCount);
+        return YouTubeVerifyResponse.of(
+                channel.id(), title, followerCount, contentCount, verificationToken);
     }
 
     private String resolveHiId(String state) {
@@ -114,7 +124,9 @@ public class YouTubeOAuthService {
             throw new BusinessException(ErrorCode.YOUTUBE_OAUTH_FAILED);
         }
 
-        if (response == null || response.items() == null || response.items().isEmpty()) {
+        if (response == null || response.items() == null || response.items().isEmpty()
+                || response.items().getFirst().id() == null
+                || response.items().getFirst().id().isBlank()) {
             throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
         }
         return response.items().get(0);
@@ -125,8 +137,12 @@ public class YouTubeOAuthService {
         if (stats == null || stats.subscriberCount() == null) {
             return null;
         }
+        return parseLong(stats.subscriberCount());
+    }
+
+    private Long parseLong(String value) {
         try {
-            return Long.parseLong(stats.subscriberCount());
+            return value == null ? null : Long.parseLong(value);
         } catch (NumberFormatException e) {
             return null;
         }

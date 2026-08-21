@@ -44,10 +44,12 @@ public class GenerationAdminController {
         return ResponseEntity.ok(generationAdminService.findOne(generationId));
     }
 
-    @Operation(summary = "기수 생성", description = "새 기수는 비활성 상태로 생성한다.")
+    @Operation(summary = "기수 생성",
+            description = "모집·활동 기간을 설정하고 비활성 상태로 생성한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "생성 성공"),
-            @ApiResponse(responseCode = "400", description = "요청 값 검증 실패", content = @Content)
+            @ApiResponse(responseCode = "400", description = "요청 값 또는 기간 검증 실패", content = @Content),
+            @ApiResponse(responseCode = "409", description = "활동 기간 중복", content = @Content)
     })
     @PostMapping
     public ResponseEntity<GenerationResponse> create(
@@ -57,12 +59,12 @@ public class GenerationAdminController {
     }
 
     @Operation(summary = "기수 정보 수정",
-            description = "기수명과 모집 기간을 수정한다. null인 필드는 변경하지 않는다.")
+            description = "기수명과 모집·활동 기간을 수정한다. null인 필드는 변경하지 않는다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
-            @ApiResponse(responseCode = "400", description = "모집 기간 오류", content = @Content),
+            @ApiResponse(responseCode = "400", description = "모집·활동 기간 오류", content = @Content),
             @ApiResponse(responseCode = "404", description = "기수 없음", content = @Content),
-            @ApiResponse(responseCode = "409", description = "활성 기수 기간 중복", content = @Content)
+            @ApiResponse(responseCode = "409", description = "모집 또는 활동 기간 중복", content = @Content)
     })
     @PatchMapping("/{generationId}")
     public ResponseEntity<GenerationResponse> update(
@@ -72,11 +74,12 @@ public class GenerationAdminController {
     }
 
     @Operation(summary = "기수 활성 상태 변경",
-            description = "활성화할 때 다른 활성 기수와 모집 기간이 겹치면 변경할 수 없다.")
+            description = "다른 활성 기수와 모집 기간이 겹치거나 "
+                    + "다른 기수와 활동 기간이 겹치면 활성화할 수 없다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "변경 성공"),
             @ApiResponse(responseCode = "404", description = "기수 없음", content = @Content),
-            @ApiResponse(responseCode = "409", description = "활성 기수 기간 중복", content = @Content)
+            @ApiResponse(responseCode = "409", description = "모집 또는 활동 기간 중복", content = @Content)
     })
     @PatchMapping("/{generationId}/status")
     public ResponseEntity<GenerationResponse> updateStatus(

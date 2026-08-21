@@ -4,6 +4,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
@@ -11,8 +12,6 @@ import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
-import com.fuma.hiselectors.user.model.User;
-import com.fuma.hiselectors.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,13 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SettlementAccountService {
 
-    private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final SettlementAccountRepository settlementAccountRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
+    private final SelectorAccessService selectorAccessService;
 
     public SettlementAccountResponse getAccount(String loginId) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireReadable(loginId);
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -37,7 +36,9 @@ public class SettlementAccountService {
 
     @Transactional
     public SettlementAccountResponse upsert(String loginId, SettlementAccountUpsertRequest request) {
-        Selectors selectors = findSelectorsForUpdate(loginId);
+        Selectors selectors = selectorsRepository.findByIdForUpdate(
+                        selectorAccessService.requireCurrent(loginId).getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseGet(() -> SettlementAccount.builder().selectorsId(selectors.getId()).build());
@@ -48,18 +49,5 @@ public class SettlementAccountService {
                 .findAllBySelectorsIdAndStatus(selectors.getId(), SettlementStatus.PAYMENT_HOLD_INFO)
                 .forEach(SettlementHistory::reopenFromInformationHold);
         return SettlementAccountResponse.of(saved);
-    }
-
-    private Selectors findSelectors(String loginId) {
-        User user = userRepository.findByHiId(loginId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-        return selectorsRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-    }
-
-    private Selectors findSelectorsForUpdate(String loginId) {
-        Selectors selectors = findSelectors(loginId);
-        return selectorsRepository.findByIdForUpdate(selectors.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
     }
 }

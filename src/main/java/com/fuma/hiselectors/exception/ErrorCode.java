@@ -15,6 +15,8 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
+    OAUTH_VERIFICATION_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 SNS 계정 인증입니다."),
+    BLACKLISTED_SELECTOR(HttpStatus.FORBIDDEN, "블랙리스트 셀렉터스는 활동할 수 없습니다."),
 
     // --- 카카오 OAuth / 메시지 ---
     KAKAO_CONFIGURATION_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "카카오 연동 설정이 올바르지 않습니다."),
@@ -54,10 +56,13 @@ public enum ErrorCode {
 
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),
+    SELECTOR_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 셀렉터스 계정이 존재합니다."),
 
     // --- 구매 ---
     PURCHASE_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "구매자를 찾을 수 없습니다."),
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다."),
+    PRODUCT_GROUP_NOT_FOUND(HttpStatus.NOT_FOUND, "상품 그룹을 찾을 수 없습니다."),
+    PRODUCT_GROUP_CAMPAIGN_MISMATCH(HttpStatus.BAD_REQUEST, "선택한 캠페인에 포함되지 않은 상품이 있습니다."),
     PRODUCT_NOT_AVAILABLE(HttpStatus.CONFLICT, "판매할 수 없는 상품입니다."),
     PURCHASE_NOT_FOUND(HttpStatus.NOT_FOUND, "구매 이력을 찾을 수 없습니다."),
     INVALID_PURCHASE_AMOUNT(HttpStatus.BAD_REQUEST, "구매 금액이 올바르지 않습니다."),
@@ -118,15 +123,23 @@ public enum ErrorCode {
 
     APPLICATION_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "지원자를 찾을 수 없습니다."),
     GENERATION_NOT_FOUND(HttpStatus.NOT_FOUND, "기수를 찾을 수 없습니다."),
-    GENERATION_PERIOD_INVALID(HttpStatus.BAD_REQUEST, "모집 시작일은 종료일보다 빨라야 합니다."),
+    GENERATION_PERIOD_INVALID(HttpStatus.BAD_REQUEST,
+            "모집·활동 기간의 시작일은 종료일보다 빨라야 합니다."),
     ACTIVE_GENERATION_OVERLAPPED(HttpStatus.CONFLICT, "모집 기간이 겹치는 활성 기수가 있습니다."),
+    GENERATION_ACTIVITY_OVERLAPPED(HttpStatus.CONFLICT,
+            "활동 기간이 겹치는 기수가 있습니다."),
     ACTIVE_GENERATION_NOT_FOUND(HttpStatus.CONFLICT, "현재 모집 중인 기수가 없어 지원할 수 없습니다."),
     DUPLICATE_APPLICATION(HttpStatus.CONFLICT, "이미 해당 기수에 지원했습니다."),
+    APPLICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "지원서를 찾을 수 없습니다."),
+    INVALID_APPLICATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "지원서 상태를 변경할 수 없습니다."),
 
     // --- STT (Gemini) ---
     GEMINI_API_KEY_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API 키가 설정되지 않았습니다."),
     GEMINI_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "Gemini API 호출에 실패했습니다."),
     STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다."),
+    STT_WORKER_CALL_FAILED(HttpStatus.BAD_GATEWAY, "STT 워커 호출에 실패했습니다."),
+    GEMINI_EVAL_PARSE_FAILED(HttpStatus.BAD_GATEWAY, "Gemini 평가 응답 해석에 실패했습니다."),
+    NO_CONTENT_TO_EVALUATE(HttpStatus.NOT_FOUND, "평가할 지원자 콘텐츠가 없습니다."),
 
     // --- 리포트 분석 ---
     REPORT_CATEGORY_NOT_SUPPORTED(
@@ -135,6 +148,11 @@ public enum ErrorCode {
     ANALYZER_UNAVAILABLE(
             HttpStatus.BAD_GATEWAY,
             "로컬 분석 워커를 호출할 수 없습니다."),
+    REPORT_CONTENT_EMPTY(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "취합할 콘텐츠 분석 결과가 없습니다. 콘텐츠 분석을 먼저 수행하세요."),
+    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "저장된 지원자 리포트가 없습니다."),
+
     // --- 콘텐츠 검수 / 위반 ---
     CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
     CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),

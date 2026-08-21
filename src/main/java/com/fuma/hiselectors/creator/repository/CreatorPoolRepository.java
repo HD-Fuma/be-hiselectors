@@ -88,13 +88,19 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             select new com.fuma.hiselectors.creator.dto.CreatorSummary(
                        c.id, c.snsCode, c.accountId, c.creatorName,
                        c.followerCount, c.engagementRate, c.lastContentAt, c.category,
-                       i.brandScore, i.igHandle, i.igConfidence)
+                       i.recent90DayContentCount, i.brandScore, i.igHandle, i.igConfidence)
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false
+              and (:keyword is null
+                   or lower(c.creatorName) like lower(concat('%', :keyword, '%'))
+                   or lower(c.accountId) like lower(concat('%', :keyword, '%')))
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
+              and (:minRecent90DayContentCount is null
+                   or i.recent90DayContentCount >= :minRecent90DayContentCount)
               and (:maxBrandScore is null or coalesce(i.brandScore, 0) <= :maxBrandScore)
               and (:minIgConfidence is null or i.igConfidence >= :minIgConfidence)
               and (:activeAfter is null or c.lastContentAt >= :activeAfter)
@@ -104,18 +110,36 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false
+              and (:keyword is null
+                   or lower(c.creatorName) like lower(concat('%', :keyword, '%'))
+                   or lower(c.accountId) like lower(concat('%', :keyword, '%')))
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
+              and (:minRecent90DayContentCount is null
+                   or i.recent90DayContentCount >= :minRecent90DayContentCount)
               and (:maxBrandScore is null or coalesce(i.brandScore, 0) <= :maxBrandScore)
               and (:minIgConfidence is null or i.igConfidence >= :minIgConfidence)
               and (:activeAfter is null or c.lastContentAt >= :activeAfter)
             """)
-    Page<CreatorSummary> search(@Param("categoryCode") String categoryCode,
+    Page<CreatorSummary> search(@Param("keyword") String keyword,
+                                @Param("categoryCode") String categoryCode,
                                 @Param("snsCode") String snsCode,
                                 @Param("minFollower") Long minFollower,
+                                @Param("minEngagementRate") BigDecimal minEngagementRate,
+                                @Param("minRecent90DayContentCount")
+                                Integer minRecent90DayContentCount,
                                 @Param("maxBrandScore") Integer maxBrandScore,
                                 @Param("minIgConfidence") BigDecimal minIgConfidence,
                                 @Param("activeAfter") LocalDateTime activeAfter,
                                 Pageable pageable);
+
+    default Page<CreatorSummary> search(String categoryCode, String snsCode,
+                                        Long minFollower, Integer maxBrandScore,
+                                        BigDecimal minIgConfidence, LocalDateTime activeAfter,
+                                        Pageable pageable) {
+        return search(null, categoryCode, snsCode, minFollower, null, null,
+                maxBrandScore, minIgConfidence, activeAfter, pageable);
+    }
 }
