@@ -29,6 +29,9 @@ dependencies {
 
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 
+    // 지원자별 콘텐츠 transcript를 휘발성(TTL)으로 모으는 캐시. DB 영속 대신(무저장 원칙).
+    implementation 'com.github.ben-manes.caffeine:caffeine'
+
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
