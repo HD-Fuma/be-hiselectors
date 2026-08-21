@@ -1,12 +1,12 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.repository.ApplicationContentAnalysisRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.service.ReportStatus;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.stt.model.ApplicationContentAnalysis;
-import com.fuma.hiselectors.stt.repository.ApplicationContentAnalysisRepository;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;

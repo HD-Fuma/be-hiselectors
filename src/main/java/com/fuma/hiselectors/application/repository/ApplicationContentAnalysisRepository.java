@@ -1,6 +1,6 @@
-package com.fuma.hiselectors.stt.repository;
+package com.fuma.hiselectors.application.repository;
 
-import com.fuma.hiselectors.stt.model.ApplicationContentAnalysis;
+import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
