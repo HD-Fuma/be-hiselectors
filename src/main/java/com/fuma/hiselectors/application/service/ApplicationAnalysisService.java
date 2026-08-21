@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.application.service;
 
 import com.fuma.hiselectors.application.model.ApplicationMedia;
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -44,16 +45,21 @@ public class ApplicationAnalysisService {
             if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
                 continue;
             }
+            // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
             evaluationService.addContent(applicationId,
                     new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
         }
 
-        // 취합 → application_report 저장 + 콘텐츠 파기(외부 Gemini 포함).
-        evaluationService.evaluate(applicationId);
+        // 취합 리포트 생성(Gemini) — 트랜잭션 밖.
+        ApplicationReport report = evaluationService.buildReport(applicationId);
 
-        transactionTemplate.executeWithoutResult(s ->
-                applicationRepository.findById(applicationId)
-                        .ifPresent(a -> a.completeAnalysis(LocalDateTime.now())));
+        // 리포트 저장 + 콘텐츠 파기 + 분석완료(DONE)를 한 트랜잭션으로.
+        // 중간에 죽어도 셋이 함께 커밋/롤백되어 "리포트는 있는데 상태는 PENDING" 불일치가 없다.
+        transactionTemplate.executeWithoutResult(s -> {
+            evaluationService.persistReport(applicationId, report);
+            applicationRepository.findById(applicationId)
+                    .ifPresent(a -> a.completeAnalysis(LocalDateTime.now()));
+        });
     }
 
     /** 실패 기록(재시도 카운트 증가). */

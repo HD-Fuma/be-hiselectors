@@ -13,7 +13,7 @@
 
 ```bash
 # 0) 사전: GPU 쿼터(ml.g4dn.xlarge for endpoint usage) 승인, S3 버킷, SageMaker 실행 role
-../.venv/Scripts/python.exe -m pip install boto3
+../.venv/Scripts/python.exe -m pip install boto3 huggingface_hub  # package.py 가 가중치 받을 때 필요
 
 # 1) 가중치 구운 model.tar.gz 패키징 + 업로드 (~2.9GB, 몇 분)
 ../.venv/Scripts/python.exe package.py <BUCKET>
@@ -26,7 +26,7 @@ aws s3 cp sample.mp3 s3://<BUCKET>/whisper/input/test.mp3
 aws sagemaker-runtime invoke-endpoint-async \
   --endpoint-name whisper-large-v3-async \
   --input-location s3://<BUCKET>/whisper/input/test.mp3 \
-  --content-type audio/mpeg out.json
+  --content-type audio/mpeg    # 응답의 OutputLocation(S3)에 결과가 비동기로 떨어짐
 aws s3 ls s3://<BUCKET>/whisper/output/   # 결과 JSON 확인
 ```
 

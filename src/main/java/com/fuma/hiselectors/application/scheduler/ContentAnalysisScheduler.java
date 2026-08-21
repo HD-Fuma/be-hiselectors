@@ -6,6 +6,7 @@ import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.application.service.ApplicationAnalysisService;
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -32,13 +33,20 @@ public class ContentAnalysisScheduler {
     @Value("${application.content-analysis.batch-size:5}")
     private int batchSize;
 
+    /** IN_PROGRESS lease(분). 처리 중 크래시하면 이 시간 뒤 다른 워커가 회수. 최대 처리시간보다 넉넉히. */
+    @Value("${application.content-analysis.lease-minutes:30}")
+    private long leaseMinutes;
+
     @Scheduled(
             fixedDelayString = "${application.content-analysis.fixed-delay-ms:60000}",
             initialDelayString = "${application.content-analysis.initial-delay-ms:20000}")
     public void analyzeCollectedApplications() {
+        LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
         List<Application> targets = applicationRepository.findAnalysisTargets(
                 MediaCollectionStatus.DONE,
                 EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                ContentAnalysisStatus.IN_PROGRESS,
+                leaseBefore,
                 MAX_RETRY_COUNT,
                 SnsPlatform.INSTAGRAM,
                 PageRequest.of(0, batchSize));
@@ -47,10 +55,12 @@ public class ContentAnalysisScheduler {
         int failed = 0;
         for (Application application : targets) {
             Long id = application.getId();
-            // 원자적 선점: PENDING/FAILED → IN_PROGRESS. 0이면 다른 인스턴스가 이미 가져감 → skip.
+            // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
+            // 0이면 다른 인스턴스가 이미 처리 중 → skip.
             int claimed = applicationRepository.claimForAnalysis(
                     id, ContentAnalysisStatus.IN_PROGRESS,
-                    EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED));
+                    EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                    LocalDateTime.now(), leaseBefore);
             if (claimed != 1) {
                 continue;
             }

@@ -85,7 +85,15 @@ public class CreatorEvaluationService {
      * 평가 후 콘텐츠(application_content_analysis)는 파기(무저장).
      */
     public ApplicationReport evaluate(Long applicationId) {
-        // 1) 짧은 읽기.
+        ApplicationReport report = buildReport(applicationId);   // Gemini 등 외부호출 = 트랜잭션 밖
+        return transactionTemplate.execute(status -> persistReport(applicationId, report));
+    }
+
+    /**
+     * 저장된 콘텐츠를 읽어 취합 리포트를 <b>만들기만</b> 한다(미저장). Gemini 호출 포함이라 트랜잭션 밖.
+     * 스케줄러는 이걸로 리포트를 만든 뒤, 저장·상태갱신을 한 트랜잭션으로 묶는다({@link #persistReport}).
+     */
+    public ApplicationReport buildReport(Long applicationId) {
         List<ApplicationContentAnalysis> rows = repository.findByApplicantId(applicationId);
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
@@ -98,10 +106,8 @@ public class CreatorEvaluationService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "콘텐츠에 전사·자막 내용이 없습니다.");
         }
 
-        // 2) Gemini insight — 트랜잭션 밖(커넥션 미보유).
         ApplicantInsight insight = evalClient.insight(merged);
-
-        ApplicationReport report = ApplicationReport.builder()
+        return ApplicationReport.builder()
                 .applicationId(applicationId)
                 .summary(toJson(insight.summary()))
                 .category(mode(rows, ApplicationContentAnalysis::getCategory))
@@ -113,14 +119,14 @@ public class CreatorEvaluationService {
                 .brandHistory(clip(join(insight.collabBrands()), TEXT_MAX))
                 .status(ReportStatus.AI_COMPLETED.name())
                 .build();
+    }
 
-        // 3) 쓰기만 짧은 트랜잭션: 기존 리포트 교체 + 저장 + 콘텐츠 파기.
-        return transactionTemplate.execute(status -> {
-            reportRepository.deleteByApplicationId(applicationId);
-            ApplicationReport saved = reportRepository.save(report);
-            repository.deleteByApplicantId(applicationId);
-            return saved;
-        });
+    /** 기존 리포트 교체 저장 + 콘텐츠 파기. 반드시 트랜잭션 안에서 호출(외부호출 없음). */
+    public ApplicationReport persistReport(Long applicationId, ApplicationReport report) {
+        reportRepository.deleteByApplicationId(applicationId);
+        ApplicationReport saved = reportRepository.save(report);
+        repository.deleteByApplicantId(applicationId);
+        return saved;
     }
 
     /** 콘텐츠별 값 최빈(non-blank). 없으면 null. */

@@ -22,6 +22,19 @@ class CdnExpiredError(AcquireError):
     """media_url/thumbnail_url(scontent CDN)이 만료됨. 호출부가 Graph API로 fresh URL 재요청해야 함."""
 
 
+# Meta CDN 만 허용(SSRF 방지). file:// 등 비HTTPS·내부 URL 차단.
+_ALLOWED_HOST_SUFFIXES = (".cdninstagram.com", ".fbcdn.net")
+
+
+def _validate_url(url: str) -> None:
+    p = urlparse(url)
+    if p.scheme != "https":
+        raise AcquireError(f"허용되지 않은 스킴: {p.scheme!r} (https만 허용)")
+    host = (p.hostname or "").lower()
+    if not any(host.endswith(sfx) for sfx in _ALLOWED_HOST_SUFFIXES):
+        raise AcquireError(f"허용되지 않은 호스트: {host!r} (Meta CDN만 허용)")
+
+
 def _is_expired(url: str) -> bool:
     """scontent URL의 oe=HEX 는 만료시각(unix). 지났으면 만료. 여유 60초."""
     m = re.search(r"[?&]oe=([0-9A-Fa-f]+)", url)
@@ -36,6 +49,7 @@ def _is_expired(url: str) -> bool:
 def _download(url: str, out_dir: str) -> str:
     """CDN 직다운. 확장자는 Content-Type(→URL경로)으로 결정해 영상/이미지 모두 처리.
     만료 URL(oe 지남 또는 403/410)은 CdnExpiredError 로 구분해 던진다."""
+    _validate_url(url)  # SSRF 방지: https + Meta CDN 만
     if _is_expired(url):
         raise CdnExpiredError("media_url 만료(oe 시각 지남)")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})

@@ -25,6 +25,7 @@ def _extract_audio(media_path: str) -> str:
     os.close(fd)  # Windows: 열린 fd가 남으면 파일 락 → 닫고 av가 쓰게 한다
     with av.open(media_path) as inp:
         if not inp.streams.audio:
+            os.remove(out_path)  # 오디오 없으면 빈 임시파일 안 남기고 정리
             return None
         in_stream = inp.streams.audio[0]
         with av.open(out_path, "w") as out:

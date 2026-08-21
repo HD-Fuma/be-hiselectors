@@ -84,7 +84,7 @@ public class SttTestController {
     })
     @PostMapping("/applicant/{applicantId}/evaluate")
     public ResponseEntity<ApplicationReport> evaluate(
-            @Parameter(description = "지원(application) ID") @PathVariable Long applicantId) {
+            @Parameter(description = "지원자 ID (application id)") @PathVariable Long applicantId) {
         return ResponseEntity.ok(evaluationService.evaluate(applicantId));
     }
 }
