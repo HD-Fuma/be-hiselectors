@@ -13,8 +13,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface ApplicationRepository extends JpaRepository<Application, Long> {
 
@@ -42,6 +44,21 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             @Param("maxRetryCount") int maxRetryCount,
             @Param("snsCode") SnsPlatform snsCode,
             Pageable pageable);
+
+    /**
+     * 분석 대상을 원자적으로 선점(IN_PROGRESS). PENDING/FAILED 인 경우에만 갱신되므로,
+     * 여러 인스턴스가 동시에 시도해도 딱 1건만 affected=1 을 받아 중복 처리를 막는다.
+     * @return 갱신된 행 수(1=선점 성공, 0=이미 다른 워커가 가져감).
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            UPDATE Application a SET a.analysisStatus = :inProgress
+            WHERE a.id = :id AND a.analysisStatus IN :claimable
+            """)
+    int claimForAnalysis(@Param("id") Long id,
+                         @Param("inProgress") ContentAnalysisStatus inProgress,
+                         @Param("claimable") Collection<ContentAnalysisStatus> claimable);
 
     @Query(value = """
             SELECT a

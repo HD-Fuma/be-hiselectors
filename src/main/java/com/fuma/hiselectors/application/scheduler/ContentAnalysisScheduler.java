@@ -47,6 +47,13 @@ public class ContentAnalysisScheduler {
         int failed = 0;
         for (Application application : targets) {
             Long id = application.getId();
+            // 원자적 선점: PENDING/FAILED → IN_PROGRESS. 0이면 다른 인스턴스가 이미 가져감 → skip.
+            int claimed = applicationRepository.claimForAnalysis(
+                    id, ContentAnalysisStatus.IN_PROGRESS,
+                    EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED));
+            if (claimed != 1) {
+                continue;
+            }
             try {
                 analysisService.analyzeAndReport(id);
                 succeeded++;
