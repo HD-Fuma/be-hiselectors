@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.purchase.service;
 
+import com.fuma.hiselectors.purchase.dto.AuthenticatedPurchaseRequest;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
@@ -11,6 +12,7 @@ import com.fuma.hiselectors.purchase.model.PurchaseProcessingResult;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -29,6 +31,7 @@ public class PurchaseService {
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final ProductRepository productRepository;
+    private final SelectorAccessService selectorAccessService;
 
     @Transactional
     public PurchaseResponse purchase(PurchaseRequest request) {
@@ -52,12 +55,23 @@ public class PurchaseService {
         return createPurchase(request, selectorsId, product);
     }
 
+    @Transactional
+    public PurchaseResponse purchase(String loginId, AuthenticatedPurchaseRequest request) {
+        Long buyerUserId = userRepository.findByHiId(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PURCHASE_USER_NOT_FOUND))
+                .getId();
+        return purchase(new PurchaseRequest(buyerUserId, request.selectorsCode(),
+                request.productCode(), request.quantity()));
+    }
+
     private Long findSelectorsId(String selectorsCode) {
         if (!StringUtils.hasText(selectorsCode)) {
             return null;
         }
         Selectors selectors = selectorsRepository.findBySelectorsCode(selectorsCode)
+                .filter(value -> !value.isDeleted() && !value.isBlacklisted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        selectorAccessService.requireCurrent(selectors);
         return selectors.getId();
     }
 

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record InstagramProfileResponse(
         String id,
         String username,
-        @JsonProperty("followers_count") Long followersCount
+        @JsonProperty("followers_count") Long followersCount,
+        @JsonProperty("media_count") Long mediaCount
 ) {
 }

@@ -14,6 +14,12 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+  # devtools 자동 재시작 끔. 코드 변경 때마다 컨텍스트가 재시작되면 자동 실행된 정성 엔진
+  # 워커도 매번 재기동(모델 20초 재로딩)돼 느려진다. 재시작이 필요하면 이 값을 true 로.
+  devtools:
+    restart:
+      enabled: false
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:hiselectors}?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
@@ -29,11 +35,11 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate
-    show-sql: true
+      ddl-auto: ${DDL_AUTO:validate}
+    show-sql: ${SHOW_SQL:true}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${FORMAT_SQL:true}
     open-in-view: false
 
 jwt:
@@ -49,6 +55,9 @@ youtube:
 
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
+    api-key: ${youtube.collection.api-key}
+
+  collection:
     api-key: ${YOUTUBE_API_KEY:}
     daily-quota: ${YOUTUBE_DISCOVERY_DAILY_QUOTA:10000}
     max-results-per-keyword: ${YOUTUBE_DISCOVERY_MAX_RESULTS:25}
@@ -77,6 +86,11 @@ instagram:
     redirect-uri: ${INSTAGRAM_REDIRECT_URI}
     scope: instagram_business_basic
 
+  collection:
+    api-version: ${META_API_VERSION:v24.0}
+    business-account-id: ${META_INSTAGRAM_BUSINESS_ACCOUNT_ID:}
+    access-token: ${META_LONG_LIVED_ACCESS_TOKEN:}
+
 # OAuth CSRF state 유효시간 (유튜브, 인스타 공용)
 oauth:
   state-validity-seconds: 300
@@ -93,3 +107,38 @@ kakao:
     mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:http://localhost:3000}
     image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
   token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}
+
+purchase:
+  auto-confirm:
+    cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
+
+selectors:
+  lifecycle:
+    # 기존 기수의 실제 활동 기간을 보정한 뒤 활성화한다.
+    enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
+    cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
+    zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+
+content:
+  batch:
+    cron: ${CONTENT_BATCH_CRON:-}
+    zone: ${CONTENT_BATCH_ZONE:Asia/Seoul}
+
+application:
+  media-collection:
+    fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:60000}
+    initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:10000}
+    batch-size: ${APPLICATION_MEDIA_COLLECTION_BATCH_SIZE:20}
+
+settlement:
+  zone: ${SETTLEMENT_ZONE:Asia/Seoul}
+  estimate:
+    cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}
+  finalization:
+    cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
+  payment:
+    cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+  expiry:
+    cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
+  notification:
+    sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}

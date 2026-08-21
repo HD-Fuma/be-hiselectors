@@ -10,8 +10,11 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
+import com.fuma.hiselectors.oauth.OAuthStateProvider;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,13 +29,22 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
+    private final SelectorsRepository selectorsRepository;
+    private final OAuthStateProvider oAuthStateProvider;
+    private final Clock clock;
 
     @Transactional
     public ApplicationResponse create(String loginId, ApplicationCreateRequest request) {
         User user = userRepository.findByHiId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.APPLICATION_USER_NOT_FOUND));
+        if (selectorsRepository.findByUserId(user.getId())
+                .filter(value -> value.isBlacklisted()).isPresent()) {
+            throw new BusinessException(ErrorCode.BLACKLISTED_SELECTOR);
+        }
+        OAuthStateProvider.VerifiedAccount verifiedAccount = verifyAccount(
+                request.verificationToken(), loginId);
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         Generation generation = generationRepository
                 .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
@@ -45,11 +57,10 @@ public class ApplicationService {
         Application application = Application.builder()
                 .userId(user.getId())
                 .generationId(generation.getId())
-                .snsCode(request.snsCode())
-                .snsAccountId(request.snsAccountId())
-                .followerCount(request.followerCount())
-                .lastContentAt(request.lastContentAt())
-                .engagementRate(request.engagementRate())
+                .snsCode(verifiedAccount.snsCode())
+                .snsAccountId(verifiedAccount.snsAccountId())
+                .followerCount(verifiedAccount.followerCount())
+                .contentCount(verifiedAccount.contentCount())
                 .alarmYn(request.alarmAgreed())
                 .policyAgreedAt(now)
                 .status(ApplicationStatus.PENDING)
@@ -60,6 +71,14 @@ public class ApplicationService {
         } catch (DataIntegrityViolationException e) {
             // existsBy 체크와 save 사이 경쟁 상태: 유니크 제약 위반을 409로 변환
             throw new BusinessException(ErrorCode.DUPLICATE_APPLICATION);
+        }
+    }
+
+    private OAuthStateProvider.VerifiedAccount verifyAccount(String token, String loginId) {
+        try {
+            return oAuthStateProvider.resolveVerificationToken(token, loginId);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.OAUTH_VERIFICATION_INVALID);
         }
     }
 }

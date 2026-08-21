@@ -11,6 +11,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
 @Component
@@ -19,19 +20,41 @@ public class YoutubeSttClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
+    private static final String SUMMARY_MARKER = "===요약===";
     private static final String STT_MARKER = "===음성===";
     private static final String OCR_MARKER = "===자막===";
+    private static final String ANALYSIS_MARKER = "===분석===";
 
+    // 영상 입력 비용은 어차피 이 호출에서 낸다. 맥락 판단이 필요한 정성 필드(요약·스타일·톤·강점·
+    // 위험·브랜드·욕설확정)를 같은 호출에 얹어 output 토큰만 추가한다. 키워드·카테고리·1차 욕설
+    // 스크리닝은 결정적/DB정렬이라 로컬 엔진(stt-worker)이 transcript 위에서 따로 처리한다.
     private static final String PROMPT = """
             이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
-            두 항목은 독립적으로 각각 추출하며, 내용이 겹쳐도 그대로 둡니다.
+            각 항목은 서로 독립적으로, 겹쳐도 그대로 각각 완전히 채우세요.
             ===음성===
-            오디오에서 사람이 말한 내용을 한국어로 전부 전사하세요. 없으면 비워 두세요.
+            오디오에서 사람이 말한 내용을 처음부터 끝까지 한국어로 빠짐없이 전사하세요. \
+            요약과 별개입니다. 축약·생략·요약하지 말고 들리는 말을 그대로 전부 적으세요. \
+            말이 전혀 없으면 비워 두세요.
             ===자막===
             화면에 보이는 텍스트를 전부 적으세요(자막, 제목, 상표·라벨, 그래픽 문구 등). \
-            음성과 겹치더라도 그대로 적으세요. 없으면 비워 두세요.""";
+            음성과 겹치더라도 그대로 적으세요. 없으면 비워 두세요.
+            ===요약===
+            영상 내용을 한국어 3~5문장으로 요약하세요. 없으면 비워 두세요.
+            ===분석===
+            아래 JSON 하나만 출력하세요. 키·형식을 정확히 지키고 코드펜스는 쓰지 마세요.
+            {
+              "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
+              "tone": "유쾌코믹|차분잔잔|진지전문|친근수다|감성무드|자극과장|시니컬솔직 중 하나",
+              "strengths": ["크리에이터·콘텐츠의 강점"],
+              "cautions": ["브랜드 협업 시 유의점"],
+              "risks": ["정치종교논란|허위과장광고|미검증건강주장|선정성|저작권|사행성 중 해당되는 것만, 없으면 빈 배열"],
+              "hateConfirmed": false,
+              "collabBrands": ["협찬·협업으로 보이는 브랜드명만. 방송사·플랫폼(SBS·유튜브 등)이나 크리에이터 본인은 제외. 없으면 빈 배열"]
+            }""";
 
     private final GeminiProperties properties;
+    // 작은 분석 JSON 파싱용. 상태 없는 파서라 빈 주입 없이 직접 만든다.
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
     public YoutubeSttClient(GeminiProperties properties) {
@@ -109,24 +132,55 @@ public class YoutubeSttClient {
         return r != null && r.promptFeedback() != null ? r.promptFeedback().blockReason() : null;
     }
 
+    private static final String[] MARKERS =
+            { SUMMARY_MARKER, STT_MARKER, OCR_MARKER, ANALYSIS_MARKER };
+
     private SttResult parse(String text) {
-        String stt = section(text, STT_MARKER, OCR_MARKER);
-        String ocr = section(text, OCR_MARKER, STT_MARKER);
-        if (stt.isEmpty() && ocr.isEmpty()
-                && text.indexOf(STT_MARKER) < 0 && text.indexOf(OCR_MARKER) < 0) {
-            return new SttResult(text.trim(), "");
+        boolean noMarkers = text.indexOf(SUMMARY_MARKER) < 0 && text.indexOf(STT_MARKER) < 0
+                && text.indexOf(OCR_MARKER) < 0 && text.indexOf(ANALYSIS_MARKER) < 0;
+        if (noMarkers) {
+            // 형식 이탈 = 마커 없는 응답. 통째로 음성 자리에 넣는다(요약으로 오인 방지).
+            return new SttResult("", text.trim(), "", ContentInsight.empty());
         }
-        return new SttResult(stt, ocr);
+        return new SttResult(
+                section(text, SUMMARY_MARKER),
+                section(text, STT_MARKER),
+                section(text, OCR_MARKER),
+                parseInsight(section(text, ANALYSIS_MARKER)));
     }
 
-    private String section(String text, String marker, String otherMarker) {
+    /** ===분석=== 섹션의 JSON을 파싱. 실패해도 STT 결과는 살리도록 빈 값으로 폴백한다. */
+    private ContentInsight parseInsight(String raw) {
+        int open = raw.indexOf('{');
+        int close = raw.lastIndexOf('}');
+        if (open < 0 || close <= open) {
+            return ContentInsight.empty();
+        }
+        try {
+            return objectMapper.readValue(raw.substring(open, close + 1), ContentInsight.class);
+        } catch (Exception e) {
+            log.warn("Gemini 분석 JSON 파싱 실패. 빈 분석으로 대체한다.", e);
+            return ContentInsight.empty();
+        }
+    }
+
+    /** marker 뒤부터 다음 마커(어느 것이든) 직전까지. 마커 순서가 바뀌어도 안전. */
+    private String section(String text, String marker) {
         int start = text.indexOf(marker);
         if (start < 0) {
             return "";
         }
         start += marker.length();
-        int other = text.indexOf(otherMarker);
-        int end = other > start ? other : text.length();
+        int end = text.length();
+        for (String other : MARKERS) {
+            if (other.equals(marker)) {
+                continue;
+            }
+            int i = text.indexOf(other);
+            if (i >= start && i < end) {
+                end = i;
+            }
+        }
         return text.substring(start, end).trim();
     }
 

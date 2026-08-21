@@ -3,12 +3,9 @@
 스타일 · 톤 · 요약 · 강점 · 넓은 의미의 위험(정치/광고/건강)·욕설혐오는 여기서 안 한다(다른 단계·담당).
 transcript 텍스트만 입력 — YouTube(Gemini) 든 Instagram(whisper) 든 동일."""
 from __future__ import annotations
-
 from functools import lru_cache
-
 from kiwipiepy import Kiwi
 from sentence_transformers import SentenceTransformer, util
-
 import enums
 
 _NOUN_TAGS = frozenset({"NNG", "NNP", "SL", "SN"})
@@ -38,6 +35,7 @@ def _noun_candidates(text: str) -> list[str]:
     for t in _kiwi().tokenize(text):
         if t.tag in _NOUN_TAGS or (t.tag == "XSN" and cur):
             if cur and t.start == cur_end:
+
                 cur += t.form
             else:
                 if cur:
@@ -52,6 +50,7 @@ def _noun_candidates(text: str) -> list[str]:
         words.append(cur)
     words = [w for w in words if len(w) >= 2 and w not in _STOP]
     return list(dict.fromkeys(words))
+
 
 
 def keywords(text: str, top_n: int = 8) -> list[str]:

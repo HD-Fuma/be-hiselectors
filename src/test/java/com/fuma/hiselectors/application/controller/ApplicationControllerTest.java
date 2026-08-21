@@ -39,16 +39,18 @@ class ApplicationControllerTest {
     @Test
     void 성공응답은_ApiResult_봉투로_감싼다() throws Exception {
         ApplicationResponse response = new ApplicationResponse(
-                1L, 10L, 3L, SnsPlatform.YOUTUBE, "UC123", 100L,
+                1L, 10L, 3L, SnsPlatform.YOUTUBE, "UC123", 100L, 42L,
                 null, null, true, LocalDateTime.now(), ApplicationStatus.PENDING,
                 LocalDateTime.now());
         when(applicationService.create(eq("user1"), any())).thenReturn(response);
 
         String body = """
                 {
+                  "verificationToken": "signed-verification-token",
                   "snsCode": "YOUTUBE",
                   "snsAccountId": "UC123",
                   "followerCount": 100,
+                  "contentCount": 42,
                   "privacyAgreed": true,
                   "alarmAgreed": true
                 }
@@ -62,6 +64,7 @@ class ApplicationControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.contentCount").value(42))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
     }
 
@@ -69,6 +72,7 @@ class ApplicationControllerTest {
     void rejectsWhenPrivacyConsentMissing() throws Exception {
         String body = """
                 {
+                  "verificationToken": "signed-verification-token",
                   "snsCode": "YOUTUBE",
                   "snsAccountId": "UC123",
                   "followerCount": 100,
@@ -85,9 +89,29 @@ class ApplicationControllerTest {
     }
 
     @Test
+    void rejectsWhenVerificationTokenMissing() throws Exception {
+        String body = """
+                {
+                  "snsCode": "YOUTUBE",
+                  "snsAccountId": "UC123",
+                  "followerCount": 100,
+                  "privacyAgreed": true,
+                  "alarmAgreed": true
+                }
+                """;
+
+        mockMvc.perform(post("/api/applications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    @Test
     void rejectsWhenAlarmConsentMissing() throws Exception {
         String body = """
                 {
+                  "verificationToken": "signed-verification-token",
                   "snsCode": "YOUTUBE",
                   "snsAccountId": "UC123",
                   "followerCount": 100,

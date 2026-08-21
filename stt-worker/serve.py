@@ -20,7 +20,6 @@ _PAGE = Path(__file__).with_name("test.html")
 class AnalyzeRequest(BaseModel):
     text: str
 
-
 class ReelRequest(BaseModel):
     url: str | None = None
     media_url: str | None = None       # Graph API media_url 있으면 CDN 직다운(yt-dlp 안 씀)

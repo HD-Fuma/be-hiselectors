@@ -68,15 +68,27 @@ public class CreatorDiscoveryInfo extends BaseTimeEntity {
     @Column(name = "discovered_at", nullable = false, updatable = false)
     private LocalDateTime discoveredAt;
 
+    /** 공개 API에서 확인한 최근 90일 콘텐츠 수. */
+    @Column(name = "recent_90_day_content_count")
+    private Integer recent90DayContentCount;
+
     @Builder
     private CreatorDiscoveryInfo(CreatorPool creatorPool, Integer brandScore, String brandHits,
-                                 String igHandle, BigDecimal igConfidence) {
+                                 String igHandle, BigDecimal igConfidence,
+                                 Integer recent90DayContentCount) {
         this.creatorPool = creatorPool;
         this.brandScore = brandScore == null ? 0 : brandScore;
         this.brandHits = brandHits;
         this.igHandle = igHandle;
         this.igConfidence = igConfidence;
+        this.recent90DayContentCount = recent90DayContentCount;
         this.discoveredAt = LocalDateTime.now();
+    }
+
+    public void updateRecent90DayContentCount(Integer count) {
+        if (count != null) {
+            this.recent90DayContentCount = count;
+        }
     }
 
     /** 같은 채널이 다시 발굴됐을 때 판정 근거를 갱신한다. */

@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.application.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -45,6 +47,10 @@ public class Application extends BaseTimeEntity {
     @Column(name = "follower_count")
     private Long followerCount;
 
+    /** OAuth 인증 시점의 전체 공개 콘텐츠 수. 플랫폼이 제공하지 않으면 null. */
+    @Column(name = "content_count")
+    private Long contentCount;
+
     /** 최근 활동일(프론트 전달). */
     @Column(name = "last_content_at")
     private LocalDateTime lastContentAt;
@@ -62,20 +68,54 @@ public class Application extends BaseTimeEntity {
     @Column(name = "status", nullable = false, length = 20)
     private ApplicationStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "media_collection_status", nullable = false, length = 20)
+    private MediaCollectionStatus mediaCollectionStatus = MediaCollectionStatus.PENDING;
+
+    @Column(name = "media_collection_retry_count", nullable = false)
+    private int mediaCollectionRetryCount;
+
+    @Column(name = "media_collected_at")
+    private LocalDateTime mediaCollectedAt;
+
+    @Column(name = "media_collection_error", length = 500)
+    private String mediaCollectionError;
+
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
-                        Long followerCount, LocalDateTime lastContentAt, BigDecimal engagementRate,
+                        Long followerCount, Long contentCount,
+                        LocalDateTime lastContentAt, BigDecimal engagementRate,
                         boolean alarmYn, LocalDateTime policyAgreedAt, ApplicationStatus status) {
         this.userId = userId;
         this.generationId = generationId;
         this.snsCode = snsCode;
         this.snsAccountId = snsAccountId;
         this.followerCount = followerCount;
+        this.contentCount = contentCount;
         this.lastContentAt = lastContentAt;
         this.engagementRate = engagementRate;
         this.alarmYn = alarmYn;
         this.policyAgreedAt = policyAgreedAt;
         this.status = status;
     }
-}
 
+    public void completeMediaCollection(LocalDateTime collectedAt) {
+        this.mediaCollectionStatus = MediaCollectionStatus.DONE;
+        this.mediaCollectedAt = collectedAt;
+        this.mediaCollectionError = null;
+    }
+
+    public void failMediaCollection(String error) {
+        this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
+        this.mediaCollectionRetryCount++;
+        this.mediaCollectionError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+
+    public void changeStatus(ApplicationStatus target) {
+        if (target == ApplicationStatus.PENDING
+                || (status != ApplicationStatus.PENDING && status != target)) {
+            throw new BusinessException(ErrorCode.INVALID_APPLICATION_STATUS_TRANSITION);
+        }
+        this.status = target;
+    }
+}

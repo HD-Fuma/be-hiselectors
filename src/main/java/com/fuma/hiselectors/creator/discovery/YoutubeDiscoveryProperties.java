@@ -15,8 +15,10 @@ public record YoutubeDiscoveryProperties(
         Integer maxResultsPerKeyword
 ) {
 
-    /** 키워드 1개 발굴에 드는 쿼터. search.list 100 + videos/channels 배치 2. */
-    public static final int QUOTA_PER_KEYWORD = 102;
+    /** search.list 100 + videos/channels 배치 2. */
+    public static final int BASE_QUOTA_PER_KEYWORD = 102;
+    private static final int YOUTUBE_LIST_MAX_RESULTS = 50;
+    public static final int MAX_FILTERABLE_RECENT_ACTIVITY_COUNT = 25;
 
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
@@ -27,6 +29,17 @@ public record YoutubeDiscoveryProperties(
     }
 
     public int maxResultsOrDefault() {
-        return maxResultsPerKeyword == null ? 25 : maxResultsPerKeyword;
+        int maxResults = maxResultsPerKeyword == null ? 25 : maxResultsPerKeyword;
+        if (maxResults < 1 || maxResults > YOUTUBE_LIST_MAX_RESULTS) {
+            throw new IllegalStateException(
+                    "youtube.discovery.max-results-per-keyword must be between 1 and 50");
+        }
+        return maxResults;
+    }
+
+    /** 최근 활동 조회의 채널별 최대 호출 수까지 포함한 키워드당 예약 쿼터. */
+    public int quotaPerKeyword() {
+        return BASE_QUOTA_PER_KEYWORD
+                + maxResultsOrDefault();
     }
 }

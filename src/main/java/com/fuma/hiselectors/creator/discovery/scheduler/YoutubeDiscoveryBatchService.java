@@ -30,7 +30,8 @@ public class YoutubeDiscoveryBatchService {
 
         List<DiscoveryKeyword> runnableKeywords = keywordRepository.findRunnable();
         int dailyQuota = Math.max(0, discoveryProperties.dailyQuotaOrDefault());
-        int quotaKeywordLimit = dailyQuota / YoutubeDiscoveryProperties.QUOTA_PER_KEYWORD;
+        int reservedQuotaPerKeyword = discoveryProperties.quotaPerKeyword();
+        int quotaKeywordLimit = dailyQuota / reservedQuotaPerKeyword;
         int runLimit = Math.min(
                 runnableKeywords.size(),
                 Math.min(quotaKeywordLimit, batchProperties.maxKeywordsPerRunOrDefault()));
@@ -63,7 +64,7 @@ public class YoutubeDiscoveryBatchService {
             }
         }
 
-        int reservedQuota = attempted * YoutubeDiscoveryProperties.QUOTA_PER_KEYWORD;
+        int reservedQuota = attempted * reservedQuotaPerKeyword;
         YoutubeDiscoveryBatchResult batchResult = new YoutubeDiscoveryBatchResult(
                 runnableKeywords.size(), attempted, succeeded, failed,
                 reservedQuota, consumedQuota, discovered, created, updated);
