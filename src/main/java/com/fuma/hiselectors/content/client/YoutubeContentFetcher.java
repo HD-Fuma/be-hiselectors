@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -35,7 +36,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 /**
  * YouTube Data API 채널 및 영상 조회
  *
- * 조회 순서: 채널 ID → 업로드 영상 목록 ID → 실제 영상 목록
+ * 조회 순서: 핸들 → 업로드 영상 목록 ID → 실제 영상 목록
  */
 @Slf4j
 @Component
@@ -51,6 +52,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
     private static final String VIDEO_URL = "https://www.youtube.com/watch?v=";
 
     private static final int PAGE_SIZE = 50;
+    private static final Pattern CHANNEL_ID = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
 
     // YouTube 영상 공개 시각을 변환할 서비스 기준 시간대
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
@@ -71,9 +73,9 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     /**
-     * channelId의 YouTube 영상 중 수집 기준 시각 이후 영상 조회
+     * accountId에 해당하는 YouTube 영상 중 수집 기준 시각 이후 영상 조회
      *
-     * accountId: {@code UC...} 형식의 채널 ID
+     * accountId: {@code UC...} 채널 ID, {@code @handle}, 핸들 또는 채널 URL
      * 반환값: 셀렉터스 콘텐츠 판별용 임시 데이터
      */
     @Override
@@ -192,23 +194,42 @@ public class YoutubeContentFetcher implements ContentFetcher {
         }
     }
 
-    private void validateRequest(String channelId, LocalDateTime since) {
+    private void validateRequest(String accountId, LocalDateTime since) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // channelId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(channelId) || since == null) {
+        // accountId, collectedAfter가 정상인지 확인
+        if (!StringUtils.hasText(accountId) || since == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
 
-    private String requestUploadsPlaylistId(String channelId) {
-        // channels API의 contentDetails로 업로드 영상 목록 ID 조회
+    private String requestUploadsPlaylistId(String accountId) {
+        ChannelLookup lookup = resolveChannelLookup(accountId);
+        if (!"id".equals(lookup.parameter())) {
+            return uploadsPlaylistId(requestChannel(lookup));
+        }
+
+        // 기존 DB의 UC 채널 ID로 현재 공개 핸들을 찾는다.
+        YoutubeChannelResponse.Item channelById = requestChannel(lookup);
+        String handle = channelById.snippet() == null
+                ? null
+                : normalizeHandle(channelById.snippet().customUrl());
+        if (!StringUtils.hasText(handle)) {
+            throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
+        }
+        // 실제 콘텐츠 수집 기준은 공개 핸들이다.
+        return uploadsPlaylistId(requestChannel(
+                new ChannelLookup("forHandle", handle)));
+    }
+
+    private YoutubeChannelResponse.Item requestChannel(ChannelLookup lookup) {
+        // snippet에서 공개 핸들, contentDetails에서 업로드 영상 목록 ID 조회
         URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                .queryParam("part", "contentDetails")
-                .queryParam("id", channelId)
+                .queryParam("part", "snippet,contentDetails")
+                .queryParam(lookup.parameter(), lookup.value())
                 .queryParam("key", properties.apiKey())
                 .build()
                 .encode()
@@ -217,14 +238,75 @@ public class YoutubeContentFetcher implements ContentFetcher {
         // channels API의 JSON 구조를 YoutubeChannelResponse로 변환
         YoutubeChannelResponse response = request(
                 uri, YoutubeChannelResponse.class);
-        if (response.items() == null || response.items().isEmpty()
-                || response.items().getFirst().contentDetails() == null
-                || response.items().getFirst().contentDetails().relatedPlaylists() == null
-                || !StringUtils.hasText(
-                        response.items().getFirst().contentDetails().relatedPlaylists().uploads())) {
+        if (response.items() == null || response.items().isEmpty()) {
             throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
         }
-        return response.items().getFirst().contentDetails().relatedPlaylists().uploads();
+        return response.items().getFirst();
+    }
+
+    private String uploadsPlaylistId(YoutubeChannelResponse.Item channel) {
+        if (channel.contentDetails() == null
+                || channel.contentDetails().relatedPlaylists() == null
+                || !StringUtils.hasText(
+                        channel.contentDetails().relatedPlaylists().uploads())) {
+            throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
+        }
+        return channel.contentDetails().relatedPlaylists().uploads();
+    }
+
+    private String normalizeHandle(String customUrl) {
+        if (!StringUtils.hasText(customUrl)) {
+            return null;
+        }
+        return removeHandlePrefix(customUrl.trim());
+    }
+
+    private ChannelLookup resolveChannelLookup(String accountId) {
+        String value = accountId.trim();
+        if (CHANNEL_ID.matcher(value).matches()) {
+            return new ChannelLookup("id", value);
+        }
+        if (!value.startsWith("http://") && !value.startsWith("https://")) {
+            return new ChannelLookup("forHandle", removeHandlePrefix(value));
+        }
+
+        try {
+            URI channelUri = URI.create(value);
+            String host = channelUri.getHost();
+            if (host == null || !(host.equalsIgnoreCase("youtube.com")
+                    || host.equalsIgnoreCase("www.youtube.com")
+                    || host.equalsIgnoreCase("m.youtube.com"))) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT);
+            }
+
+            String[] segments = channelUri.getPath().split("/");
+            if (segments.length >= 3 && "channel".equals(segments[1])) {
+                if (!CHANNEL_ID.matcher(segments[2]).matches()) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT);
+                }
+                return new ChannelLookup("id", segments[2]);
+            }
+            if (segments.length >= 3 && "user".equals(segments[1])) {
+                return new ChannelLookup("forUsername", segments[2]);
+            }
+            if (segments.length >= 2 && segments[1].startsWith("@")) {
+                return new ChannelLookup("forHandle", removeHandlePrefix(segments[1]));
+            }
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT);
+    }
+
+    private String removeHandlePrefix(String value) {
+        String handle = value.startsWith("@") ? value.substring(1) : value;
+        if (!StringUtils.hasText(handle)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return handle;
+    }
+
+    private record ChannelLookup(String parameter, String value) {
     }
 
     private YoutubeContentResponse requestPlaylistPage(
