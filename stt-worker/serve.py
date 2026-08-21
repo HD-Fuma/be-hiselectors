@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import acquire
 import analyze as engine
 import pipeline
 
@@ -35,6 +36,10 @@ def do_reel(req: ReelRequest) -> dict:
     """Graph API media_url → 취득 → STT/OCR → 분석. 무저장."""
     try:
         return pipeline.run(media_url=req.media_url, thumbnail_url=req.thumbnail_url)
+    except acquire.CdnExpiredError as e:
+        # 만료는 재요청 대상 → 일반 실패(500)와 구분되게 410 로 명시. Java가 fresh URL 재요청.
+        logging.warning("media_url 만료: %s", e)
+        raise HTTPException(status_code=410, detail=f"CDN_EXPIRED: {e}") from e
     except Exception as e:
         logging.error("reel 실패: %s\n%s", e, traceback.format_exc())
         # 원인을 500 본문에 실어 Java 로그에서 바로 보이게 한다.

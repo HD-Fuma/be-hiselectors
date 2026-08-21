@@ -1,5 +1,7 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient;
+import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient.MediaUrls;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.util.List;
@@ -24,6 +26,7 @@ public class CreatorEvaluationService {
     private final InstagramSttClient instagramClient;
     private final GeminiEvalClient evalClient;
     private final ApplicationContentAnalysisRepository repository;
+    private final MetaGraphApiClient metaGraphApiClient;
 
     /** 콘텐츠 1건 분석 후 적재. content_key 가 이미 있으면 재분석하지 않고 저장분을 돌려준다(멱등). */
     public InstagramAnalysisResult addContent(Long applicantId, ContentAddRequest req) {
@@ -33,9 +36,8 @@ public class CreatorEvaluationService {
             return existing.get().toResult();
         }
 
-        // 2) 오래 걸리는 워커 호출 — 트랜잭션 밖(커넥션 미보유).
-        InstagramAnalysisResult result = instagramClient.analyze(
-                req.mediaUrl(), req.thumbnailUrl());
+        // 2) 오래 걸리는 워커 호출 — 트랜잭션 밖(커넥션 미보유). media_url 만료면 1회 재취득 후 재시도.
+        InstagramAnalysisResult result = analyzeWithRefresh(req);
 
         // 3) 짧은 저장. 동시요청이 먼저 같은 content_key 를 저장했으면 중복은 성공으로 간주(멱등).
         try {
@@ -44,6 +46,22 @@ public class CreatorEvaluationService {
             // 다른 요청이 선점 저장 — 재분석 결과는 버리고 성공 취급.
         }
         return result;
+    }
+
+    /**
+     * 워커 호출. media_url 만료(MEDIA_URL_EXPIRED)면 content_key(=media id)로 Graph API에서
+     * fresh media_url 재취득 후 딱 1회 재시도한다. 그래도 만료/실패면 예외 그대로.
+     */
+    private InstagramAnalysisResult analyzeWithRefresh(ContentAddRequest req) {
+        try {
+            return instagramClient.analyze(req.mediaUrl(), req.thumbnailUrl());
+        } catch (BusinessException e) {
+            if (e.getErrorCode() != ErrorCode.MEDIA_URL_EXPIRED) {
+                throw e;
+            }
+            MediaUrls fresh = metaGraphApiClient.fetchMediaUrls(req.contentKey());
+            return instagramClient.analyze(fresh.mediaUrl(), fresh.thumbnailUrl());
+        }
     }
 
     /** 지원자의 저장된 콘텐츠를 합쳐 Gemini 1회 평가. 평가 후 삭제(무저장 원칙). */

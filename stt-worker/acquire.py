@@ -6,7 +6,10 @@ yt-dlp 등 스크래핑은 인스타그램 이용약관 위반이라 절대 쓰�
 from __future__ import annotations
 
 import os
+import re
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
@@ -15,10 +18,34 @@ class AcquireError(Exception):
     pass
 
 
+class CdnExpiredError(AcquireError):
+    """media_url/thumbnail_url(scontent CDN)이 만료됨. 호출부가 Graph API로 fresh URL 재요청해야 함."""
+
+
+def _is_expired(url: str) -> bool:
+    """scontent URL의 oe=HEX 는 만료시각(unix). 지났으면 만료. 여유 60초."""
+    m = re.search(r"[?&]oe=([0-9A-Fa-f]+)", url)
+    if not m:
+        return False
+    try:
+        return int(m.group(1), 16) < (time.time() + 60)
+    except ValueError:
+        return False
+
+
 def _download(url: str, out_dir: str) -> str:
-    """CDN 직다운. 확장자는 Content-Type(→URL경로)으로 결정해 영상/이미지 모두 처리."""
+    """CDN 직다운. 확장자는 Content-Type(→URL경로)으로 결정해 영상/이미지 모두 처리.
+    만료 URL(oe 지남 또는 403/410)은 CdnExpiredError 로 구분해 던진다."""
+    if _is_expired(url):
+        raise CdnExpiredError("media_url 만료(oe 시각 지남)")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    try:
+        resp = urllib.request.urlopen(req, timeout=60)
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 410):
+            raise CdnExpiredError(f"CDN {e.code} — media_url 만료/무효") from e
+        raise
+    with resp:
         ctype = resp.headers.get("Content-Type", "")
         data = resp.read()
     if "video" in ctype:

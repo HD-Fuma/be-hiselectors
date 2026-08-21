@@ -60,7 +60,12 @@ public class InstagramSttClient {
             }
             return result;
         } catch (RestClientResponseException e) {
-            // 워커가 반환한 500 본문(detail)에 실제 원인이 담겨 있다.
+            // 410 = media_url 만료(워커가 CdnExpiredError 를 410으로 반환). 재요청 대상으로 구분.
+            if (e.getStatusCode().value() == 410) {
+                log.info("media_url 만료(410). Graph API 재요청 필요. body={}", e.getResponseBodyAsString());
+                throw new BusinessException(ErrorCode.MEDIA_URL_EXPIRED);
+            }
+            // 그 외 오류 응답: 워커 500 본문(detail)에 실제 원인.
             log.warn("STT 워커 오류 응답. status={}, body={}",
                     e.getStatusCode(), e.getResponseBodyAsString());
             throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
