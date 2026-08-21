@@ -112,11 +112,16 @@ public class GeminiEvalClient {
 
     private ApplicantEvaluation parse(String json) {
         try {
-            return objectMapper.readValue(json, ApplicantEvaluation.class);
+            return objectMapper.readValue(stripCodeFence(json), ApplicantEvaluation.class);
         } catch (RuntimeException e) {
             log.warn("Gemini 평가 JSON 파싱 실패. body={}", json, e);
             throw new BusinessException(ErrorCode.GEMINI_EVAL_PARSE_FAILED);
         }
+    }
+
+    /** LLM이 ```json …``` 코드펜스로 감싸 보내는 환각 대비. 펜스만 벗겨 순수 JSON을 남긴다. */
+    private String stripCodeFence(String s) {
+        return s.replace("```json", "").replace("```", "").trim();
     }
 
     record GeminiResponse(List<Candidate> candidates) {
