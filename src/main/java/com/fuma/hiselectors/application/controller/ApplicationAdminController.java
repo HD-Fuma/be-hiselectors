@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.application.controller;
 
+import com.fuma.hiselectors.application.dto.AdminAiReportResponse;
 import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse;
 import com.fuma.hiselectors.application.dto.AdminApplicationSummaryResponse;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
@@ -52,6 +53,15 @@ public class ApplicationAdminController {
     public ResponseEntity<AdminApplicationDetailResponse> findDetail(
             @PathVariable Long applicationId) {
         return ResponseEntity.ok(applicationAdminService.findDetail(applicationId));
+    }
+
+    @Operation(summary = "지원자 AI 리포트 조회",
+            description = "지원자 상세에서 콘텐츠 취합 AI 리포트(요약·카테고리·키워드·강점·주의 등)를 조회한다. "
+                    + "아직 분석 전이면 404(REPORT_NOT_FOUND).")
+    @GetMapping("/{applicationId}/ai-report")
+    public ResponseEntity<AdminAiReportResponse> findAiReport(
+            @PathVariable Long applicationId) {
+        return ResponseEntity.ok(applicationAdminService.findAiReport(applicationId));
     }
 
     private Pageable limitPageSize(Pageable pageable) {
