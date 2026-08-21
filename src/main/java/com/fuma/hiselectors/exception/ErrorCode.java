@@ -137,6 +137,9 @@ public enum ErrorCode {
     GEMINI_API_KEY_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "Gemini API 키가 설정되지 않았습니다."),
     GEMINI_API_CALL_FAILED(HttpStatus.BAD_GATEWAY, "Gemini API 호출에 실패했습니다."),
     STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다."),
+    STT_WORKER_CALL_FAILED(HttpStatus.BAD_GATEWAY, "STT 워커 호출에 실패했습니다."),
+    GEMINI_EVAL_PARSE_FAILED(HttpStatus.BAD_GATEWAY, "Gemini 평가 응답 해석에 실패했습니다."),
+    NO_CONTENT_TO_EVALUATE(HttpStatus.NOT_FOUND, "평가할 지원자 콘텐츠가 없습니다."),
 
     // --- 리포트 분석 ---
     REPORT_CATEGORY_NOT_SUPPORTED(

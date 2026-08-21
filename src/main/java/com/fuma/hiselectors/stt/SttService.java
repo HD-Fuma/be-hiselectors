@@ -11,11 +11,21 @@ import org.springframework.stereotype.Service;
 public class SttService {
 
     private final YoutubeSttClient youtubeClient;
+    private final InstagramSttClient instagramClient;
 
     public SttResult transcribe(String snsCode, String snsContentId) {
         if (!SnsPlatform.YOUTUBE.name().equalsIgnoreCase(snsCode)) {
             throw new BusinessException(ErrorCode.STT_SNS_NOT_SUPPORTED);
         }
         return youtubeClient.transcribe(snsContentId);
+    }
+
+    /**
+     * 인스타 릴스: 파이썬 워커가 취득·STT·OCR·분석까지 수행.
+     * media_url 있으면 워커가 CDN 직다운(yt-dlp 생략), 없으면 reelUrl 로 yt-dlp.
+     */
+    public InstagramAnalysisResult analyzeInstagramReel(
+            String reelUrl, String mediaUrl, String thumbnailUrl) {
+        return instagramClient.analyze(reelUrl, mediaUrl, thumbnailUrl);
     }
 }
