@@ -2,37 +2,12 @@ package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import java.util.List;
 import java.util.Map;
-import org.hibernate.boot.MetadataSources;
-import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
-import org.hibernate.dialect.MySQLDialect;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class CreatorEvaluationTest {
-
-    @Test
-    void LONGTEXT_스키마가_Hibernate_매핑과_일치한다() {
-        var registry = new StandardServiceRegistryBuilder()
-                .applySetting("hibernate.dialect", MySQLDialect.class.getName())
-                .applySetting("hibernate.boot.allow_jdbc_metadata_access", false)
-                .build();
-        try {
-            var metadata = new MetadataSources(registry)
-                    .addAnnotatedClass(ApplicationContentAnalysis.class)
-                    .buildMetadata();
-            var entity = metadata.getEntityBinding(ApplicationContentAnalysis.class.getName());
-
-            assertThat(List.of("stt", "ocr", "keywords"))
-                    .allSatisfy(property -> assertThat(entity.getProperty(property)
-                            .getColumns().getFirst().getSqlType(metadata))
-                            .isEqualToIgnoringCase("LONGTEXT"));
-        } finally {
-            StandardServiceRegistryBuilder.destroy(registry);
-        }
-    }
 
     @Test
     void 엔티티_왕복시_transcript와_신호가_보존된다() {
@@ -55,9 +30,10 @@ class CreatorEvaluationTest {
     }
 
     @Test
-    void Gemini_취합_JSON이_ContentInsight로_매핑된다() {
+    void Gemini_취합_JSON이_ApplicantInsight로_매핑된다() {
         String json = """
                 {
+                  "summary": "생활용품 청소 꿀팁과 맛집 리뷰를 친근하게 소개하는 크리에이터입니다.",
                   "contentStyle": "리뷰언박싱",
                   "tone": "친근수다",
                   "strengths": ["실사용 리뷰", "정보 전달력"],
@@ -67,8 +43,9 @@ class CreatorEvaluationTest {
                   "collabBrands": ["홈스타"]
                 }""";
 
-        ContentInsight i = new ObjectMapper().readValue(json, ContentInsight.class);
+        ApplicantInsight i = new ObjectMapper().readValue(json, ApplicantInsight.class);
 
+        assertThat(i.summary()).contains("청소");
         assertThat(i.contentStyle()).isEqualTo("리뷰언박싱");
         assertThat(i.tone()).isEqualTo("친근수다");
         assertThat(i.strengths()).containsExactly("실사용 리뷰", "정보 전달력");

@@ -15,7 +15,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Instagram 릴스 분석은 파이썬 워커(faster-whisper + RapidOCR)가 담당한다.
- * URL 하나를 넘기면 워커가 직접 취득·STT·OCR·분석 후 결과만 돌려준다(무저장).
+ * Graph API media_url/thumbnail_url(공식 API)을 넘기면 워커가 CDN에서 취득·STT·OCR·분석 후
+ * 결과만 돌려준다(무저장). 스크래핑(yt-dlp)은 ToS 위반이라 쓰지 않는다.
  */
 @Slf4j
 @Component
@@ -33,22 +34,13 @@ public class InstagramSttClient {
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    /** 릴스 permalink만으로 취득(yt-dlp). media_url 없이 부를 때. */
-    public InstagramAnalysisResult analyze(String reelUrl) {
-        return analyze(reelUrl, null, null);
-    }
-
     /**
-     * @param reelUrl      릴스 permalink(yt-dlp 폴백용)
-     * @param mediaUrl     Graph API media_url. 있으면 워커가 CDN 직다운(yt-dlp 안 씀)
-     * @param thumbnailUrl Graph API thumbnail_url. 영상 취득 실패 시 폴백
+     * @param mediaUrl     Graph API media_url. 워커가 CDN 직다운(영상/이미지)
+     * @param thumbnailUrl Graph API thumbnail_url. media_url 없을 때(저작권 릴스) 폴백
      * @return 취득·STT·OCR·분석 결과. 저장하지 않는다.
      */
-    public InstagramAnalysisResult analyze(String reelUrl, String mediaUrl, String thumbnailUrl) {
+    public InstagramAnalysisResult analyze(String mediaUrl, String thumbnailUrl) {
         Map<String, Object> body = new HashMap<>();
-        if (reelUrl != null) {
-            body.put("url", reelUrl);
-        }
         if (mediaUrl != null) {
             body.put("media_url", mediaUrl);
         }
@@ -68,7 +60,12 @@ public class InstagramSttClient {
             }
             return result;
         } catch (RestClientResponseException e) {
-            // 워커가 반환한 500 본문(detail)에 실제 원인이 담겨 있다.
+            // 410 = media_url 만료(워커가 CdnExpiredError 를 410으로 반환). 재요청 대상으로 구분.
+            if (e.getStatusCode().value() == 410) {
+                log.info("media_url 만료(410). Graph API 재요청 필요. body={}", e.getResponseBodyAsString());
+                throw new BusinessException(ErrorCode.MEDIA_URL_EXPIRED);
+            }
+            // 그 외 오류 응답: 워커 500 본문(detail)에 실제 원인.
             log.warn("STT 워커 오류 응답. status={}, body={}",
                     e.getStatusCode(), e.getResponseBodyAsString());
             throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);

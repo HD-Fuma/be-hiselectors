@@ -48,22 +48,20 @@ public class SttTestController {
     }
 
     @Operation(summary = "인스타 릴스 분석",
-            description = "릴스 URL 을 파이썬 워커에 넘겨 취득·STT·OCR·정성분석(키워드·카테고리·"
-                    + "욕설혐오)까지 수행한다. 저장하지 않는다.")
+            description = "Graph API media_url(공식 API)을 워커에 넘겨 취득·STT·OCR·정성분석까지 "
+                    + "수행한다. 저장하지 않는다. 스크래핑 미사용.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "분석 성공"),
             @ApiResponse(responseCode = "502", description = "STT 워커 호출 실패", content = @Content)
     })
     @GetMapping("/instagram")
     public ResponseEntity<InstagramAnalysisResult> analyzeInstagram(
-            @Parameter(description = "릴스 permalink(yt-dlp 폴백용)")
-            @RequestParam(required = false) String reelUrl,
-            @Parameter(description = "Graph API media_url. 있으면 CDN 직다운(yt-dlp 생략)")
+            @Parameter(description = "Graph API media_url. 워커가 CDN 직다운")
             @RequestParam(required = false) String mediaUrl,
-            @Parameter(description = "Graph API thumbnail_url. 영상 실패 시 폴백")
+            @Parameter(description = "Graph API thumbnail_url. media_url 없을 때 폴백")
             @RequestParam(required = false) String thumbnailUrl) {
         return ResponseEntity.ok(
-                sttService.analyzeInstagramReel(reelUrl, mediaUrl, thumbnailUrl));
+                sttService.analyzeInstagramReel(mediaUrl, thumbnailUrl));
     }
 
     @Operation(summary = "지원자 콘텐츠 분석·적재",
@@ -77,16 +75,16 @@ public class SttTestController {
     }
 
     @Operation(summary = "지원자 종합 평가",
-            description = "적재된 콘텐츠(application_content_analysis)를 취합해 category·keywords 는 결정적으로, "
-                    + "강점·스타일·톤 등 insight 는 Gemini 1회로 뽑아 application_report 에 저장한다.")
+            description = "적재된 콘텐츠를 합쳐 Gemini 1회로 정성 평가한다. STT/OCR 재실행 없음 "
+                    + "→ 평가 실패 시 이 요청만 재시도. 평가 후 지원자 콘텐츠 삭제.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "평가 성공"),
             @ApiResponse(responseCode = "404", description = "적재된 콘텐츠 없음", content = @Content),
             @ApiResponse(responseCode = "502", description = "Gemini 호출·해석 실패", content = @Content)
     })
-    @PostMapping("/applicant/{applicationId}/evaluate")
+    @PostMapping("/applicant/{applicantId}/evaluate")
     public ResponseEntity<ApplicationReport> evaluate(
-            @Parameter(description = "지원(application) ID") @PathVariable Long applicationId) {
-        return ResponseEntity.ok(evaluationService.evaluate(applicationId));
+            @Parameter(description = "지원자 ID (application id)") @PathVariable Long applicantId) {
+        return ResponseEntity.ok(evaluationService.evaluate(applicantId));
     }
 }

@@ -9,8 +9,9 @@ from faster_whisper import WhisperModel
 
 
 def model_fn(model_dir):
-    # 컨테이너 굽거나 최초 로드 시 HF에서 받음. GPU라 float16(느리면 int8_float16).
-    return WhisperModel("large-v3", device="cuda", compute_type="float16")
+    # 가중치를 model.tar.gz 에 구워 로컬 로드(HF 재다운로드 없음 → 콜드스타트 단축).
+    weights = os.path.join(model_dir, "models", "large-v3")
+    return WhisperModel(weights, device="cuda", compute_type="float16")
 
 
 def input_fn(request_body, content_type=None):

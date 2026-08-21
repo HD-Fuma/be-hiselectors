@@ -1,0 +1,41 @@
+# 하나의 EC2 에 Spring(app) + STT/OCR 파이썬 워커(stt-worker)를 함께 띄운다.
+#   docker compose up -d --build
+# 앱 설정은 .env 로 주입한다(.env.example 참고).
+#
+# AWS 자격증명: 워커가 SageMaker/S3 를 쓰며 EC2 인스턴스 role(hiselectors-ec2-role)로 boto3 가 자동 획득.
+#   role 권한: sagemaker:InvokeEndpointAsync, s3(hi-selectors-stt/whisper/*) get/put. 컨테이너에 키 안 넣음.
+#   (컨테이너에서 IMDS 못 읽으면 hop-limit 2 로: aws ec2 modify-instance-metadata-options --http-put-response-hop-limit 2)
+services:
+  app:
+    build: .                      # 루트 Dockerfile = Spring (bootJar)
+    image: hiselectors-app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env                      # DB_*, JWT_SECRET, GEMINI_API_KEY, INSTAGRAM_*, META_* 등
+    environment:
+      # Spring 은 컨테이너이므로 워커를 localhost 가 아니라 compose 서비스명으로 호출한다.
+      STT_WORKER_BASE_URL: http://stt-worker:8900
+    depends_on:
+      stt-worker:
+        condition: service_healthy
+    restart: unless-stopped
+
+  stt-worker:
+    build: ./stt-worker
+    image: hiselectors-worker
+    # 같은 compose 네트워크에서 app 이 http://stt-worker:8900 으로 접근. 호스트 디버깅용으로만 127.0.0.1 공개.
+    ports:
+      - "127.0.0.1:8900:8900"
+    environment:
+      STT_BACKEND: sagemaker           # STT 는 SageMaker GPU 로 오프로드
+      STT_S3_BUCKET: hi-selectors-stt
+      STT_ENDPOINT: whisper-large-v3-async
+      AWS_REGION: ap-northeast-2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

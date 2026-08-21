@@ -1,5 +1,7 @@
 package com.fuma.hiselectors.creator.discovery;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse.BusinessDiscovery;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -83,6 +85,50 @@ public class MetaGraphApiClient {
             throw new BusinessException(ErrorCode.META_GRAPH_API_CALL_FAILED);
         }
     }
+
+    /**
+     * media id 로 fresh media_url/thumbnail_url 재취득(만료된 CDN URL 갱신용).
+     * 토큰이 그 미디어를 조회할 수 있어야 함(오운드/접근가능 미디어). mediaId 는 shortcode 아닌 실제 media id.
+     */
+    public MediaUrls fetchMediaUrls(String mediaId) {
+        if (!properties.isConfigured()) {
+            throw new BusinessException(ErrorCode.META_GRAPH_CONFIG_MISSING);
+        }
+        URI uri = UriComponentsBuilder
+                .fromUriString(properties.baseUrlOrDefault())
+                .pathSegment(properties.apiVersionOrDefault(), mediaId)
+                .queryParam("fields", "media_url,thumbnail_url")
+                .build()
+                .encode()
+                .toUri();
+        try {
+            MediaResponse r = restClient.get()
+                    .uri(uri)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.accessToken())
+                    .retrieve()
+                    .body(MediaResponse.class);
+            if (r == null) {
+                throw new BusinessException(ErrorCode.META_GRAPH_API_CALL_FAILED);
+            }
+            return new MediaUrls(r.mediaUrl(), r.thumbnailUrl());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RestClientResponseException e) {
+            log.warn("media 재취득 실패. mediaId={}, status={}, body={}",
+                    mediaId, e.getStatusCode(), safeErrorMessage(e.getResponseBodyAsString()));
+            throw new BusinessException(ErrorCode.META_GRAPH_API_CALL_FAILED);
+        } catch (RestClientException e) {
+            log.warn("media 재취득 통신 실패. mediaId={}", mediaId, e);
+            throw new BusinessException(ErrorCode.META_GRAPH_API_CALL_FAILED);
+        }
+    }
+
+    /** fresh 미디어 URL 쌍. */
+    public record MediaUrls(String mediaUrl, String thumbnailUrl) { }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record MediaResponse(@JsonProperty("media_url") String mediaUrl,
+                         @JsonProperty("thumbnail_url") String thumbnailUrl) { }
 
     private String normalizeUsername(String instagramHandle) {
         String username = instagramHandle == null

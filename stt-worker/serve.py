@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import acquire
 import analyze as engine
 import pipeline
 
@@ -21,9 +22,8 @@ class AnalyzeRequest(BaseModel):
     text: str
 
 class ReelRequest(BaseModel):
-    url: str | None = None
-    media_url: str | None = None       # Graph API media_url 있으면 CDN 직다운(yt-dlp 안 씀)
-    thumbnail_url: str | None = None   # 영상 취득 실패 시 폴백
+    media_url: str | None = None       # Graph API media_url(공식 API) — CDN 직다운
+    thumbnail_url: str | None = None   # media_url 없을 때(저작권 릴스) 폴백
 
 
 @app.post("/analyze")
@@ -33,9 +33,17 @@ def do_analyze(req: AnalyzeRequest) -> dict:
 
 @app.post("/reel")
 def do_reel(req: ReelRequest) -> dict:
-    """릴스 URL → 취득 → STT/OCR → 분석. 무저장."""
+    """Graph API media_url → 취득 → STT/OCR → 분석. 무저장."""
     try:
-        return pipeline.run(url=req.url, media_url=req.media_url, thumbnail_url=req.thumbnail_url)
+        return pipeline.run(media_url=req.media_url, thumbnail_url=req.thumbnail_url)
+    except acquire.CdnExpiredError as e:
+        # 만료는 재요청 대상 → 일반 실패(500)와 구분되게 410 로 명시. Java가 fresh URL 재요청.
+        logging.warning("media_url 만료: %s", e)
+        raise HTTPException(status_code=410, detail=f"CDN_EXPIRED: {e}") from e
+    except acquire.AcquireError as e:
+        # 소스 없음/스킴·호스트 불허 = 잘못된 요청(워커 장애 아님) → 422.
+        logging.warning("취득 요청 오류: %s", e)
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         logging.error("reel 실패: %s\n%s", e, traceback.format_exc())
         # 원인을 500 본문에 실어 Java 로그에서 바로 보이게 한다.

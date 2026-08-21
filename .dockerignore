@@ -1,4 +1,12 @@
+# Spring(app) 빌드 컨텍스트 최소화. 워커는 자체 stt-worker/.dockerignore 사용.
 .git
-.github
 .gradle
 build
+out
+# 파이썬 워커는 별도 이미지 → Spring 컨텍스트에서 통째 제외(2.9GB venv/모델 방지)
+stt-worker
+# 기타
+.idea
+*.iml
+*.tar.gz
+node_modules

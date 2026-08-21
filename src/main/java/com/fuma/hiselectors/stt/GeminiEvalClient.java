@@ -31,6 +31,7 @@ public class GeminiEvalClient {
             (OCR 노이즈가 섞일 수 있으니 감안해라). 이 지원자를 종합 평가해 아래 JSON 하나만 출력해라.
             설명·마크다운·코드펜스 없이 JSON 객체만 낸다.
             {
+              "summary": "이 지원자의 콘텐츠가 전반적으로 어떤 주제·형식·특징인지 2~3문장으로 서술",
               "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
               "tone": "유쾌코믹|차분잔잔|진지전문|친근수다|감성무드|자극과장|시니컬솔직 중 하나",
               "strengths": ["크리에이터·콘텐츠의 강점"],
@@ -54,8 +55,8 @@ public class GeminiEvalClient {
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    /** 합본 transcript → 정성 insight. 실패해도 상류가 살릴 수 있도록 파싱 실패는 예외로 명시한다. */
-    public ContentInsight insight(String mergedTranscript) {
+    /** 합본 transcript → 지원자 종합 insight(서술 요약 포함). */
+    public ApplicantInsight insight(String mergedTranscript) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
@@ -109,9 +110,9 @@ public class GeminiEvalClient {
         return sb.toString();
     }
 
-    private ContentInsight parse(String json) {
+    private ApplicantInsight parse(String json) {
         try {
-            return objectMapper.readValue(stripCodeFence(json), ContentInsight.class);
+            return objectMapper.readValue(stripCodeFence(json), ApplicantInsight.class);
         } catch (RuntimeException e) {
             log.warn("Gemini 취합 JSON 파싱 실패. body={}", json, e);
             throw new BusinessException(ErrorCode.GEMINI_EVAL_PARSE_FAILED);
