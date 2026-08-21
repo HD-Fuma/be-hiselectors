@@ -44,11 +44,11 @@ public class ApplicationContentAnalysis extends BaseTimeEntity {
     private String source;
 
     @Lob
-    @Column(name = "stt")
+    @Column(name = "stt", columnDefinition = "LONGTEXT")
     private String stt;
 
     @Lob
-    @Column(name = "ocr")
+    @Column(name = "ocr", columnDefinition = "LONGTEXT")
     private String ocr;
 
     @Column(name = "category", length = 30)
@@ -56,7 +56,7 @@ public class ApplicationContentAnalysis extends BaseTimeEntity {
 
     /** 로컬 신호 키워드. 콤마 구분 저장. */
     @Lob
-    @Column(name = "keywords")
+    @Column(name = "keywords", columnDefinition = "LONGTEXT")
     private String keywords;
 
     @Column(name = "hate_suspected", nullable = false)

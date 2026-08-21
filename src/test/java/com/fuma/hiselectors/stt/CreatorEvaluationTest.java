@@ -4,10 +4,34 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import org.hibernate.boot.MetadataSources;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.dialect.MySQLDialect;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class CreatorEvaluationTest {
+
+    @Test
+    void LONGTEXT_스키마가_Hibernate_매핑과_일치한다() {
+        var registry = new StandardServiceRegistryBuilder()
+                .applySetting("hibernate.dialect", MySQLDialect.class.getName())
+                .applySetting("hibernate.boot.allow_jdbc_metadata_access", false)
+                .build();
+        try {
+            var metadata = new MetadataSources(registry)
+                    .addAnnotatedClass(ApplicationContentAnalysis.class)
+                    .buildMetadata();
+            var entity = metadata.getEntityBinding(ApplicationContentAnalysis.class.getName());
+
+            assertThat(List.of("stt", "ocr", "keywords"))
+                    .allSatisfy(property -> assertThat(entity.getProperty(property)
+                            .getColumns().getFirst().getSqlType(metadata))
+                            .isEqualToIgnoringCase("LONGTEXT"));
+        } finally {
+            StandardServiceRegistryBuilder.destroy(registry);
+        }
+    }
 
     @Test
     void 엔티티_왕복시_transcript와_신호가_보존된다() {
