@@ -7,12 +7,14 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -32,6 +34,7 @@ public class StoredContentService {
 
     private final GenerationService generationService;
     private final ContentRepository contentRepository;
+    private final ContentBatchAccountRepository accountRepository;
     private final List<ContentFetcher> fetchers;
     private final ContentEngagementRepository engagementRepository;
     private final ContentVersionRepository versionRepository;
@@ -48,6 +51,10 @@ public class StoredContentService {
         int failedContentCount = 0;
 
         for (StoredContentFetch result : results) {
+            if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
+                failedContentCount++;
+                continue;
+            }
             try {
                 Integer savedCount = transactionTemplate.execute(
                         status -> save(result, collectedAt));
@@ -84,6 +91,13 @@ public class StoredContentService {
 
         // 현재 기수에 저장된 콘텐츠 조회
         List<Content> contents = contentRepository.findAllByGenerationId(generation.getId());
+        Map<AccountKey, String> accountIds = new HashMap<>();
+        for (SelectorsSnsAccount account : accountRepository
+                .findAllByGenerationId(generation.getId())) {
+            accountIds.put(
+                    new AccountKey(account.getSelectorsId(), account.getSnsCode()),
+                    account.getAccountId());
+        }
         Map<Content, FetchResult> fetchedByContent = new HashMap<>();
 
         // 플랫폼별 SNS ID를 묶어서 정보와 성과 조회
@@ -95,19 +109,40 @@ public class StoredContentService {
                 continue;
             }
 
-            ContentFetcher fetcher = findFetcher(platform);
-            List<String> snsContentIds = platformContents.stream()
-                    .map(Content::getSnsContentId)
-                    .toList();
-            Map<String, FetchResult> fetchedById = fetcher
-                    .fetchByContentIds(snsContentIds)
-                    .stream()
-                    .collect(Collectors.toMap(FetchResult::snsContentId, result -> result));
-
-            for (Content content : platformContents) {
-                fetchedByContent.put(content, Objects.requireNonNull(
-                        fetchedById.get(content.getSnsContentId()),
-                        "콘텐츠 조회 결과가 없습니다. id=" + content.getSnsContentId()));
+            try {
+                ContentFetcher fetcher = findFetcher(platform);
+                if (platform == SnsPlatform.INSTAGRAM) {
+                    Map<Long, List<Content>> contentsBySelectors = platformContents.stream()
+                            .collect(Collectors.groupingBy(Content::getSelectorsId));
+                    for (Map.Entry<Long, List<Content>> entry : contentsBySelectors.entrySet()) {
+                        try {
+                            String accountId = Objects.requireNonNull(
+                                    accountIds.get(new AccountKey(entry.getKey(), platform)),
+                                    "활성 SNS 계정이 없습니다. selectorsId=" + entry.getKey());
+                            attachFetchResults(
+                                    entry.getValue(),
+                                    fetcher.fetchByAccountContentIds(
+                                            accountId, snsContentIds(entry.getValue())),
+                                    fetchedByContent);
+                        } catch (RuntimeException exception) {
+                            log.error(
+                                    "SNS 계정의 기존 콘텐츠 조회에 실패했습니다. platform={} selectorsId={}",
+                                    platform,
+                                    entry.getKey(),
+                                    exception);
+                            attachFailedResults(entry.getValue(), fetchedByContent);
+                        }
+                    }
+                } else {
+                    attachFetchResults(
+                            platformContents,
+                            fetcher.fetchByContentIds(snsContentIds(platformContents)),
+                            fetchedByContent);
+                }
+            } catch (RuntimeException exception) {
+                log.error("플랫폼의 기존 콘텐츠 조회에 실패했습니다. platform={}",
+                        platform, exception);
+                attachFailedResults(platformContents, fetchedByContent);
             }
         }
 
@@ -115,6 +150,36 @@ public class StoredContentService {
         return contents.stream()
                 .map(content -> new StoredContentFetch(content, fetchedByContent.get(content)))
                 .toList();
+    }
+
+    private List<String> snsContentIds(List<Content> contents) {
+        return contents.stream()
+                .map(Content::getSnsContentId)
+                .toList();
+    }
+
+    private void attachFetchResults(
+            List<Content> contents,
+            List<FetchResult> results,
+            Map<Content, FetchResult> fetchedByContent) {
+        Map<String, FetchResult> fetchedById = results.stream()
+                .collect(Collectors.toMap(FetchResult::snsContentId, result -> result));
+        for (Content content : contents) {
+            fetchedByContent.put(content, fetchedById.getOrDefault(
+                    content.getSnsContentId(), failed(content)));
+        }
+    }
+
+    private void attachFailedResults(
+            List<Content> contents, Map<Content, FetchResult> fetchedByContent) {
+        for (Content content : contents) {
+            fetchedByContent.put(content, failed(content));
+        }
+    }
+
+    private FetchResult failed(Content content) {
+        return new FetchResult(
+                content.getSnsContentId(), ContentFetcher.FetchStatus.FAILED, null, null);
     }
 
     private ContentFetcher findFetcher(SnsPlatform platform) {
@@ -199,6 +264,9 @@ public class StoredContentService {
     }
 
     record StoredContentFetch(Content content, FetchResult fetched) {
+    }
+
+    private record AccountKey(Long selectorsId, SnsPlatform platform) {
     }
 
     public record StoredContentResult(int savedEngagementCount, int failedContentCount) {
