@@ -108,7 +108,7 @@ class CreatorDiscoveryRepositoryTest {
     }
 
     @Test
-    @DisplayName("최근 활동 백필은 활성 YouTube의 NULL 발굴 정보만 조건부로 채운다")
+    @DisplayName("최근 활동 백필은 실행 시점에 활성 YouTube인 누락 정보만 생성한다")
     void findAndFillRecentActivityBackfillTargets() {
         CreatorPool target = saveCreator("YOUTUBE", "UC-target", "백필 대상");
         infoRepository.save(CreatorDiscoveryInfo.builder()
@@ -135,23 +135,51 @@ class CreatorDiscoveryRepositoryTest {
                 .creatorPool(instagram)
                 .brandScore(0)
                 .build());
-        saveCreator("YOUTUBE", "UC-no-info", "발굴 정보 없음");
+        CreatorPool noInfo = saveCreator("YOUTUBE", "UC-no-info", "발굴 정보 없음");
+        CreatorPool deletedAfterLookup =
+                saveCreator("YOUTUBE", "UC-deleted-after-lookup", "조회 후 삭제");
+        CreatorPool changedPlatformAfterLookup =
+                saveCreator("YOUTUBE", "UC-changed-platform", "조회 후 플랫폼 변경");
         em.flush();
         em.clear();
 
         List<RecentActivityBackfillTarget> targets =
                 infoRepository.findRecentActivityBackfillTargets("YOUTUBE");
 
-        assertThat(targets).singleElement()
-                .satisfies(found -> {
-                    assertThat(found.getCreatorId()).isEqualTo(target.getId());
-                    assertThat(found.getAccountId()).isEqualTo("UC-target");
-                });
+        assertThat(targets).extracting(RecentActivityBackfillTarget::getCreatorId)
+                .containsExactly(target.getId(), noInfo.getId(), deletedAfterLookup.getId(),
+                        changedPlatformAfterLookup.getId());
+        assertThat(targets).extracting(RecentActivityBackfillTarget::getAccountId)
+                .containsExactly("UC-target", "UC-no-info", "UC-deleted-after-lookup",
+                        "UC-changed-platform");
+
+        creatorPoolRepository.findById(deletedAfterLookup.getId()).orElseThrow().softDelete();
+        em.getEntityManager().createQuery("""
+                        update CreatorPool c
+                           set c.snsCode = 'INSTAGRAM'
+                         where c.id = :creatorId
+                        """)
+                .setParameter("creatorId", changedPlatformAfterLookup.getId())
+                .executeUpdate();
+        em.flush();
+        em.clear();
+
         assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 0)).isEqualTo(1);
         assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 7)).isZero();
+        assertThat(infoRepository.insertRecent90DayContentCount(noInfo.getId(), 6)).isEqualTo(1);
+        assertThat(infoRepository.insertRecent90DayContentCount(
+                deletedAfterLookup.getId(), 6)).isZero();
+        assertThat(infoRepository.insertRecent90DayContentCount(
+                changedPlatformAfterLookup.getId(), 6)).isZero();
         em.clear();
         assertThat(infoRepository.findById(target.getId()).orElseThrow()
                 .getRecent90DayContentCount()).isZero();
+        CreatorDiscoveryInfo created = infoRepository.findById(noInfo.getId()).orElseThrow();
+        assertThat(created.getBrandScore()).isZero();
+        assertThat(created.getRecent90DayContentCount()).isEqualTo(6);
+        assertThat(created.getDiscoveredAt()).isNotNull();
+        assertThat(infoRepository.findById(deletedAfterLookup.getId())).isEmpty();
+        assertThat(infoRepository.findById(changedPlatformAfterLookup.getId())).isEmpty();
     }
 
     @Test
