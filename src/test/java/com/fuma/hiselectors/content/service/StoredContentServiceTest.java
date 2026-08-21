@@ -1,11 +1,11 @@
 package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -17,11 +17,13 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
+import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -46,6 +48,9 @@ class StoredContentServiceTest {
 
     @Mock
     private ContentRepository contentRepository;
+
+    @Mock
+    private ContentBatchAccountRepository accountRepository;
 
     @Mock
     private ContentEngagementRepository engagementRepository;
@@ -73,6 +78,7 @@ class StoredContentServiceTest {
         service = new StoredContentService(
                 generationService,
                 contentRepository,
+                accountRepository,
                 List.of(instagramFetcher, youtubeFetcher),
                 engagementRepository,
                 versionRepository,
@@ -82,6 +88,12 @@ class StoredContentServiceTest {
                 Clock.fixed(
                         Instant.parse("2026-08-20T03:00:00Z"),
                         ZoneId.of("Asia/Seoul")));
+        lenient().when(accountRepository.findAllByGenerationId(anyLong()))
+                .thenReturn(List.of(SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .accountId("selector.insta")
+                        .build()));
     }
 
     @Test
@@ -114,7 +126,8 @@ class StoredContentServiceTest {
                 .thenReturn(List.of(instagram, youtubeFound, youtubeMissing));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
-        when(instagramFetcher.fetchByContentIds(List.of("instagram-id")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("instagram-id")))
                 .thenReturn(List.of(instagramResult));
         when(youtubeFetcher.fetchByContentIds(
                 List.of("youtube-found", "youtube-missing")))
@@ -126,6 +139,50 @@ class StoredContentServiceTest {
                 new StoredContentService.StoredContentFetch(instagram, instagramResult),
                 new StoredContentService.StoredContentFetch(youtubeFound, youtubeFoundResult),
                 new StoredContentService.StoredContentFetch(youtubeMissing, youtubeMissingResult));
+    }
+
+    @Test
+    void fetchesInstagramContentsBySelectorsAccount() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.INSTAGRAM, "first-media");
+        Content second = content(SnsPlatform.INSTAGRAM, "second-media");
+        ReflectionTestUtils.setField(second, "selectorsId", 2L);
+        ContentFetcher.FetchResult firstResult = new ContentFetcher.FetchResult(
+                "first-media", ContentFetcher.FetchStatus.FOUND,
+                org.mockito.Mockito.mock(RawContent.class), null);
+        ContentFetcher.FetchResult secondResult = new ContentFetcher.FetchResult(
+                "second-media", ContentFetcher.FetchStatus.FOUND,
+                org.mockito.Mockito.mock(RawContent.class), null);
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(first, second));
+        when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .accountId("first.selector")
+                        .build(),
+                SelectorsSnsAccount.builder()
+                        .selectorsId(2L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .accountId("second.selector")
+                        .build()));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "first.selector", List.of("first-media")))
+                .thenReturn(List.of(firstResult));
+        when(instagramFetcher.fetchByAccountContentIds(
+                "second.selector", List.of("second-media")))
+                .thenReturn(List.of(secondResult));
+
+        List<StoredContentService.StoredContentFetch> result = service.fetchStoredContents();
+
+        assertThat(result).containsExactly(
+                new StoredContentService.StoredContentFetch(first, firstResult),
+                new StoredContentService.StoredContentFetch(second, secondResult));
+        verify(instagramFetcher, never()).fetchByContentIds(any());
     }
 
     @Test
@@ -155,7 +212,8 @@ class StoredContentServiceTest {
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(found, notFound));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("found", "not-found")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("found", "not-found")))
                 .thenReturn(List.of(foundResult, notFoundResult));
         when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
                 .thenReturn(List.of(ContentVersion.builder()
@@ -207,7 +265,8 @@ class StoredContentServiceTest {
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(changed, unchanged));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("changed", "unchanged")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("changed", "unchanged")))
                 .thenReturn(List.of(changedResult, unchangedResult));
         when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
                 .thenReturn(List.of(version(
@@ -265,7 +324,8 @@ class StoredContentServiceTest {
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(notFound, found, failed));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("not-found", "found", "failed")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("not-found", "found", "failed")))
                 .thenReturn(List.of(
                         new ContentFetcher.FetchResult(
                                 "not-found", ContentFetcher.FetchStatus.NOT_FOUND, null, null),
@@ -282,7 +342,7 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 0));
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 1));
         assertThat(notFound.isDeleted()).isTrue();
         assertThat(found.isDeleted()).isFalse();
         assertThat(failed.isDeleted()).isTrue();
@@ -303,7 +363,8 @@ class StoredContentServiceTest {
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("duplicate")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("duplicate")))
                 .thenReturn(List.of(new ContentFetcher.FetchResult(
                         "duplicate",
                         ContentFetcher.FetchStatus.FOUND,
@@ -348,7 +409,8 @@ class StoredContentServiceTest {
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("first", "second")))
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("first", "second")))
                 .thenReturn(List.of(
                         new ContentFetcher.FetchResult(
                                 "first", ContentFetcher.FetchStatus.FOUND, firstRaw,
@@ -372,36 +434,52 @@ class StoredContentServiceTest {
     }
 
     @Test
-    void propagatesFetcherExceptionBeforeStartingTransactions() {
+    void continuesWithYoutubeWhenInstagramFetcherFails() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
-        Content content = content(SnsPlatform.INSTAGRAM, "fetch-fails");
+        Content instagram = content(SnsPlatform.INSTAGRAM, "fetch-fails");
+        Content youtube = content(SnsPlatform.YOUTUBE, "youtube-found");
+        ContentFetcher.FetchResult youtubeResult = new ContentFetcher.FetchResult(
+                "youtube-found",
+                ContentFetcher.FetchStatus.FOUND,
+                org.mockito.Mockito.mock(RawContent.class),
+                null);
         when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
-        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(instagram, youtube));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("fetch-fails")))
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("fetch-fails")))
                 .thenThrow(new IllegalStateException("fetch failed"));
+        when(youtubeFetcher.fetchByContentIds(List.of("youtube-found")))
+                .thenReturn(List.of(youtubeResult));
 
-        assertThatThrownBy(service::check)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("fetch failed");
-        verifyNoInteractions(transactionTemplate);
+        List<StoredContentService.StoredContentFetch> result = service.fetchStoredContents();
+
+        assertThat(result).containsExactly(
+                new StoredContentService.StoredContentFetch(
+                        instagram,
+                        new ContentFetcher.FetchResult(
+                                "fetch-fails", ContentFetcher.FetchStatus.FAILED, null, null)),
+                new StoredContentService.StoredContentFetch(youtube, youtubeResult));
+        verify(youtubeFetcher).fetchByContentIds(List.of("youtube-found"));
     }
 
     @Test
-    void propagatesMissingFetchResultBeforeStartingTransactions() {
+    void countsMissingFetchResultAsFailureWithoutStartingTransaction() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content content = content(SnsPlatform.INSTAGRAM, "missing");
         when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
-        when(instagramFetcher.fetchByContentIds(List.of("missing"))).thenReturn(List.of());
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("missing"))).thenReturn(List.of());
 
-        assertThatThrownBy(service::check)
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("missing");
-        verifyNoInteractions(transactionTemplate);
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 1));
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {

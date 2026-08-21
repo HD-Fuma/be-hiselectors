@@ -28,6 +28,14 @@ public interface ContentFetcher {
     /** SNS 콘텐츠 ID별 최신 내용과 성과 조회 */
     List<FetchResult> fetchByContentIds(List<String> snsContentIds);
 
+    /**
+     * SNS 계정에 속한 콘텐츠 ID별 최신 내용과 성과 조회 (Instagram)
+     */
+    default List<FetchResult> fetchByAccountContentIds(
+            String accountId, List<String> snsContentIds) {
+        return fetchByContentIds(snsContentIds);
+    }
+
     record FetchResult(
             String snsContentId,
             FetchStatus status,

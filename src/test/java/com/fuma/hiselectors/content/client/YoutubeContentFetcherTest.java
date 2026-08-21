@@ -243,6 +243,62 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    @DisplayName("YouTube 핸들로 채널의 업로드 목록을 조회한다")
+    void collectByHandle() {
+        expectUploadsPlaylist("forHandle=test-handle");
+        expectEmptyPlaylist();
+
+        List<RawContent> result = client.fetchByAccount(
+                "@test-handle", LocalDateTime.now());
+
+        assertThat(result).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("UC로 시작해도 채널 ID 형식이 아니면 핸들로 조회한다")
+    void collectHandleStartingWithUc() {
+        expectUploadsPlaylist("forHandle=UCcreator");
+        expectEmptyPlaylist();
+
+        List<RawContent> result = client.fetchByAccount(
+                "@UCcreator", LocalDateTime.now());
+
+        assertThat(result).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("YouTube 채널 URL로 채널의 업로드 목록을 조회한다")
+    void collectByChannelUrl() {
+        expectUploadsPlaylist();
+        expectEmptyPlaylist();
+
+        List<RawContent> result = client.fetchByAccount(
+                "https://www.youtube.com/channel/" + CHANNEL_ID,
+                LocalDateTime.now());
+
+        assertThat(result).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("핸들 조회가 실패하면 UC 채널 ID 결과로 대체하지 않는다")
+    void failWhenHandleLookupFails() {
+        expectChannel("id=" + CHANNEL_ID, "@test-handle", "uploads-by-id");
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("forHandle=test-handle"))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        assertThatThrownBy(() -> client.fetchByAccount(
+                CHANNEL_ID, LocalDateTime.now()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.YOUTUBE_API_CALL_FAILED);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("YouTube Data API 오류를 비즈니스 예외로 변환한다")
     void convertApiFailure() {
         server.expect(request -> assertThat(request.getURI().getPath())
@@ -334,25 +390,46 @@ class YoutubeContentFetcherTest {
     }
 
     private void expectUploadsPlaylist() {
+        expectChannel("id=" + CHANNEL_ID, "@test-handle", "uploads-by-id");
+        expectUploadsPlaylist("forHandle=test-handle");
+    }
+
+    private void expectUploadsPlaylist(String expectedAccountQuery) {
+        expectChannel(expectedAccountQuery, "@test-handle", "uploads-playlist");
+    }
+
+    private void expectChannel(
+            String expectedAccountQuery, String customUrl, String uploadsPlaylistId) {
         server.expect(request -> {
                     assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/channels");
                     String query = decodedQuery(request.getURI().getRawQuery());
                     assertThat(query)
-                            .contains("part=contentDetails")
-                            .contains("id=" + CHANNEL_ID)
+                            .contains("part=snippet,contentDetails")
+                            .contains(expectedAccountQuery)
                             .contains("key=" + API_KEY);
                 })
                 .andRespond(withSuccess("""
                         {
                           "items": [{
+                            "id": "%s",
+                            "snippet": {
+                              "customUrl": "%s"
+                            },
                             "contentDetails": {
                               "relatedPlaylists": {
-                                "uploads": "uploads-playlist"
+                                "uploads": "%s"
                               }
                             }
                           }]
                         }
-                        """, MediaType.APPLICATION_JSON));
+                        """.formatted(CHANNEL_ID, customUrl, uploadsPlaylistId),
+                        MediaType.APPLICATION_JSON));
+    }
+
+    private void expectEmptyPlaylist() {
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .isEqualTo("/youtube/v3/playlistItems"))
+                .andRespond(withSuccess("{\"items\":[]}", MediaType.APPLICATION_JSON));
     }
 
     private List<RawContent> fetchByAccount(
