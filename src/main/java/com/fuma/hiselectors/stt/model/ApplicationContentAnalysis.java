@@ -1,6 +1,7 @@
-package com.fuma.hiselectors.stt;
+package com.fuma.hiselectors.stt.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
+import com.fuma.hiselectors.stt.InstagramAnalysisResult;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

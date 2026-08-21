@@ -2,6 +2,7 @@ package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.stt.model.ApplicationContentAnalysis;
 import java.util.List;
 import java.util.Map;
 import org.hibernate.boot.MetadataSources;
@@ -54,20 +55,24 @@ class CreatorEvaluationTest {
     }
 
     @Test
-    void Gemini_평가_JSON이_DTO로_매핑된다() {
+    void Gemini_취합_JSON이_ContentInsight로_매핑된다() {
         String json = """
                 {
-                  "category": "LIVING_LIFE",
-                  "keywords": ["세정제", "홈스타", "청소"],
-                  "summary": "생활용품 청소 리뷰 크리에이터",
-                  "tone": "친근함"
+                  "contentStyle": "리뷰언박싱",
+                  "tone": "친근수다",
+                  "strengths": ["실사용 리뷰", "정보 전달력"],
+                  "cautions": ["과장 표현 주의"],
+                  "risks": [],
+                  "hateConfirmed": false,
+                  "collabBrands": ["홈스타"]
                 }""";
 
-        ApplicantEvaluation e = new ObjectMapper().readValue(json, ApplicantEvaluation.class);
+        ContentInsight i = new ObjectMapper().readValue(json, ContentInsight.class);
 
-        assertThat(e.category()).isEqualTo("LIVING_LIFE");
-        assertThat(e.keywords()).containsExactly("세정제", "홈스타", "청소");
-        assertThat(e.summary()).contains("청소");
-        assertThat(e.tone()).isEqualTo("친근함");
+        assertThat(i.contentStyle()).isEqualTo("리뷰언박싱");
+        assertThat(i.tone()).isEqualTo("친근수다");
+        assertThat(i.strengths()).containsExactly("실사용 리뷰", "정보 전달력");
+        assertThat(i.hateConfirmed()).isFalse();
+        assertThat(i.collabBrands()).containsExactly("홈스타");
     }
 }

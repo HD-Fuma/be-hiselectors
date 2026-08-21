@@ -148,6 +148,11 @@ public enum ErrorCode {
     ANALYZER_UNAVAILABLE(
             HttpStatus.BAD_GATEWAY,
             "로컬 분석 워커를 호출할 수 없습니다."),
+    REPORT_CONTENT_EMPTY(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "취합할 콘텐츠 분석 결과가 없습니다. 콘텐츠 분석을 먼저 수행하세요."),
+    REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "저장된 지원자 리포트가 없습니다."),
+
     // --- 콘텐츠 검수 / 위반 ---
     CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
     CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),
