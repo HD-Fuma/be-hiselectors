@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.application.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -107,5 +109,13 @@ public class Application extends BaseTimeEntity {
         this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
         this.mediaCollectionRetryCount++;
         this.mediaCollectionError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+
+    public void changeStatus(ApplicationStatus target) {
+        if (target == ApplicationStatus.PENDING
+                || (status != ApplicationStatus.PENDING && status != target)) {
+            throw new BusinessException(ErrorCode.INVALID_APPLICATION_STATUS_TRANSITION);
+        }
+        this.status = target;
     }
 }

@@ -11,6 +11,7 @@ import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.oauth.OAuthStateProvider;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.Clock;
@@ -28,6 +29,7 @@ public class ApplicationService {
     private final ApplicationRepository applicationRepository;
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
+    private final SelectorsRepository selectorsRepository;
     private final OAuthStateProvider oAuthStateProvider;
     private final Clock clock;
 
@@ -35,6 +37,10 @@ public class ApplicationService {
     public ApplicationResponse create(String loginId, ApplicationCreateRequest request) {
         User user = userRepository.findByHiId(loginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.APPLICATION_USER_NOT_FOUND));
+        if (selectorsRepository.findByUserId(user.getId())
+                .filter(value -> value.isBlacklisted()).isPresent()) {
+            throw new BusinessException(ErrorCode.BLACKLISTED_SELECTOR);
+        }
         OAuthStateProvider.VerifiedAccount verifiedAccount = verifyAccount(
                 request.verificationToken(), loginId);
 

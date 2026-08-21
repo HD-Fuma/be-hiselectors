@@ -30,6 +30,8 @@ class GenerationAdminControllerTest {
 
     private static final LocalDateTime START = LocalDateTime.of(2026, 9, 1, 0, 0);
     private static final LocalDateTime END = LocalDateTime.of(2026, 9, 30, 23, 59);
+    private static final LocalDateTime ACTIVITY_START = LocalDateTime.of(2026, 10, 1, 0, 0);
+    private static final LocalDateTime ACTIVITY_END = LocalDateTime.of(2026, 12, 31, 23, 59);
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private GenerationAdminService generationAdminService;
@@ -46,9 +48,11 @@ class GenerationAdminControllerTest {
 
     @Test
     void createsGeneration() throws Exception {
-        GenerationCreateRequest request = new GenerationCreateRequest("1기", START, END);
+        GenerationCreateRequest request = new GenerationCreateRequest(
+                "1기", START, END, ACTIVITY_START, ACTIVITY_END);
         GenerationResponse response = new GenerationResponse(
-                1L, "1기", START, END, GenerationStatus.INACTIVE);
+                1L, "1기", START, END, ACTIVITY_START, ACTIVITY_END,
+                GenerationStatus.INACTIVE);
         when(generationAdminService.create(request)).thenReturn(response);
 
         mockMvc.perform(post("/api/admin/generations")
@@ -58,6 +62,7 @@ class GenerationAdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.generationName").value("1기"))
+                .andExpect(jsonPath("$.data.activityStartDate").exists())
                 .andExpect(jsonPath("$.data.status").value("INACTIVE"));
 
         verify(generationAdminService).create(request);
@@ -66,7 +71,8 @@ class GenerationAdminControllerTest {
     @Test
     void findsAllGenerations() throws Exception {
         GenerationResponse response = new GenerationResponse(
-                1L, "1기", START, END, GenerationStatus.INACTIVE);
+                1L, "1기", START, END, ACTIVITY_START, ACTIVITY_END,
+                GenerationStatus.INACTIVE);
         when(generationAdminService.findAll()).thenReturn(List.of(response));
 
         mockMvc.perform(get("/api/admin/generations"))
@@ -80,9 +86,11 @@ class GenerationAdminControllerTest {
 
     @Test
     void updatesGeneration() throws Exception {
-        GenerationUpdateRequest request = new GenerationUpdateRequest("2기", null, END);
+        GenerationUpdateRequest request = new GenerationUpdateRequest(
+                "2기", null, END, null, ACTIVITY_END.plusDays(1));
         GenerationResponse response = new GenerationResponse(
-                1L, "2기", START, END, GenerationStatus.INACTIVE);
+                1L, "2기", START, END, ACTIVITY_START, ACTIVITY_END.plusDays(1),
+                GenerationStatus.INACTIVE);
         when(generationAdminService.update(1L, request)).thenReturn(response);
 
         mockMvc.perform(patch("/api/admin/generations/1")
@@ -100,7 +108,8 @@ class GenerationAdminControllerTest {
         GenerationStatusUpdateRequest request =
                 new GenerationStatusUpdateRequest(GenerationStatus.ACTIVE);
         GenerationResponse response = new GenerationResponse(
-                1L, "1기", START, END, GenerationStatus.ACTIVE);
+                1L, "1기", START, END, ACTIVITY_START, ACTIVITY_END,
+                GenerationStatus.ACTIVE);
         when(generationAdminService.updateStatus(1L, request)).thenReturn(response);
 
         mockMvc.perform(patch("/api/admin/generations/1/status")

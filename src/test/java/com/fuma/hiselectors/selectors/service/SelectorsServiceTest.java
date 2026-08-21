@@ -62,14 +62,15 @@ class SelectorsServiceTest {
         when(selectors.getId()).thenReturn(1L);
         when(selectors.getSelectorsCode()).thenReturn("SEL001");
         when(selectors.getSelectorsNickname()).thenReturn("tester");
+        when(selectors.isBlacklisted()).thenReturn(true);
         when(selectorsRepository.searchWithPenalties(
-                2L, PenaltyStatus.ACTIVE, true, 3L, pageable))
+                2L, PenaltyStatus.ACTIVE, true, pageable))
                 .thenReturn(new PageImpl<>(List.of(selectors), pageable, 1));
 
         LocalDateTime now = LocalDateTime.now();
         PenaltyHistory released = PenaltyHistory.activate(1L, 10L, now.minusDays(3));
         released.release(now.minusDays(2));
-        when(penaltyHistoryRepository.findAllBySelectorsIds(List.of(1L)))
+        when(penaltyHistoryRepository.findAllBySelectorsIdsAndGenerationId(List.of(1L), 2L))
                 .thenReturn(List.of(
                         PenaltyHistory.activate(1L, 11L, now.minusDays(1)),
                         PenaltyHistory.activate(1L, 12L, now),
@@ -85,7 +86,7 @@ class SelectorsServiceTest {
             assertThat(response.histories()).hasSize(3);
         });
         verify(selectorsRepository).searchWithPenalties(
-                2L, PenaltyStatus.ACTIVE, true, 3L, pageable);
+                2L, PenaltyStatus.ACTIVE, true, pageable);
     }
 
     @Test
@@ -95,6 +96,7 @@ class SelectorsServiceTest {
         when(selectors.getId()).thenReturn(1L);
         when(selectors.getSelectorsCode()).thenReturn("SEL001");
         when(selectors.getSelectorsNickname()).thenReturn("tester");
+        when(selectors.isBlacklisted()).thenReturn(true);
         when(selectorsRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(selectors));
 
         PenaltyHistory released = PenaltyHistory.activate(1L, 10L, now.minusDays(3));

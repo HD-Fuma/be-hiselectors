@@ -80,7 +80,7 @@ public class StoredContentService {
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
     List<StoredContentFetch> fetchStoredContents() {
-        Generation generation = generationService.getActive();
+        Generation generation = generationService.getCurrentActivity();
 
         // 현재 기수에 저장된 콘텐츠 조회
         List<Content> contents = contentRepository.findAllByGenerationId(generation.getId());

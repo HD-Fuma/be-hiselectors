@@ -10,6 +10,7 @@ import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.generation.model.Generation;
+import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,9 @@ class ApplicationAdminRepositoryTest {
     private ApplicationMediaRepository mediaRepository;
 
     @Autowired
+    private GenerationRepository generationRepository;
+
+    @Autowired
     private TestEntityManager em;
 
     private Generation generation;
@@ -44,7 +48,11 @@ class ApplicationAdminRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        generation = em.persist(Generation.builder().generationName("2기").build());
+        generation = em.persist(Generation.builder()
+                .generationName("2기")
+                .activityStartDate(COLLECTED_AT.minusMonths(1))
+                .activityEndDate(COLLECTED_AT.plusMonths(1))
+                .build());
         regular = saveApplication("지안", "jian", SnsPlatform.INSTAGRAM,
                 ApplicationStatus.PENDING, 1_000L, true, 4);
         lowFollower = saveApplication("민희", "UC-low", SnsPlatform.YOUTUBE,
@@ -75,6 +83,13 @@ class ApplicationAdminRepositoryTest {
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(regular.getId());
+    }
+
+    @Test
+    void readsGenerationsWithLifecycleSharedLock() {
+        assertThat(generationRepository.findAllForRead())
+                .extracting(Generation::getId)
+                .containsExactly(generation.getId());
     }
 
     @Test

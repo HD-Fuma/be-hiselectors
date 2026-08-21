@@ -21,6 +21,8 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.oauth.OAuthStateProvider;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.user.model.User;
 import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.Clock;
@@ -40,9 +42,11 @@ class ApplicationServiceTest {
     private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
+    private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
     private final OAuthStateProvider oAuthStateProvider = mock(OAuthStateProvider.class);
     private final ApplicationService service = new ApplicationService(
-            applicationRepository, userRepository, generationRepository, oAuthStateProvider, CLOCK);
+            applicationRepository, userRepository, generationRepository, selectorsRepository,
+            oAuthStateProvider, CLOCK);
 
     private ApplicationCreateRequest request() {
         return new ApplicationCreateRequest("verification-token", true, true);
@@ -115,6 +119,23 @@ class ApplicationServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACTIVE_GENERATION_NOT_FOUND);
+    }
+
+    @Test
+    void rejectsBlacklistedSelector() {
+        User user = User.builder().hiId("hi-user").build();
+        ReflectionTestUtils.setField(user, "id", 7L);
+        Selectors selectors = mock(Selectors.class);
+        when(selectors.isBlacklisted()).thenReturn(true);
+        when(userRepository.findByHiId("hi-user")).thenReturn(Optional.of(user));
+        when(selectorsRepository.findByUserId(7L)).thenReturn(Optional.of(selectors));
+
+        assertThatThrownBy(() -> service.create("hi-user", request()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.BLACKLISTED_SELECTOR);
+
+        verify(applicationRepository, never()).save(any());
     }
 
     @Test

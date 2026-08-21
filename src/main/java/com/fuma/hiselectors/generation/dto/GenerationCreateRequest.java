@@ -17,6 +17,12 @@ public record GenerationCreateRequest(
         LocalDateTime startDate,
 
         @NotNull(message = "모집 종료일은 필수입니다.")
-        LocalDateTime endDate
+        LocalDateTime endDate,
+
+        @NotNull(message = "활동 시작일은 필수입니다.")
+        LocalDateTime activityStartDate,
+
+        @NotNull(message = "활동 종료일은 필수입니다.")
+        LocalDateTime activityEndDate
 ) {
 }

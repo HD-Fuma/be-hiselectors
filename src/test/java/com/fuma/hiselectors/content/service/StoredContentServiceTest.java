@@ -108,7 +108,7 @@ class StoredContentServiceTest {
                 null,
                 null);
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(instagram, youtubeFound, youtubeMissing));
@@ -150,7 +150,7 @@ class StoredContentServiceTest {
                 null);
         AtomicReference<List<ContentEngagement>> saved = new AtomicReference<>();
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(found, notFound));
@@ -202,7 +202,7 @@ class StoredContentServiceTest {
         AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
         AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(changed, unchanged));
@@ -260,7 +260,7 @@ class StoredContentServiceTest {
         failed.markDeleted();
         RawContent foundRaw = raw("found", "동일 본문");
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L))
                 .thenReturn(List.of(notFound, found, failed));
@@ -299,7 +299,7 @@ class StoredContentServiceTest {
         RawContent before = raw("duplicate", "수정 전");
         RawContent now = raw("duplicate", "수정 후");
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
@@ -344,7 +344,7 @@ class StoredContentServiceTest {
         RawContent firstRaw = raw("first", "본문 1");
         RawContent secondRaw = raw("second", "본문 2");
 
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
@@ -375,7 +375,7 @@ class StoredContentServiceTest {
     void propagatesFetcherExceptionBeforeStartingTransactions() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content content = content(SnsPlatform.INSTAGRAM, "fetch-fails");
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
@@ -392,7 +392,7 @@ class StoredContentServiceTest {
     void propagatesMissingFetchResultBeforeStartingTransactions() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content content = content(SnsPlatform.INSTAGRAM, "missing");
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         when(generation.getId()).thenReturn(3L);
         when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
         when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);

@@ -102,6 +102,13 @@ purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
 
+selectors:
+  lifecycle:
+    # 기존 기수의 실제 활동 기간을 보정한 뒤 활성화한다.
+    enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
+    cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
+    zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+
 content:
   batch:
     cron: ${CONTENT_BATCH_CRON:-}

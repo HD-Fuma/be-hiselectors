@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public record PenaltyHistoryResponse(
         Long id,
+        Long generationId,
         Long violationTypeId,
         LocalDateTime startedAt,
         LocalDateTime endedAt,
@@ -14,6 +15,7 @@ public record PenaltyHistoryResponse(
     public static PenaltyHistoryResponse from(PenaltyHistory history) {
         return new PenaltyHistoryResponse(
                 history.getId(),
+                history.getGenerationId(),
                 history.getViolationTypeId(),
                 history.getStartedAt(),
                 history.getEndedAt(),

@@ -3,13 +3,11 @@ package com.fuma.hiselectors.settlement.service;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.selectors.model.Selectors;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementHistoryListResponse;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
-import com.fuma.hiselectors.user.model.User;
-import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -24,13 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SettlementEstimateService {
 
-    private final UserRepository userRepository;
-    private final SelectorsRepository selectorsRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final Clock clock;
+    private final SelectorAccessService selectorAccessService;
 
     public SettlementEstimateResponse getEstimate(String loginId, YearMonth requestedMonth) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireCurrent(loginId);
         YearMonth activityMonth = resolveReadableMonth(requestedMonth);
         SettlementHistory history = settlementHistoryRepository
                 .findBySelectorsIdAndActivityMonth(
@@ -41,7 +38,7 @@ public class SettlementEstimateService {
     }
 
     public SettlementHistoryListResponse getHistories(String loginId, Integer requestedYear) {
-        Selectors selectors = findSelectors(loginId);
+        Selectors selectors = selectorAccessService.requireSettlementHistoryReadable(loginId);
         int selectedYear = requestedYear == null ? LocalDate.now(clock).getYear() : requestedYear;
         LocalDateTime startMonth = YearMonth.of(selectedYear, 1).atDay(1).atStartOfDay();
         LocalDateTime endMonth = startMonth.plusYears(1);
@@ -56,13 +53,6 @@ public class SettlementEstimateService {
                 selectedYear,
                 settlementHistoryRepository.findAvailableYearsBySelectorsId(selectors.getId()),
                 histories);
-    }
-
-    private Selectors findSelectors(String loginId) {
-        User user = userRepository.findByHiId(loginId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
-        return selectorsRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
     }
 
     private YearMonth resolveReadableMonth(YearMonth requestedMonth) {

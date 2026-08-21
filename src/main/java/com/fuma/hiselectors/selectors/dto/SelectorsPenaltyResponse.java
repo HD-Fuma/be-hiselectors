@@ -25,7 +25,7 @@ public record SelectorsPenaltyResponse(
                 selectors.getSelectorsNickname(),
                 histories.size(),
                 activePenaltyCount,
-                histories.size() >= blacklistThreshold,
+                selectors.isBlacklisted(),
                 histories.stream().map(PenaltyHistoryResponse::from).toList());
     }
 }
