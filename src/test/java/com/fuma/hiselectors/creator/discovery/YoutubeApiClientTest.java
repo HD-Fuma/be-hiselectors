@@ -24,4 +24,16 @@ class YoutubeApiClientTest {
                 .isEqualTo(ErrorCode.YOUTUBE_API_KEY_MISSING);
         assertThat(client.consumedQuota()).isZero();
     }
+
+    @Test
+    @DisplayName("기존 채널 활동 수 백필도 API 키가 없으면 시작하지 않는다")
+    void rejectRecentActivityBackfillWithoutApiKey() {
+        YoutubeApiClient client = new YoutubeApiClient(
+                new YoutubeDiscoveryProperties(null, null, null));
+
+        assertThatThrownBy(() -> client.fetchRecent90DayContentCount("UC-channel"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.YOUTUBE_API_KEY_MISSING);
+    }
 }
