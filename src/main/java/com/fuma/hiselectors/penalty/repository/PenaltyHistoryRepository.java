@@ -2,13 +2,20 @@ package com.fuma.hiselectors.penalty.repository;
 
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
 import com.fuma.hiselectors.penalty.model.PenaltyStatus;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PenaltyHistoryRepository extends JpaRepository<PenaltyHistory, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<PenaltyHistory> findFirstBySelectorsIdAndStatusOrderByIdDesc(
+            Long selectorsId, PenaltyStatus status);
 
     @Query("""
             select p from PenaltyHistory p
@@ -27,8 +34,7 @@ public interface PenaltyHistoryRepository extends JpaRepository<PenaltyHistory, 
             @Param("selectorsIds") Collection<Long> selectorsIds,
             @Param("generationId") Long generationId);
 
-    long countBySelectorsIdAndGenerationIdAndStatus(
-            Long selectorsId, Long generationId, PenaltyStatus status);
+    long countBySelectorsId(Long selectorsId);
 
     List<PenaltyHistory> findAllBySelectorsIdAndGenerationIdAndStatus(
             Long selectorsId, Long generationId, PenaltyStatus status);

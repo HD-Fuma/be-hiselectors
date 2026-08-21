@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class ContentInspectionService {
+public class ContentInspectionQueryService {
 
     private final GenerationService generationService;
     private final ContentRepository contentRepository;
@@ -79,7 +79,7 @@ public class ContentInspectionService {
                 row.storedAt(),
                 row.latestVersionId(),
                 row.latestVersionNo(),
-                row.inspectionStatus(),
+                row.inspectionStatus() == null ? null : row.inspectionStatus().name(),
                 row.inspectedAt(),
                 row.latestVersionStoredAt(),
                 row.accountId(),

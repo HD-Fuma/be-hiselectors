@@ -28,19 +28,19 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-class ContentInspectionServiceTest {
+class ContentInspectionQueryServiceTest {
 
     private GenerationService generationService;
     private ContentRepository contentRepository;
     private ContentMediaRepository mediaRepository;
-    private ContentInspectionService service;
+    private ContentInspectionQueryService service;
 
     @BeforeEach
     void setUp() {
         generationService = mock(GenerationService.class);
         contentRepository = mock(ContentRepository.class);
         mediaRepository = mock(ContentMediaRepository.class);
-        service = new ContentInspectionService(
+        service = new ContentInspectionQueryService(
                 generationService, contentRepository, mediaRepository);
     }
 

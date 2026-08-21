@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationTypeRepository;
 import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
@@ -38,8 +39,11 @@ class PenaltyServiceTest {
             mock(SelectorsGenerationRepository.class);
     private final PenaltyHistoryRepository penaltyRepository = mock(PenaltyHistoryRepository.class);
     private final ViolationTypeRepository violationTypeRepository = mock(ViolationTypeRepository.class);
+    private final ViolationItemRepository violationItemRepository =
+            mock(ViolationItemRepository.class);
     private final PenaltyService service = new PenaltyService(
             selectorsRepository, membershipRepository, penaltyRepository, violationTypeRepository,
+            violationItemRepository,
             Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), ZoneOffset.UTC));
     private Selectors selectors;
 
@@ -54,31 +58,32 @@ class PenaltyServiceTest {
                 new SelectorsGenerationResponse(
                         2L, "2기", NOW.minusMonths(1), NOW.minusDays(20),
                         NOW.minusDays(10), NOW.plusDays(10), "ACTIVE", NOW.minusDays(10))));
-        when(penaltyRepository.save(any(PenaltyHistory.class)))
+        when(penaltyRepository.saveAndFlush(any(PenaltyHistory.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
-    void thirdPenaltyInSameGenerationBlacklistsSelector() {
-        when(penaltyRepository.countBySelectorsIdAndGenerationIdAndStatus(
-                9L, 2L, PenaltyStatus.ACTIVE)).thenReturn(3L);
+    void thirdAccumulatedPenaltyImmediatelyBlacklistsAcrossGenerations() {
+        when(penaltyRepository.countBySelectorsId(9L)).thenReturn(3L);
 
         var response = service.create(9L, new PenaltyCreateRequest(4L));
 
         assertThat(response.generationId()).isEqualTo(2L);
         assertThat(selectors.isBlacklisted()).isTrue();
-        verify(penaltyRepository).countBySelectorsIdAndGenerationIdAndStatus(
-                9L, 2L, PenaltyStatus.ACTIVE);
+        verify(penaltyRepository).countBySelectorsId(9L);
     }
 
     @Test
-    void secondActivePenaltyDoesNotBlacklistSelector() {
-        when(penaltyRepository.countBySelectorsIdAndGenerationIdAndStatus(
-                9L, 2L, PenaltyStatus.ACTIVE)).thenReturn(2L);
+    void releasingPenaltyDoesNotResetAccumulatedCountOrChangeBlacklist() {
+        PenaltyHistory active = PenaltyHistory.activate(9L, 2L, 4L, NOW.minusDays(1));
+        when(violationItemRepository.existsOpenBySelectorsId(any(), any())).thenReturn(false);
+        when(penaltyRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
+                9L, PenaltyStatus.ACTIVE)).thenReturn(Optional.of(active));
 
-        service.create(9L, new PenaltyCreateRequest(4L));
-
+        assertThat(service.releaseIfEligible(9L)).isTrue();
+        assertThat(active.getStatus()).isEqualTo(PenaltyStatus.RELEASED);
         assertThat(selectors.isBlacklisted()).isFalse();
+        verify(penaltyRepository, never()).countBySelectorsId(any());
     }
 
     @Test
@@ -89,9 +94,8 @@ class PenaltyServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.ACCESS_DENIED);
-        verify(penaltyRepository, never()).save(any());
-        verify(penaltyRepository, never()).countBySelectorsIdAndGenerationIdAndStatus(
-                any(), any(), any());
+        verify(penaltyRepository, never()).saveAndFlush(any());
+        verify(penaltyRepository, never()).countBySelectorsId(any());
     }
 
     @Test
@@ -102,6 +106,40 @@ class PenaltyServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
-        verify(penaltyRepository, never()).save(any());
+        verify(penaltyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void automaticConfirmationDoesNotStartSecondActivePenaltyCycle() {
+        PenaltyHistory active = PenaltyHistory.activate(9L, 2L, 4L, NOW.minusDays(1));
+        when(penaltyRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
+                9L, PenaltyStatus.ACTIVE)).thenReturn(Optional.of(active));
+
+        assertThat(service.activateIfAbsent(9L, 4L)).isFalse();
+
+        verify(penaltyRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void releasesActivePenaltyAfterAllViolationsAreClosed() {
+        PenaltyHistory active = PenaltyHistory.activate(9L, 2L, 4L, NOW.minusDays(1));
+        when(violationItemRepository.existsOpenBySelectorsId(any(), any())).thenReturn(false);
+        when(penaltyRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
+                9L, PenaltyStatus.ACTIVE)).thenReturn(Optional.of(active));
+
+        assertThat(service.releaseIfEligible(9L)).isTrue();
+        assertThat(active.getStatus()).isEqualTo(PenaltyStatus.RELEASED);
+    }
+
+    @Test
+    void administratorCannotCreateOverlappingActivePenaltyCycle() {
+        PenaltyHistory active = PenaltyHistory.activate(9L, 2L, 4L, NOW.minusDays(1));
+        when(penaltyRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
+                9L, PenaltyStatus.ACTIVE)).thenReturn(Optional.of(active));
+
+        assertThatThrownBy(() -> service.create(9L, new PenaltyCreateRequest(4L)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACTIVE_PENALTY_ALREADY_EXISTS);
     }
 }

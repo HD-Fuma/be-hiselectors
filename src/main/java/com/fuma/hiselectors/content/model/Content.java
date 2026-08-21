@@ -65,9 +65,24 @@ public class Content extends BaseTimeEntity {
         this.lastVersionNo = lastVersionNo == null ? 1L : lastVersionNo;
     }
 
-    public Long advanceVersion() {
+    public static Content create(Long selectorsId, SnsPlatform snsCode,
+                                 String contentUrl, String contentType) {
+        return Content.builder()
+                .selectorsId(selectorsId)
+                .snsCode(snsCode)
+                .snsContentId(contentUrl)
+                .contentUrl(contentUrl)
+                .contentType(parseContentType(contentType))
+                .build();
+    }
+
+    public Long nextVersionNo() {
         lastVersionNo++;
         return lastVersionNo;
+    }
+
+    public Long advanceVersion() {
+        return nextVersionNo();
     }
 
     public void markDeleted() {
@@ -76,5 +91,12 @@ public class Content extends BaseTimeEntity {
 
     public void restore() {
         deleted = false;
+    }
+
+    private static ContentType parseContentType(String contentType) {
+        if ("POST".equalsIgnoreCase(contentType)) {
+            return ContentType.FEED;
+        }
+        return ContentType.valueOf(contentType);
     }
 }

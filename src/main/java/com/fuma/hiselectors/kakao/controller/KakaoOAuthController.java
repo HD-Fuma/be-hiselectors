@@ -3,6 +3,7 @@ package com.fuma.hiselectors.kakao.controller;
 import com.fuma.hiselectors.kakao.dto.KakaoAuthUrlResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoOAuthConnectRequest;
 import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionResponse;
+import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionStatusResponse;
 import com.fuma.hiselectors.kakao.oauth.KakaoConnectionType;
 import com.fuma.hiselectors.kakao.service.KakaoOAuthService;
 import jakarta.validation.Valid;
@@ -26,6 +27,11 @@ public class KakaoOAuthController {
     public ResponseEntity<KakaoAuthUrlResponse> authorize(Principal principal) {
         return ResponseEntity.ok(new KakaoAuthUrlResponse(oauthService.buildAuthorizationUrl(
                 principal.getName(), KakaoConnectionType.RECIPIENT)));
+    }
+
+    @GetMapping("/status")
+    public ResponseEntity<KakaoRecipientConnectionStatusResponse> status(Principal principal) {
+        return ResponseEntity.ok(oauthService.getRecipientStatus(principal.getName()));
     }
 
     @PostMapping("/connect")

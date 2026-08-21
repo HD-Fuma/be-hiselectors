@@ -9,6 +9,7 @@ import com.fuma.hiselectors.kakao.client.KakaoOAuthClient;
 import com.fuma.hiselectors.kakao.config.KakaoOAuthProperties;
 import com.fuma.hiselectors.kakao.dto.KakaoFriendResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionResponse;
+import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionStatusResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoSenderConnectionResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoTokenResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoUserResponse;
@@ -124,6 +125,14 @@ public class KakaoOAuthService {
         } catch (DataIntegrityViolationException e) {
             throw new BusinessException(ErrorCode.KAKAO_CONNECTION_DUPLICATED);
         }
+    }
+
+    public KakaoRecipientConnectionStatusResponse getRecipientStatus(String requesterHiId) {
+        User user = userRepository.findByHiId(requesterHiId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.APPLICATION_USER_NOT_FOUND));
+        return recipientRepository.findByUserId(user.getId())
+                .map(KakaoRecipientConnectionStatusResponse::from)
+                .orElseGet(KakaoRecipientConnectionStatusResponse::unlinked);
     }
 
     private Optional<KakaoFriendResponse.Friend> findFromAnySender(Long kakaoUserId) {

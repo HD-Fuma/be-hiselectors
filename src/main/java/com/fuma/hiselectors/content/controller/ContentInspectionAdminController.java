@@ -1,7 +1,7 @@
 package com.fuma.hiselectors.content.controller;
 
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
-import com.fuma.hiselectors.content.service.ContentInspectionService;
+import com.fuma.hiselectors.content.service.ContentInspectionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 public class ContentInspectionAdminController {
 
-    private final ContentInspectionService contentInspectionService;
+    private final ContentInspectionQueryService contentInspectionQueryService;
 
     @Operation(summary = "활성 기수 콘텐츠 검수 목록 조회",
             description = "현재 활성 기수의 삭제되지 않은 콘텐츠와 최신 버전을 "
@@ -44,6 +44,6 @@ public class ContentInspectionAdminController {
             @Min(value = 1, message = "size는 1 이상이어야 합니다.")
             @Max(value = 100, message = "size는 100 이하여야 합니다.") int size) {
         return ResponseEntity.ok(
-                contentInspectionService.getCurrentGenerationContents(page, size));
+                contentInspectionQueryService.getCurrentGenerationContents(page, size));
     }
 }

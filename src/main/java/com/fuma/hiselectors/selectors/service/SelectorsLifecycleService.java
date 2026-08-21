@@ -47,12 +47,15 @@ public class SelectorsLifecycleService {
                     .findAllByGenerationId(generation.getId())) {
                 Selectors selectors = selectorsRepository
                         .findByIdForUpdate(membership.getSelectorsId()).orElse(null);
-                if (selectors == null || selectors.isBlacklisted()) {
+                if (selectors == null) {
                     continue;
                 }
                 penaltyHistoryRepository.findAllBySelectorsIdAndGenerationIdAndStatus(
                                 selectors.getId(), generation.getId(), PenaltyStatus.ACTIVE)
                         .forEach(penalty -> penalty.release(now));
+                if (selectors.isBlacklisted()) {
+                    continue;
+                }
                 if (selectors.isDeleted()) {
                     continue;
                 }
