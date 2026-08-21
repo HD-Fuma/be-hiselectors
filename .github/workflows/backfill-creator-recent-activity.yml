@@ -1,4 +1,4 @@
-name: Backfill creator recent activity
+name: Diagnose application content analysis schema
 
 on:
   workflow_dispatch:
@@ -16,9 +16,9 @@ env:
   EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
 
 jobs:
-  backfill:
+  diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     env:
       REMOTE_SCRIPT: |
         set -eu
@@ -42,54 +42,42 @@ jobs:
         DB_NAME="${DB_NAME:-hiselectors}"
         DB_USERNAME="${DB_USERNAME:-root}"
         test -n "$DB_HOST"
-        test -n "$(container_env YOUTUBE_API_KEY)"
 
         export MYSQL_PWD="$DB_PASSWORD"
         mysql_query() {
-          docker run --rm --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
-            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
-            -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+          docker run --rm --pull never --network "container:$API_CONTAINER" \
+            -e MYSQL_PWD mysql:8.4 mysql --connect-timeout=10 \
+            -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" \
+            -Nse "$1" 2>/dev/null
+        }
+        print_query() {
+          value="$(mysql_query "$2")" || {
+            echo "aca.$1=QUERY_FAILED"
+            return 1
+          }
+          echo "aca.$1=$value"
         }
 
-        NULL_COUNT_SQL="SELECT COUNT(*) FROM creator_pool c JOIN creator_discovery_info i ON i.creator_pool_id = c.creator_pool_id WHERE c.sns_code = 'YOUTUBE' AND c.is_deleted = 0 AND i.recent_90_day_content_count IS NULL"
-        MISSING_INFO_COUNT_SQL="SELECT COUNT(*) FROM creator_pool c LEFT JOIN creator_discovery_info i ON i.creator_pool_id = c.creator_pool_id WHERE c.sns_code = 'YOUTUBE' AND c.is_deleted = 0 AND i.creator_pool_id IS NULL"
-
-        null_before="$(mysql_query "$NULL_COUNT_SQL")"
-        missing_info_before="$(mysql_query "$MISSING_INFO_COUNT_SQL")"
-        echo "creator-recent-activity.before-null=$null_before"
-        echo "creator-recent-activity.before-missing-info=$missing_info_before"
-
-        BACKFILL_LOG="$(mktemp)"
-        trap 'rm -f "$BACKFILL_LOG"' EXIT
-        backfill_status=0
-        docker compose run --rm --no-deps -T \
-          -e CREATOR_RECENT_ACTIVITY_BACKFILL_ENABLED=true \
-          -e SCHEDULING_ENABLED=false \
-          -e DISCOVERY_DEFAULTS_ENABLED=false \
-          api >"$BACKFILL_LOG" 2>&1 || backfill_status=$?
-        grep 'creator-recent-activity-backfill=' "$BACKFILL_LOG" || true
-        if [ "$backfill_status" -ne 0 ]; then
-          echo "creator-recent-activity-backfill=failed" >&2
-          exit "$backfill_status"
-        fi
-
-        null_after="$(mysql_query "$NULL_COUNT_SQL")"
-        missing_info_after="$(mysql_query "$MISSING_INFO_COUNT_SQL")"
-        echo "creator-recent-activity.after-null=$null_after"
-        echo "creator-recent-activity.after-missing-info=$missing_info_after"
-        test "$null_after" = "0"
-        test "$missing_info_after" = "0"
-        echo "creator-recent-activity-backfill=verified"
+        print_query table_count "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query valid_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND ((column_name = 'content_analysis_id' AND column_type = 'bigint' AND is_nullable = 'NO' AND extra = 'auto_increment') OR (column_name = 'applicant_id' AND column_type = 'bigint' AND is_nullable = 'NO') OR (column_name = 'content_key' AND column_type = 'varchar(200)' AND is_nullable = 'NO') OR (column_name = 'source' AND column_type = 'varchar(20)' AND is_nullable = 'YES') OR (column_name = 'stt' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'ocr' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'category' AND column_type = 'varchar(30)' AND is_nullable = 'YES') OR (column_name = 'keywords' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'hate_suspected' AND column_type = 'bit(1)' AND is_nullable = 'NO' AND column_default IN ('0', 'b''0''')) OR (column_name = 'created_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES') OR (column_name = 'updated_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES'))"
+        print_query engine_collation "SELECT CONCAT(COALESCE(engine, 'NULL'), '/', COALESCE(table_collation, 'NULL')) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query utf8mb4_string_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name IN ('content_key', 'source', 'stt', 'ocr', 'category', 'keywords') AND character_set_name = 'utf8mb4'"
+        print_query primary_key "SELECT GROUP_CONCAT(column_name ORDER BY ordinal_position) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'PRIMARY'"
+        print_query unique_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'uq_aca_content_key' AND non_unique = 0 AND sub_part IS NULL"
+        print_query unique_constraint_count "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'uq_aca_content_key' AND constraint_type = 'UNIQUE'"
+        print_query applicant_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'idx_aca_applicant' AND non_unique = 1 AND sub_part IS NULL"
+        print_query hate_default "SELECT CONCAT('hex:', COALESCE(HEX(column_default), 'NULL'), ',quoted:', COALESCE(QUOTE(column_default), 'NULL')) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name = 'hate_suspected'"
     steps:
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Backfill through SSM
+      - name: Diagnose schema through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
-          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["1800"]}')"
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
@@ -97,7 +85,7 @@ jobs:
             --query 'Command.CommandId' \
             --output text)"
           STATUS=
-          for _ in {1..360}; do
+          for _ in {1..120}; do
             STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
             case "$STATUS" in
               Success) break ;;
@@ -111,6 +99,7 @@ jobs:
             esac
             sleep 5
           done
+          STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
           if [ "$STATUS" != "Success" ]; then
             aws ssm cancel-command --command-id "$COMMAND_ID" --instance-ids "$EC2_INSTANCE_ID"
             aws ssm get-command-invocation \
