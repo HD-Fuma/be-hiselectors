@@ -60,7 +60,11 @@ def _dedupe(lines: list[str]) -> list[str]:
 
 
 def stt(path: str) -> str:
-    """faster-whisper 음성 전사(한국어). VAD로 무음/BGM 구간 환각 억제."""
+    """음성 전사(한국어). STT_BACKEND=sagemaker 면 GPU 엔드포인트로 오프로드(오디오만 전송),
+    아니면 로컬 faster-whisper. 워커 CPU는 취득·OCR만 지고 무거운 STT만 GPU로 뺄 수 있다."""
+    if os.environ.get("STT_BACKEND") == "sagemaker":
+        from sagemaker import client  # stt-worker/sagemaker/client.py
+        return client.stt(path)
     segments, _ = _whisper().transcribe(path, language="ko", vad_filter=True)
     return " ".join(seg.text.strip() for seg in segments).strip()
 
