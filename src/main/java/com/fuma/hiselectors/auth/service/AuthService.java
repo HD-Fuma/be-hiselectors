@@ -47,7 +47,7 @@ public class AuthService {
         }
 
         String token = jwtTokenProvider.createToken(admin.getLoginId(), "ADMIN");
-        return TokenResponse.of(token, admin.getLoginId(), "ADMIN");
+        return TokenResponse.ofAdmin(token, admin.getLoginId(), "ADMIN", admin.getName());
     }
 
     private BusinessException unauthorized() {
