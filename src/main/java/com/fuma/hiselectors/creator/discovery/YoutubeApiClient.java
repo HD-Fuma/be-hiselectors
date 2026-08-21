@@ -85,6 +85,28 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         return fetchChannels(byChannel);
     }
 
+    @Override
+    public Integer fetchRecent90DayContentCount(String channelId) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
+        }
+        if (channelId == null || channelId.isBlank()) {
+            return null;
+        }
+
+        String uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
+                .queryParam("part", "contentDetails")
+                .queryParam("id", channelId)
+                .queryParam("key", properties.apiKey())
+                .build().toUriString();
+        YoutubeChannelListResponse response =
+                call(uri, YoutubeChannelListResponse.class, LIST_COST);
+        if (response == null || response.items() == null || response.items().isEmpty()) {
+            return null;
+        }
+        return fetchRecent90DayContentCount(response.items().getFirst());
+    }
+
     /**
      * 채널이 아니라 영상을 검색한다. 채널명에 키워드가 없어도 그 주제로 콘텐츠를
      * 만드는 채널을 찾기 위해서다.
@@ -196,7 +218,7 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         YoutubePlaylistItemListResponse response = call(
                 uri, YoutubePlaylistItemListResponse.class, LIST_COST);
         if (response == null || response.items() == null) {
-            return 0;
+            return null;
         }
         // Meta와 같은 25건 공개 범위로 맞춘다. 관리자 최소 필터도 25가 상한이므로
         // 고활동 채널은 정확한 총량 대신 "25건 이상"으로 다룬다.
