@@ -2,6 +2,7 @@ package com.fuma.hiselectors.application.repository;
 
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import jakarta.persistence.LockModeType;
@@ -25,6 +26,22 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     List<Application> findByMediaCollectionStatusInAndMediaCollectionRetryCountLessThanOrderByIdAsc(
             Collection<MediaCollectionStatus> statuses, int maxRetryCount, Pageable pageable);
+
+    /** 미디어 수집 끝났고(:collected=DONE) 분석 대기·실패(재시도 남음)인 지원자. 인스타 전용. */
+    @Query("""
+            SELECT a FROM Application a
+            WHERE a.mediaCollectionStatus = :collected
+              AND a.analysisStatus IN :statuses
+              AND a.analysisRetryCount < :maxRetryCount
+              AND a.snsCode = :snsCode
+            ORDER BY a.id ASC
+            """)
+    List<Application> findAnalysisTargets(
+            @Param("collected") MediaCollectionStatus collected,
+            @Param("statuses") Collection<ContentAnalysisStatus> statuses,
+            @Param("maxRetryCount") int maxRetryCount,
+            @Param("snsCode") SnsPlatform snsCode,
+            Pageable pageable);
 
     @Query(value = """
             SELECT a

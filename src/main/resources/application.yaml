@@ -127,7 +127,7 @@ content:
 application:
   media-collection:
     fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:60000}
-    initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:10000}
+    initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:20000}
     batch-size: ${APPLICATION_MEDIA_COLLECTION_BATCH_SIZE:20}
 
 settlement:

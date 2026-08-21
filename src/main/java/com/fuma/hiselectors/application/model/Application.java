@@ -81,6 +81,19 @@ public class Application extends BaseTimeEntity {
     @Column(name = "media_collection_error", length = 500)
     private String mediaCollectionError;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "analysis_status", nullable = false, length = 20)
+    private ContentAnalysisStatus analysisStatus = ContentAnalysisStatus.PENDING;
+
+    @Column(name = "analysis_retry_count", nullable = false)
+    private int analysisRetryCount;
+
+    @Column(name = "analyzed_at")
+    private LocalDateTime analyzedAt;
+
+    @Column(name = "analysis_error", length = 500)
+    private String analysisError;
+
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
                         Long followerCount, Long contentCount,
@@ -109,6 +122,18 @@ public class Application extends BaseTimeEntity {
         this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
         this.mediaCollectionRetryCount++;
         this.mediaCollectionError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+
+    public void completeAnalysis(LocalDateTime analyzedAt) {
+        this.analysisStatus = ContentAnalysisStatus.DONE;
+        this.analyzedAt = analyzedAt;
+        this.analysisError = null;
+    }
+
+    public void failAnalysis(String error) {
+        this.analysisStatus = ContentAnalysisStatus.FAILED;
+        this.analysisRetryCount++;
+        this.analysisError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
     }
 
     public void changeStatus(ApplicationStatus target) {
