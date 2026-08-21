@@ -2,6 +2,7 @@ package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

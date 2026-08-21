@@ -10,6 +10,7 @@ import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -35,10 +36,13 @@ class ApplicationAdminServiceTest {
             mock(ApplicationRepository.class);
     private final ApplicationMediaRepository mediaRepository =
             mock(ApplicationMediaRepository.class);
+    private final ApplicationReportRepository reportRepository =
+            mock(ApplicationReportRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
     private final ApplicationAdminService service = new ApplicationAdminService(
-            applicationRepository, mediaRepository, userRepository, generationRepository);
+            applicationRepository, mediaRepository, reportRepository, userRepository,
+            generationRepository);
 
     private Application application;
     private User user;
