@@ -58,7 +58,6 @@ jobs:
         missing_info_before="$(mysql_query "$MISSING_INFO_COUNT_SQL")"
         echo "creator-recent-activity.before-null=$null_before"
         echo "creator-recent-activity.before-missing-info=$missing_info_before"
-        test "$missing_info_before" = "0"
 
         BACKFILL_LOG="$(mktemp)"
         trap 'rm -f "$BACKFILL_LOG"' EXIT
@@ -79,7 +78,7 @@ jobs:
         echo "creator-recent-activity.after-null=$null_after"
         echo "creator-recent-activity.after-missing-info=$missing_info_after"
         test "$null_after" = "0"
-        test "$missing_info_after" = "$missing_info_before"
+        test "$missing_info_after" = "0"
         echo "creator-recent-activity-backfill=verified"
     steps:
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5

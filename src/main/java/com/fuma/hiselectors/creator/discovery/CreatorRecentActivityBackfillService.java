@@ -6,9 +6,10 @@ import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository.Re
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
-/** 기존 YouTube 발굴 정보 중 비어 있는 최근 활동 수만 한 번 채운다. */
+/** 기존 YouTube의 누락된 발굴 정보와 최근 활동 수를 한 번 채운다. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -42,8 +43,7 @@ public class CreatorRecentActivityBackfillService {
                             target.getCreatorId());
                     continue;
                 }
-                int changed = discoveryInfoRepository.fillRecent90DayContentCount(
-                        target.getCreatorId(), count);
+                int changed = fillOrCreate(target.getCreatorId(), count);
                 if (changed == 1) {
                     updated++;
                 } else {
@@ -57,6 +57,27 @@ public class CreatorRecentActivityBackfillService {
         }
 
         return new BackfillResult(targets.size(), updated, failed, skipped);
+    }
+
+    private int fillOrCreate(Long creatorId, Integer count) {
+        int changed = discoveryInfoRepository.fillRecent90DayContentCount(creatorId, count);
+        if (changed == 1) {
+            return changed;
+        }
+        try {
+            int inserted = discoveryInfoRepository.insertRecent90DayContentCount(
+                    creatorId, count);
+            if (inserted == 1) {
+                return inserted;
+            }
+        } catch (DataIntegrityViolationException exception) {
+            int raced = discoveryInfoRepository.fillRecent90DayContentCount(creatorId, count);
+            if (raced == 1 || discoveryInfoRepository.existsById(creatorId)) {
+                return raced;
+            }
+            throw exception;
+        }
+        return discoveryInfoRepository.fillRecent90DayContentCount(creatorId, count);
     }
 
     public record BackfillResult(int candidates, int updated, int failed, int skipped) {
