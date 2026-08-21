@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -76,16 +77,16 @@ public class SttTestController {
     }
 
     @Operation(summary = "지원자 종합 평가",
-            description = "적재된 콘텐츠를 합쳐 Gemini 1회로 정성 평가한다. STT/OCR 재실행 없음 "
-                    + "→ 평가 실패 시 이 요청만 재시도. 평가 후 지원자 콘텐츠 삭제.")
+            description = "적재된 콘텐츠(application_content_analysis)를 취합해 category·keywords 는 결정적으로, "
+                    + "강점·스타일·톤 등 insight 는 Gemini 1회로 뽑아 application_report 에 저장한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "평가 성공"),
             @ApiResponse(responseCode = "404", description = "적재된 콘텐츠 없음", content = @Content),
             @ApiResponse(responseCode = "502", description = "Gemini 호출·해석 실패", content = @Content)
     })
-    @PostMapping("/applicant/{applicantId}/evaluate")
-    public ResponseEntity<ApplicantEvaluation> evaluate(
-            @Parameter(description = "지원자 ID") @PathVariable Long applicantId) {
-        return ResponseEntity.ok(evaluationService.evaluate(applicantId));
+    @PostMapping("/applicant/{applicationId}/evaluate")
+    public ResponseEntity<ApplicationReport> evaluate(
+            @Parameter(description = "지원(application) ID") @PathVariable Long applicationId) {
+        return ResponseEntity.ok(evaluationService.evaluate(applicationId));
     }
 }
