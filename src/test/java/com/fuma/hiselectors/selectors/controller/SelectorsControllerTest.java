@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.selectors.controller;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -52,7 +53,7 @@ class SelectorsControllerTest {
                 List.of(new SelectorsDetailResponse.ContentResponse(
                         20L, "YOUTUBE", "https://youtube.com/shorts/20", "SHORTS",
                         now, 1_000L, 100L, 10L)),
-                new SelectorsDetailResponse.PerformanceResponse(6, 9_000, 900, 90)));
+                new SelectorsDetailResponse.PerformanceResponse(6L, 9_000L, null, 0L)));
 
         mockMvc.perform(get("/api/admin/selectors/7"))
                 .andExpect(status().isOk())
@@ -64,7 +65,9 @@ class SelectorsControllerTest {
                 .andExpect(jsonPath("$.data.contents[0].snsCode").value("YOUTUBE"))
                 .andExpect(jsonPath("$.data.contents[0].viewCount").value(1000))
                 .andExpect(jsonPath("$.data.performance.contentCount").value(6))
-                .andExpect(jsonPath("$.data.performance.totalViewCount").value(9000));
+                .andExpect(jsonPath("$.data.performance.totalViewCount").value(9000))
+                .andExpect(jsonPath("$.data.performance.totalLikeCount").value(nullValue()))
+                .andExpect(jsonPath("$.data.performance.totalCommentCount").value(0));
     }
 
     @Test
