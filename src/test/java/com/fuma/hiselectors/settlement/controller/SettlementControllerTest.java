@@ -11,6 +11,7 @@ import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementHistoryListResponse;
+import com.fuma.hiselectors.settlement.dto.SettlementProvisionalEstimate;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.service.SettlementEstimateService;
 import java.math.BigDecimal;
@@ -49,7 +50,10 @@ class SettlementControllerTest {
                 .andExpect(jsonPath("$.data.settlementMonth").value("2026-08"))
                 .andExpect(jsonPath("$.data.paymentMonth").value("2026-09"))
                 .andExpect(jsonPath("$.data.settlementRate").value(3.00))
-                .andExpect(jsonPath("$.data.settlementAmount").value(300));
+                .andExpect(jsonPath("$.data.settlementAmount").value(300))
+                .andExpect(jsonPath("$.data.provisionalEstimate.purchaseCount").value(3))
+                .andExpect(jsonPath("$.data.provisionalEstimate.salesAmount").value(12000))
+                .andExpect(jsonPath("$.data.provisionalEstimate.settlementAmount").value(360));
 
         verify(settlementEstimateService)
                 .getEstimate("selector-user", YearMonth.of(2026, 7));
@@ -98,6 +102,11 @@ class SettlementControllerTest {
                 10_000L,
                 new BigDecimal("3.00"),
                 300L,
+                new SettlementProvisionalEstimate(
+                        3L,
+                        12_000L,
+                        360L,
+                        LocalDateTime.of(2026, 8, 10, 12, 0)),
                 SettlementStatus.CALCULATING,
                 LocalDateTime.of(2026, 8, 10, 3, 0),
                 LocalDateTime.of(2026, 8, 10, 3, 0));

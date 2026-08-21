@@ -30,6 +30,12 @@ public class SettlementSchedulePolicy {
         return paymentDate(activityMonth).equals(date);
     }
 
+    /** 오늘 지급일이 도래한 가장 최근 활동월. 지급일 전에는 직전 활동월까지만 허용한다. */
+    public YearMonth latestPayableActivityMonth(LocalDate date) {
+        YearMonth candidate = YearMonth.from(date).minusMonths(2);
+        return date.isBefore(paymentDate(candidate)) ? candidate.minusMonths(1) : candidate;
+    }
+
     private LocalDate previousWeekday(LocalDate date) {
         return switch (date.getDayOfWeek()) {
             case SATURDAY -> date.minusDays(1);

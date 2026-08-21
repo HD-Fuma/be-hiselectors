@@ -77,6 +77,7 @@ public enum ErrorCode {
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),
     SETTLEMENT_RATE_SOURCE_NOT_FOUND(HttpStatus.CONFLICT, "수수료율 산정에 필요한 지원 정보를 찾을 수 없습니다."),
     INVALID_SETTLEMENT_AMOUNT(HttpStatus.CONFLICT, "정산 대상 매출에 원 단위 미만 금액이 포함되어 있습니다."),
+    SETTLEMENT_ACTIVITY_MONTH_DUPLICATED(HttpStatus.CONFLICT, "같은 활동월의 정산 이력이 중복되어 있습니다."),
     INVALID_SETTLEMENT_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 정산 상태 변경입니다."),
 
     // --- 발굴 카테고리 / 키워드 ---

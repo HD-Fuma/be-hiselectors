@@ -12,6 +12,16 @@ import org.junit.jupiter.api.Test;
 class SettlementHistoryTest {
 
     @Test
+    void normalizesActivityMonthToTheFirstDayAtMidnight() {
+        SettlementHistory history = SettlementHistory.create(
+                1L, LocalDateTime.of(2026, 7, 21, 14, 30));
+
+        assertThat(history.getActivityMonth())
+                .isEqualTo(LocalDateTime.of(2026, 7, 1, 0, 0));
+        assertThat(history.getActivityYearMonth()).isEqualTo(202607);
+    }
+
+    @Test
     void supportsDefinedStatusTransitions() {
         SettlementHistory history = calculatedHistory();
 

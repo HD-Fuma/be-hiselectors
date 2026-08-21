@@ -88,6 +88,21 @@ public interface PurchaseHistoryRepository extends JpaRepository<PurchaseHistory
             @Param("endExclusive") LocalDateTime endExclusive);
 
     @Query("""
+            select coalesce(sum(p.paidAmount), 0) as totalSales,
+                   count(p) as purchaseCount
+            from PurchaseHistory p
+            where p.selectorsId = :selectorsId
+              and p.status in :statuses
+              and p.purchasedAt >= :startInclusive
+              and p.purchasedAt < :endExclusive
+            """)
+    PurchaseProvisionalSettlementSummary summarizeProvisionalPurchasesForActivityMonth(
+            @Param("selectorsId") Long selectorsId,
+            @Param("statuses") Collection<PurchaseStatus> statuses,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query("""
             select coalesce(sum(p.paidAmount), 0)
             from PurchaseHistory p
             where p.selectorsId = :selectorsId

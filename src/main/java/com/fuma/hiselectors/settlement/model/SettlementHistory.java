@@ -14,6 +14,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Set;
@@ -23,8 +24,8 @@ import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "settlement_history", uniqueConstraints = @UniqueConstraint(
-        name = "uk_settlement_selectors_month",
-        columnNames = {"selectors_id", "settlement_month"}))
+        name = "uk_settlement_selectors_activity_year_month",
+        columnNames = {"selectors_id", "activity_year_month"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SettlementHistory extends BaseTimeEntity {
@@ -58,6 +59,10 @@ public class SettlementHistory extends BaseTimeEntity {
     @Column(name = "settlement_month", nullable = false)
     private LocalDateTime activityMonth;
 
+    /** 시간대와 일·시각에 영향받지 않는 활동 년월(예: 202607). */
+    @Column(name = "activity_year_month", nullable = false, updatable = false)
+    private Integer activityYearMonth;
+
     @Column(name = "total_sales", nullable = false)
     private Long totalSales;
 
@@ -78,8 +83,11 @@ public class SettlementHistory extends BaseTimeEntity {
 
     public static SettlementHistory create(Long selectorsId, LocalDateTime activityMonth) {
         SettlementHistory history = new SettlementHistory();
+        YearMonth normalizedActivityMonth = YearMonth.from(activityMonth);
         history.selectorsId = selectorsId;
-        history.activityMonth = activityMonth;
+        history.activityMonth = normalizedActivityMonth.atDay(1).atStartOfDay();
+        history.activityYearMonth = normalizedActivityMonth.getYear() * 100
+                + normalizedActivityMonth.getMonthValue();
         history.status = SettlementStatus.CALCULATING;
         history.totalSales = 0L;
         history.settlementAmount = 0L;

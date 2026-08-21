@@ -78,7 +78,8 @@ class SettlementAdminServiceTest {
                 Instant.parse("2026-08-15T01:00:00Z"), TimeConfig.SEOUL_ZONE);
         SettlementAdminService service = new SettlementAdminService(
                 historyRepository, selectorsRepository, snsAccountRepository,
-                purchaseHistoryRepository, clock);
+                purchaseHistoryRepository, clock,
+                mock(SettlementProvisionalEstimateService.class));
         Selectors selectors = selectors(15L);
         SelectorsSnsAccount snsAccount = SelectorsSnsAccount.builder()
                 .selectorsId(15L)
@@ -105,9 +106,9 @@ class SettlementAdminServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0))).thenReturn(2L);
         when(historyRepository.sumCommissionBySelectorsIdAndStatus(15L, SettlementStatus.SETTLED))
                 .thenReturn(1_500L);
-        when(historyRepository.findBySelectorsIdAndActivityMonthAndStatusIn(
+        when(historyRepository.findBySelectorsIdAndActivityYearMonthAndStatusIn(
                 15L,
-                LocalDateTime.of(2026, 6, 1, 0, 0),
+                202606,
                 List.of(SettlementStatus.CALCULATING, SettlementStatus.PAYMENT_PENDING)))
                 .thenReturn(Optional.of(nextPaymentHistory));
         when(historyRepository.findAllBySelectorsIdOrderByActivityMonthDesc(15L, pageable))
@@ -133,7 +134,8 @@ class SettlementAdminServiceTest {
                 selectorsRepository,
                 mock(SelectorsSnsAccountRepository.class),
                 mock(PurchaseHistoryRepository.class),
-                Clock.systemUTC());
+                Clock.systemUTC(),
+                mock(SettlementProvisionalEstimateService.class));
     }
 
     private Selectors selectors(Long selectorsId) {
