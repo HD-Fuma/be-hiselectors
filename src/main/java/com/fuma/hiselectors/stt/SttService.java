@@ -11,11 +11,17 @@ import org.springframework.stereotype.Service;
 public class SttService {
 
     private final YoutubeSttClient youtubeClient;
+    private final InstagramSttClient instagramClient;
 
     public SttResult transcribe(String snsCode, String snsContentId) {
         if (!SnsPlatform.YOUTUBE.name().equalsIgnoreCase(snsCode)) {
             throw new BusinessException(ErrorCode.STT_SNS_NOT_SUPPORTED);
         }
         return youtubeClient.transcribe(snsContentId);
+    }
+
+    /** 인스타 릴스: 파이썬 워커가 취득·STT·OCR·분석까지 수행. */
+    public InstagramAnalysisResult analyzeInstagramReel(String reelUrl) {
+        return instagramClient.analyze(reelUrl);
     }
 }

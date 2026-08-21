@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>정성 엔진 테스트</title>
+<body style="font-family:sans-serif;max-width:720px;margin:2rem auto">
+<h3>transcript → 정성 필드</h3>
+<textarea id="t" rows="8" style="width:100%" placeholder="transcript 텍스트"></textarea>
+<button onclick="go()">분석</button>
+<pre id="out"></pre>
+<script>
+async function go() {
+  const r = await fetch('/analyze', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: document.getElementById('t').value})
+  });
+  document.getElementById('out').textContent = JSON.stringify(await r.json(), null, 2);
+}
+</script>
+</body>

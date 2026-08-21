@@ -41,4 +41,19 @@ public class SttTestController {
             @RequestParam String snsContentId) {
         return ResponseEntity.ok(sttService.transcribe(snsCode, snsContentId));
     }
+
+    @Operation(summary = "인스타 릴스 분석",
+            description = "릴스 URL 을 파이썬 워커에 넘겨 취득·STT·OCR·정성분석(키워드·카테고리·"
+                    + "욕설혐오)까지 수행한다. 저장하지 않는다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "분석 성공"),
+            @ApiResponse(responseCode = "502", description = "STT 워커 호출 실패", content = @Content)
+    })
+    @GetMapping("/instagram")
+    public ResponseEntity<InstagramAnalysisResult> analyzeInstagram(
+            @Parameter(description = "릴스 permalink", required = true,
+                    example = "https://www.instagram.com/reels/DbXos7-kgtj/")
+            @RequestParam String reelUrl) {
+        return ResponseEntity.ok(sttService.analyzeInstagramReel(reelUrl));
+    }
 }
