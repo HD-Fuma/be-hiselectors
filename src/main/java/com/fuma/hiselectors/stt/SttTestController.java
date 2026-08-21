@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -64,16 +65,27 @@ public class SttTestController {
                 sttService.analyzeInstagramReel(reelUrl, mediaUrl, thumbnailUrl));
     }
 
+    @Operation(summary = "지원자 콘텐츠 분석·적재",
+            description = "릴스 1건을 분석해 DB에 적재한다(content_key 멱등 — 같은 키 재요청 시 재분석 안 함). "
+                    + "여러 번 호출로 지원자 콘텐츠를 쌓는다. 크래시·실패 후 재개 시 done 항목은 skip.")
+    @PostMapping("/applicant/{applicantId}/content")
+    public ResponseEntity<InstagramAnalysisResult> addContent(
+            @Parameter(description = "지원자 ID") @PathVariable Long applicantId,
+            @RequestBody ContentAddRequest request) {
+        return ResponseEntity.ok(evaluationService.addContent(applicantId, request));
+    }
+
     @Operation(summary = "지원자 종합 평가",
-            description = "이미 분석된 콘텐츠 결과들(/instagram 응답)을 모아 넘기면 합본 transcript를 "
-                    + "Gemini 1회로 정성 평가한다. STT/OCR 재실행 없음 → 평가 실패 시 이 요청만 재시도.")
+            description = "적재된 콘텐츠를 합쳐 Gemini 1회로 정성 평가한다. STT/OCR 재실행 없음 "
+                    + "→ 평가 실패 시 이 요청만 재시도. 평가 후 지원자 콘텐츠 삭제.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "평가 성공"),
-            @ApiResponse(responseCode = "400", description = "콘텐츠 비어있음", content = @Content),
+            @ApiResponse(responseCode = "404", description = "적재된 콘텐츠 없음", content = @Content),
             @ApiResponse(responseCode = "502", description = "Gemini 호출·해석 실패", content = @Content)
     })
-    @PostMapping("/applicant/evaluate")
-    public ResponseEntity<ApplicantEvaluation> evaluate(@RequestBody ApplicantEvaluateRequest request) {
-        return ResponseEntity.ok(evaluationService.evaluate(request.contents()));
+    @PostMapping("/applicant/{applicantId}/evaluate")
+    public ResponseEntity<ApplicantEvaluation> evaluate(
+            @Parameter(description = "지원자 ID") @PathVariable Long applicantId) {
+        return ResponseEntity.ok(evaluationService.evaluate(applicantId));
     }
 }

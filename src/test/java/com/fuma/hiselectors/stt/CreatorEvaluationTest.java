@@ -1,33 +1,32 @@
 package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fuma.hiselectors.exception.BusinessException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class CreatorEvaluationTest {
 
-    private CreatorEvaluationService service() {
-        GeminiProperties props = new GeminiProperties("dummy", null, null, null);
-        return new CreatorEvaluationService(new GeminiEvalClient(props));
-    }
-
     @Test
-    void 콘텐츠가_없으면_Gemini_호출_전에_거부한다() {
-        assertThatThrownBy(() -> service().evaluate(List.of()))
-                .isInstanceOf(BusinessException.class);
-    }
+    void 엔티티_왕복시_transcript와_신호가_보존된다() {
+        InstagramAnalysisResult original = new InstagramAnalysisResult(
+                "video", "음성 전사", "화면 자막",
+                new InstagramAnalysisResult.Analysis(
+                        List.of("세정제", "청소"),
+                        new InstagramAnalysisResult.Category("LIVING_LIFE", 0.4, false),
+                        new InstagramAnalysisResult.Hate(List.of(), Map.of(), false)));
 
-    @Test
-    void 전사_자막이_전부_비면_거부한다() {
-        List<InstagramAnalysisResult> blank =
-                List.of(new InstagramAnalysisResult("thumbnail", "", "  ", null));
+        ApplicationContentAnalysis entity = ApplicationContentAnalysis.from(1L, "DbXos7-kgtj", original);
+        InstagramAnalysisResult back = entity.toResult();
 
-        assertThatThrownBy(() -> service().evaluate(blank))
-                .isInstanceOf(BusinessException.class);
+        assertThat(entity.getContentKey()).isEqualTo("DbXos7-kgtj");
+        assertThat(back.stt()).isEqualTo("음성 전사");
+        assertThat(back.ocr()).isEqualTo("화면 자막");
+        assertThat(back.analysis().keywords()).containsExactly("세정제", "청소");
+        assertThat(back.analysis().category().label()).isEqualTo("LIVING_LIFE");
+        assertThat(back.analysis().hate().suspected()).isFalse();
     }
 
     @Test
