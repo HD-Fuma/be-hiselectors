@@ -85,28 +85,6 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         return fetchChannels(byChannel);
     }
 
-    @Override
-    public Integer fetchRecent90DayContentCount(String channelId) {
-        if (!properties.hasApiKey()) {
-            throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
-        }
-        if (channelId == null || channelId.isBlank()) {
-            return null;
-        }
-
-        String uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                .queryParam("part", "contentDetails")
-                .queryParam("id", channelId)
-                .queryParam("key", properties.apiKey())
-                .build().toUriString();
-        YoutubeChannelListResponse response =
-                call(uri, YoutubeChannelListResponse.class, LIST_COST);
-        if (response == null || response.items() == null || response.items().isEmpty()) {
-            return null;
-        }
-        return fetchRecent90DayContentCount(response.items().getFirst());
-    }
-
     /**
      * 채널이 아니라 영상을 검색한다. 채널명에 키워드가 없어도 그 주제로 콘텐츠를
      * 만드는 채널을 찾기 위해서다.
