@@ -1,4 +1,4 @@
-package com.fuma.hiselectors.stt.model;
+package com.fuma.hiselectors.application.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
 import com.fuma.hiselectors.stt.InstagramAnalysisResult;
