@@ -22,4 +22,7 @@ public interface ContentEngagementRepository extends JpaRepository<ContentEngage
             """)
     List<ContentEngagement> findLatestByContentIds(
             @Param("contentIds") Collection<Long> contentIds);
+
+    List<ContentEngagement> findAllByContentIdInOrderByContentIdAscCreatedAtAsc(
+            Collection<Long> contentIds);
 }
