@@ -55,6 +55,35 @@ jobs:
             -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
         }
 
+        mysql_query "CREATE TABLE IF NOT EXISTS application_content_analysis (
+          content_analysis_id BIGINT       NOT NULL AUTO_INCREMENT,
+          applicant_id        BIGINT       NOT NULL,
+          content_key         VARCHAR(200) NOT NULL,
+          source              VARCHAR(20),
+          stt                 LONGTEXT,
+          ocr                 LONGTEXT,
+          category            VARCHAR(30),
+          keywords            LONGTEXT,
+          hate_suspected      BIT(1)       NOT NULL DEFAULT 0,
+          created_at          DATETIME(6),
+          updated_at          DATETIME(6),
+          PRIMARY KEY (content_analysis_id),
+          CONSTRAINT uq_aca_content_key UNIQUE (content_key),
+          INDEX idx_aca_applicant (applicant_id)
+        ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4"
+
+        analysis_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'")"
+        analysis_valid_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND ((column_name = 'content_analysis_id' AND column_type = 'bigint' AND is_nullable = 'NO' AND extra = 'auto_increment') OR (column_name = 'applicant_id' AND column_type = 'bigint' AND is_nullable = 'NO') OR (column_name = 'content_key' AND column_type = 'varchar(200)' AND is_nullable = 'NO') OR (column_name = 'source' AND column_type = 'varchar(20)' AND is_nullable = 'YES') OR (column_name = 'stt' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'ocr' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'category' AND column_type = 'varchar(30)' AND is_nullable = 'YES') OR (column_name = 'keywords' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'hate_suspected' AND column_type = 'bit(1)' AND is_nullable = 'NO' AND column_default IN ('0', 'b''0''')) OR (column_name = 'created_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES') OR (column_name = 'updated_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES'))")"
+        test "$analysis_column_count" = "11"
+        test "$analysis_valid_column_count" = "11"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND engine = 'InnoDB' AND table_collation LIKE 'utf8mb4_%'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name IN ('content_key', 'source', 'stt', 'ocr', 'category', 'keywords') AND character_set_name = 'utf8mb4'")" = "6"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY ordinal_position) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'PRIMARY'")" = "content_analysis_id"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'uq_aca_content_key' AND non_unique = 0 AND sub_part IS NULL")" = "content_key"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'uq_aca_content_key' AND constraint_type = 'UNIQUE'")" = "1"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'idx_aca_applicant' AND non_unique = 1 AND sub_part IS NULL")" = "applicant_id"
+        echo "application-content-analysis-schema=verified"
+
         activity_start_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date'")"
         activity_end_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date'")"
         if [ "$activity_start_column_count" = "0" ] || [ "$activity_end_column_count" = "0" ]; then
