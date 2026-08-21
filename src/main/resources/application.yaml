@@ -79,6 +79,13 @@ stt:
   worker:
     base-url: ${STT_WORKER_BASE_URL:http://127.0.0.1:8900}
 
+content-inspection:
+  extraction:
+    instagram:
+      # Instagram 추출 파이프라인은 아직 연결 전이며 정책 버전 기록에만 사용한다.
+      stt-model: ${INSTAGRAM_STT_MODEL:not-configured}
+      ocr-model: ${INSTAGRAM_OCR_MODEL:not-configured}
+
 instagram:
   oauth:
     client-id: ${INSTAGRAM_CLIENT_ID:}

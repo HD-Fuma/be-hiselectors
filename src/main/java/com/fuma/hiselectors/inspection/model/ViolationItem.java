@@ -12,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -20,7 +21,11 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "violation_item")
+@Table(name = "violation_item", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uq_violation_item_content_type",
+                columnNames = {"content_id", "violation_type_id"})
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ViolationItem extends BaseTimeEntity {
@@ -29,6 +34,9 @@ public class ViolationItem extends BaseTimeEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "violation_item_id")
     private Long id;
+
+    @Column(name = "content_id", nullable = false)
+    private Long contentId;
 
     @Column(name = "content_version_id", nullable = false)
     private Long contentVersionId;
@@ -56,6 +64,7 @@ public class ViolationItem extends BaseTimeEntity {
     public static ViolationItem pending(ContentVersion version, Long violationTypeId,
                                         ViolationEvidence evidence) {
         ViolationItem item = new ViolationItem();
+        item.contentId = version.getContentId();
         item.contentVersionId = version.getId();
         item.lastDetectedContentVersionId = version.getId();
         item.violationTypeId = violationTypeId;
@@ -67,9 +76,16 @@ public class ViolationItem extends BaseTimeEntity {
 
     public void detectAgain(ContentVersion version, ViolationEvidence evidence) {
         requireOpen();
-        lastDetectedContentVersionId = version.getId();
-        this.evidence = evidence;
-        contentMediaId = representativeMediaId(evidence.locations());
+        applyDetection(version, evidence);
+    }
+
+    public void reopen(ContentVersion version, ViolationEvidence evidence) {
+        if (isOpen()) {
+            throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
+        }
+        status = ViolationStatus.PENDING;
+        resolvedContentVersionId = null;
+        applyDetection(version, evidence);
     }
 
     public void resolve(ContentVersion version) {
@@ -103,6 +119,12 @@ public class ViolationItem extends BaseTimeEntity {
         return status == ViolationStatus.PENDING
                 || status == ViolationStatus.VIOLATION_CONFIRMED
                 || status == ViolationStatus.EDIT_REQUESTED;
+    }
+
+    private void applyDetection(ContentVersion version, ViolationEvidence evidence) {
+        lastDetectedContentVersionId = version.getId();
+        this.evidence = evidence;
+        contentMediaId = representativeMediaId(evidence.locations());
     }
 
     private void requireOpen() {

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /** 셀렉터스 기본 정보와 운영 상세. */
 @Schema(description = "셀렉터스 상세")
@@ -64,7 +65,10 @@ public record SelectorsDetailResponse(
                         .map(content -> ContentResponse.from(
                                 content, latestEngagements.get(content.getId())))
                         .toList(),
-                PerformanceResponse.from(contents, latestEngagements)
+                PerformanceResponse.from(
+                        contents,
+                        latestEngagements,
+                        snsAccount != null && snsAccount.lastCollectedAt() != null)
         );
     }
 
@@ -94,31 +98,41 @@ public record SelectorsDetailResponse(
     }
 
     public record PerformanceResponse(
-            long contentCount,
-            long totalViewCount,
-            long totalLikeCount,
-            long totalCommentCount
+            Long contentCount,
+            Long totalViewCount,
+            Long totalLikeCount,
+            Long totalCommentCount
     ) {
         private static PerformanceResponse from(
                 List<Content> contents,
-                Map<Long, ContentEngagement> latestEngagements) {
-            long totalViewCount = 0;
-            long totalLikeCount = 0;
-            long totalCommentCount = 0;
-            for (Content content : contents) {
-                ContentEngagement engagement = latestEngagements.get(content.getId());
-                if (engagement != null) {
-                    totalViewCount += orZero(engagement.getViewCount());
-                    totalLikeCount += orZero(engagement.getLikeCount());
-                    totalCommentCount += orZero(engagement.getCommentCount());
-                }
+                Map<Long, ContentEngagement> latestEngagements,
+                boolean contentCollectionCompleted) {
+            if (!contentCollectionCompleted) {
+                return new PerformanceResponse(null, null, null, null);
+            }
+            if (contents.isEmpty()) {
+                return new PerformanceResponse(0L, 0L, 0L, 0L);
             }
             return new PerformanceResponse(
-                    contents.size(), totalViewCount, totalLikeCount, totalCommentCount);
+                    (long) contents.size(),
+                    sumWhenComplete(contents, latestEngagements, ContentEngagement::getViewCount),
+                    sumWhenComplete(contents, latestEngagements, ContentEngagement::getLikeCount),
+                    sumWhenComplete(contents, latestEngagements, ContentEngagement::getCommentCount));
         }
-    }
 
-    private static long orZero(Long value) {
-        return value == null ? 0 : value;
+        private static Long sumWhenComplete(
+                List<Content> contents,
+                Map<Long, ContentEngagement> latestEngagements,
+                Function<ContentEngagement, Long> metric) {
+            long total = 0;
+            for (Content content : contents) {
+                ContentEngagement engagement = latestEngagements.get(content.getId());
+                if (engagement == null) return null;
+                Long value = metric.apply(engagement);
+                if (value == null) return null;
+                total += value;
+            }
+            return total;
+        }
     }
 }

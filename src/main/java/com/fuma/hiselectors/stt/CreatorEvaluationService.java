@@ -1,18 +1,15 @@
 package com.fuma.hiselectors.stt;
 
+import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.repository.ApplicationContentAnalysisRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.service.ReportStatus;
 import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient;
-import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient.MediaUrls;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -77,7 +74,7 @@ public class CreatorEvaluationService {
             if (e.getErrorCode() != ErrorCode.MEDIA_URL_EXPIRED) {
                 throw e;
             }
-            MediaUrls fresh = metaGraphApiClient.fetchMediaUrls(req.contentKey());
+            MetaGraphApiClient.MediaUrls fresh = metaGraphApiClient.fetchMediaUrls(req.contentKey());
             return instagramClient.analyze(fresh.mediaUrl(), fresh.thumbnailUrl());
         }
     }

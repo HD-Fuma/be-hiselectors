@@ -8,7 +8,6 @@ import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorDiscoverySource;
 import com.fuma.hiselectors.creator.model.CreatorPool;
-import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository.RecentActivityBackfillTarget;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -105,53 +104,6 @@ class CreatorDiscoveryRepositoryTest {
         CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
         assertThat(found.getId()).isEqualTo(creator.getId());
         assertThat(found.getIgHandle()).isEqualTo("fitgpt_daily");
-    }
-
-    @Test
-    @DisplayName("최근 활동 백필은 활성 YouTube의 NULL 발굴 정보만 조건부로 채운다")
-    void findAndFillRecentActivityBackfillTargets() {
-        CreatorPool target = saveCreator("YOUTUBE", "UC-target", "백필 대상");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(target)
-                .brandScore(0)
-                .build());
-
-        CreatorPool populated = saveCreator("YOUTUBE", "UC-populated", "이미 수집");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(populated)
-                .brandScore(0)
-                .recent90DayContentCount(4)
-                .build());
-
-        CreatorPool deleted = saveCreator("YOUTUBE", "UC-deleted", "삭제 계정");
-        deleted.softDelete();
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(deleted)
-                .brandScore(0)
-                .build());
-
-        CreatorPool instagram = saveCreator("INSTAGRAM", "ig-id", "인스타 계정");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(instagram)
-                .brandScore(0)
-                .build());
-        saveCreator("YOUTUBE", "UC-no-info", "발굴 정보 없음");
-        em.flush();
-        em.clear();
-
-        List<RecentActivityBackfillTarget> targets =
-                infoRepository.findRecentActivityBackfillTargets("YOUTUBE");
-
-        assertThat(targets).singleElement()
-                .satisfies(found -> {
-                    assertThat(found.getCreatorId()).isEqualTo(target.getId());
-                    assertThat(found.getAccountId()).isEqualTo("UC-target");
-                });
-        assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 0)).isEqualTo(1);
-        assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 7)).isZero();
-        em.clear();
-        assertThat(infoRepository.findById(target.getId()).orElseThrow()
-                .getRecent90DayContentCount()).isZero();
     }
 
     @Test

@@ -34,9 +34,13 @@ jobs:
             sed -n "s/^$1=//p" |
             head -n 1
         }
+        assert_eq() {
+          echo "$1=$2"
+          test "$2" = "$3"
+        }
 
         DDL_AUTO_VALUE="$(container_env DDL_AUTO)"
-        test "${DDL_AUTO_VALUE:-validate}" = "validate"
+        assert_eq ddl-auto "${DDL_AUTO_VALUE:-validate}" validate
 
         DB_HOST="$(container_env DB_HOST)"
         DB_PORT="$(container_env DB_PORT)"

@@ -25,9 +25,6 @@ public interface YoutubeDiscoveryClient {
      */
     List<DiscoveredChannel> discoverByKeyword(String keyword, int maxResults);
 
-    /** 기존 YouTube 채널 한 건의 최근 90일 공개 콘텐츠 수를 다시 조회한다. */
-    Integer fetchRecent90DayContentCount(String channelId);
-
     /** 이번 호출로 사용한 쿼터. 키워드 1개당 약 102 units. */
     int consumedQuota();
 

@@ -14,7 +14,7 @@ import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
 import com.fuma.hiselectors.content.dto.ContentInspectionMediaResponse;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.MediaType;
-import com.fuma.hiselectors.content.service.ContentInspectionService;
+import com.fuma.hiselectors.content.service.ContentInspectionQueryService;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import jakarta.validation.Validation;
 import java.time.LocalDateTime;
@@ -30,12 +30,12 @@ import org.springframework.validation.beanvalidation.MethodValidationInterceptor
 
 class ContentInspectionAdminControllerTest {
 
-    private ContentInspectionService service;
+    private ContentInspectionQueryService service;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        service = mock(ContentInspectionService.class);
+        service = mock(ContentInspectionQueryService.class);
         ContentInspectionAdminController controller =
                 new ContentInspectionAdminController(service);
         ProxyFactory proxyFactory = new ProxyFactory(controller);
