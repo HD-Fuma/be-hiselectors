@@ -38,10 +38,21 @@ jobs:
         DB_NAME="$(container_env DB_NAME)"
         DB_USERNAME="$(container_env DB_USERNAME)"
         DB_PASSWORD="$(container_env DB_PASSWORD)"
+        DDL_AUTO_VALUE="$(container_env DDL_AUTO)"
+        LIFECYCLE_VALUE="${SELECTORS_LIFECYCLE_ENABLED:-$(container_env SELECTORS_LIFECYCLE_ENABLED)}"
         DB_PORT="${DB_PORT:-3306}"
         DB_NAME="${DB_NAME:-hiselectors}"
         DB_USERNAME="${DB_USERNAME:-root}"
         test -n "$DB_HOST"
+
+        case "${DDL_AUTO_VALUE:-validate}" in
+          validate) echo "008.ddl_auto_validate=1" ;;
+          *) echo "008.ddl_auto_validate=0" ;;
+        esac
+        case "$LIFECYCLE_VALUE" in
+          ""|false|False|FALSE) echo "008.selectors_lifecycle_enabled=0" ;;
+          *) echo "008.selectors_lifecycle_enabled=1" ;;
+        esac
 
         export MYSQL_PWD="$DB_PASSWORD"
         mysql_query() {
@@ -50,24 +61,56 @@ jobs:
             -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" \
             -Nse "$1" 2>/dev/null
         }
+        QUERY_FAILURE=0
         print_query() {
           value="$(mysql_query "$2")" || {
-            echo "aca.$1=QUERY_FAILED"
-            return 1
+            echo "$1=QUERY_FAILED"
+            QUERY_FAILURE=1
+            return 0
           }
-          echo "aca.$1=$value"
+          echo "$1=$value"
         }
 
-        print_query table_count "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
-        print_query column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
-        print_query valid_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND ((column_name = 'content_analysis_id' AND column_type = 'bigint' AND is_nullable = 'NO' AND extra = 'auto_increment') OR (column_name = 'applicant_id' AND column_type = 'bigint' AND is_nullable = 'NO') OR (column_name = 'content_key' AND column_type = 'varchar(200)' AND is_nullable = 'NO') OR (column_name = 'source' AND column_type = 'varchar(20)' AND is_nullable = 'YES') OR (column_name = 'stt' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'ocr' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'category' AND column_type = 'varchar(30)' AND is_nullable = 'YES') OR (column_name = 'keywords' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'hate_suspected' AND column_type = 'bit(1)' AND is_nullable = 'NO' AND column_default IN ('0', 'b''0''')) OR (column_name = 'created_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES') OR (column_name = 'updated_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES'))"
-        print_query engine_collation "SELECT CONCAT(COALESCE(engine, 'NULL'), '/', COALESCE(table_collation, 'NULL')) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
-        print_query utf8mb4_string_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name IN ('content_key', 'source', 'stt', 'ocr', 'category', 'keywords') AND character_set_name = 'utf8mb4'"
-        print_query primary_key "SELECT GROUP_CONCAT(column_name ORDER BY ordinal_position) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'PRIMARY'"
-        print_query unique_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'uq_aca_content_key' AND non_unique = 0 AND sub_part IS NULL"
-        print_query unique_constraint_count "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'uq_aca_content_key' AND constraint_type = 'UNIQUE'"
-        print_query applicant_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'idx_aca_applicant' AND non_unique = 1 AND sub_part IS NULL"
-        print_query hate_default "SELECT CONCAT('hex:', COALESCE(HEX(column_default), 'NULL'), ',quoted:', COALESCE(QUOTE(column_default), 'NULL')) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name = 'hate_suspected'"
+        print_query aca.table_count "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query aca.column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query aca.valid_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND ((column_name = 'content_analysis_id' AND column_type = 'bigint' AND is_nullable = 'NO' AND extra = 'auto_increment') OR (column_name = 'applicant_id' AND column_type = 'bigint' AND is_nullable = 'NO') OR (column_name = 'content_key' AND column_type = 'varchar(200)' AND is_nullable = 'NO') OR (column_name = 'source' AND column_type = 'varchar(20)' AND is_nullable = 'YES') OR (column_name = 'stt' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'ocr' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'category' AND column_type = 'varchar(30)' AND is_nullable = 'YES') OR (column_name = 'keywords' AND column_type = 'longtext' AND is_nullable = 'YES') OR (column_name = 'hate_suspected' AND column_type = 'bit(1)' AND is_nullable = 'NO' AND HEX(column_default) IN ('30', '62273027')) OR (column_name = 'created_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES') OR (column_name = 'updated_at' AND column_type = 'datetime(6)' AND is_nullable = 'YES'))"
+        print_query aca.engine_collation_gate_count "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND engine = 'InnoDB' AND table_collation LIKE 'utf8mb4_%'"
+        print_query aca.engine_collation "SELECT CONCAT(COALESCE(engine, 'NULL'), '/', COALESCE(table_collation, 'NULL')) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+        print_query aca.utf8mb4_string_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name IN ('content_key', 'source', 'stt', 'ocr', 'category', 'keywords') AND character_set_name = 'utf8mb4'"
+        print_query aca.primary_key "SELECT GROUP_CONCAT(column_name ORDER BY ordinal_position) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'PRIMARY'"
+        print_query aca.unique_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'uq_aca_content_key' AND non_unique = 0 AND sub_part IS NULL"
+        print_query aca.unique_constraint_count "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'application_content_analysis' AND constraint_name = 'uq_aca_content_key' AND constraint_type = 'UNIQUE'"
+        print_query aca.applicant_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND index_name = 'idx_aca_applicant' AND non_unique = 1 AND sub_part IS NULL"
+        print_query aca.hate_default "SELECT CONCAT('hex:', COALESCE(HEX(column_default), 'NULL'), ',quoted:', COALESCE(QUOTE(column_default), 'NULL')) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis' AND column_name = 'hate_suspected'"
+        print_query aca.column_metadata "SELECT GROUP_CONCAT(CONCAT(column_name, ':', column_type, ':', is_nullable, ':', extra, ':', HEX(COALESCE(column_default, ''))) ORDER BY ordinal_position SEPARATOR ',') FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_content_analysis'"
+
+        print_query 008.activity_start_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date'"
+        print_query 008.activity_end_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date'"
+        print_query 008.generation_period_null_count "SELECT COUNT(*) FROM generation WHERE start_date IS NULL OR end_date IS NULL"
+        print_query 008.selectors_generation_fk_null_count "SELECT COUNT(*) FROM selectors_generation WHERE selectors_id IS NULL OR generation_id IS NULL"
+        print_query 008.selectors_generation_duplicate_count "SELECT COUNT(*) FROM (SELECT selectors_id, generation_id FROM selectors_generation GROUP BY selectors_id, generation_id HAVING COUNT(*) > 1) duplicates"
+        print_query 008.selectors_user_duplicate_count "SELECT COUNT(*) FROM (SELECT user_id FROM selectors WHERE user_id IS NOT NULL GROUP BY user_id HAVING COUNT(*) > 1) duplicates"
+        print_query 008.activity_start_not_null_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date' AND is_nullable = 'NO'"
+        print_query 008.activity_end_not_null_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date' AND is_nullable = 'NO'"
+        print_query 008.generation_overlap_count "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date"
+        print_query 008.generation_activity_index_count "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'"
+        print_query 008.selectors_generation_unique_constraint_count "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'selectors_generation' AND constraint_name = 'uq_selectors_generation' AND constraint_type = 'UNIQUE'"
+        print_query 008.selectors_user_unique_constraint_count "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'selectors' AND constraint_name = 'uq_selectors_user' AND constraint_type = 'UNIQUE'"
+        print_query 008.penalty_generation_column_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id'"
+        print_query 008.penalty_index_count "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'"
+        print_query 008.penalty_generation_orphan_count "SELECT COUNT(*) FROM penalty_history p LEFT JOIN generation g ON g.generation_id = p.generation_id WHERE p.generation_id IS NOT NULL AND g.generation_id IS NULL"
+        print_query 008.penalty_fk_reference_count "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND referenced_table_name = 'generation'"
+        print_query 008.generation_activity_null_count "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
+        print_query 008.selectors_generation_created_at_null_count "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL"
+        print_query 008.generation_activity_columns_valid_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name IN ('activity_start_date', 'activity_end_date') AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES'"
+        print_query 008.penalty_generation_column_valid_count "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id' AND data_type = 'bigint' AND is_nullable = 'YES'"
+        print_query 008.generation_activity_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'"
+        print_query 008.selectors_generation_unique_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors_generation' AND index_name = 'uq_selectors_generation' AND non_unique = 0"
+        print_query 008.selectors_user_unique_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors' AND index_name = 'uq_selectors_user' AND non_unique = 0"
+        print_query 008.penalty_selectors_generation_index "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'"
+        print_query 008.penalty_generation_fk_count "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND column_name = 'generation_id' AND referenced_table_name = 'generation' AND referenced_column_name = 'generation_id'"
+
+        test "$QUERY_FAILURE" = "0"
     steps:
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
