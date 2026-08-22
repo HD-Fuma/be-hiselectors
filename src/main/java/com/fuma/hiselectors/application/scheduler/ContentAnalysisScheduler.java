@@ -17,7 +17,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 미디어 수집(DONE)이 끝난 인스타 지원자를 STT/OCR 분석 → 취합 → application_report 로 만든다.
+ * 미디어 수집(DONE)이 끝난 인스타·유튜브 지원자를 STT/OCR 분석 → 취합 → application_report 로 만든다.
  * 수집 스케줄러(ApplicationMediaCollectionScheduler) 다음 단계.
  */
 @Slf4j
@@ -48,7 +48,7 @@ public class ContentAnalysisScheduler {
                 ContentAnalysisStatus.IN_PROGRESS,
                 leaseBefore,
                 MAX_RETRY_COUNT,
-                SnsPlatform.INSTAGRAM,
+                EnumSet.of(SnsPlatform.INSTAGRAM, SnsPlatform.YOUTUBE),
                 PageRequest.of(0, batchSize));
 
         int succeeded = 0;

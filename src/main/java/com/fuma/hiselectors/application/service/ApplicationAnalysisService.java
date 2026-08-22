@@ -2,6 +2,7 @@ package com.fuma.hiselectors.application.service;
 
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -40,14 +41,23 @@ public class ApplicationAnalysisService {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
 
-        // 미디어별 STT/OCR 적재(외부호출, 멱등). media_url 없는 건 취득 불가라 skip.
+        // 미디어별 STT/OCR 적재(외부호출, 멱등). 플랫폼별 취득 경로가 다르다.
         for (ApplicationMedia m : media) {
-            if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
-                continue;
+            if (m.getSnsCode() == SnsPlatform.YOUTUBE) {
+                // 유튜브는 media_url 이 없다. videoId(=sns_content_id)로 URL 전사.
+                if (m.getSnsContentId() == null || m.getSnsContentId().isBlank()) {
+                    continue;
+                }
+                evaluationService.addYoutubeContent(applicationId, m.getSnsContentId());
+            } else {
+                // 인스타는 media_url(CDN) 필요. 없는 건 취득 불가라 skip.
+                if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
+                    continue;
+                }
+                // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
+                evaluationService.addContent(applicationId,
+                        new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
             }
-            // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
-            evaluationService.addContent(applicationId,
-                    new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
         }
 
         // 취합 리포트 생성(Gemini) — 트랜잭션 밖.
