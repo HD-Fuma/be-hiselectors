@@ -181,3 +181,4 @@ settlement:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:
     sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    upcoming-cron: ${SETTLEMENT_NOTIFICATION_UPCOMING_CRON:0 0 9 * * *}

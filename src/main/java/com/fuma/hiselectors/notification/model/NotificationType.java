@@ -21,6 +21,7 @@ public enum NotificationType {
     SELECTION_APPROVED,
     SELECTION_REJECTED,
     SETTLEMENT_MISSING,
+    SETTLEMENT_UPCOMING,
     WEEKLY_SALES_GROWTH;
 
     public String getPurposeCode() {

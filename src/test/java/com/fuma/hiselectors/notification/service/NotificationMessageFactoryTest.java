@@ -114,4 +114,18 @@ class NotificationMessageFactoryTest {
                         + "활동 중이라면 페이지가 정상적으로 열리는지 한 번 확인해 주세요.");
         assertThat(message.buttonTitle()).isEqualTo("페이지 확인하기");
     }
+
+    @Test
+    void createsSettlementUpcomingMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.SETTLEMENT_UPCOMING, "셀렉터스",
+                "2026년 6월 정산금 84,000원이 2026년 8월 20일에 정산될 예정이에요.");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 정산 예정 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터스님, 2026년 6월 정산금 84,000원이 "
+                        + "2026년 8월 20일에 정산될 예정이에요. "
+                        + "등록된 정산 정보를 미리 확인해 주세요.");
+        assertThat(message.buttonTitle()).isEqualTo("정산 내역 확인하기");
+    }
 }
