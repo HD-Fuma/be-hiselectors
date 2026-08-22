@@ -92,14 +92,14 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
                   OR (a.mediaCollectedAt IS NOT NULL
-                    AND (SELECT COUNT(m.id) FROM ApplicationMedia m
+                    AND (SELECT COUNT(DISTINCT m.snsContentId) FROM ApplicationMedia m
                          WHERE m.applicationId = a.id
                            AND m.publishedAt >= a.mediaCollectedAt - 90 day
                            AND m.publishedAt <= a.mediaCollectedAt) <= 3)))
                 OR (:minimumCriteriaOnly = false
                   AND (a.followerCount IS NULL OR a.followerCount > 500)
                   AND (a.mediaCollectedAt IS NULL
-                    OR (SELECT COUNT(m.id) FROM ApplicationMedia m
+                    OR (SELECT COUNT(DISTINCT m.snsContentId) FROM ApplicationMedia m
                         WHERE m.applicationId = a.id
                           AND m.publishedAt >= a.mediaCollectedAt - 90 day
                           AND m.publishedAt <= a.mediaCollectedAt) > 3)))
@@ -122,14 +122,14 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
                   OR (a.mediaCollectedAt IS NOT NULL
-                    AND (SELECT COUNT(m.id) FROM ApplicationMedia m
+                    AND (SELECT COUNT(DISTINCT m.snsContentId) FROM ApplicationMedia m
                          WHERE m.applicationId = a.id
                            AND m.publishedAt >= a.mediaCollectedAt - 90 day
                            AND m.publishedAt <= a.mediaCollectedAt) <= 3)))
                 OR (:minimumCriteriaOnly = false
                   AND (a.followerCount IS NULL OR a.followerCount > 500)
                   AND (a.mediaCollectedAt IS NULL
-                    OR (SELECT COUNT(m.id) FROM ApplicationMedia m
+                    OR (SELECT COUNT(DISTINCT m.snsContentId) FROM ApplicationMedia m
                         WHERE m.applicationId = a.id
                           AND m.publishedAt >= a.mediaCollectedAt - 90 day
                           AND m.publishedAt <= a.mediaCollectedAt) > 3)))

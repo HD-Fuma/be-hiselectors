@@ -35,8 +35,8 @@ public class ApplicationAnalysisService {
 
     /** 미디어 전부 분석·적재 → 취합·리포트 저장 → 분석 상태 DONE. */
     public void analyzeAndReport(Long applicationId) {
-        List<ApplicationMedia> media =
-                mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(applicationId);
+        List<ApplicationMedia> media = mediaRepository
+                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         if (media.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
@@ -54,9 +54,9 @@ public class ApplicationAnalysisService {
                 if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
                     continue;
                 }
-                // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
                 evaluationService.addContent(applicationId,
-                        new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
+                        new ContentAddRequest(
+                                m.getSnsMediaId(), m.getMediaUrl(), m.getThumbnailUrl()));
             }
         }
 

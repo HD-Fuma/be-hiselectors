@@ -51,6 +51,7 @@ public class DiscoveryPipelineService {
 
     private final YoutubeDiscoveryClient youtubeClient;
     private final IgHandleExtractor igHandleExtractor;
+    private final PublicEmailExtractor publicEmailExtractor;
     private final BrandScoreCalculator brandScoreCalculator;
 
     private final DiscoveryKeywordRepository keywordRepository;
@@ -134,6 +135,7 @@ public class DiscoveryPipelineService {
                     .snsCode(SNS_CODE_YOUTUBE)
                     .accountId(channel.channelId())
                     .creatorName(channel.title())
+                    .email(publicEmailExtractor.extract(channel.description()).orElse(null))
                     .followerCount(channel.subscriberCount())
                     .lastContentAt(channel.lastUploadAt())
                     .engagementRate(engagementRate(channel))

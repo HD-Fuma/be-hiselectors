@@ -9,6 +9,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
@@ -65,9 +66,24 @@ class ApplicationAdminRepositoryTest {
                 .applicationId(sparse.getId())
                 .snsCode(SnsPlatform.YOUTUBE)
                 .snsContentId("UC-sparse-outside-window")
+                .snsMediaId("UC-sparse-outside-window-media")
                 .contentUrl("https://example.com/UC-sparse/outside-window")
+                .mediaType(MediaType.VIDEO)
                 .sequenceNo(3)
+                .mediaSequenceNo(0)
                 .publishedAt(COLLECTED_AT.minusDays(91))
+                .collectedAt(COLLECTED_AT)
+                .build());
+        mediaRepository.save(ApplicationMedia.builder()
+                .applicationId(sparse.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("UC-sparse-0")
+                .snsMediaId("UC-sparse-0-second-media")
+                .contentUrl("https://example.com/UC-sparse/0")
+                .mediaType(MediaType.VIDEO)
+                .sequenceNo(0)
+                .mediaSequenceNo(1)
+                .publishedAt(COLLECTED_AT)
                 .collectedAt(COLLECTED_AT)
                 .build());
         em.flush();
@@ -136,8 +152,9 @@ class ApplicationAdminRepositoryTest {
 
     @Test
     void minimumCriteriaIgnoresContentsOutsideCollectionWindow() {
-        assertThat(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(sparse.getId()))
-                .hasSize(4);
+        assertThat(mediaRepository
+                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(sparse.getId()))
+                .hasSize(5);
 
         var result = applicationRepository.searchAdmin(
                 "UC-sparse", null, null, generation.getId(), true, PageRequest.of(0, 20));
@@ -171,7 +188,7 @@ class ApplicationAdminRepositoryTest {
                 .status(status)
                 .build();
         if (collected) {
-            application.completeMediaCollection(COLLECTED_AT);
+            application.completeMediaCollection(COLLECTED_AT, null);
         }
         application = applicationRepository.save(application);
         for (int sequenceNo = 0; sequenceNo < mediaCount; sequenceNo++) {
@@ -179,9 +196,13 @@ class ApplicationAdminRepositoryTest {
                     .applicationId(application.getId())
                     .snsCode(platform)
                     .snsContentId(accountId + "-" + sequenceNo)
+                    .snsMediaId(accountId + "-" + sequenceNo + "-media")
                     .contentUrl("https://example.com/" + accountId + "/" + sequenceNo)
-                    .contentType(platform == SnsPlatform.INSTAGRAM ? ContentType.FEED : null)
+                    .contentType(platform == SnsPlatform.INSTAGRAM ? ContentType.POST : null)
+                    .mediaType(platform == SnsPlatform.INSTAGRAM
+                            ? MediaType.IMAGE : MediaType.VIDEO)
                     .sequenceNo(sequenceNo)
+                    .mediaSequenceNo(0)
                     .publishedAt(COLLECTED_AT.minusDays(sequenceNo))
                     .collectedAt(COLLECTED_AT)
                     .build());
