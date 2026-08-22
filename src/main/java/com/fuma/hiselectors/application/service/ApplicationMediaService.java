@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -42,7 +43,9 @@ public class ApplicationMediaService {
         Application application = findApplication(applicationId);
         try {
             LocalDateTime collectedAt = LocalDateTime.now(clock);
-            LocalDateTime collectedAfter = collectedAt.minusDays(COLLECTION_DAYS);
+            LocalDateTime collectedAfter = application.getSnsCode() == SnsPlatform.INSTAGRAM
+                    ? LocalDateTime.MIN
+                    : collectedAt.minusDays(COLLECTION_DAYS);
             ContentFetcher fetcher = findFetcher(application);
             List<RawContent> contents = fetcher.fetchByAccount(
                     application.getSnsAccountId(), collectedAfter);
@@ -73,6 +76,7 @@ public class ApplicationMediaService {
         }
     }
 
+    @Transactional(readOnly = true)
     public List<ApplicationMediaResponse> findLatest(Long applicationId) {
         findApplication(applicationId);
         return mediaRepository.findTop3ByApplicationIdOrderBySequenceNoAsc(applicationId).stream()
@@ -107,7 +111,12 @@ public class ApplicationMediaService {
                         && !content.contentUrl().isBlank()
                         && content.createdAt() != null
                         && !content.createdAt().isBefore(collectedAfter)
-                        && !content.createdAt().isAfter(collectedAt))
+                        && !content.createdAt().isAfter(collectedAt)
+                        && (application.getSnsCode() != SnsPlatform.INSTAGRAM
+                                || content.media().stream().anyMatch(media ->
+                                        media != null
+                                                && media.mediaUrl() != null
+                                                && !media.mediaUrl().isBlank())))
                 .sorted(Comparator.comparing(RawContent::createdAt).reversed())
                 .collect(Collectors.toMap(
                         RawContent::snsContentId,
@@ -141,16 +150,24 @@ public class ApplicationMediaService {
             RawContent content,
             int sequenceNo,
             LocalDateTime collectedAt) {
+        List<String> mediaUrls = content.media().stream()
+                .map(media -> media.mediaUrl())
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
+        List<String> thumbnailUrls = content.media().stream()
+                .flatMap(media -> media.thumbnailUrls().stream())
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .toList();
         return ApplicationMedia.builder()
                 .applicationId(application.getId())
                 .snsCode(application.getSnsCode())
                 .snsContentId(content.snsContentId())
                 .contentUrl(content.contentUrl())
-                .mediaUrl(content.media().stream()
-                        .map(media -> media.mediaUrl())
-                        .filter(url -> url != null && !url.isBlank())
-                        .findFirst()
-                        .orElse(null))
+                .mediaUrl(mediaUrls.isEmpty() ? null : mediaUrls.getFirst())
+                .mediaUrls(mediaUrls)
+                .thumbnailUrls(thumbnailUrls)
                 // videos.list duration만으로는 Shorts의 세로 비율을 확인할 수 없다.
                 .contentType(application.getSnsCode() == SnsPlatform.YOUTUBE
                         ? null : content.contentType())

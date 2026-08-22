@@ -139,6 +139,52 @@ class ApplicationMediaServiceTest {
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getCollectedAt)
                 .containsOnly(COLLECTED_AT);
+        verify(youtubeFetcher).fetchByAccount(
+                "channel-id", COLLECTED_AT.minusDays(90));
+    }
+
+    @Test
+    void collectRequestsAllInstagramContentsAndSkipsMissingMediaUrls() {
+        Application application = application(SnsPlatform.INSTAGRAM, "username");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        RawContent available = new RawContent(
+                SnsPlatform.INSTAGRAM,
+                "available",
+                "https://www.instagram.com/p/available",
+                ContentType.FEED,
+                List.of(),
+                LocalDateTime.of(2010, 1, 1, 0, 0),
+                List.of(new RawContentMedia(
+                        "available-media",
+                        RawContentMedia.MediaType.IMAGE,
+                        "https://cdn.example.com/available.jpg")));
+        RawContent unavailable = new RawContent(
+                SnsPlatform.INSTAGRAM,
+                "unavailable",
+                "https://www.instagram.com/p/unavailable",
+                ContentType.FEED,
+                List.of(),
+                LocalDateTime.of(2009, 1, 1, 0, 0),
+                List.of(new RawContentMedia(
+                        "unavailable-media",
+                        RawContentMedia.MediaType.VIDEO,
+                        null)));
+        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN))
+                .thenReturn(List.of(available, unavailable));
+        when(instagramFetcher.addStatistics(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.collect(APPLICATION_ID);
+
+        assertThat(result.fetchedCount()).isEqualTo(2);
+        assertThat(result.storedCount()).isEqualTo(1);
+        assertThat(result.media()).singleElement().satisfies(media -> {
+            assertThat(media.snsContentId()).isEqualTo("available");
+            assertThat(media.mediaUrls())
+                    .containsExactly("https://cdn.example.com/available.jpg");
+        });
+        verify(instagramFetcher).fetchByAccount("username", LocalDateTime.MIN);
     }
 
     @Test
@@ -180,7 +226,7 @@ class ApplicationMediaServiceTest {
     }
 
     @Test
-    void collectStoresPostAndCdnUrlsSeparately() {
+    void collectStoresEveryMediaAndThumbnailUrl() {
         Application application = application(SnsPlatform.INSTAGRAM, "username");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
         RawContent content = new RawContent(
@@ -190,10 +236,20 @@ class ApplicationMediaServiceTest {
                 ContentType.SHORT_FORM,
                 List.of(),
                 COLLECTED_AT,
-                List.of(new RawContentMedia(
-                        "media-1",
-                        RawContentMedia.MediaType.VIDEO,
-                        "https://cdn.example.com/post-1.mp4")));
+                List.of(
+                        new RawContentMedia(
+                                "media-1",
+                                RawContentMedia.MediaType.VIDEO,
+                                "https://cdn.example.com/post-1.mp4",
+                                List.of("https://cdn.example.com/post-1.jpg")),
+                        new RawContentMedia(
+                                "media-2",
+                                RawContentMedia.MediaType.IMAGE,
+                                "https://cdn.example.com/post-2.jpg"),
+                        new RawContentMedia(
+                                "media-3",
+                                RawContentMedia.MediaType.IMAGE,
+                                null)));
         when(instagramFetcher.fetchByAccount(any(), any())).thenReturn(List.of(content));
         when(instagramFetcher.addStatistics(any())).thenReturn(List.of(content));
         when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -205,6 +261,11 @@ class ApplicationMediaServiceTest {
                     .isEqualTo("https://www.instagram.com/reel/post-1");
             assertThat(media.mediaUrl())
                     .isEqualTo("https://cdn.example.com/post-1.mp4");
+            assertThat(media.mediaUrls()).containsExactly(
+                    "https://cdn.example.com/post-1.mp4",
+                    "https://cdn.example.com/post-2.jpg");
+            assertThat(media.thumbnailUrls())
+                    .containsExactly("https://cdn.example.com/post-1.jpg");
             assertThat(media.contentType()).isEqualTo(ContentType.SHORT_FORM);
         });
     }
@@ -260,6 +321,11 @@ class ApplicationMediaServiceTest {
 
     private RawContent raw(SnsPlatform platform, String contentId, LocalDateTime createdAt,
                            Long viewCount, Long likeCount, Long commentCount) {
+        List<RawContentMedia> media = platform == SnsPlatform.INSTAGRAM
+                ? List.of(new RawContentMedia(
+                        contentId, RawContentMedia.MediaType.IMAGE,
+                        "https://cdn.example.com/" + contentId + ".jpg"))
+                : List.of();
         return new RawContent(
                 platform,
                 contentId,
@@ -267,7 +333,7 @@ class ApplicationMediaServiceTest {
                 ContentType.FEED,
                 List.of(),
                 createdAt,
-                List.of(),
+                media,
                 viewCount,
                 likeCount,
                 commentCount);

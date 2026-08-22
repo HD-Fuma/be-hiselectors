@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.ContentType;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -21,6 +23,9 @@ class ApplicationMediaRepositoryTest {
 
     @Autowired
     private ApplicationMediaRepository repository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     void findsLatestThreeBySequence() {
@@ -50,6 +55,41 @@ class ApplicationMediaRepositoryTest {
                 java.util.List.of(2L, 1L)))
                 .extracting(ApplicationMedia::getSnsContentId)
                 .containsExactly("post-1", "post-2", "other");
+    }
+
+    @Test
+    void persistsAndCascadesEveryMediaAndThumbnailUrl() {
+        ApplicationMedia saved = repository.saveAndFlush(ApplicationMedia.builder()
+                .applicationId(1L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("carousel")
+                .contentUrl("https://www.instagram.com/p/carousel")
+                .mediaUrl("https://cdn.example.com/first.jpg")
+                .mediaUrls(List.of(
+                        "https://cdn.example.com/first.jpg",
+                        "https://cdn.example.com/second.mp4"))
+                .thumbnailUrls(List.of(
+                        "https://cdn.example.com/second-thumbnail.jpg"))
+                .contentType(ContentType.FEED)
+                .sequenceNo(0)
+                .publishedAt(LocalDateTime.now())
+                .collectedAt(LocalDateTime.now())
+                .build());
+        entityManager.clear();
+
+        ApplicationMedia stored = repository.findById(saved.getId()).orElseThrow();
+
+        assertThat(stored.getMediaUrls()).containsExactly(
+                "https://cdn.example.com/first.jpg",
+                "https://cdn.example.com/second.mp4");
+        assertThat(stored.getThumbnailUrls())
+                .containsExactly("https://cdn.example.com/second-thumbnail.jpg");
+
+        repository.deleteByApplicationId(1L);
+        repository.flush();
+        assertThat(((Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM application_media_url").getSingleResult()).longValue())
+                .isZero();
     }
 
     private ApplicationMedia media(Long applicationId, String contentId, int sequenceNo) {

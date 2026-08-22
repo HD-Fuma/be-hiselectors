@@ -3,19 +3,28 @@ package com.fuma.hiselectors.application.model;
 import com.fuma.hiselectors.common.BaseTimeEntity;
 import com.fuma.hiselectors.content.model.ContentType;
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Entity
 @Table(
@@ -50,6 +59,15 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Column(name = "media_url", columnDefinition = "TEXT")
     private String mediaUrl;
 
+    /** 게시물의 모든 직접 미디어·썸네일 URL. */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "application_media_url",
+            joinColumns = @JoinColumn(name = "application_media_id"))
+    @OrderColumn(name = "sequence_no", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private List<ApplicationMediaUrl> urls = new ArrayList<>();
+
     @Enumerated(EnumType.STRING)
     @Column(name = "content_type", length = 20)
     private ContentType contentType;
@@ -74,7 +92,9 @@ public class ApplicationMedia extends BaseTimeEntity {
 
     @Builder
     private ApplicationMedia(Long applicationId, SnsPlatform snsCode, String snsContentId,
-                             String contentUrl, String mediaUrl, ContentType contentType,
+                             String contentUrl, String mediaUrl,
+                             List<String> mediaUrls, List<String> thumbnailUrls,
+                             ContentType contentType,
                              int sequenceNo,
                              LocalDateTime publishedAt,
                              Long viewCount, Long likeCount, Long commentCount,
@@ -84,6 +104,8 @@ public class ApplicationMedia extends BaseTimeEntity {
         this.snsContentId = snsContentId;
         this.contentUrl = contentUrl;
         this.mediaUrl = mediaUrl;
+        addUrls(ApplicationMediaUrl.Type.MEDIA, mediaUrls);
+        addUrls(ApplicationMediaUrl.Type.THUMBNAIL, thumbnailUrls);
         this.contentType = contentType;
         this.sequenceNo = sequenceNo;
         this.publishedAt = publishedAt;
@@ -91,6 +113,32 @@ public class ApplicationMedia extends BaseTimeEntity {
         this.likeCount = likeCount;
         this.commentCount = commentCount;
         this.collectedAt = collectedAt;
+    }
+
+    public List<String> getMediaUrls() {
+        return urls(ApplicationMediaUrl.Type.MEDIA);
+    }
+
+    public List<String> getThumbnailUrls() {
+        return urls(ApplicationMediaUrl.Type.THUMBNAIL);
+    }
+
+    private void addUrls(ApplicationMediaUrl.Type type, List<String> values) {
+        if (values == null) {
+            return;
+        }
+        values.stream()
+                .filter(url -> url != null && !url.isBlank())
+                .distinct()
+                .map(url -> new ApplicationMediaUrl(type, url))
+                .forEach(urls::add);
+    }
+
+    private List<String> urls(ApplicationMediaUrl.Type type) {
+        return urls.stream()
+                .filter(url -> url.getType() == type)
+                .map(ApplicationMediaUrl::getUrl)
+                .toList();
     }
 
 }
