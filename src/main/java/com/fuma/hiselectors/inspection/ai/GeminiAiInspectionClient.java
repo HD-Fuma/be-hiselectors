@@ -2,8 +2,8 @@ package com.fuma.hiselectors.inspection.ai;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
-import com.fuma.hiselectors.inspection.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
@@ -47,7 +47,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     }
 
     @Override
-    public AiInspectionResult inspect(InspectionContext context, InspectionPolicy policy) {
+    public AiInspectionResponse inspect(InspectionContext context, InspectionPolicy policy) {
         Map<String, Object> input = Map.of(
                 "sns", context.content().getSnsCode(),
                 "contentUrl", context.content().getContentUrl(),
@@ -59,7 +59,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     }
 
     @Override
-    public AiInspectionResult inspectText(String text) {
+    public AiInspectionResponse inspectText(String text) {
         Map<String, Object> input = Map.of(
                 "sns", "PREVIEW",
                 "contentUrl", "",
@@ -70,7 +70,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
         return inspectInput(input, properties.modelOrDefault(), promptProvider.aiPrompt());
     }
 
-    private AiInspectionResult inspectInput(Map<String, Object> inputData, String modelName,
+    private AiInspectionResponse inspectInput(Map<String, Object> inputData, String modelName,
                                             String prompt) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
@@ -98,7 +98,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
         }
     }
 
-    AiInspectionResult mapResponse(String json) throws JacksonException {
+    AiInspectionResponse mapResponse(String json) throws JacksonException {
         RawInspection raw = objectMapper.readValue(json, RawInspection.class);
         ContentReportData report = raw.report() == null
                 ? ContentReportData.empty()
@@ -109,7 +109,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         ViolationTypeCode.valueOf(violation.violationType()),
                         new ViolationEvidence(violation.reason(), violation.confidence(),
                                 violation.locations()))).toList();
-        return new AiInspectionResult(report, violations);
+        return new AiInspectionResponse(report, violations);
     }
 
     private String extractText(GeminiResponse response) {

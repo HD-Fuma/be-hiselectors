@@ -5,7 +5,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.ai.YoutubeIntegratedInspectionClient;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
@@ -135,7 +135,7 @@ public class MediaPreprocessingService {
     }
 
     public record PreprocessingResult(
-            Optional<AiInspectionResult> integratedAiResult,
+            Optional<AiInspectionResponse> integratedAiResult,
             Optional<MediaExtractionUpdate> extractionUpdate) {
 
         public PreprocessingResult {

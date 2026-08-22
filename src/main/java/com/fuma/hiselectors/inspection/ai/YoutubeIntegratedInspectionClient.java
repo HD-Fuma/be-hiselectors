@@ -4,7 +4,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.stt.ContentInsight;
@@ -115,7 +115,7 @@ public class YoutubeIntegratedInspectionClient {
         Map<String, Object> policyJson = new LinkedHashMap<>();
         policyJson.put("report", raw.report());
         policyJson.put("violations", raw.violations() == null ? List.of() : raw.violations());
-        AiInspectionResult inspection = inspectionMapper.mapResponse(
+        AiInspectionResponse inspection = inspectionMapper.mapResponse(
                 objectMapper.writeValueAsString(policyJson));
         return new IntegratedInspectionResult(sttResult, inspection);
     }

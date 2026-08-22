@@ -3,6 +3,7 @@ package com.fuma.hiselectors.inspection.service;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
+import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentReportRepository;
@@ -12,7 +13,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.detector.AiViolationDetector;
 import com.fuma.hiselectors.inspection.detector.RuleViolationDetector;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
@@ -86,11 +87,12 @@ public class ContentInspectionExecutionService {
                 preparation.selectors(), preparation.media());
         List<DetectedViolation> rules = new ArrayList<>();
         ruleDetectors.forEach(detector -> rules.addAll(detector.detect(context)));
-        AiInspectionResult aiResult = preprocessing.integratedAiResult()
+        AiInspectionResponse aiResponse = preprocessing.integratedAiResult()
                 .orElseGet(() -> aiViolationDetector.inspect(context, preparation.policy()));
         List<DetectedViolation> merged = resultMerger.mergeRuleFirst(
-                rules, aiResult.violations());
-        return new InspectionAnalysis(aiResult, merged, preprocessing.extractionUpdate());
+                rules, aiResponse.violations());
+        return new InspectionAnalysis(
+                aiResponse.report(), merged, preprocessing.extractionUpdate());
     }
 
     private InspectionResult persist(
@@ -102,7 +104,7 @@ public class ContentInspectionExecutionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         analysis.extractionUpdate().ifPresent(update -> applyExtraction(contentVersionId, update));
         contentReportRepository.save(ContentReport.create(
-                contentVersionId, analysis.aiResult().report(), preparation.policy().getId()));
+                contentVersionId, analysis.report(), preparation.policy().getId()));
         reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
@@ -136,7 +138,7 @@ public class ContentInspectionExecutionService {
     }
 
     private record InspectionAnalysis(
-            AiInspectionResult aiResult,
+            ContentReportData report,
             List<DetectedViolation> violations,
             java.util.Optional<MediaExtractionUpdate> extractionUpdate) {
     }

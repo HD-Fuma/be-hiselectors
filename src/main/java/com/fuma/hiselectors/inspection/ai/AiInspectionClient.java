@@ -1,12 +1,12 @@
 package com.fuma.hiselectors.inspection.ai;
 
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 
 public interface AiInspectionClient {
 
-    AiInspectionResult inspect(InspectionContext context, InspectionPolicy policy);
+    AiInspectionResponse inspect(InspectionContext context, InspectionPolicy policy);
 
-    AiInspectionResult inspectText(String text);
+    AiInspectionResponse inspectText(String text);
 }

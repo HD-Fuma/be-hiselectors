@@ -4,6 +4,6 @@ import com.fuma.hiselectors.stt.SttResult;
 
 public record IntegratedInspectionResult(
         SttResult extraction,
-        AiInspectionResult inspection
+        AiInspectionResponse inspection
 ) {
 }

@@ -9,7 +9,7 @@ import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentVersionStatus;
-import com.fuma.hiselectors.inspection.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
