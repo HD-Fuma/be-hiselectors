@@ -151,4 +151,43 @@ class PerformanceNotificationServiceTest {
 
         verify(notificationService).sendToFriend(any(), any());
     }
+
+    @Test
+    void sendsOnlyHighestReachedSalesMilestone() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("1200000"));
+
+        service.notifySalesMilestone(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        NotificationMessageCommand command = commandCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
+        org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("1,000,000");
+        org.assertj.core.api.Assertions.assertThat(command.notificationType())
+                .isEqualTo(NotificationType.SALES_1M);
+    }
+
+    @Test
+    void skipsSalesMilestoneBelowFirstThreshold() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("99999"));
+
+        service.notifySalesMilestone(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void doesNotBackfillLowerSalesMilestone() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("1200000"));
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.SALES_1M.getPurposeCode(), 2L)).thenReturn(1L);
+
+        service.notifySalesMilestone(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
 }

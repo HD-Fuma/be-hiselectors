@@ -32,4 +32,16 @@ class NotificationMessageFactoryTest {
                         + "자세한 내용은 성과 페이지에서 확인해 주세요.");
         assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
     }
+
+    @Test
+    void createsSalesMilestoneMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.SALES_1M, "셀렉터", "1,000,000");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 누적 매출 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터님, 누적 확정 매출이 1,000,000원을 달성했어요. "
+                        + "꾸준히 상품을 소개해 주셔서 감사합니다.");
+        assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
+    }
 }

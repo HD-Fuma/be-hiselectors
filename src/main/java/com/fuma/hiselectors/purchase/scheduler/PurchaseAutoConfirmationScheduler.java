@@ -21,7 +21,10 @@ public class PurchaseAutoConfirmationScheduler {
     public void confirmExpiredPurchases() {
         PurchaseAutoConfirmationService.ConfirmationResult result =
                 purchaseAutoConfirmationService.confirmExpiredPurchases();
-        result.selectorsIds().forEach(performanceNotificationService::notifyFirstRevenue);
+        result.selectorsIds().forEach(selectorsId -> {
+            performanceNotificationService.notifyFirstRevenue(selectorsId);
+            performanceNotificationService.notifySalesMilestone(selectorsId);
+        });
         log.info("구매 자동확정 배치 완료: confirmedCount={}", result.confirmedCount());
     }
 }

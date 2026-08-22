@@ -13,6 +13,7 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,13 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Service
 @RequiredArgsConstructor
 public class PerformanceNotificationService {
+
+    private static final List<SalesMilestone> SALES_MILESTONES = List.of(
+            new SalesMilestone(NotificationType.SALES_10M, 10_000_000L),
+            new SalesMilestone(NotificationType.SALES_5M, 5_000_000L),
+            new SalesMilestone(NotificationType.SALES_1M, 1_000_000L),
+            new SalesMilestone(NotificationType.SALES_500K, 500_000L),
+            new SalesMilestone(NotificationType.SALES_100K, 100_000L));
 
     private final SelectorsRepository selectorsRepository;
     private final NotificationRepository notificationRepository;
@@ -86,6 +94,38 @@ public class PerformanceNotificationService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifySalesMilestone(Long selectorsId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
+            if (selectors == null || selectors.getUserId() == null) {
+                return;
+            }
+            BigDecimal confirmedSales = purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                    selectorsId, PurchaseStatus.PURCHASE_CONFIRMED);
+            SalesMilestone milestone = highestReachedMilestone(confirmedSales);
+            if (milestone == null || alreadySent(milestone.type(), selectorsId)) {
+                return;
+            }
+            send(selectors, milestone.type(),
+                    String.format(Locale.KOREA, "%,d", milestone.amount()));
+        } catch (RuntimeException exception) {
+            log.warn("누적 매출 알림 발송 실패: selectorsId={}", selectorsId, exception);
+        }
+    }
+
+    private SalesMilestone highestReachedMilestone(BigDecimal confirmedSales) {
+        for (SalesMilestone milestone : SALES_MILESTONES) {
+            if (confirmedSales.compareTo(BigDecimal.valueOf(milestone.amount())) >= 0) {
+                return milestone;
+            }
+        }
+        return null;
+    }
+
     private BigDecimal confirmedRevenue(Long selectorsId, Application application) {
         BigDecimal confirmedSales = purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 selectorsId, PurchaseStatus.PURCHASE_CONFIRMED);
@@ -120,5 +160,8 @@ public class PerformanceNotificationService {
                 || selectors.getSelectorsNickname().isBlank()
                 ? "회원"
                 : selectors.getSelectorsNickname();
+    }
+
+    private record SalesMilestone(NotificationType type, long amount) {
     }
 }
