@@ -231,7 +231,11 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(1, 0));
+        assertThat(result.savedEngagementCount()).isEqualTo(1);
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 0));
         assertThat(saved.get()).singleElement().satisfies(snapshot -> {
             assertThat(snapshot.getContentId()).isEqualTo(10L);
             assertThat(snapshot.getViewCount()).isEqualTo(100L);
@@ -289,8 +293,11 @@ class StoredContentServiceTest {
             return values;
         });
 
-        service.check();
+        StoredContentService.StoredContentResult result = service.check();
 
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(1, 0));
         assertThat(changed.getLastVersionNo()).isEqualTo(2L);
         assertThat(unchanged.getLastVersionNo()).isEqualTo(1L);
         assertThat(savedVersions.get()).singleElement().satisfies(version -> {
@@ -342,7 +349,11 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 1));
+        assertThat(result.savedEngagementCount()).isZero();
+        assertThat(result.failedContentCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 1));
         assertThat(notFound.isDeleted()).isTrue();
         assertThat(found.isDeleted()).isFalse();
         assertThat(failed.isDeleted()).isTrue();
@@ -386,7 +397,11 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 0));
+        assertThat(result.savedEngagementCount()).isZero();
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(1, 0));
         assertThat(content.getLastVersionNo()).isEqualTo(2L);
         assertThat(content.isDeleted()).isFalse();
         verify(engagementRepository, never()).saveAll(any());
@@ -429,7 +444,11 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(1, 1));
+        assertThat(result.savedEngagementCount()).isEqualTo(1);
+        assertThat(result.failedContentCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 1));
         verify(versionRepository).findCurrentByContentIdIn(List.of(20L));
     }
 
@@ -467,6 +486,33 @@ class StoredContentServiceTest {
     }
 
     @Test
+    void separatesInstagramAndYoutubeFailures() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content instagram = content(SnsPlatform.INSTAGRAM, "instagram-missing");
+        Content youtube = content(SnsPlatform.YOUTUBE, "youtube-missing");
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(instagram, youtube));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("instagram-missing"))).thenReturn(List.of());
+        when(youtubeFetcher.fetchByContentIds(List.of("youtube-missing")))
+                .thenReturn(List.of());
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isEqualTo(2);
+        assertThat(result.platformStats()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 1),
+                SnsPlatform.YOUTUBE,
+                new StoredContentService.PlatformStoredContentStats(0, 1)));
+    }
+
+    @Test
     void countsMissingFetchResultAsFailureWithoutStartingTransaction() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content content = content(SnsPlatform.INSTAGRAM, "missing");
@@ -479,7 +525,11 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check();
 
-        assertThat(result).isEqualTo(new StoredContentService.StoredContentResult(0, 1));
+        assertThat(result.savedEngagementCount()).isZero();
+        assertThat(result.failedContentCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 1));
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {
