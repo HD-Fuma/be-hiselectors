@@ -64,6 +64,7 @@ class PerformanceNotificationServiceTest {
         when(selectors.getUserId()).thenReturn(20L);
         when(selectors.getApplicationId()).thenReturn(30L);
         when(selectors.getSelectorsNickname()).thenReturn("셀렉터");
+        when(selectors.isActive()).thenReturn(true);
         when(selectorsRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(selectors));
 
         Application application = mock(Application.class);
@@ -373,6 +374,38 @@ class PerformanceNotificationServiceTest {
                 .thenReturn(new BigDecimal("100000"), new BigDecimal("90000"));
 
         service.notifyWeeklySalesGrowth(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void sendsMidMonthActivity() {
+        service.notifyMidMonthActivity(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.MID_MONTH_ACTIVITY);
+    }
+
+    @Test
+    void sendsMidMonthActivityOnlyOncePerMonth() {
+        when(notificationRepository.countByPurposeAndReferenceInPeriod(
+                NotificationType.MID_MONTH_ACTIVITY.getPurposeCode(), 2L,
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 1, 0, 0))).thenReturn(1L);
+
+        service.notifyMidMonthActivity(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void skipsMidMonthActivityForInactiveSelectors() {
+        when(selectors.isActive()).thenReturn(false);
+
+        service.notifyMidMonthActivity(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }

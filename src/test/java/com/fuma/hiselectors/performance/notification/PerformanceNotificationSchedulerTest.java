@@ -7,6 +7,8 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -22,6 +24,7 @@ class PerformanceNotificationSchedulerTest {
                 mock(PurchaseHistoryRepository.class);
         PerformanceNotificationService notificationService =
                 mock(PerformanceNotificationService.class);
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-24T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         when(purchaseHistoryRepository.findDistinctSelectorsIdsByStatusAndConfirmedAtBetween(
@@ -30,7 +33,7 @@ class PerformanceNotificationSchedulerTest {
                 LocalDateTime.of(2026, 8, 24, 0, 0)))
                 .thenReturn(List.of(2L, 3L));
         PerformanceNotificationScheduler scheduler = new PerformanceNotificationScheduler(
-                purchaseHistoryRepository, notificationService, clock);
+                purchaseHistoryRepository, selectorsRepository, notificationService, clock);
 
         scheduler.sendScheduledNotifications();
 
@@ -44,13 +47,37 @@ class PerformanceNotificationSchedulerTest {
                 mock(PurchaseHistoryRepository.class);
         PerformanceNotificationService notificationService =
                 mock(PerformanceNotificationService.class);
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-25T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         PerformanceNotificationScheduler scheduler = new PerformanceNotificationScheduler(
-                purchaseHistoryRepository, notificationService, clock);
+                purchaseHistoryRepository, selectorsRepository, notificationService, clock);
 
         scheduler.sendScheduledNotifications();
 
-        verifyNoInteractions(purchaseHistoryRepository, notificationService);
+        verifyNoInteractions(purchaseHistoryRepository, selectorsRepository, notificationService);
+    }
+
+    @Test
+    void checksMidMonthActivityForSelectorsWithoutPurchasesOnSixteenth() {
+        PurchaseHistoryRepository purchaseHistoryRepository =
+                mock(PurchaseHistoryRepository.class);
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        PerformanceNotificationService notificationService =
+                mock(PerformanceNotificationService.class);
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-09-16T00:00:00Z"), ZoneId.of("Asia/Seoul"));
+        when(selectorsRepository.findActiveIdsWithoutPurchasesBetween(
+                Selectors.ACTIVE_ROLE,
+                LocalDateTime.of(2026, 9, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 16, 0, 0)))
+                .thenReturn(List.of(2L, 3L));
+        PerformanceNotificationScheduler scheduler = new PerformanceNotificationScheduler(
+                purchaseHistoryRepository, selectorsRepository, notificationService, clock);
+
+        scheduler.sendScheduledNotifications();
+
+        verify(notificationService).notifyMidMonthActivity(2L);
+        verify(notificationService).notifyMidMonthActivity(3L);
     }
 }

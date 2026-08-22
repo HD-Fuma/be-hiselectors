@@ -17,6 +17,7 @@ public class NotificationMessageFactory {
             case FIRST_PURCHASE -> firstPurchase(name);
             case FIRST_REVENUE -> firstRevenue(name, detail);
             case LAST_MONTH_SALES -> lastMonthSales(name);
+            case MID_MONTH_ACTIVITY -> midMonthActivity(name);
             case SALES_100K, SALES_500K, SALES_1M, SALES_5M, SALES_10M ->
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
@@ -136,6 +137,15 @@ public class NotificationMessageFactory {
                 name + "님, " + result
                         + "지난 한 주도 꾸준히 활동해 주셔서 감사합니다.",
                 "성과 확인하기"
+        );
+    }
+
+    private MessageText midMonthActivity(String name) {
+        return new MessageText(
+                "[셀렉터스 활동 안내]",
+                name + "님, 이번 달에는 아직 새로운 구매가 발생하지 않았어요. "
+                        + "부담 없이 이전에 반응이 좋았던 상품을 다시 소개해 보셔도 좋겠습니다.",
+                "상품 확인하기"
         );
     }
 

@@ -202,6 +202,31 @@ public class PerformanceNotificationService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyMidMonthActivity(Long selectorsId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
+            if (selectors == null || selectors.getUserId() == null
+                    || selectors.isDeleted() || !selectors.isActive()) {
+                return;
+            }
+            YearMonth currentMonth = YearMonth.now(clock);
+            LocalDateTime currentMonthStart = currentMonth.atDay(1).atStartOfDay();
+            LocalDateTime nextMonthStart = currentMonth.plusMonths(1).atDay(1).atStartOfDay();
+            if (notificationRepository.countByPurposeAndReferenceInPeriod(
+                    NotificationType.MID_MONTH_ACTIVITY.getPurposeCode(), selectorsId,
+                    currentMonthStart, nextMonthStart) > 0) {
+                return;
+            }
+            sendSafely(selectors, NotificationType.MID_MONTH_ACTIVITY, null);
+        } catch (RuntimeException exception) {
+            log.warn("월 중반 활동 알림 처리 실패: selectorsId={}", selectorsId, exception);
+        }
+    }
+
     private OrderMilestone highestReachedOrderMilestone(long confirmedOrders) {
         for (OrderMilestone milestone : ORDER_MILESTONES) {
             if (confirmedOrders >= milestone.orders()) {

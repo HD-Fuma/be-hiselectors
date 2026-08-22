@@ -90,4 +90,16 @@ class NotificationMessageFactoryTest {
                 "셀렉터님, 지난주에 새로운 매출이 발생했어요. "
                         + "지난 한 주도 꾸준히 활동해 주셔서 감사합니다.");
     }
+
+    @Test
+    void createsMidMonthActivityMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.MID_MONTH_ACTIVITY, "셀렉터스", null);
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 활동 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터스님, 이번 달에는 아직 새로운 구매가 발생하지 않았어요. "
+                        + "부담 없이 이전에 반응이 좋았던 상품을 다시 소개해 보셔도 좋겠습니다.");
+        assertThat(message.buttonTitle()).isEqualTo("상품 확인하기");
+    }
 }
