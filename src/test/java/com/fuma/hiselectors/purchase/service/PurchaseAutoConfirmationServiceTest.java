@@ -11,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PurchaseAutoConfirmationServiceTest {
@@ -30,14 +31,20 @@ class PurchaseAutoConfirmationServiceTest {
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 cutoffExclusive,
                 confirmedAt)).thenReturn(3);
+        when(repository.findDistinctSelectorIdsByStatusAndConfirmedAt(
+                PurchaseStatus.PURCHASE_CONFIRMED, confirmedAt)).thenReturn(List.of(4L, 7L));
 
-        int result = service.confirmExpiredPurchases();
+        PurchaseAutoConfirmationService.ConfirmationResult result =
+                service.confirmExpiredPurchases();
 
-        assertThat(result).isEqualTo(3);
+        assertThat(result.confirmedCount()).isEqualTo(3);
+        assertThat(result.selectorsIds()).containsExactly(4L, 7L);
         verify(repository).confirmExpiredPurchases(
                 PurchaseStatus.PURCHASED,
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 cutoffExclusive,
                 confirmedAt);
+        verify(repository).findDistinctSelectorIdsByStatusAndConfirmedAt(
+                PurchaseStatus.PURCHASE_CONFIRMED, confirmedAt);
     }
 }

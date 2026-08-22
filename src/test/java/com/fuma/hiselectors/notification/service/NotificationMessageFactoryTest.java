@@ -16,8 +16,20 @@ class NotificationMessageFactoryTest {
 
         assertThat(message.title()).isEqualTo("[셀렉터스 첫 구매 안내]");
         assertThat(message.description()).isEqualTo(
-                "셀렉터님이 공유한 상품에서 첫 구매가 발생했어요. "
+                "셀렉터님이 소개한 상품에서 첫 주문이 들어왔어요. "
                         + "좋은 시작이에요. 앞으로의 활동도 응원하겠습니다.");
+        assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
+    }
+
+    @Test
+    void createsFirstRevenueMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.FIRST_REVENUE, "셀렉터", "3,000");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 첫 수익 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터님, 첫 정산 대상 수익 3,000원이 확정되었어요. "
+                        + "자세한 내용은 성과 페이지에서 확인해 주세요.");
         assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
     }
 }

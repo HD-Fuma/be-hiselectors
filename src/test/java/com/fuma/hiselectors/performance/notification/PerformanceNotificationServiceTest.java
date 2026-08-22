@@ -12,8 +12,15 @@ import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.service.NotificationService;
+import com.fuma.hiselectors.application.model.Application;
+import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.purchase.model.PurchaseStatus;
+import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
+import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +32,9 @@ class PerformanceNotificationServiceTest {
     private SelectorsRepository selectorsRepository;
     private NotificationRepository notificationRepository;
     private NotificationService notificationService;
+    private PurchaseHistoryRepository purchaseHistoryRepository;
+    private ApplicationRepository applicationRepository;
+    private CommissionRateCalculator commissionRateCalculator;
     private PerformanceNotificationService service;
     private Selectors selectors;
 
@@ -33,15 +43,27 @@ class PerformanceNotificationServiceTest {
         selectorsRepository = mock(SelectorsRepository.class);
         notificationRepository = mock(NotificationRepository.class);
         notificationService = mock(NotificationService.class);
+        purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
+        applicationRepository = mock(ApplicationRepository.class);
+        commissionRateCalculator = mock(CommissionRateCalculator.class);
         service = new PerformanceNotificationService(
-                selectorsRepository, notificationRepository, notificationService);
+                selectorsRepository, notificationRepository, notificationService,
+                purchaseHistoryRepository, applicationRepository, commissionRateCalculator);
         ReflectionTestUtils.setField(service, "senderAdminLoginId", "sender-admin");
 
         selectors = mock(Selectors.class);
         when(selectors.getId()).thenReturn(2L);
         when(selectors.getUserId()).thenReturn(20L);
+        when(selectors.getApplicationId()).thenReturn(30L);
         when(selectors.getSelectorsNickname()).thenReturn("셀렉터");
         when(selectorsRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(selectors));
+
+        Application application = mock(Application.class);
+        when(application.getSnsCode()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(application.getFollowerCount()).thenReturn(1_000L);
+        when(applicationRepository.findById(30L)).thenReturn(Optional.of(application));
+        when(commissionRateCalculator.calculate(SnsPlatform.INSTAGRAM, 1_000L))
+                .thenReturn(new BigDecimal("3.00"));
     }
 
     @Test
@@ -88,5 +110,45 @@ class PerformanceNotificationServiceTest {
 
         assertThatCode(() -> service.handlePurchaseCreated(new PurchaseCreatedEvent(101L, 2L)))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendsFirstRevenueWhenConfirmedCommissionBecomesPositive() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("100000"));
+
+        service.notifyFirstRevenue(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        NotificationMessageCommand command = commandCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
+        org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("3,000");
+        org.assertj.core.api.Assertions.assertThat(command.notificationType())
+                .isEqualTo(NotificationType.FIRST_REVENUE);
+    }
+
+    @Test
+    void skipsFirstRevenueWhenRoundedCommissionIsZero() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(BigDecimal.ONE);
+
+        service.notifyFirstRevenue(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void sendsFirstRevenueOnlyOnce() {
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("10000"));
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.FIRST_REVENUE.getPurposeCode(), 2L)).thenReturn(0L, 1L);
+
+        service.notifyFirstRevenue(2L);
+        service.notifyFirstRevenue(2L);
+
+        verify(notificationService).sendToFriend(any(), any());
     }
 }

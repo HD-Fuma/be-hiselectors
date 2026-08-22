@@ -15,6 +15,7 @@ public class NotificationMessageFactory {
             case CONTENT_EDIT_DONE -> contentEditDone(name);
             case DEAD_LINK_NOTICE -> deadLinkNotice(name, detail);
             case FIRST_PURCHASE -> firstPurchase(name);
+            case FIRST_REVENUE -> firstRevenue(name, detail);
             case SETTLEMENT_MISSING -> settlementMissing(name);
             case ACTIVITY_GUIDE -> activityGuide(name, detail);
         };
@@ -97,8 +98,17 @@ public class NotificationMessageFactory {
     private MessageText firstPurchase(String name) {
         return new MessageText(
                 "[셀렉터스 첫 구매 안내]",
-                name + "님이 공유한 상품에서 첫 구매가 발생했어요. "
+                name + "님이 소개한 상품에서 첫 주문이 들어왔어요. "
                         + "좋은 시작이에요. 앞으로의 활동도 응원하겠습니다.",
+                "성과 확인하기"
+        );
+    }
+
+    private MessageText firstRevenue(String name, String revenue) {
+        return new MessageText(
+                "[셀렉터스 첫 수익 안내]",
+                name + "님, 첫 정산 대상 수익 " + revenue + "원이 확정되었어요. "
+                        + "자세한 내용은 성과 페이지에서 확인해 주세요.",
                 "성과 확인하기"
         );
     }
