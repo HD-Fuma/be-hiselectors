@@ -39,9 +39,11 @@ class ApplicationApprovalServiceTest {
             mock(SelectorsGenerationRepository.class);
     private final SelectorsSnsAccountRepository snsAccountRepository =
             mock(SelectorsSnsAccountRepository.class);
+    private final com.fuma.hiselectors.notification.service.NotificationService notificationService =
+            mock(com.fuma.hiselectors.notification.service.NotificationService.class);
     private final ApplicationApprovalService service = new ApplicationApprovalService(
             applicationRepository, userRepository, selectorsRepository, membershipRepository,
-            snsAccountRepository);
+            snsAccountRepository, notificationService);
 
     private Application application;
     private User user;
@@ -73,7 +75,7 @@ class ApplicationApprovalServiceTest {
         });
 
         var response = service.updateStatus(
-                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED));
+                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin");
 
         assertThat(response.status()).isEqualTo(ApplicationStatus.APPROVED);
         ArgumentCaptor<Selectors> selectorsCaptor = ArgumentCaptor.forClass(Selectors.class);
@@ -112,7 +114,7 @@ class ApplicationApprovalServiceTest {
         when(snsAccountRepository.findBySelectorsId(9L)).thenReturn(Optional.of(account));
 
         service.updateStatus(
-                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED));
+                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin");
 
         assertThat(account.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(account.getAccountId()).isEqualTo("UC-approved");
@@ -130,7 +132,7 @@ class ApplicationApprovalServiceTest {
         when(selectorsRepository.findByUserIdForUpdate(7L)).thenReturn(Optional.of(selectors));
 
         assertThatThrownBy(() -> service.updateStatus(
-                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED)))
+                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.BLACKLISTED_SELECTOR);
@@ -143,7 +145,7 @@ class ApplicationApprovalServiceTest {
         application.changeStatus(ApplicationStatus.APPROVED);
 
         var response = service.updateStatus(
-                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED));
+                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin");
 
         assertThat(response.status()).isEqualTo(ApplicationStatus.APPROVED);
         verify(userRepository, never()).findByIdForUpdate(7L);
@@ -160,7 +162,7 @@ class ApplicationApprovalServiceTest {
                 .thenThrow(new DataIntegrityViolationException("duplicate user"));
 
         assertThatThrownBy(() -> service.updateStatus(
-                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED)))
+                31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin"))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.SELECTOR_ALREADY_EXISTS);

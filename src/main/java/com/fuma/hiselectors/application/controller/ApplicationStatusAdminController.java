@@ -6,6 +6,7 @@ import com.fuma.hiselectors.application.service.ApplicationApprovalService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -29,7 +30,9 @@ public class ApplicationStatusAdminController {
     @PatchMapping("/{applicationId}/status")
     public ResponseEntity<ApplicationResponse> updateStatus(
             @PathVariable Long applicationId,
-            @Valid @RequestBody ApplicationStatusUpdateRequest request) {
-        return ResponseEntity.ok(applicationApprovalService.updateStatus(applicationId, request));
+            @Valid @RequestBody ApplicationStatusUpdateRequest request,
+            Principal principal) {
+        return ResponseEntity.ok(applicationApprovalService.updateStatus(
+                applicationId, request, principal.getName()));
     }
 }

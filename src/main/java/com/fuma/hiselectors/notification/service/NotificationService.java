@@ -94,6 +94,27 @@ public class NotificationService {
         }
     }
 
+    // 메시지 발송 (승인/반려 결과 알림)
+    public NotificationSendResponse sendToUuid(String adminLoginId, String receiverUuid,
+                                               NotificationMessageCommand command) {
+        Admin admin = adminRepository.findByLoginId(adminLoginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        Long connectionId = requireConnection(admin);
+        CreatedKakaoTemplate created = templateFactoryResolver.create(
+                DEFAULT_TEMPLATE_TYPE, command);
+        Long notificationId = recorder.createRequested(
+                command.notificationType().getPurposeCode(), command.referenceId(),
+                receiverUuid, created.body());
+        try {
+            notificationSender.sendToFriend(connectionId, receiverUuid, created.template());
+            recorder.markSent(notificationId);
+            return new NotificationSendResponse(notificationId, NotificationStatus.SENT);
+        } catch (RuntimeException e) {
+            recorder.markFailed(notificationId);
+            throw e;
+        }
+    }
+
     private NotificationSendResponse sendToMe(Admin admin, NotificationMessageCommand command) {
         Long connectionId = requireConnection(admin);
         CreatedKakaoTemplate created = templateFactoryResolver.create(
