@@ -327,4 +327,53 @@ class PerformanceNotificationServiceTest {
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }
+
+    @Test
+    void sendsWeeklyGrowthWithRoundedIncreaseRate() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED,
+                LocalDateTime.of(2026, 8, 3, 0, 0),
+                LocalDateTime.of(2026, 8, 10, 0, 0)))
+                .thenReturn(new BigDecimal("100000"));
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED,
+                LocalDateTime.of(2026, 8, 10, 0, 0),
+                LocalDateTime.of(2026, 8, 17, 0, 0)))
+                .thenReturn(new BigDecimal("132000"));
+
+        service.notifyWeeklySalesGrowth(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().detail())
+                .isEqualTo("32");
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.WEEKLY_SALES_GROWTH);
+    }
+
+    @Test
+    void sendsWeeklyGrowthAsNewSalesWhenPreviousWeekWasZero() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(BigDecimal.ZERO, BigDecimal.ONE);
+
+        service.notifyWeeklySalesGrowth(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().detail()).isNull();
+    }
+
+    @Test
+    void skipsWeeklyGrowthWhenSalesDidNotIncrease() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(new BigDecimal("100000"), new BigDecimal("90000"));
+
+        service.notifyWeeklySalesGrowth(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
 }

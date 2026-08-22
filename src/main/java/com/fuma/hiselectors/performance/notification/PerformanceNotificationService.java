@@ -14,8 +14,10 @@ import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -160,6 +162,44 @@ public class PerformanceNotificationService {
             return;
         }
         sendSafely(selectors, NotificationType.LAST_MONTH_SALES, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyWeeklySalesGrowth(Long selectorsId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
+            if (selectors == null || selectors.getUserId() == null) {
+                return;
+            }
+            LocalDate currentWeek = LocalDate.now(clock)
+                    .with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+            LocalDateTime currentWeekStart = currentWeek.atStartOfDay();
+            LocalDateTime lastWeekStart = currentWeek.minusWeeks(1).atStartOfDay();
+            LocalDateTime twoWeeksAgoStart = currentWeek.minusWeeks(2).atStartOfDay();
+            BigDecimal previousSales = purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                    selectorsId, PurchaseStatus.PURCHASE_CONFIRMED,
+                    twoWeeksAgoStart, lastWeekStart);
+            BigDecimal lastWeekSales = purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                    selectorsId, PurchaseStatus.PURCHASE_CONFIRMED,
+                    lastWeekStart, currentWeekStart);
+            if (lastWeekSales.compareTo(previousSales) <= 0
+                    || notificationRepository.countByPurposeAndReferenceInPeriod(
+                    NotificationType.WEEKLY_SALES_GROWTH.getPurposeCode(), selectorsId,
+                    currentWeekStart, currentWeek.plusWeeks(1).atStartOfDay()) > 0) {
+                return;
+            }
+            String increaseRate = previousSales.signum() == 0 ? null
+                    : lastWeekSales.subtract(previousSales)
+                    .multiply(new BigDecimal("100"))
+                    .divide(previousSales, 0, RoundingMode.HALF_UP)
+                    .toPlainString();
+            sendSafely(selectors, NotificationType.WEEKLY_SALES_GROWTH, increaseRate);
+        } catch (RuntimeException exception) {
+            log.warn("전주 매출 증가 알림 처리 실패: selectorsId={}", selectorsId, exception);
+        }
     }
 
     private OrderMilestone highestReachedOrderMilestone(long confirmedOrders) {

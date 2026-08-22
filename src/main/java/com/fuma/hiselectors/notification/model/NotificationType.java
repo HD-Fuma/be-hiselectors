@@ -18,7 +18,8 @@ public enum NotificationType {
     ORDERS_100,
     SELECTION_APPROVED,
     SELECTION_REJECTED,
-    SETTLEMENT_MISSING;
+    SETTLEMENT_MISSING,
+    WEEKLY_SALES_GROWTH;
 
     public String getPurposeCode() {
         return name();

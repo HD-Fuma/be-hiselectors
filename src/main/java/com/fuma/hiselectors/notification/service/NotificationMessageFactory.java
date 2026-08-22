@@ -21,6 +21,7 @@ public class NotificationMessageFactory {
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
             case SETTLEMENT_MISSING -> settlementMissing(name);
+            case WEEKLY_SALES_GROWTH -> weeklySalesGrowth(name, detail);
             case ACTIVITY_GUIDE -> activityGuide(name, detail);
         };
     }
@@ -122,6 +123,18 @@ public class NotificationMessageFactory {
                 "[셀렉터스 매출 성장 안내]",
                 name + "님, 이번 달 매출이 지난달 매출을 넘어섰어요. "
                         + "꾸준한 활동으로 좋은 흐름이 이어지고 있습니다.",
+                "성과 확인하기"
+        );
+    }
+
+    private MessageText weeklySalesGrowth(String name, String increaseRate) {
+        String result = increaseRate == null || increaseRate.isBlank()
+                ? "지난주에 새로운 매출이 발생했어요. "
+                : "지난주 매출이 전주보다 " + increaseRate + "% 증가했어요. ";
+        return new MessageText(
+                "[셀렉터스 주간 매출 안내]",
+                name + "님, " + result
+                        + "지난 한 주도 꾸준히 활동해 주셔서 감사합니다.",
                 "성과 확인하기"
         );
     }

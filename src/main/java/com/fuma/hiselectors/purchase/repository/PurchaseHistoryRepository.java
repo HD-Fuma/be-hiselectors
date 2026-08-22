@@ -37,9 +37,23 @@ public interface PurchaseHistoryRepository extends JpaRepository<PurchaseHistory
               and p.confirmedAt = :confirmedAt
             order by p.selectorsId
             """)
-    List<Long> findDistinctSelectorIdsByStatusAndConfirmedAt(
+    List<Long> findDistinctSelectorsIdsByStatusAndConfirmedAt(
             @Param("status") PurchaseStatus status,
             @Param("confirmedAt") LocalDateTime confirmedAt);
+
+    @Query("""
+            select distinct p.selectorsId
+            from PurchaseHistory p
+            where p.selectorsId is not null
+              and p.status = :status
+              and p.confirmedAt >= :startInclusive
+              and p.confirmedAt < :endExclusive
+            order by p.selectorsId
+            """)
+    List<Long> findDistinctSelectorsIdsByStatusAndConfirmedAtBetween(
+            @Param("status") PurchaseStatus status,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive);
 
     @Query("""
             select new com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse(

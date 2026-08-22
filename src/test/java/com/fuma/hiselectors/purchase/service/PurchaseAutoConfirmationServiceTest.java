@@ -31,7 +31,7 @@ class PurchaseAutoConfirmationServiceTest {
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 cutoffExclusive,
                 confirmedAt)).thenReturn(3);
-        when(repository.findDistinctSelectorIdsByStatusAndConfirmedAt(
+        when(repository.findDistinctSelectorsIdsByStatusAndConfirmedAt(
                 PurchaseStatus.PURCHASE_CONFIRMED, confirmedAt)).thenReturn(List.of(4L, 7L));
 
         PurchaseAutoConfirmationService.ConfirmationResult result =
@@ -44,7 +44,7 @@ class PurchaseAutoConfirmationServiceTest {
                 PurchaseStatus.PURCHASE_CONFIRMED,
                 cutoffExclusive,
                 confirmedAt);
-        verify(repository).findDistinctSelectorIdsByStatusAndConfirmedAt(
+        verify(repository).findDistinctSelectorsIdsByStatusAndConfirmedAt(
                 PurchaseStatus.PURCHASE_CONFIRMED, confirmedAt);
     }
 }

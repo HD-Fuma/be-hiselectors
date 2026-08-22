@@ -68,4 +68,26 @@ class NotificationMessageFactoryTest {
                         + "꾸준한 활동으로 좋은 흐름이 이어지고 있습니다.");
         assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
     }
+
+    @Test
+    void createsWeeklySalesGrowthMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.WEEKLY_SALES_GROWTH, "셀렉터", "32");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 주간 매출 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터님, 지난주 매출이 전주보다 32% 증가했어요. "
+                        + "지난 한 주도 꾸준히 활동해 주셔서 감사합니다.");
+        assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
+    }
+
+    @Test
+    void createsNewWeeklySalesMessageWhenPreviousWeekWasZero() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.WEEKLY_SALES_GROWTH, "셀렉터", null);
+
+        assertThat(message.description()).isEqualTo(
+                "셀렉터님, 지난주에 새로운 매출이 발생했어요. "
+                        + "지난 한 주도 꾸준히 활동해 주셔서 감사합니다.");
+    }
 }

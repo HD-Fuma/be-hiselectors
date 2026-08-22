@@ -142,6 +142,8 @@ purchase:
 performance:
   notification:
     sender-admin-login-id: ${PERFORMANCE_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    daily-cron: ${PERFORMANCE_NOTIFICATION_DAILY_CRON:0 0 9 * * *}
+    zone: ${PERFORMANCE_NOTIFICATION_ZONE:Asia/Seoul}
 
 proposal:
   mail:

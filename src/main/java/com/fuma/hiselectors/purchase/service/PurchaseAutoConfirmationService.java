@@ -32,7 +32,7 @@ public class PurchaseAutoConfirmationService {
                 now);
         List<Long> selectorsIds = confirmedCount == 0
                 ? List.of()
-                : purchaseHistoryRepository.findDistinctSelectorIdsByStatusAndConfirmedAt(
+                : purchaseHistoryRepository.findDistinctSelectorsIdsByStatusAndConfirmedAt(
                         PurchaseStatus.PURCHASE_CONFIRMED, now);
         return new ConfirmationResult(confirmedCount, selectorsIds);
     }
