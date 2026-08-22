@@ -31,13 +31,14 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             Collection<MediaCollectionStatus> statuses, int maxRetryCount, Pageable pageable);
 
     /**
-     * 미디어 수집 끝났고(:collected=DONE) 분석 대기·실패(재시도 남음)인 지원자. 인스타 전용.
-     * 처리 중 크래시로 :inProgress 로 멈춘(analyzed_at 이 :leaseBefore 이전 = lease 만료) 것도 재대상.
+     * 미디어 수집 끝났고(:collected=DONE) 분석 대기·실패(재시도 남음)인 지원자.
+     * :snsCodes 로 플랫폼 한정(인스타·유튜브 등). 처리 중 크래시로 :inProgress 로 멈춘
+     * (analyzed_at 이 :leaseBefore 이전 = lease 만료) 것도 재대상.
      */
     @Query("""
             SELECT a FROM Application a
             WHERE a.mediaCollectionStatus = :collected
-              AND a.snsCode = :snsCode
+              AND a.snsCode IN :snsCodes
               AND a.analysisRetryCount < :maxRetryCount
               AND (a.analysisStatus IN :statuses
                    OR (a.analysisStatus = :inProgress AND a.analyzedAt < :leaseBefore))
@@ -49,7 +50,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             @Param("inProgress") ContentAnalysisStatus inProgress,
             @Param("leaseBefore") LocalDateTime leaseBefore,
             @Param("maxRetryCount") int maxRetryCount,
-            @Param("snsCode") SnsPlatform snsCode,
+            @Param("snsCodes") Collection<SnsPlatform> snsCodes,
             Pageable pageable);
 
     /**

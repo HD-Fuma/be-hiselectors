@@ -37,6 +37,7 @@ public class CreatorEvaluationService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final InstagramSttClient instagramClient;
+    private final YoutubeSttClient youtubeClient;
     private final GeminiEvalClient evalClient;
     private final ApplicationContentAnalysisRepository repository;
     private final ApplicationReportRepository reportRepository;
@@ -61,6 +62,29 @@ public class CreatorEvaluationService {
             // 다른 요청이 선점 저장 — 재분석 결과는 버리고 성공 취급.
         }
         return result;
+    }
+
+    /**
+     * 유튜브 콘텐츠 1건을 전사해 적재한다. content_key(=videoId) 멱등이라 재시도 시 done 은 skip.
+     * 인스타와 달리 media_url(CDN)이 없고, Gemini 가 watch URL 을 직접 읽어 전사한다.
+     */
+    public void addYoutubeContent(Long applicantId, String videoId) {
+        if (repository.findByContentKey(videoId).isPresent()) {
+            return;
+        }
+        SttResult result = youtubeClient.transcribe(videoId);
+        try {
+            repository.save(ApplicationContentAnalysis.builder()
+                    .applicantId(applicantId)
+                    .contentKey(videoId)
+                    .source("youtube")
+                    .stt(result.stt())
+                    .ocr(result.ocr())
+                    .hateSuspected(false)
+                    .build());
+        } catch (DataIntegrityViolationException duplicate) {
+            // 다른 요청이 선점 저장 — 멱등 성공 취급.
+        }
     }
 
     /**
