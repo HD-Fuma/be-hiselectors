@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,9 +31,11 @@ class SettlementPaymentServiceTest {
         SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
         SettlementMissingNotificationService notificationService = mock(
                 SettlementMissingNotificationService.class);
+        SettlementStatusNotificationService statusNotificationService = mock(
+                SettlementStatusNotificationService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), SEOUL);
         SettlementPaymentService service = new SettlementPaymentService(
-                historyRepository, paymentWorker, notificationService,
+                historyRepository, paymentWorker, notificationService, statusNotificationService,
                 new SettlementSchedulePolicy(), clock);
 
         SettlementHistory first = mock(SettlementHistory.class);
@@ -63,6 +66,7 @@ class SettlementPaymentServiceTest {
         assertThat(result.skippedCount()).isZero();
         assertThat(result.failedCount()).isZero();
         verify(paymentWorker, org.mockito.Mockito.times(3)).process(anyLong());
+        verify(statusNotificationService).notifyCompleted(1L);
     }
 
     @Test
@@ -71,9 +75,11 @@ class SettlementPaymentServiceTest {
         SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
         SettlementMissingNotificationService notificationService = mock(
                 SettlementMissingNotificationService.class);
+        SettlementStatusNotificationService statusNotificationService = mock(
+                SettlementStatusNotificationService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), SEOUL);
         SettlementPaymentService service = new SettlementPaymentService(
-                historyRepository, paymentWorker, notificationService,
+                historyRepository, paymentWorker, notificationService, statusNotificationService,
                 new SettlementSchedulePolicy(), clock);
         SettlementHistory hold = mock(SettlementHistory.class);
         SettlementHistory pending = mock(SettlementHistory.class);
@@ -103,9 +109,11 @@ class SettlementPaymentServiceTest {
         SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
         SettlementMissingNotificationService notificationService = mock(
                 SettlementMissingNotificationService.class);
+        SettlementStatusNotificationService statusNotificationService = mock(
+                SettlementStatusNotificationService.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), SEOUL);
         SettlementPaymentService service = new SettlementPaymentService(
-                historyRepository, paymentWorker, notificationService,
+                historyRepository, paymentWorker, notificationService, statusNotificationService,
                 new SettlementSchedulePolicy(), clock);
         SettlementHistory pending = mock(SettlementHistory.class);
         when(pending.getId()).thenReturn(6L);
@@ -125,5 +133,37 @@ class SettlementPaymentServiceTest {
         assertThat(result.processedCount()).isEqualTo(1);
         assertThat(result.settledCount()).isEqualTo(1);
         verify(paymentWorker).process(6L);
+    }
+
+    @Test
+    void keepsSettlementSuccessfulWhenCompletedNotificationFails() {
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
+        SettlementMissingNotificationService notificationService = mock(
+                SettlementMissingNotificationService.class);
+        SettlementStatusNotificationService statusNotificationService = mock(
+                SettlementStatusNotificationService.class);
+        Clock clock = Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), SEOUL);
+        SettlementPaymentService service = new SettlementPaymentService(
+                historyRepository, paymentWorker, notificationService, statusNotificationService,
+                new SettlementSchedulePolicy(), clock);
+        SettlementHistory pending = mock(SettlementHistory.class);
+        when(pending.getId()).thenReturn(7L);
+        when(historyRepository.findAllByStatusIn(EnumSet.of(
+                SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)))
+                .thenReturn(List.of());
+        when(historyRepository
+                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+                        SettlementStatus.PAYMENT_PENDING, 202606))
+                .thenReturn(List.of(pending));
+        when(paymentWorker.process(7L))
+                .thenReturn(SettlementPaymentWorker.PaymentOutcome.SETTLED);
+        doThrow(new IllegalStateException("notification failed"))
+                .when(statusNotificationService).notifyCompleted(7L);
+
+        SettlementPaymentResponse result = service.processCurrentPaymentMonth();
+
+        assertThat(result.settledCount()).isEqualTo(1);
+        assertThat(result.failedCount()).isZero();
     }
 }

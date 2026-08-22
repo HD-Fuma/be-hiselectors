@@ -47,30 +47,60 @@ public class SettlementStatusNotificationService {
                     .orElse(null);
             if (history == null || history.getStatus() != SettlementStatus.PAYMENT_PENDING
                     || history.getSettlementAmount() <= 0
-                    || notificationRepository.countByNotificationPurposeCodeAndReferenceId(
-                    NotificationType.SETTLEMENT_UPCOMING.getPurposeCode(), settlementId) > 0) {
-                return;
-            }
-            Selectors selectors = selectorsRepository.findById(history.getSelectorsId())
-                    .orElse(null);
-            if (selectors == null || selectors.getUserId() == null) {
+                    || alreadySent(NotificationType.SETTLEMENT_UPCOMING, settlementId)) {
                 return;
             }
             String detail = MONTH_FORMAT.format(history.getActivityMonth())
                     + " 정산금 "
                     + String.format(Locale.KOREA, "%,d", history.getSettlementAmount())
                     + "원이 " + DATE_FORMAT.format(paymentDate) + "에 정산될 예정이에요.";
-            notificationService.sendToFriend(senderAdminLoginId,
-                    new NotificationMessageCommand(
-                            null,
-                            selectors.getUserId(),
-                            history.getId(),
-                            receiverName(selectors),
-                            detail,
-                            NotificationType.SETTLEMENT_UPCOMING));
+            send(history, NotificationType.SETTLEMENT_UPCOMING, detail);
         } catch (RuntimeException exception) {
             log.warn("정산 예정 알림 처리 실패: settlementId={}", settlementId, exception);
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyCompleted(Long settlementId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            SettlementHistory history = settlementHistoryRepository.findByIdForUpdate(settlementId)
+                    .orElse(null);
+            if (history == null || history.getStatus() != SettlementStatus.SETTLED
+                    || history.getSettlementAmount() <= 0
+                    || alreadySent(NotificationType.SETTLEMENT_COMPLETED, settlementId)) {
+                return;
+            }
+            String detail = MONTH_FORMAT.format(history.getActivityMonth())
+                    + " 정산금 "
+                    + String.format(Locale.KOREA, "%,d", history.getSettlementAmount())
+                    + "원의 정산 처리가 완료되었어요.";
+            send(history, NotificationType.SETTLEMENT_COMPLETED, detail);
+        } catch (RuntimeException exception) {
+            log.warn("정산 완료 알림 처리 실패: settlementId={}", settlementId, exception);
+        }
+    }
+
+    private boolean alreadySent(NotificationType type, Long settlementId) {
+        return notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                type.getPurposeCode(), settlementId) > 0;
+    }
+
+    private void send(SettlementHistory history, NotificationType type, String detail) {
+        Selectors selectors = selectorsRepository.findById(history.getSelectorsId()).orElse(null);
+        if (selectors == null || selectors.getUserId() == null) {
+            return;
+        }
+        notificationService.sendToFriend(senderAdminLoginId,
+                new NotificationMessageCommand(
+                        null,
+                        selectors.getUserId(),
+                        history.getId(),
+                        receiverName(selectors),
+                        detail,
+                        type));
     }
 
     private String receiverName(Selectors selectors) {

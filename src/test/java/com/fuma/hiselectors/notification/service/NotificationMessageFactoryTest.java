@@ -128,4 +128,17 @@ class NotificationMessageFactoryTest {
                         + "등록된 정산 정보를 미리 확인해 주세요.");
         assertThat(message.buttonTitle()).isEqualTo("정산 내역 확인하기");
     }
+
+    @Test
+    void createsSettlementCompletedMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.SETTLEMENT_COMPLETED, "셀렉터스",
+                "2026년 6월 정산금 84,000원의 정산 처리가 완료되었어요.");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 정산 완료 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터스님, 2026년 6월 정산금 84,000원의 정산 처리가 완료되었어요. "
+                        + "자세한 내용은 정산 내역에서 확인해 주세요.");
+        assertThat(message.buttonTitle()).isEqualTo("정산 내역 확인하기");
+    }
 }

@@ -30,6 +30,7 @@ class SettlementStatusNotificationServiceTest {
     private NotificationRepository notificationRepository;
     private NotificationService notificationService;
     private SettlementStatusNotificationService service;
+    private SettlementHistory history;
 
     @BeforeEach
     void setUp() {
@@ -42,7 +43,7 @@ class SettlementStatusNotificationServiceTest {
                 notificationRepository, notificationService);
         ReflectionTestUtils.setField(service, "senderAdminLoginId", "sender-admin");
 
-        SettlementHistory history = SettlementHistory.create(
+        history = SettlementHistory.create(
                 2L, LocalDateTime.of(2026, 6, 1, 0, 0));
         ReflectionTestUtils.setField(history, "id", 10L);
         ReflectionTestUtils.setField(history, "settlementAmount", 84_000L);
@@ -76,6 +77,36 @@ class SettlementStatusNotificationServiceTest {
                 NotificationType.SETTLEMENT_UPCOMING.getPurposeCode(), 10L)).thenReturn(1L);
 
         service.notifyUpcoming(10L, LocalDate.of(2026, 8, 20));
+
+        verify(notificationService, never()).sendToFriend(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void sendsCompletedSettlementOnce() {
+        history.transitionTo(SettlementStatus.SETTLED,
+                LocalDateTime.of(2026, 8, 20, 9, 0));
+
+        service.notifyCompleted(10L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        NotificationMessageCommand command = commandCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo(
+                "2026년 6월 정산금 84,000원의 정산 처리가 완료되었어요.");
+        org.assertj.core.api.Assertions.assertThat(command.notificationType())
+                .isEqualTo(NotificationType.SETTLEMENT_COMPLETED);
+    }
+
+    @Test
+    void skipsCompletedSettlementWhenAlreadySent() {
+        history.transitionTo(SettlementStatus.SETTLED,
+                LocalDateTime.of(2026, 8, 20, 9, 0));
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.SETTLEMENT_COMPLETED.getPurposeCode(), 10L)).thenReturn(1L);
+
+        service.notifyCompleted(10L);
 
         verify(notificationService, never()).sendToFriend(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any());
