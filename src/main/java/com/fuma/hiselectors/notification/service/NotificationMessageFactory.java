@@ -18,6 +18,7 @@ public class NotificationMessageFactory {
             case FIRST_REVENUE -> firstRevenue(name, detail);
             case SALES_100K, SALES_500K, SALES_1M, SALES_5M, SALES_10M ->
                     salesMilestone(name, detail);
+            case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
             case SETTLEMENT_MISSING -> settlementMissing(name);
             case ACTIVITY_GUIDE -> activityGuide(name, detail);
         };
@@ -120,6 +121,15 @@ public class NotificationMessageFactory {
                 "[셀렉터스 누적 매출 안내]",
                 name + "님, 누적 확정 매출이 " + sales + "원을 달성했어요. "
                         + "꾸준히 상품을 소개해 주셔서 감사합니다.",
+                "성과 확인하기"
+        );
+    }
+
+    private MessageText orderMilestone(String name, String orders) {
+        return new MessageText(
+                "[셀렉터스 누적 판매 안내]",
+                name + "님, 누적 판매 " + orders + "건을 달성했어요. "
+                        + "소개해 주신 상품에 꾸준한 관심이 이어지고 있습니다.",
                 "성과 확인하기"
         );
     }

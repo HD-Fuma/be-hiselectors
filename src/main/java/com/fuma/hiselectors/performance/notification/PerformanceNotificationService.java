@@ -35,6 +35,10 @@ public class PerformanceNotificationService {
             new SalesMilestone(NotificationType.SALES_1M, 1_000_000L),
             new SalesMilestone(NotificationType.SALES_500K, 500_000L),
             new SalesMilestone(NotificationType.SALES_100K, 100_000L));
+    private static final List<OrderMilestone> ORDER_MILESTONES = List.of(
+            new OrderMilestone(NotificationType.ORDERS_100, 100L),
+            new OrderMilestone(NotificationType.ORDERS_50, 50L),
+            new OrderMilestone(NotificationType.ORDERS_10, 10L));
 
     private final SelectorsRepository selectorsRepository;
     private final NotificationRepository notificationRepository;
@@ -126,6 +130,38 @@ public class PerformanceNotificationService {
         return null;
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyOrderMilestone(Long selectorsId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
+            if (selectors == null || selectors.getUserId() == null) {
+                return;
+            }
+            long confirmedOrders = purchaseHistoryRepository
+                    .countDistinctOrdersBySelectorsIdAndStatusIn(
+                            selectorsId, List.of(PurchaseStatus.PURCHASE_CONFIRMED));
+            OrderMilestone milestone = highestReachedOrderMilestone(confirmedOrders);
+            if (milestone == null || alreadySent(milestone.type(), selectorsId)) {
+                return;
+            }
+            send(selectors, milestone.type(), Long.toString(milestone.orders()));
+        } catch (RuntimeException exception) {
+            log.warn("누적 판매 알림 발송 실패: selectorsId={}", selectorsId, exception);
+        }
+    }
+
+    private OrderMilestone highestReachedOrderMilestone(long confirmedOrders) {
+        for (OrderMilestone milestone : ORDER_MILESTONES) {
+            if (confirmedOrders >= milestone.orders()) {
+                return milestone;
+            }
+        }
+        return null;
+    }
+
     private BigDecimal confirmedRevenue(Long selectorsId, Application application) {
         BigDecimal confirmedSales = purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 selectorsId, PurchaseStatus.PURCHASE_CONFIRMED);
@@ -163,5 +199,8 @@ public class PerformanceNotificationService {
     }
 
     private record SalesMilestone(NotificationType type, long amount) {
+    }
+
+    private record OrderMilestone(NotificationType type, long orders) {
     }
 }

@@ -24,6 +24,7 @@ public class PurchaseAutoConfirmationScheduler {
         result.selectorsIds().forEach(selectorsId -> {
             performanceNotificationService.notifyFirstRevenue(selectorsId);
             performanceNotificationService.notifySalesMilestone(selectorsId);
+            performanceNotificationService.notifyOrderMilestone(selectorsId);
         });
         log.info("구매 자동확정 배치 완료: confirmedCount={}", result.confirmedCount());
     }

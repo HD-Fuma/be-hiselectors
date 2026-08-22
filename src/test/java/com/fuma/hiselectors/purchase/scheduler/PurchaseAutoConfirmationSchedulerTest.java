@@ -28,5 +28,7 @@ class PurchaseAutoConfirmationSchedulerTest {
         verify(notificationService).notifyFirstRevenue(7L);
         verify(notificationService).notifySalesMilestone(4L);
         verify(notificationService).notifySalesMilestone(7L);
+        verify(notificationService).notifyOrderMilestone(4L);
+        verify(notificationService).notifyOrderMilestone(7L);
     }
 }

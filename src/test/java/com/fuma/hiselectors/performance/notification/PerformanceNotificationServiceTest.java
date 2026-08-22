@@ -190,4 +190,43 @@ class PerformanceNotificationServiceTest {
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }
+
+    @Test
+    void sendsOnlyHighestReachedOrderMilestone() {
+        when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
+                2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(67L);
+
+        service.notifyOrderMilestone(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        NotificationMessageCommand command = commandCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
+        org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("50");
+        org.assertj.core.api.Assertions.assertThat(command.notificationType())
+                .isEqualTo(NotificationType.ORDERS_50);
+    }
+
+    @Test
+    void skipsOrderMilestoneBelowFirstThreshold() {
+        when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
+                2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(9L);
+
+        service.notifyOrderMilestone(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void doesNotBackfillLowerOrderMilestone() {
+        when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
+                2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(67L);
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.ORDERS_50.getPurposeCode(), 2L)).thenReturn(1L);
+
+        service.notifyOrderMilestone(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
 }

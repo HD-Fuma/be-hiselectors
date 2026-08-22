@@ -12,6 +12,9 @@ public enum NotificationType {
     SALES_1M,
     SALES_5M,
     SALES_10M,
+    ORDERS_10,
+    ORDERS_50,
+    ORDERS_100,
     SELECTION_APPROVED,
     SELECTION_REJECTED,
     SETTLEMENT_MISSING;
