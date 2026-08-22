@@ -14,6 +14,7 @@ public class NotificationMessageFactory {
             case CONTENT_EDIT_REQUEST -> contentEditRequest(name, detail);
             case CONTENT_EDIT_DONE -> contentEditDone(name);
             case DEAD_LINK_NOTICE -> deadLinkNotice(name, detail);
+            case FIRST_PURCHASE -> firstPurchase(name);
             case SETTLEMENT_MISSING -> settlementMissing(name);
             case ACTIVITY_GUIDE -> activityGuide(name, detail);
         };
@@ -90,6 +91,15 @@ public class NotificationMessageFactory {
                         + "※ 가입 후 12개월 이상 정산 정보 미등록 또는 "
                         + "오기재 상태가 지속될 경우 정산금이 소멸될 수 있습니다.",
                 "정산 정보 등록하기"
+        );
+    }
+
+    private MessageText firstPurchase(String name) {
+        return new MessageText(
+                "[셀렉터스 첫 구매 안내]",
+                name + "님이 공유한 상품에서 첫 구매가 발생했어요. "
+                        + "좋은 시작이에요. 앞으로의 활동도 응원하겠습니다.",
+                "성과 확인하기"
         );
     }
 

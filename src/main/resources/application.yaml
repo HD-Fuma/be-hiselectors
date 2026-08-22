@@ -139,6 +139,10 @@ purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
 
+performance:
+  notification:
+    sender-admin-login-id: ${PERFORMANCE_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+
 proposal:
   mail:
     admin-position: ${PROPOSAL_ADMIN_POSITION:매니저}
