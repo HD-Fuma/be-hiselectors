@@ -42,6 +42,7 @@ class InstagramDiscoveryServiceTest {
 
     @Mock MetaGraphApiClient metaGraphApiClient;
     @Mock InstagramEngagementCalculator engagementCalculator;
+    @Mock PublicEmailExtractor publicEmailExtractor;
     @Mock CreatorPoolRepository creatorPoolRepository;
     @Mock CreatorDiscoveryInfoRepository discoveryInfoRepository;
     @Mock TransactionTemplate transactionTemplate;
@@ -69,6 +70,8 @@ class InstagramDiscoveryServiceTest {
         when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
+        when(publicEmailExtractor.extract(discovered.biography()))
+                .thenReturn(Optional.of("contact@nike.com"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                 "INSTAGRAM", "17841400602400210"))
                 .thenReturn(Optional.empty());
@@ -87,6 +90,7 @@ class InstagramDiscoveryServiceTest {
         assertThat(instagram.getSnsCode()).isEqualTo("INSTAGRAM");
         assertThat(instagram.getAccountId()).isEqualTo("17841400602400210");
         assertThat(instagram.getCreatorName()).isEqualTo("nike");
+        assertThat(instagram.getEmail()).isEqualTo("contact@nike.com");
         assertThat(instagram.getCategory()).isEqualTo("BEAUTY");
         assertThat(instagram.getFollowerCount()).isEqualTo(291_530_362L);
         assertThat(instagram.getEngagementRate()).isEqualByComparingTo("0.04");
@@ -129,6 +133,7 @@ class InstagramDiscoveryServiceTest {
         );
         verify(existing).restore();
         verify(creatorPoolRepository, never()).saveAndFlush(any(CreatorPool.class));
+        verifyNoInteractions(publicEmailExtractor);
         assertThat(result.created()).isFalse();
     }
 
@@ -229,7 +234,7 @@ class InstagramDiscoveryServiceTest {
 
     private BusinessDiscovery discoveredAccount(List<MediaItem> mediaItems) {
         return new BusinessDiscovery(
-                "17841400602400210", "nike", "Nike", "Just Do It.", null,
+                "17841400602400210", "nike", "Nike", "Just Do It. contact@nike.com", null,
                 291_530_362L, 1_668L, new Media(mediaItems)
         );
     }

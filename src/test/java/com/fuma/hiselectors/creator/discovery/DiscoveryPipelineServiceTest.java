@@ -48,6 +48,8 @@ class DiscoveryPipelineServiceTest {
     @Mock
     private IgHandleExtractor igHandleExtractor;
     @Mock
+    private PublicEmailExtractor publicEmailExtractor;
+    @Mock
     private BrandScoreCalculator brandScoreCalculator;
     @Mock
     private DiscoveryKeywordRepository keywordRepository;
@@ -118,7 +120,7 @@ class DiscoveryPipelineServiceTest {
     void saveNewCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 1, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
-                "UC_NEW", "새 크리에이터", "Instagram @new_creator",
+                "UC_NEW", "새 크리에이터", "Instagram @new_creator / hello@example.com",
                 120_000L, 3_000_000L, uploadedAt,
                 12, 1_000L, 40L, 10L);
         CreatorPool savedCreator = org.mockito.Mockito.mock(CreatorPool.class);
@@ -129,6 +131,8 @@ class DiscoveryPipelineServiceTest {
         when(youtubeClient.consumedQuota()).thenReturn(102);
         when(igHandleExtractor.extract(channel.description()))
                 .thenReturn(Optional.of(new IgHandle("new_creator", IgHandleSource.LABELED)));
+        when(publicEmailExtractor.extract(channel.description()))
+                .thenReturn(Optional.of("hello@example.com"));
         when(brandScoreCalculator.calculate(
                 channel.title(), channel.description(), "new_creator"))
                 .thenReturn(new BrandScore(0, List.of()));
@@ -153,6 +157,7 @@ class DiscoveryPipelineServiceTest {
         CreatorPool creator = creatorCaptor.getValue();
         assertThat(creator.getSnsCode()).isEqualTo("YOUTUBE");
         assertThat(creator.getAccountId()).isEqualTo("UC_NEW");
+        assertThat(creator.getEmail()).isEqualTo("hello@example.com");
         assertThat(creator.getFollowerCount()).isEqualTo(120_000L);
         assertThat(creator.getEngagementRate()).isEqualByComparingTo("5.00");
         assertThat(creator.getCategory()).isEqualTo("BEAUTY");
@@ -178,7 +183,7 @@ class DiscoveryPipelineServiceTest {
     void updateExistingCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 2, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
-                "UC_EXISTING", "기존 크리에이터", null,
+                "UC_EXISTING", "기존 크리에이터", "contact@example.com",
                 50_000L, 1_000_000L, uploadedAt,
                 7, 200L, 8L, 2L);
         CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);
@@ -189,8 +194,9 @@ class DiscoveryPipelineServiceTest {
         when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
         when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
                 .thenReturn(List.of(channel));
-        when(igHandleExtractor.extract(null)).thenReturn(Optional.empty());
-        when(brandScoreCalculator.calculate("기존 크리에이터", null, null))
+        when(igHandleExtractor.extract("contact@example.com")).thenReturn(Optional.empty());
+        when(brandScoreCalculator.calculate(
+                "기존 크리에이터", "contact@example.com", null))
                 .thenReturn(new BrandScore(2, List.of("공식")));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                 "YOUTUBE", "UC_EXISTING"))
@@ -212,6 +218,7 @@ class DiscoveryPipelineServiceTest {
         verify(existingInfo).updateRecent90DayContentCount(7);
         verify(existingSource).refresh(new BigDecimal("1.00000"));
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
+        verifyNoInteractions(publicEmailExtractor);
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);
     }
 }

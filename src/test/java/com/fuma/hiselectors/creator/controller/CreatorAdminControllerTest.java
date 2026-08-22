@@ -54,7 +54,7 @@ class CreatorAdminControllerTest {
     @Test
     void 크리에이터_기본_상세정보를_조회한다() throws Exception {
         CreatorDetailResponse response = new CreatorDetailResponse(
-                113L, "YOUTUBE", "UC113", "다예다", "creator@example.com",
+                113L, "YOUTUBE", "UC113", "다예다",
                 100_000L, new BigDecimal("4.25"),
                 LocalDateTime.of(2026, 8, 12, 20, 0), "BEAUTY",
                 List.of(new CategoryShare("BEAUTY", new BigDecimal("1.00"))),
@@ -70,6 +70,7 @@ class CreatorAdminControllerTest {
                 .andExpect(jsonPath("$.data.id").value(113))
                 .andExpect(jsonPath("$.data.snsCode").value("YOUTUBE"))
                 .andExpect(jsonPath("$.data.creatorName").value("다예다"))
+                .andExpect(jsonPath("$.data.email").doesNotExist())
                 .andExpect(jsonPath("$.data.category").value("BEAUTY"))
                 .andExpect(jsonPath("$.data.categoryShares[0].categoryCode")
                         .value("BEAUTY"))

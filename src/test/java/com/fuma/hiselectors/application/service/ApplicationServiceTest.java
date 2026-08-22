@@ -78,6 +78,8 @@ class ApplicationServiceTest {
 
         assertThat(response.snsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(response.snsAccountId()).isEqualTo("UC123");
+        assertThat(response.profileUrl())
+                .isEqualTo("https://www.youtube.com/channel/UC123");
         assertThat(response.followerCount()).isEqualTo(100L);
         assertThat(response.contentCount()).isEqualTo(42L);
         assertThat(response.lastContentAt()).isNull();

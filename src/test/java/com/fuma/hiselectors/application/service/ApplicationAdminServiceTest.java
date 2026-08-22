@@ -13,6 +13,7 @@ import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
@@ -55,6 +56,7 @@ class ApplicationAdminServiceTest {
                 .generationId(20L)
                 .snsCode(SnsPlatform.INSTAGRAM)
                 .snsAccountId("creator.handle")
+                .profileUrl("https://www.instagram.com/creator.handle/")
                 .followerCount(1_000L)
                 .contentCount(500L)
                 .lastContentAt(COLLECTED_AT.minusHours(1))
@@ -81,21 +83,25 @@ class ApplicationAdminServiceTest {
 
     @Test
     void searchMapsCollectedCountsAndMeasuredEngagementRate() {
-        application.completeMediaCollection(COLLECTED_AT);
+        application.completeMediaCollection(COLLECTED_AT, new BigDecimal("15.00"));
         var pageable = PageRequest.of(0, 20);
         List<ApplicationMedia> contents = List.of(
-                media("post-1", 0, COLLECTED_AT.minusDays(3),
-                        ContentType.FEED, 100L, 10L, 5L),
-                media("post-2", 1, COLLECTED_AT.minusDays(1),
-                        ContentType.SHORT_FORM, null, 20L, null));
+                media("post-1", 0, 0, COLLECTED_AT.minusDays(3),
+                        ContentType.POST, 100L, 10L, 5L),
+                media("post-1", 0, 1, COLLECTED_AT.minusDays(3),
+                        ContentType.POST, 100L, 10L, 5L),
+                media("post-2", 1, 0, COLLECTED_AT.minusDays(1),
+                        ContentType.REELS, null, 20L, null));
         when(applicationRepository.searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
                 20L, true, pageable))
                 .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
         when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
         when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
-        when(mediaRepository.findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAsc(
-                List.of(1L))).thenReturn(contents);
+        when(mediaRepository
+                .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(
+                        List.of(1L)))
+                .thenReturn(contents);
 
         var result = service.search(
                 "  김지안  ", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
@@ -106,7 +112,9 @@ class ApplicationAdminServiceTest {
             assertThat(summary.applicantName()).isEqualTo("김지안");
             assertThat(summary.totalContentCount()).isEqualTo(500L);
             assertThat(summary.recent90DayContentCount()).isEqualTo(2L);
-            assertThat(summary.engagementRate()).isEqualByComparingTo("1.50");
+            assertThat(summary.engagementRate()).isEqualByComparingTo("15.00");
+            assertThat(summary.profileUrl())
+                    .isEqualTo("https://www.instagram.com/creator.handle/");
             assertThat(summary.mediaCollectedAt()).isEqualTo(COLLECTED_AT);
         });
         verify(applicationRepository).searchAdmin(
@@ -130,20 +138,22 @@ class ApplicationAdminServiceTest {
 
     @Test
     void detailCalculatesMeasuredOnlyAveragesCadenceFormatsAndEngagement() {
-        application.completeMediaCollection(COLLECTED_AT);
+        application.completeMediaCollection(COLLECTED_AT, new BigDecimal("15.00"));
         List<ApplicationMedia> contents = List.of(
-                media("post-1", 0, LocalDateTime.of(2026, 8, 1, 10, 0),
-                        ContentType.FEED, 100L, 10L, 5L),
-                media("post-2", 1, LocalDateTime.of(2026, 8, 11, 10, 0),
-                        ContentType.SHORT_FORM, null, 20L, null),
-                media("post-3", 2, LocalDateTime.of(2026, 8, 20, 10, 0),
+                media("post-1", 0, 0, LocalDateTime.of(2026, 8, 1, 10, 0),
+                        ContentType.POST, 100L, 10L, 5L),
+                media("post-1", 0, 1, LocalDateTime.of(2026, 8, 1, 10, 0),
+                        ContentType.POST, 100L, 10L, 5L),
+                media("post-2", 1, 0, LocalDateTime.of(2026, 8, 11, 10, 0),
+                        ContentType.REELS, null, 20L, null),
+                media("post-3", 2, 0, LocalDateTime.of(2026, 8, 20, 10, 0),
                         null, 300L, null, 7L),
-                media("old", 3, LocalDateTime.of(2026, 5, 1, 10, 0),
-                        ContentType.FEED, 999L, 999L, 999L));
+                media("old", 3, 0, LocalDateTime.of(2026, 5, 1, 10, 0),
+                        ContentType.POST, 999L, 999L, 999L));
         when(applicationRepository.findById(1L)).thenReturn(Optional.of(application));
         when(userRepository.findById(10L)).thenReturn(Optional.of(user));
         when(generationRepository.findById(20L)).thenReturn(Optional.of(generation));
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L))
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
                 .thenReturn(contents);
 
         var result = service.findDetail(1L);
@@ -164,20 +174,23 @@ class ApplicationAdminServiceTest {
         assertThat(metrics.averageLikeCount().sampleCount()).isEqualTo(2);
         assertThat(metrics.averageCommentCount().value()).isEqualByComparingTo("6.00");
         assertThat(metrics.averageCommentCount().sampleCount()).isEqualTo(2);
-        assertThat(metrics.engagementRate().value()).isEqualByComparingTo("1.50");
+        assertThat(metrics.engagementRate().value()).isEqualByComparingTo("15.00");
         assertThat(metrics.engagementRate().sampleCount()).isEqualTo(1);
         assertThat(metrics.contentFormats())
                 .extracting(format -> format.contentType() + ":" + format.count())
-                .containsExactly("FEED:1", "SHORT_FORM:1", "UNKNOWN:1");
-        assertThat(result.contents()).hasSize(4);
+                .containsExactly("POST:1", "REELS:1", "UNKNOWN:1");
+        assertThat(result.profileUrl())
+                .isEqualTo("https://www.instagram.com/creator.handle/");
+        assertThat(result.contents()).hasSize(5);
     }
 
     @Test
     void detailKeepsUncollectedMetricsNullInsteadOfTreatingThemAsZero() {
+        ReflectionTestUtils.setField(application, "engagementRate", null);
         when(applicationRepository.findById(1L)).thenReturn(Optional.of(application));
         when(userRepository.findById(10L)).thenReturn(Optional.of(user));
         when(generationRepository.findById(20L)).thenReturn(Optional.of(generation));
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L))
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
                 .thenReturn(List.of());
 
         var metrics = service.findDetail(1L).metrics();
@@ -194,6 +207,7 @@ class ApplicationAdminServiceTest {
     private ApplicationMedia media(
             String contentId,
             int sequenceNo,
+            int mediaSequenceNo,
             LocalDateTime publishedAt,
             ContentType contentType,
             Long views,
@@ -203,9 +217,12 @@ class ApplicationAdminServiceTest {
                 .applicationId(1L)
                 .snsCode(SnsPlatform.INSTAGRAM)
                 .snsContentId(contentId)
+                .snsMediaId(contentId + "-media-" + mediaSequenceNo)
                 .contentUrl("https://example.com/" + contentId)
                 .contentType(contentType)
+                .mediaType(MediaType.IMAGE)
                 .sequenceNo(sequenceNo)
+                .mediaSequenceNo(mediaSequenceNo)
                 .publishedAt(publishedAt)
                 .viewCount(views)
                 .likeCount(likes)

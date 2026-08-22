@@ -32,6 +32,7 @@ public class InstagramDiscoveryService {
 
     private final MetaGraphApiClient metaGraphApiClient;
     private final InstagramEngagementCalculator engagementCalculator;
+    private final PublicEmailExtractor publicEmailExtractor;
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final TransactionTemplate transactionTemplate;
@@ -102,6 +103,7 @@ public class InstagramDiscoveryService {
                     .snsCode(SnsPlatform.INSTAGRAM.name())
                     .accountId(instagramId)
                     .creatorName(username)
+                    .email(publicEmailExtractor.extract(discovered.biography()).orElse(null))
                     .followerCount(discovered.followersCount())
                     .lastContentAt(lastContentAt)
                     .engagementRate(engagementRate)

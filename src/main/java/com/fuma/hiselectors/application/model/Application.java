@@ -44,6 +44,9 @@ public class Application extends BaseTimeEntity {
     @Column(name = "sns_account_id", nullable = false, length = 200)
     private String snsAccountId;
 
+    @Column(name = "profile_url", length = 500)
+    private String profileUrl;
+
     @Column(name = "follower_count")
     private Long followerCount;
 
@@ -55,7 +58,7 @@ public class Application extends BaseTimeEntity {
     @Column(name = "last_content_at")
     private LocalDateTime lastContentAt;
 
-    @Column(name = "engagement_rate", precision = 5, scale = 2)
+    @Column(name = "engagement_rate", precision = 8, scale = 2)
     private BigDecimal engagementRate;
 
     @Column(name = "alarm_yn", nullable = false)
@@ -96,6 +99,7 @@ public class Application extends BaseTimeEntity {
 
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
+                        String profileUrl,
                         Long followerCount, Long contentCount,
                         LocalDateTime lastContentAt, BigDecimal engagementRate,
                         boolean alarmYn, LocalDateTime policyAgreedAt, ApplicationStatus status) {
@@ -103,6 +107,7 @@ public class Application extends BaseTimeEntity {
         this.generationId = generationId;
         this.snsCode = snsCode;
         this.snsAccountId = snsAccountId;
+        this.profileUrl = profileUrl;
         this.followerCount = followerCount;
         this.contentCount = contentCount;
         this.lastContentAt = lastContentAt;
@@ -112,9 +117,10 @@ public class Application extends BaseTimeEntity {
         this.status = status;
     }
 
-    public void completeMediaCollection(LocalDateTime collectedAt) {
+    public void completeMediaCollection(LocalDateTime collectedAt, BigDecimal engagementRate) {
         this.mediaCollectionStatus = MediaCollectionStatus.DONE;
         this.mediaCollectedAt = collectedAt;
+        this.engagementRate = engagementRate;
         this.mediaCollectionError = null;
     }
 
