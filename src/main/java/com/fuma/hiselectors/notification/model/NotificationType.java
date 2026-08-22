@@ -9,6 +9,7 @@ public enum NotificationType {
     FIRST_REVENUE,
     LAST_MONTH_SALES,
     MID_MONTH_ACTIVITY,
+    NO_PAGE_VIEWS,
     SALES_100K,
     SALES_500K,
     SALES_1M,

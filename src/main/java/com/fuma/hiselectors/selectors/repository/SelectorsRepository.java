@@ -44,6 +44,26 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
             @Param("startInclusive") java.time.LocalDateTime startInclusive,
             @Param("endExclusive") java.time.LocalDateTime endExclusive);
 
+    @Query("""
+            select distinct s.id
+            from Selectors s
+            join SelectorsGeneration sg on sg.selectorsId = s.id
+            join Generation g on g.id = sg.generationId
+            where s.deleted = false
+              and s.selectorsRoleId = :activeRole
+              and g.activityStartDate <= :now
+              and g.activityEndDate >= :now
+              and g.activityStartDate <= :cutoff
+              and sg.createdAt <= :cutoff
+              and not exists (
+                  select 1 from ClickLog c where c.selectorsId = s.id)
+            order by s.id
+            """)
+    List<Long> findActiveIdsWithoutViewsAfterActivityStarted(
+            @Param("activeRole") String activeRole,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("cutoff") java.time.LocalDateTime cutoff);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Selectors s where s.id = :selectorsId")
     Optional<Selectors> findByIdForUpdate(@Param("selectorsId") Long selectorsId);

@@ -18,6 +18,7 @@ public class NotificationMessageFactory {
             case FIRST_REVENUE -> firstRevenue(name, detail);
             case LAST_MONTH_SALES -> lastMonthSales(name);
             case MID_MONTH_ACTIVITY -> midMonthActivity(name);
+            case NO_PAGE_VIEWS -> noPageViews(name);
             case SALES_100K, SALES_500K, SALES_1M, SALES_5M, SALES_10M ->
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
@@ -146,6 +147,15 @@ public class NotificationMessageFactory {
                 name + "님, 이번 달에는 아직 새로운 구매가 발생하지 않았어요. "
                         + "부담 없이 이전에 반응이 좋았던 상품을 다시 소개해 보셔도 좋겠습니다.",
                 "상품 확인하기"
+        );
+    }
+
+    private MessageText noPageViews(String name) {
+        return new MessageText(
+                "[셀렉터스 페이지 확인 안내]",
+                name + "님, 아직 셀렉터스 페이지의 조회 기록이 없어요. "
+                        + "활동 중이라면 페이지가 정상적으로 열리는지 한 번 확인해 주세요.",
+                "페이지 확인하기"
         );
     }
 

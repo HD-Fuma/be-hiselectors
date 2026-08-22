@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
+import com.fuma.hiselectors.analytics.repository.ClickLogRepository;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.service.NotificationService;
@@ -35,6 +36,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class PerformanceNotificationServiceTest {
 
     private SelectorsRepository selectorsRepository;
+    private ClickLogRepository clickLogRepository;
     private NotificationRepository notificationRepository;
     private NotificationService notificationService;
     private PurchaseHistoryRepository purchaseHistoryRepository;
@@ -46,6 +48,7 @@ class PerformanceNotificationServiceTest {
     @BeforeEach
     void setUp() {
         selectorsRepository = mock(SelectorsRepository.class);
+        clickLogRepository = mock(ClickLogRepository.class);
         notificationRepository = mock(NotificationRepository.class);
         notificationService = mock(NotificationService.class);
         purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
@@ -56,7 +59,7 @@ class PerformanceNotificationServiceTest {
         service = new PerformanceNotificationService(
                 selectorsRepository, notificationRepository, notificationService,
                 purchaseHistoryRepository, applicationRepository, commissionRateCalculator,
-                clock);
+                clickLogRepository, clock);
         ReflectionTestUtils.setField(service, "senderAdminLoginId", "sender-admin");
 
         selectors = mock(Selectors.class);
@@ -406,6 +409,36 @@ class PerformanceNotificationServiceTest {
         when(selectors.isActive()).thenReturn(false);
 
         service.notifyMidMonthActivity(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void sendsNoPageViews() {
+        service.notifyNoPageViews(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.NO_PAGE_VIEWS);
+    }
+
+    @Test
+    void sendsNoPageViewsOnlyOnce() {
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.NO_PAGE_VIEWS.getPurposeCode(), 2L)).thenReturn(1L);
+
+        service.notifyNoPageViews(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void skipsNoPageViewsWhenAViewWasRecorded() {
+        when(clickLogRepository.existsBySelectorsId(2L)).thenReturn(true);
+
+        service.notifyNoPageViews(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }

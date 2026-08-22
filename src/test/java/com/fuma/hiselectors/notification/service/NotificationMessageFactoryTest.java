@@ -102,4 +102,16 @@ class NotificationMessageFactoryTest {
                         + "부담 없이 이전에 반응이 좋았던 상품을 다시 소개해 보셔도 좋겠습니다.");
         assertThat(message.buttonTitle()).isEqualTo("상품 확인하기");
     }
+
+    @Test
+    void createsNoPageViewsMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.NO_PAGE_VIEWS, "셀렉터스", null);
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 페이지 확인 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터스님, 아직 셀렉터스 페이지의 조회 기록이 없어요. "
+                        + "활동 중이라면 페이지가 정상적으로 열리는지 한 번 확인해 주세요.");
+        assertThat(message.buttonTitle()).isEqualTo("페이지 확인하기");
+    }
 }

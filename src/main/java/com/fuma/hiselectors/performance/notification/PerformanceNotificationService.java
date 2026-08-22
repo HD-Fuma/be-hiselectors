@@ -2,6 +2,7 @@ package com.fuma.hiselectors.performance.notification;
 
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.analytics.repository.ClickLogRepository;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
@@ -51,6 +52,7 @@ public class PerformanceNotificationService {
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final ApplicationRepository applicationRepository;
     private final CommissionRateCalculator commissionRateCalculator;
+    private final ClickLogRepository clickLogRepository;
     private final Clock clock;
 
     @Value("${performance.notification.sender-admin-login-id:}")
@@ -224,6 +226,25 @@ public class PerformanceNotificationService {
             sendSafely(selectors, NotificationType.MID_MONTH_ACTIVITY, null);
         } catch (RuntimeException exception) {
             log.warn("월 중반 활동 알림 처리 실패: selectorsId={}", selectorsId, exception);
+        }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyNoPageViews(Long selectorsId) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
+            if (selectors == null || selectors.getUserId() == null
+                    || selectors.isDeleted() || !selectors.isActive()
+                    || clickLogRepository.existsBySelectorsId(selectorsId)
+                    || alreadySent(NotificationType.NO_PAGE_VIEWS, selectorsId)) {
+                return;
+            }
+            sendSafely(selectors, NotificationType.NO_PAGE_VIEWS, null);
+        } catch (RuntimeException exception) {
+            log.warn("페이지 무조회 알림 처리 실패: selectorsId={}", selectorsId, exception);
         }
     }
 

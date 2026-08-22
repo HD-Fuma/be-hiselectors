@@ -42,7 +42,7 @@ class PerformanceNotificationSchedulerTest {
     }
 
     @Test
-    void skipsWeeklyGrowthOnOtherDays() {
+    void skipsWeeklyAndMidMonthChecksOnOtherDays() {
         PurchaseHistoryRepository purchaseHistoryRepository =
                 mock(PurchaseHistoryRepository.class);
         PerformanceNotificationService notificationService =
@@ -55,7 +55,11 @@ class PerformanceNotificationSchedulerTest {
 
         scheduler.sendScheduledNotifications();
 
-        verifyNoInteractions(purchaseHistoryRepository, selectorsRepository, notificationService);
+        verify(selectorsRepository).findActiveIdsWithoutViewsAfterActivityStarted(
+                Selectors.ACTIVE_ROLE,
+                LocalDateTime.of(2026, 8, 25, 9, 0),
+                LocalDateTime.of(2026, 8, 18, 9, 0));
+        verifyNoInteractions(purchaseHistoryRepository, notificationService);
     }
 
     @Test
@@ -72,6 +76,11 @@ class PerformanceNotificationSchedulerTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0),
                 LocalDateTime.of(2026, 9, 16, 0, 0)))
                 .thenReturn(List.of(2L, 3L));
+        when(selectorsRepository.findActiveIdsWithoutViewsAfterActivityStarted(
+                Selectors.ACTIVE_ROLE,
+                LocalDateTime.of(2026, 9, 16, 9, 0),
+                LocalDateTime.of(2026, 9, 9, 9, 0)))
+                .thenReturn(List.of(2L, 4L));
         PerformanceNotificationScheduler scheduler = new PerformanceNotificationScheduler(
                 purchaseHistoryRepository, selectorsRepository, notificationService, clock);
 
@@ -79,5 +88,28 @@ class PerformanceNotificationSchedulerTest {
 
         verify(notificationService).notifyMidMonthActivity(2L);
         verify(notificationService).notifyMidMonthActivity(3L);
+        verify(notificationService).notifyNoPageViews(4L);
+    }
+
+    @Test
+    void checksNoPageViewsEveryDay() {
+        PurchaseHistoryRepository purchaseHistoryRepository =
+                mock(PurchaseHistoryRepository.class);
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        PerformanceNotificationService notificationService =
+                mock(PerformanceNotificationService.class);
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-09-17T00:00:00Z"), ZoneId.of("Asia/Seoul"));
+        when(selectorsRepository.findActiveIdsWithoutViewsAfterActivityStarted(
+                Selectors.ACTIVE_ROLE,
+                LocalDateTime.of(2026, 9, 17, 9, 0),
+                LocalDateTime.of(2026, 9, 10, 9, 0)))
+                .thenReturn(List.of(5L));
+        PerformanceNotificationScheduler scheduler = new PerformanceNotificationScheduler(
+                purchaseHistoryRepository, selectorsRepository, notificationService, clock);
+
+        scheduler.sendScheduledNotifications();
+
+        verify(notificationService).notifyNoPageViews(5L);
     }
 }
