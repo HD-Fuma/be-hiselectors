@@ -2,13 +2,20 @@ package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.inspection.service.StaleContentInspectionService;
+import com.fuma.hiselectors.logging.BatchEventLogger;
+import com.fuma.hiselectors.logging.BatchLogContext;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,8 +40,109 @@ class ContentBatchServiceTest {
     @Mock
     private StaleContentInspectionService staleContentInspectionService;
 
+    @Mock
+    private BatchEventLogger batchEventLogger;
+
+    @Mock
+    private BatchLogContext batchLogContext;
+
     @InjectMocks
     private ContentBatchService service;
+
+    @Test
+    void logsOneCombinedPartialFailureEventForInstagramAndYoutube() {
+        when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
+        when(newContentService.collect()).thenReturn(new NewContentService.NewContentResult(
+                9,
+                1,
+                Map.of(
+                        SnsPlatform.INSTAGRAM,
+                        new NewContentService.PlatformCollectionStats(14, 6, 6, 0),
+                        SnsPlatform.YOUTUBE,
+                        new NewContentService.PlatformCollectionStats(7, 3, 3, 1))));
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(
+                        4,
+                        2,
+                        Map.of(
+                                SnsPlatform.INSTAGRAM,
+                                new StoredContentService.PlatformStoredContentStats(2, 0),
+                                SnsPlatform.YOUTUBE,
+                                new StoredContentService.PlatformStoredContentStats(1, 2))));
+
+        service.run();
+
+        verify(batchEventLogger).partialFailure(
+                batchLogContext,
+                Map.ofEntries(
+                        Map.entry("instagramNewCandidateCount", 14L),
+                        Map.entry("instagramSelectorsContentCount", 6L),
+                        Map.entry("instagramChangedContentCount", 2L),
+                        Map.entry("instagramSavedVersionCount", 8L),
+                        Map.entry("instagramFailedCount", 0L),
+                        Map.entry("youtubeNewCandidateCount", 7L),
+                        Map.entry("youtubeSelectorsContentCount", 3L),
+                        Map.entry("youtubeChangedContentCount", 1L),
+                        Map.entry("youtubeSavedVersionCount", 4L),
+                        Map.entry("youtubeFailedCount", 3L),
+                        Map.entry("failedStageCount", 0L)),
+                Map.of());
+        verify(batchEventLogger).start("content-sync");
+        verifyNoMoreInteractions(batchEventLogger);
+    }
+
+    @Test
+    void logsSuccessWhenContentSyncCompletesWithoutFailure() {
+        when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
+        when(newContentService.collect()).thenReturn(new NewContentService.NewContentResult(
+                1,
+                0,
+                Map.of(
+                        SnsPlatform.INSTAGRAM,
+                        new NewContentService.PlatformCollectionStats(2, 1, 1, 0))));
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(
+                        1,
+                        0,
+                        Map.of(
+                                SnsPlatform.INSTAGRAM,
+                                new StoredContentService.PlatformStoredContentStats(1, 0))));
+
+        service.run();
+
+        verify(batchEventLogger).start("content-sync");
+        verify(batchEventLogger).succeeded(eq(batchLogContext), anyMap(), eq(Map.of()));
+        verifyNoMoreInteractions(batchEventLogger);
+    }
+
+    @Test
+    void logsNoTargetsWhenBothContentStagesHaveNoPlatformResults() {
+        when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
+        when(newContentService.collect()).thenReturn(
+                new NewContentService.NewContentResult(0, 0));
+        when(storedContentService.check()).thenReturn(
+                new StoredContentService.StoredContentResult(0, 0));
+
+        service.run();
+
+        verify(batchEventLogger).start("content-sync");
+        verify(batchEventLogger).skipped(
+                eq(batchLogContext), eq("NO_TARGETS"), anyMap(), eq(Map.of()));
+        verifyNoMoreInteractions(batchEventLogger);
+    }
+
+    @Test
+    void logsFailureAndRethrowsUnexpectedError() {
+        AssertionError failure = new AssertionError("unexpected");
+        when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
+        when(newContentService.collect()).thenThrow(failure);
+
+        assertThatThrownBy(service::run).isSameAs(failure);
+
+        verify(batchEventLogger).start("content-sync");
+        verify(batchEventLogger).failed(batchLogContext, failure);
+        verifyNoMoreInteractions(batchEventLogger);
+    }
 
     @Test
     void runsNewCollectionBeforeStoredContentCheck() {
