@@ -1,7 +1,6 @@
 package com.fuma.hiselectors.content.model;
 
 import com.fuma.hiselectors.common.BaseTimeEntity;
-import com.fuma.hiselectors.inspection.model.ContentReportData;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

@@ -126,7 +126,7 @@ kakao:
   oauth:
     rest-api-key: ${KAKAO_REST_API_KEY:}
     client-secret: ${KAKAO_CLIENT_SECRET:}
-    redirect-uri: ${KAKAO_REDIRECT_URI:https://hiselectors.shop/#/mypage/member}
+    redirect-uri: ${KAKAO_REDIRECT_URI:https://hiselectors.shop/mypage/member}
     sender-scope: friends,talk_message,profile_nickname
     recipient-scope: friends,talk_message
   message:
@@ -143,7 +143,7 @@ proposal:
   mail:
     admin-position: ${PROPOSAL_ADMIN_POSITION:매니저}
     admin-email: ${PROPOSAL_ADMIN_EMAIL:official@hiselectors.shop}
-    apply-url: ${PROPOSAL_APPLY_URL:https://hiselectors.shop/#/apply}
+    apply-url: ${PROPOSAL_APPLY_URL:https://hiselectors.shop/apply}
 
 selectors:
   lifecycle:

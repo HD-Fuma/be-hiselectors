@@ -17,6 +17,9 @@ public interface ViolationItemRepository extends JpaRepository<ViolationItem, Lo
     @Query("select vi from ViolationItem vi where vi.id = :id")
     Optional<ViolationItem> findByIdForUpdate(@Param("id") Long id);
 
+    List<ViolationItem> findAllByContentIdAndStatusInOrderByIdAsc(
+            Long contentId, Collection<ViolationStatus> statuses);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select vi from ViolationItem vi where vi.contentId = :contentId")
     List<ViolationItem> findAllByContentIdForUpdate(@Param("contentId") Long contentId);

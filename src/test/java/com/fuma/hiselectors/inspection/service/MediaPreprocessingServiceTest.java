@@ -11,8 +11,8 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.ai.YoutubeIntegratedInspectionClient;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
-import com.fuma.hiselectors.inspection.model.ContentReportData;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
+import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
@@ -62,7 +62,7 @@ class MediaPreprocessingServiceTest {
         InspectionPolicy active = policy(2L, "new-extraction");
         Content content = content();
         ContentMedia video = video(Map.of());
-        AiInspectionResult aiResult = new AiInspectionResult(
+        AiInspectionResponse aiResult = new AiInspectionResponse(
                 ContentReportData.empty(), List.of());
         when(youtube.inspect("abc123", content, video, List.of(video), active))
                 .thenReturn(new IntegratedInspectionResult(
