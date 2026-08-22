@@ -13,6 +13,9 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +49,7 @@ public class PerformanceNotificationService {
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final ApplicationRepository applicationRepository;
     private final CommissionRateCalculator commissionRateCalculator;
+    private final Clock clock;
 
     @Value("${performance.notification.sender-admin-login-id:}")
     private String senderAdminLoginId;
@@ -70,36 +74,9 @@ public class PerformanceNotificationService {
         }
     }
 
+    /** 구매확정 후 잠금을 한 번만 잡고 관련 성과 알림을 함께 판정한다. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void notifyFirstRevenue(Long selectorsId) {
-        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
-            return;
-        }
-        try {
-            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
-            if (selectors == null || selectors.getUserId() == null
-                    || selectors.getApplicationId() == null
-                    || alreadySent(NotificationType.FIRST_REVENUE, selectorsId)) {
-                return;
-            }
-            Application application = applicationRepository.findById(selectors.getApplicationId())
-                    .orElse(null);
-            if (application == null) {
-                return;
-            }
-            BigDecimal revenue = confirmedRevenue(selectorsId, application);
-            if (revenue.signum() <= 0) {
-                return;
-            }
-            send(selectors, NotificationType.FIRST_REVENUE,
-                    String.format(Locale.KOREA, "%,d", revenue.longValueExact()));
-        } catch (RuntimeException exception) {
-            log.warn("첫 수익 알림 발송 실패: selectorsId={}", selectorsId, exception);
-        }
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void notifySalesMilestone(Long selectorsId) {
+    public void notifyConfirmedPerformance(Long selectorsId) {
         if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
             return;
         }
@@ -110,15 +87,39 @@ public class PerformanceNotificationService {
             }
             BigDecimal confirmedSales = purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                     selectorsId, PurchaseStatus.PURCHASE_CONFIRMED);
-            SalesMilestone milestone = highestReachedMilestone(confirmedSales);
-            if (milestone == null || alreadySent(milestone.type(), selectorsId)) {
-                return;
-            }
-            send(selectors, milestone.type(),
-                    String.format(Locale.KOREA, "%,d", milestone.amount()));
+            notifyFirstRevenue(selectors, confirmedSales);
+            notifySalesMilestone(selectors, confirmedSales);
+            notifyOrderMilestone(selectors);
+            notifyLastMonthSalesSurpassed(selectors);
         } catch (RuntimeException exception) {
-            log.warn("누적 매출 알림 발송 실패: selectorsId={}", selectorsId, exception);
+            log.warn("구매확정 성과 알림 처리 실패: selectorsId={}", selectorsId, exception);
         }
+    }
+
+    private void notifyFirstRevenue(Selectors selectors, BigDecimal confirmedSales) {
+        if (confirmedSales.signum() <= 0 || selectors.getApplicationId() == null
+                || alreadySent(NotificationType.FIRST_REVENUE, selectors.getId())) {
+            return;
+        }
+        Application application = applicationRepository.findById(selectors.getApplicationId())
+                .orElse(null);
+        if (application == null) {
+            return;
+        }
+        BigDecimal revenue = confirmedRevenue(confirmedSales, application);
+        if (revenue.signum() > 0) {
+            sendSafely(selectors, NotificationType.FIRST_REVENUE,
+                    String.format(Locale.KOREA, "%,d", revenue.longValueExact()));
+        }
+    }
+
+    private void notifySalesMilestone(Selectors selectors, BigDecimal confirmedSales) {
+        SalesMilestone milestone = highestReachedMilestone(confirmedSales);
+        if (milestone == null || alreadySent(milestone.type(), selectors.getId())) {
+            return;
+        }
+        sendSafely(selectors, milestone.type(),
+                String.format(Locale.KOREA, "%,d", milestone.amount()));
     }
 
     private SalesMilestone highestReachedMilestone(BigDecimal confirmedSales) {
@@ -130,27 +131,35 @@ public class PerformanceNotificationService {
         return null;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void notifyOrderMilestone(Long selectorsId) {
-        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+    private void notifyOrderMilestone(Selectors selectors) {
+        long confirmedOrders = purchaseHistoryRepository
+                .countDistinctOrdersBySelectorsIdAndStatusIn(
+                        selectors.getId(), List.of(PurchaseStatus.PURCHASE_CONFIRMED));
+        OrderMilestone milestone = highestReachedOrderMilestone(confirmedOrders);
+        if (milestone == null || alreadySent(milestone.type(), selectors.getId())) {
             return;
         }
-        try {
-            Selectors selectors = selectorsRepository.findByIdForUpdate(selectorsId).orElse(null);
-            if (selectors == null || selectors.getUserId() == null) {
-                return;
-            }
-            long confirmedOrders = purchaseHistoryRepository
-                    .countDistinctOrdersBySelectorsIdAndStatusIn(
-                            selectorsId, List.of(PurchaseStatus.PURCHASE_CONFIRMED));
-            OrderMilestone milestone = highestReachedOrderMilestone(confirmedOrders);
-            if (milestone == null || alreadySent(milestone.type(), selectorsId)) {
-                return;
-            }
-            send(selectors, milestone.type(), Long.toString(milestone.orders()));
-        } catch (RuntimeException exception) {
-            log.warn("누적 판매 알림 발송 실패: selectorsId={}", selectorsId, exception);
+        sendSafely(selectors, milestone.type(), Long.toString(milestone.orders()));
+    }
+
+    private void notifyLastMonthSalesSurpassed(Selectors selectors) {
+        YearMonth currentMonth = YearMonth.now(clock);
+        LocalDateTime currentMonthStart = currentMonth.atDay(1).atStartOfDay();
+        LocalDateTime lastMonthStart = currentMonth.minusMonths(1).atDay(1).atStartOfDay();
+        LocalDateTime nextMonthStart = currentMonth.plusMonths(1).atDay(1).atStartOfDay();
+        BigDecimal lastMonthSales = purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                selectors.getId(), PurchaseStatus.PURCHASE_CONFIRMED,
+                lastMonthStart, currentMonthStart);
+        BigDecimal currentMonthSales = purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                selectors.getId(), PurchaseStatus.PURCHASE_CONFIRMED,
+                currentMonthStart, nextMonthStart);
+        if (currentMonthSales.compareTo(lastMonthSales) <= 0
+                || notificationRepository.countByPurposeAndReferenceInPeriod(
+                NotificationType.LAST_MONTH_SALES.getPurposeCode(), selectors.getId(),
+                currentMonthStart, nextMonthStart) > 0) {
+            return;
         }
+        sendSafely(selectors, NotificationType.LAST_MONTH_SALES, null);
     }
 
     private OrderMilestone highestReachedOrderMilestone(long confirmedOrders) {
@@ -162,9 +171,7 @@ public class PerformanceNotificationService {
         return null;
     }
 
-    private BigDecimal confirmedRevenue(Long selectorsId, Application application) {
-        BigDecimal confirmedSales = purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
-                selectorsId, PurchaseStatus.PURCHASE_CONFIRMED);
+    private BigDecimal confirmedRevenue(BigDecimal confirmedSales, Application application) {
         BigDecimal rate = commissionRateCalculator.calculate(
                 application.getSnsCode(), application.getFollowerCount());
         return confirmedSales.multiply(rate)
@@ -189,6 +196,15 @@ public class PerformanceNotificationService {
                         receiverName(selectors),
                         detail,
                         type));
+    }
+
+    private void sendSafely(Selectors selectors, NotificationType type, String detail) {
+        try {
+            send(selectors, type, detail);
+        } catch (RuntimeException exception) {
+            log.warn("성과 알림 발송 실패: selectorsId={}, type={}",
+                    selectors.getId(), type, exception);
+        }
     }
 
     private String receiverName(Selectors selectors) {

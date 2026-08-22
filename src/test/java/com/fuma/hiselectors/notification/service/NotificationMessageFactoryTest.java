@@ -56,4 +56,16 @@ class NotificationMessageFactoryTest {
                         + "소개해 주신 상품에 꾸준한 관심이 이어지고 있습니다.");
         assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
     }
+
+    @Test
+    void createsLastMonthSalesSurpassedMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.LAST_MONTH_SALES, "셀렉터", null);
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 매출 성장 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터님, 이번 달 매출이 지난달 매출을 넘어섰어요. "
+                        + "꾸준한 활동으로 좋은 흐름이 이어지고 있습니다.");
+        assertThat(message.buttonTitle()).isEqualTo("성과 확인하기");
+    }
 }

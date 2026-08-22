@@ -7,6 +7,7 @@ public enum NotificationType {
     DEAD_LINK_NOTICE,
     FIRST_PURCHASE,
     FIRST_REVENUE,
+    LAST_MONTH_SALES,
     SALES_100K,
     SALES_500K,
     SALES_1M,

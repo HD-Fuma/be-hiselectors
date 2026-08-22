@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +22,10 @@ import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,9 +51,12 @@ class PerformanceNotificationServiceTest {
         purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
         applicationRepository = mock(ApplicationRepository.class);
         commissionRateCalculator = mock(CommissionRateCalculator.class);
+        Clock clock = Clock.fixed(
+                Instant.parse("2026-08-22T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         service = new PerformanceNotificationService(
                 selectorsRepository, notificationRepository, notificationService,
-                purchaseHistoryRepository, applicationRepository, commissionRateCalculator);
+                purchaseHistoryRepository, applicationRepository, commissionRateCalculator,
+                clock);
         ReflectionTestUtils.setField(service, "senderAdminLoginId", "sender-admin");
 
         selectors = mock(Selectors.class);
@@ -64,6 +72,22 @@ class PerformanceNotificationServiceTest {
         when(applicationRepository.findById(30L)).thenReturn(Optional.of(application));
         when(commissionRateCalculator.calculate(SnsPlatform.INSTAGRAM, 1_000L))
                 .thenReturn(new BigDecimal("3.00"));
+        when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(BigDecimal.ZERO);
+        when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
+                2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(0L);
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(BigDecimal.ZERO);
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.FIRST_REVENUE.getPurposeCode(), 2L)).thenReturn(1L);
+        for (NotificationType type : java.util.List.of(
+                NotificationType.SALES_100K, NotificationType.SALES_500K,
+                NotificationType.SALES_1M, NotificationType.SALES_5M,
+                NotificationType.SALES_10M)) {
+            when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                    type.getPurposeCode(), 2L)).thenReturn(1L);
+        }
     }
 
     @Test
@@ -116,8 +140,10 @@ class PerformanceNotificationServiceTest {
     void sendsFirstRevenueWhenConfirmedCommissionBecomesPositive() {
         when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("100000"));
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.FIRST_REVENUE.getPurposeCode(), 2L)).thenReturn(0L);
 
-        service.notifyFirstRevenue(2L);
+        service.notifyConfirmedPerformance(2L);
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
@@ -133,10 +159,22 @@ class PerformanceNotificationServiceTest {
     void skipsFirstRevenueWhenRoundedCommissionIsZero() {
         when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(BigDecimal.ONE);
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.FIRST_REVENUE.getPurposeCode(), 2L)).thenReturn(0L);
 
-        service.notifyFirstRevenue(2L);
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void evaluatesConfirmedPerformanceWithOneLockAndOneLifetimeSalesQuery() {
+        service.notifyConfirmedPerformance(2L);
+
+        verify(selectorsRepository, times(1)).findByIdForUpdate(2L);
+        verify(purchaseHistoryRepository, times(1))
+                .sumPaidAmountBySelectorsIdAndStatus(
+                        2L, PurchaseStatus.PURCHASE_CONFIRMED);
     }
 
     @Test
@@ -146,8 +184,8 @@ class PerformanceNotificationServiceTest {
         when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
                 NotificationType.FIRST_REVENUE.getPurposeCode(), 2L)).thenReturn(0L, 1L);
 
-        service.notifyFirstRevenue(2L);
-        service.notifyFirstRevenue(2L);
+        service.notifyConfirmedPerformance(2L);
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService).sendToFriend(any(), any());
     }
@@ -156,8 +194,10 @@ class PerformanceNotificationServiceTest {
     void sendsOnlyHighestReachedSalesMilestone() {
         when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("1200000"));
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.SALES_1M.getPurposeCode(), 2L)).thenReturn(0L);
 
-        service.notifySalesMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
@@ -174,7 +214,7 @@ class PerformanceNotificationServiceTest {
         when(purchaseHistoryRepository.sumPaidAmountBySelectorsIdAndStatus(
                 2L, PurchaseStatus.PURCHASE_CONFIRMED)).thenReturn(new BigDecimal("99999"));
 
-        service.notifySalesMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }
@@ -186,7 +226,7 @@ class PerformanceNotificationServiceTest {
         when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
                 NotificationType.SALES_1M.getPurposeCode(), 2L)).thenReturn(1L);
 
-        service.notifySalesMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }
@@ -196,7 +236,7 @@ class PerformanceNotificationServiceTest {
         when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
                 2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(67L);
 
-        service.notifyOrderMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
@@ -213,7 +253,7 @@ class PerformanceNotificationServiceTest {
         when(purchaseHistoryRepository.countDistinctOrdersBySelectorsIdAndStatusIn(
                 2L, java.util.List.of(PurchaseStatus.PURCHASE_CONFIRMED))).thenReturn(9L);
 
-        service.notifyOrderMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }
@@ -225,7 +265,65 @@ class PerformanceNotificationServiceTest {
         when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
                 NotificationType.ORDERS_50.getPurposeCode(), 2L)).thenReturn(1L);
 
-        service.notifyOrderMilestone(2L);
+        service.notifyConfirmedPerformance(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void sendsWhenCurrentMonthSalesSurpassLastMonth() {
+        LocalDateTime lastMonthStart = LocalDateTime.of(2026, 7, 1, 0, 0);
+        LocalDateTime currentMonthStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        LocalDateTime nextMonthStart = LocalDateTime.of(2026, 9, 1, 0, 0);
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED,
+                lastMonthStart, currentMonthStart)).thenReturn(new BigDecimal("500000"));
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                2L, PurchaseStatus.PURCHASE_CONFIRMED,
+                currentMonthStart, nextMonthStart)).thenReturn(new BigDecimal("600000"));
+
+        service.notifyConfirmedPerformance(2L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.LAST_MONTH_SALES);
+    }
+
+    @Test
+    void treatsPositiveCurrentMonthSalesAsSurpassingZeroLastMonthSales() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(BigDecimal.ZERO, BigDecimal.ONE);
+
+        service.notifyConfirmedPerformance(2L);
+
+        verify(notificationService).sendToFriend(any(), any());
+    }
+
+    @Test
+    void skipsWhenCurrentMonthSalesDoNotSurpassLastMonth() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(new BigDecimal("500000"), new BigDecimal("500000"));
+
+        service.notifyConfirmedPerformance(2L);
+
+        verify(notificationService, never()).sendToFriend(any(), any());
+    }
+
+    @Test
+    void sendsLastMonthSalesSurpassedOnlyOncePerMonth() {
+        when(purchaseHistoryRepository.sumConfirmedSalesByConfirmedAt(
+                eq(2L), eq(PurchaseStatus.PURCHASE_CONFIRMED), any(), any()))
+                .thenReturn(BigDecimal.ZERO, BigDecimal.ONE);
+        when(notificationRepository.countByPurposeAndReferenceInPeriod(
+                NotificationType.LAST_MONTH_SALES.getPurposeCode(), 2L,
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 1, 0, 0))).thenReturn(1L);
+
+        service.notifyConfirmedPerformance(2L);
 
         verify(notificationService, never()).sendToFriend(any(), any());
     }

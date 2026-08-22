@@ -16,6 +16,7 @@ public class NotificationMessageFactory {
             case DEAD_LINK_NOTICE -> deadLinkNotice(name, detail);
             case FIRST_PURCHASE -> firstPurchase(name);
             case FIRST_REVENUE -> firstRevenue(name, detail);
+            case LAST_MONTH_SALES -> lastMonthSales(name);
             case SALES_100K, SALES_500K, SALES_1M, SALES_5M, SALES_10M ->
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
@@ -112,6 +113,15 @@ public class NotificationMessageFactory {
                 "[셀렉터스 첫 수익 안내]",
                 name + "님, 첫 정산 대상 수익 " + revenue + "원이 확정되었어요. "
                         + "자세한 내용은 성과 페이지에서 확인해 주세요.",
+                "성과 확인하기"
+        );
+    }
+
+    private MessageText lastMonthSales(String name) {
+        return new MessageText(
+                "[셀렉터스 매출 성장 안내]",
+                name + "님, 이번 달 매출이 지난달 매출을 넘어섰어요. "
+                        + "꾸준한 활동으로 좋은 흐름이 이어지고 있습니다.",
                 "성과 확인하기"
         );
     }
