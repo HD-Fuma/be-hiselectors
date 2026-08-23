@@ -56,14 +56,33 @@ class ProposalServiceTest {
             return saved;
         });
 
-        ProposalHistoryResponse response = service.propose("mgr", new ProposalCreateRequest(5L));
+        ProposalHistoryResponse response = service.propose(
+                "mgr", new ProposalCreateRequest(5L, "맞춤 제목", "맞춤 본문"));
 
         assertThat(response.proposalHistoryId()).isEqualTo(99L);
         assertThat(response.creatorId()).isEqualTo(5L);
         assertThat(response.creatorName()).isEqualTo("도윤의 집밥");
         assertThat(response.email()).isEqualTo("creator@example.com");
         assertThat(response.adminName()).isEqualTo("홍길동");
+        verify(proposalMailService).send(
+                any(CreatorPool.class), any(Admin.class),
+                org.mockito.ArgumentMatchers.eq("맞춤 제목"),
+                org.mockito.ArgumentMatchers.eq("맞춤 본문"));
+    }
+
+    @Test
+    void 제목과_본문을_생략하면_기본_템플릿으로_발송한다() {
+        when(adminRepository.findByLoginId("mgr")).thenReturn(Optional.of(admin(3L)));
+        when(creatorPoolRepository.findByIdAndDeletedFalse(5L))
+                .thenReturn(Optional.of(creator(5L, "creator@example.com")));
+        when(proposalHistoryRepository.save(any(ProposalHistory.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        service.propose("mgr", new ProposalCreateRequest(5L));
+
         verify(proposalMailService).send(any(CreatorPool.class), any(Admin.class));
+        verify(proposalMailService, never()).send(
+                any(CreatorPool.class), any(Admin.class), any(String.class), any(String.class));
     }
 
     @Test

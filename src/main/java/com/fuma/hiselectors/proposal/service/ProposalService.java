@@ -48,7 +48,11 @@ public class ProposalService {
 
         ProposalHistory saved = proposalHistoryRepository.save(
                 ProposalHistory.of(creator.getId(), admin.getId()));
-        proposalMailService.send(creator, admin);
+        if (request.subject() == null) {
+            proposalMailService.send(creator, admin);
+        } else {
+            proposalMailService.send(creator, admin, request.subject(), request.body());
+        }
 
         return new ProposalHistoryResponse(
                 saved.getId(),
