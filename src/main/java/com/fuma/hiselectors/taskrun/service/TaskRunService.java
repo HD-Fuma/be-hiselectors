@@ -2,12 +2,12 @@ package com.fuma.hiselectors.taskrun.service;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
 import java.time.Clock;
-import java.util.EnumSet;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -18,17 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TaskRunService {
 
-    private static final EnumSet<TaskType> SINGLETON_TYPES = EnumSet.of(
-            TaskType.CREATOR_SYNC,
-            TaskType.CONTENT_SYNC,
-            TaskType.APPLICATION_REPORT_GENERATION,
-            TaskType.CONTENT_REPORT_GENERATION,
-            TaskType.SETTLEMENT_CALCULATION);
-
     private final TaskRunRepository repository;
     private final TaskRunCreator creator;
     private final TaskRunConflictResolver conflictResolver;
     private final RequestFingerprint requestFingerprint;
+    private final TaskTypePolicy taskTypePolicy;
     private final Clock clock;
 
     public TaskRunService(
@@ -36,11 +30,13 @@ public class TaskRunService {
             TaskRunCreator creator,
             TaskRunConflictResolver conflictResolver,
             RequestFingerprint requestFingerprint,
+            TaskTypePolicy taskTypePolicy,
             Clock clock) {
         this.repository = repository;
         this.creator = creator;
         this.conflictResolver = conflictResolver;
         this.requestFingerprint = requestFingerprint;
+        this.taskTypePolicy = taskTypePolicy;
         this.clock = clock;
     }
 
@@ -124,7 +120,7 @@ public class TaskRunService {
     }
 
     private String concurrencyKey(TaskType taskType) {
-        return SINGLETON_TYPES.contains(taskType) ? taskType.name() : null;
+        return taskTypePolicy.forType(taskType).singleton() ? taskType.name() : null;
     }
 
     private String bounded(String value, int maxLength) {

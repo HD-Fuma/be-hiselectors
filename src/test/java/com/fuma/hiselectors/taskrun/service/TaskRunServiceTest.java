@@ -12,6 +12,8 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
+import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -46,6 +49,7 @@ import tools.jackson.databind.ObjectMapper;
         RequestFingerprint.class,
         TaskRunCreator.class,
         TaskRunConflictResolver.class,
+        TaskTypePolicy.class,
         TaskRunService.class,
         TaskRunServiceTest.FixedClockConfiguration.class
 })
@@ -274,6 +278,7 @@ class TaskRunServiceTest {
                 mock(TaskRunCreator.class),
                 mock(TaskRunConflictResolver.class),
                 mock(RequestFingerprint.class),
+                mock(TaskTypePolicy.class),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertThatThrownBy(() -> racingService.markRunning(run.getRunId()))
@@ -323,6 +328,7 @@ class TaskRunServiceTest {
     }
 
     @TestConfiguration
+    @EnableConfigurationProperties(TaskRunProperties.class)
     static class FixedClockConfiguration {
 
         @Bean
