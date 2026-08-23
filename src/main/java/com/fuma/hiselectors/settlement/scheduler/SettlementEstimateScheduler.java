@@ -1,29 +1,35 @@
 package com.fuma.hiselectors.settlement.scheduler;
 
-import com.fuma.hiselectors.settlement.service.SettlementBatchService;
+import com.fuma.hiselectors.settlement.task.SettlementEstimateTask;
+import com.fuma.hiselectors.taskrun.model.TaskType;
+import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
+import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SettlementEstimateScheduler {
 
-    private final SettlementBatchService settlementBatchService;
+    private final TaskRunExecutionService taskRunExecutionService;
+    private final SettlementEstimateTask task;
+    private final ObjectMapper objectMapper;
 
     @Scheduled(
             cron = "${settlement.estimate.cron:0 0 3 * * *}",
             zone = "${settlement.zone:Asia/Seoul}")
     public void calculateOpenActivityMonth() {
-        SettlementBatchService.SettlementBatchResult result =
-                settlementBatchService.calculateOpenActivityMonth();
-        log.info(
-                "당월까지 예상 정산 산정 배치 완료: throughActivityMonth={}, processed={}, skipped={}, failed={}",
-                result.activityMonth(),
-                result.processedCount(),
-                result.skippedCount(),
-                result.failedCount());
+        taskRunExecutionService.submit(
+                new TaskStartCommand(
+                        TaskType.SETTLEMENT_CALCULATION,
+                        TriggerType.SCHEDULED,
+                        null,
+                        UUID.randomUUID(),
+                        objectMapper.createObjectNode().put("mode", "ESTIMATE")),
+                task);
     }
 }
