@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
+import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +17,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @Import(CacheConfig.class)
@@ -73,7 +76,57 @@ class TaskRunRepositoryTest {
         assertThat(repository.count()).isEqualTo(2);
     }
 
+    @Test
+    void activeRunsUseHeartbeatForQueuedRunsAndBreakEqualTimesByIdAscending() {
+        Instant early = NOW.minusSeconds(20);
+        Instant same = NOW.minusSeconds(10);
+        Instant late = NOW;
+        TaskRun queuedEarly = repository.save(queued(UUID.randomUUID(), null, early));
+        TaskRun runningSame = repository.save(running(same));
+        TaskRun queuedSame = repository.save(queued(UUID.randomUUID(), null, same));
+        TaskRun runningLate = repository.save(running(late));
+        repository.flush();
+        entityManager.clear();
+
+        assertThat(repository.findActiveRuns(
+                List.of(TaskRunStatus.QUEUED, TaskRunStatus.RUNNING)))
+                .extracting(TaskRun::getRunId)
+                .containsExactly(
+                        queuedEarly.getRunId(),
+                        runningSame.getRunId(),
+                        queuedSame.getRunId(),
+                        runningLate.getRunId());
+    }
+
+    @Test
+    void terminalRunsBreakEqualFinishTimesByIdDescending() {
+        TaskRun older = repository.save(terminal(NOW.minusSeconds(1)));
+        TaskRun firstAtSameTime = repository.save(terminal(NOW));
+        TaskRun secondAtSameTime = repository.save(terminal(NOW));
+        repository.flush();
+        entityManager.clear();
+        List<TaskRunStatus> statuses = List.of(TaskRunStatus.SUCCEEDED);
+
+        assertThat(repository.findTerminalRuns(statuses, PageRequest.of(0, 20)).getContent())
+                .extracting(TaskRun::getRunId)
+                .containsExactly(
+                        secondAtSameTime.getRunId(),
+                        firstAtSameTime.getRunId(),
+                        older.getRunId());
+        assertThat(repository.findRecentTerminalRuns(
+                statuses, NOW.minusSeconds(60), PageRequest.of(0, 20)))
+                .extracting(TaskRun::getRunId)
+                .containsExactly(
+                        secondAtSameTime.getRunId(),
+                        firstAtSameTime.getRunId(),
+                        older.getRunId());
+    }
+
     private TaskRun queued(UUID idempotencyKey, String concurrencyKey) {
+        return queued(idempotencyKey, concurrencyKey, NOW);
+    }
+
+    private TaskRun queued(UUID idempotencyKey, String concurrencyKey, Instant now) {
         return TaskRun.queued(
                 TaskType.CONTENT_SYNC,
                 TriggerType.SCHEDULED,
@@ -81,6 +134,18 @@ class TaskRunRepositoryTest {
                 idempotencyKey,
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 concurrencyKey,
-                NOW);
+                now);
+    }
+
+    private TaskRun running(Instant startedAt) {
+        TaskRun run = queued(UUID.randomUUID(), null, startedAt.minusSeconds(1));
+        run.markRunning(UUID.randomUUID(), startedAt);
+        return run;
+    }
+
+    private TaskRun terminal(Instant finishedAt) {
+        TaskRun run = running(finishedAt.minusSeconds(1));
+        run.complete(finishedAt);
+        return run;
     }
 }
