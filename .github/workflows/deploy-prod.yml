@@ -59,6 +59,15 @@ jobs:
             -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
         }
 
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
+        mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
+          mysql_query "ALTER TABLE application_media MODIFY COLUMN media_sequence_no INT NOT NULL"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM application_media WHERE media_sequence_no IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND data_type = 'int' AND is_nullable = 'NO'")" = "1"
+        echo "application-media-sequence=verified"
+
         activity_start_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date'")"
         activity_end_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date'")"
         if [ "$activity_start_column_count" = "0" ] || [ "$activity_end_column_count" = "0" ]; then
