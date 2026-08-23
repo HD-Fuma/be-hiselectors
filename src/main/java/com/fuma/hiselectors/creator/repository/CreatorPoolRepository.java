@@ -98,6 +98,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxFollower is null or c.followerCount <= :maxFollower)
               and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
               and (:minRecent90DayContentCount is null
                    or i.recent90DayContentCount >= :minRecent90DayContentCount)
@@ -116,6 +117,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxFollower is null or c.followerCount <= :maxFollower)
               and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
               and (:minRecent90DayContentCount is null
                    or i.recent90DayContentCount >= :minRecent90DayContentCount)
@@ -127,6 +129,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
                                 @Param("categoryCode") String categoryCode,
                                 @Param("snsCode") String snsCode,
                                 @Param("minFollower") Long minFollower,
+                                @Param("maxFollower") Long maxFollower,
                                 @Param("minEngagementRate") BigDecimal minEngagementRate,
                                 @Param("minRecent90DayContentCount")
                                 Integer minRecent90DayContentCount,
@@ -139,7 +142,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
                                         Long minFollower, Integer maxBrandScore,
                                         BigDecimal minIgConfidence, LocalDateTime activeAfter,
                                         Pageable pageable) {
-        return search(null, categoryCode, snsCode, minFollower, null, null,
+        return search(null, categoryCode, snsCode, minFollower, null, null, null,
                 maxBrandScore, minIgConfidence, activeAfter, pageable);
     }
 }

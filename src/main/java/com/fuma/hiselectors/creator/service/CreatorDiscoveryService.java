@@ -38,7 +38,8 @@ public class CreatorDiscoveryService {
      * @param activeWithinDays 최근 N일 안에 활동한 계정만. null 이면 제한 없음
      */
     public Page<CreatorSummary> search(String keyword, String categoryCode, String snsCode,
-                                       Long minFollower, BigDecimal minEngagementRate,
+                                       Long minFollower, Long maxFollower,
+                                       BigDecimal minEngagementRate,
                                        Integer minRecent90DayContentCount, Integer maxBrandScore,
                                        BigDecimal minIgConfidence, Integer activeWithinDays,
                                        Pageable pageable) {
@@ -47,8 +48,8 @@ public class CreatorDiscoveryService {
                 : LocalDateTime.now().minusDays(activeWithinDays);
 
         String normalizedKeyword = keyword == null || keyword.isBlank() ? null : keyword.trim();
-        return creatorPoolRepository.search(normalizedKeyword, categoryCode, snsCode, minFollower,
-                minEngagementRate, minRecent90DayContentCount,
+        return creatorPoolRepository.search(normalizedKeyword, categoryCode, snsCode,
+                minFollower, maxFollower, minEngagementRate, minRecent90DayContentCount,
                 maxBrandScore, minIgConfidence, activeAfter, pageable);
     }
 
