@@ -8,13 +8,16 @@ from kiwipiepy import Kiwi
 from sentence_transformers import SentenceTransformer, util
 import enums
 
-_NOUN_TAGS = frozenset({"NNG", "NNP", "SL", "SN"})
+# 한국어 명사만. SL(영문)·SN(숫자)은 OCR 워터마크·로고·UI 노이즈(0004, ROCKPINK, GV16 등)라 제외.
+# ponytail: 영문 브랜드 키워드가 필요해지면 allowlist 로 선별 통과시키는 게 정석(전면 허용 X).
+_NOUN_TAGS = frozenset({"NNG", "NNP"})
 MODEL_NAME = "jhgan/ko-sroberta-multitask"
 MIN_CONFIDENCE = 0.3
 _MAX_JOIN = 3  # 재결합 허용 형태소 개수. 넘으면 run-on 으로 보고 버림. 정상/노이즈 경계라 튜닝값.
 _STOP = frozenset({
     "요즘", "이번", "오늘", "때문", "이야기", "다음",
     "부분", "느낌", "생각", "경우", "사람", "정도",
+    "감사", "안녕", "구독", "좋아요", "알림",  # 인사·유튜브 상투 필러
 })
 
 
@@ -113,6 +116,12 @@ def _selfcheck() -> None:
     assert "열무냉김치말이밥" not in cands, cands
     assert "김치말이밥" in cands, cands
     assert "공깃밥" in cands, cands
+
+    # OCR 노이즈(영문·숫자 워터마크/로고)는 키워드에서 제외한다.
+    noise = _noun_candidates("ROCKPINK CosmeHongKong 0004 GV16 감사합니다 김치말이밥")
+    print("noise-filtered:", noise)
+    assert not any(c in noise for c in ["ROCKPINK", "CosmeHongKong", "0004", "GV16", "감사"]), noise
+    assert "김치말이밥" in noise, noise
 
     print("ok:", beauty["keywords"])
 
