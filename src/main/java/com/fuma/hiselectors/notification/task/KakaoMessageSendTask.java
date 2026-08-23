@@ -18,7 +18,11 @@ public class KakaoMessageSendTask {
                 notificationService.resendFailed(adminLoginId, notificationId);
                 context.progress().advance(1, 0, 0);
             } catch (RuntimeException exception) {
-                context.progress().advance(0, 1, 0);
+                try {
+                    context.progress().advance(0, 1, 0);
+                } catch (RuntimeException progressFailure) {
+                    exception.addSuppressed(progressFailure);
+                }
                 throw exception;
             }
         };
