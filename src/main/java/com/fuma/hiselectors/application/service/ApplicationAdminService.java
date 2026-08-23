@@ -12,6 +12,7 @@ import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
@@ -113,10 +114,13 @@ public class ApplicationAdminService {
             SnsPlatform snsCode,
             ApplicationStatus status,
             Long generationId,
+            Boolean hasAiReport,
             Boolean minimumCriteriaOnly,
             Pageable pageable) {
+        ContentAnalysisStatus analysisStatus = Boolean.TRUE.equals(hasAiReport)
+                ? ContentAnalysisStatus.DONE : null;
         Page<Application> applications = applicationRepository.searchAdmin(
-                normalize(keyword), snsCode, status, generationId, minimumCriteriaOnly, pageable);
+                normalize(keyword), snsCode, status, generationId, analysisStatus, minimumCriteriaOnly, pageable);
         List<Long> applicationIds = applications.stream().map(Application::getId).toList();
         Map<Long, User> users = byId(userRepository.findAllById(
                 applications.stream().map(Application::getUserId).distinct().toList()), User::getId);

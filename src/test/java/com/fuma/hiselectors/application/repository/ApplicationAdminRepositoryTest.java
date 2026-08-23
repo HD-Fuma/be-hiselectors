@@ -94,7 +94,7 @@ class ApplicationAdminRepositoryTest {
     void filtersKeywordPlatformStatusAndGenerationTogether() {
         var result = applicationRepository.searchAdmin(
                 "지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                generation.getId(), null, PageRequest.of(0, 20));
+                generation.getId(), null, null, PageRequest.of(0, 20));
 
         assertThat(result.getContent())
                 .extracting(Application::getId)
@@ -111,12 +111,12 @@ class ApplicationAdminRepositoryTest {
     @Test
     void omittedMinimumCriteriaReturnsAllApplicants() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), null, PageRequest.of(0, 2));
+                null, null, null, generation.getId(), null, null, PageRequest.of(0, 2));
 
         assertThat(result.getTotalElements()).isEqualTo(4);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), null, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, null, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(
                         regular.getId(), lowFollower.getId(), sparse.getId(), unknown.getId());
@@ -125,12 +125,12 @@ class ApplicationAdminRepositoryTest {
     @Test
     void minimumCriteriaIsAppliedBeforePaging() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), true, PageRequest.of(0, 1));
+                null, null, null, generation.getId(), null, true, PageRequest.of(0, 1));
 
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), true, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, true, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(lowFollower.getId(), sparse.getId())
                 .doesNotContain(regular.getId());
@@ -139,12 +139,12 @@ class ApplicationAdminRepositoryTest {
     @Test
     void falseMinimumCriteriaReturnsOnlyApplicantsWhoAreNotBelowCriteria() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), false, PageRequest.of(0, 1));
+                null, null, null, generation.getId(), null, false, PageRequest.of(0, 1));
 
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), false, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, false, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(regular.getId(), unknown.getId())
                 .doesNotContain(lowFollower.getId(), sparse.getId());
@@ -157,7 +157,7 @@ class ApplicationAdminRepositoryTest {
                 .hasSize(5);
 
         var result = applicationRepository.searchAdmin(
-                "UC-sparse", null, null, generation.getId(), true, PageRequest.of(0, 20));
+                "UC-sparse", null, null, generation.getId(), null, true, PageRequest.of(0, 20));
 
         assertThat(result.getContent())
                 .extracting(Application::getId)

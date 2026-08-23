@@ -91,6 +91,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
+              AND (:analysisStatus IS NULL OR a.analysisStatus = :analysisStatus)
               AND (:minimumCriteriaOnly IS NULL
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
@@ -121,6 +122,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
+              AND (:analysisStatus IS NULL OR a.analysisStatus = :analysisStatus)
               AND (:minimumCriteriaOnly IS NULL
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
@@ -142,6 +144,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             @Param("snsCode") SnsPlatform snsCode,
             @Param("status") ApplicationStatus status,
             @Param("generationId") Long generationId,
+            @Param("analysisStatus") ContentAnalysisStatus analysisStatus,
             @Param("minimumCriteriaOnly") Boolean minimumCriteriaOnly,
             Pageable pageable);
 }

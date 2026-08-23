@@ -94,7 +94,7 @@ class ApplicationAdminServiceTest {
                         ContentType.REELS, null, 20L, null));
         when(applicationRepository.searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable))
+                20L, null, true, pageable))
                 .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
         when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
         when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
@@ -105,7 +105,7 @@ class ApplicationAdminServiceTest {
 
         var result = service.search(
                 "  김지안  ", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable);
+                20L, null, true, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().getFirst()).satisfies(summary -> {
@@ -119,21 +119,21 @@ class ApplicationAdminServiceTest {
         });
         verify(applicationRepository).searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable);
+                20L, null, true, pageable);
     }
 
     @Test
     void searchForwardsOmittedMinimumCriteriaAsNull() {
         var pageable = PageRequest.of(0, 20);
         when(applicationRepository.searchAdmin(
-                null, null, null, null, null, pageable))
+                null, null, null, null, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(), pageable, 0));
 
-        var result = service.search(null, null, null, null, null, pageable);
+        var result = service.search(null, null, null, null, null, null, pageable);
 
         assertThat(result).isEmpty();
         verify(applicationRepository).searchAdmin(
-                null, null, null, null, null, pageable);
+                null, null, null, null, null, null, pageable);
     }
 
     @Test

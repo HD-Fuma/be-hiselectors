@@ -61,7 +61,7 @@ class ApplicationAdminControllerTest {
                 MediaCollectionStatus.DONE, collectedAt.minusDays(30), collectedAt, collectedAt);
         when(applicationAdminService.search(
                 eq("김지안"), eq(SnsPlatform.INSTAGRAM), eq(ApplicationStatus.PENDING),
-                eq(2L), eq(true), any(Pageable.class)))
+                eq(2L), isNull(), eq(true), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
                         List.of(response), PageRequest.of(0, 100), 1));
 
@@ -84,16 +84,16 @@ class ApplicationAdminControllerTest {
 
         verify(applicationAdminService).search(
                 eq("김지안"), eq(SnsPlatform.INSTAGRAM), eq(ApplicationStatus.PENDING),
-                eq(2L), eq(true), argThat(pageable -> pageable.getPageSize() == 100));
+                eq(2L), isNull(), eq(true), argThat(pageable -> pageable.getPageSize() == 100));
     }
 
     @Test
     void searchDistinguishesOmittedAndFalseMinimumCriteria() throws Exception {
         when(applicationAdminService.search(
-                isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
         when(applicationAdminService.search(
-                isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
+                isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/admin/applications"))
@@ -103,9 +103,9 @@ class ApplicationAdminControllerTest {
                 .andExpect(status().isOk());
 
         verify(applicationAdminService).search(
-                isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class));
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class));
         verify(applicationAdminService).search(
-                isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
+                isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
