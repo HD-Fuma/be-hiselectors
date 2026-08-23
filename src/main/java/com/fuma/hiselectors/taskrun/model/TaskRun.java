@@ -217,7 +217,7 @@ public class TaskRun {
         } else {
             this.status = TaskRunStatus.SUCCEEDED;
         }
-        finish(now);
+        finish(now, true);
     }
 
     public void fail(String errorType, String boundedMessage, Instant now) {
@@ -227,7 +227,7 @@ public class TaskRun {
         this.status = TaskRunStatus.FAILED;
         this.errorType = errorType;
         this.errorMessage = boundedMessage;
-        finish(now);
+        finish(now, true);
     }
 
     public void markStale(UUID replacementToken, boolean clearConcurrencyKey, Instant now) {
@@ -237,10 +237,7 @@ public class TaskRun {
         // 리스를 먼저 교체해 이전 작업자를 차단하고, 안전할 때만 중복 실행 방지 키를 해제한다.
         this.status = TaskRunStatus.STALE;
         this.leaseToken = replacementToken;
-        if (clearConcurrencyKey) {
-            this.concurrencyKey = null;
-        }
-        finish(now);
+        finish(now, clearConcurrencyKey);
     }
 
     public boolean isTerminal() {
@@ -277,8 +274,11 @@ public class TaskRun {
         this.heartbeatAt = now;
     }
 
-    private void finish(Instant now) {
+    private void finish(Instant now, boolean clearConcurrencyKey) {
         this.finishedAt = now;
         this.heartbeatAt = now;
+        if (clearConcurrencyKey) {
+            this.concurrencyKey = null;
+        }
     }
 }

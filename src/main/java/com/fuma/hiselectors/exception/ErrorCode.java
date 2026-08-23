@@ -11,6 +11,14 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 HTTP 메서드입니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
+
+    // --- 작업 실행 ---
+    TASK_ALREADY_RUNNING(HttpStatus.CONFLICT, "같은 작업이 이미 실행 중입니다."),
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "멱등 키가 다른 요청에 이미 사용되었습니다."),
+    TASK_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "작업 실행 이력을 찾을 수 없습니다."),
+    TASK_RUN_LEASE_LOST(HttpStatus.CONFLICT, "작업 실행 권한이 만료되었습니다."),
+    INVALID_TASK_RUN_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 작업 실행 상태 변경입니다."),
+
     // --- 인증 / 인가 ---
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),

@@ -169,6 +169,15 @@ class TaskRunTest {
     }
 
     @Test
+    void markStaleCanKeepConcurrencyKeyUntilTheReplacementIsFenced() {
+        TaskRun run = running();
+
+        run.markStale(UUID.randomUUID(), false, NOW.plusSeconds(2));
+
+        assertThat(run.getConcurrencyKey()).isEqualTo("content-sync");
+    }
+
+    @Test
     void terminalRunsAreImmutable() {
         TaskRun run = running();
         run.complete(NOW.plusSeconds(2));
