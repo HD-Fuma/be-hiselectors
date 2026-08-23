@@ -62,6 +62,7 @@ public class SecurityConfig {
                     // STT 테스트 경로는 로컬에서만 공개. 운영에선 관리자만(미인증+과금 남용 방지).
                     if (environment.matchesProfiles("local")) {
                         auth.requestMatchers("/stt-test.html", "/api/stt/**").permitAll();
+                        auth.requestMatchers("/actuator/scheduledtasks").permitAll();
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                     auth.requestMatchers("/api/stt/**").hasRole("ADMIN");
