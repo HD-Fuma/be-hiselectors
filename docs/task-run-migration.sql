@@ -26,8 +26,6 @@ CREATE TABLE IF NOT EXISTS task_run (
     CONSTRAINT uq_task_run_run_id UNIQUE (run_id),
     CONSTRAINT uq_task_run_concurrency_key UNIQUE (concurrency_key),
     CONSTRAINT uq_task_run_idempotency_key UNIQUE (idempotency_key),
-    CONSTRAINT fk_task_run_started_by_admin
-        FOREIGN KEY (started_by_admin_id) REFERENCES admin (admin_id),
     CONSTRAINT chk_task_run_total_count
         CHECK (total_count IS NULL OR total_count >= 0),
     CONSTRAINT chk_task_run_processed_count
