@@ -159,13 +159,15 @@ public class CreatorEvaluationService {
     public ApplicationReport buildReport(Long applicationId) {
         List<ApplicationContentAnalysis> rows = repository.findByApplicantId(applicationId);
         List<ApplicationMedia> media =
-                mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(applicationId);
-        // 분석 입력 = 콘텐츠별 전사·자막(stt/ocr) + 게시물 텍스트(caption). caption 만 있는
-        // (전사·OCR 안 걸린) 게시물도 이제 리포트에 반영된다.
+                mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
+        // 분석 입력 = 콘텐츠별 전사·자막(stt/ocr) + 게시물 텍스트(인스타 caption / 유튜브 title·description).
+        // 텍스트만 있고 전사·OCR 안 걸린 게시물도 이제 리포트에 반영된다.
         String merged = Stream.concat(
                         rows.stream().map(c -> (safe(c.getStt()) + " " + safe(c.getOcr())).strip()),
-                        media.stream().map(m -> safe(m.getCaption()).strip()))
+                        media.stream().map(m -> (safe(m.getCaption()) + " "
+                                + safe(m.getTitle()) + " " + safe(m.getDescription())).strip()))
                 .filter(s -> !s.isEmpty())
+                .distinct()   // 캐러셀은 per-media 행이라 같은 caption 이 반복됨 → 중복 텍스트 제거
                 .collect(Collectors.joining("\n\n"));
         if (merged.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);

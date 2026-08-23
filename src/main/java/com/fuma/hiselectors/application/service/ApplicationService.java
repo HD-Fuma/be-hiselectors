@@ -59,6 +59,7 @@ public class ApplicationService {
                 .generationId(generation.getId())
                 .snsCode(verifiedAccount.snsCode())
                 .snsAccountId(verifiedAccount.snsAccountId())
+                .profileUrl(profileUrl(verifiedAccount))
                 .followerCount(verifiedAccount.followerCount())
                 .contentCount(verifiedAccount.contentCount())
                 .alarmYn(request.alarmAgreed())
@@ -80,5 +81,14 @@ public class ApplicationService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException(ErrorCode.OAUTH_VERIFICATION_INVALID);
         }
+    }
+
+    private String profileUrl(OAuthStateProvider.VerifiedAccount account) {
+        return switch (account.snsCode()) {
+            case INSTAGRAM -> "https://www.instagram.com/%s/"
+                    .formatted(account.snsAccountId().replaceFirst("^@", ""));
+            case YOUTUBE -> "https://www.youtube.com/channel/%s"
+                    .formatted(account.snsAccountId());
+        };
     }
 }

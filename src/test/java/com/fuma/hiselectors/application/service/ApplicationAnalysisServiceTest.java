@@ -1,7 +1,6 @@
 package com.fuma.hiselectors.application.service;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,13 +30,22 @@ class ApplicationAnalysisServiceTest {
     private final ApplicationAnalysisService service = new ApplicationAnalysisService(
             mediaRepository, applicationRepository, evaluationService, transactionTemplate);
 
-    private ApplicationMedia media(SnsPlatform snsCode, String snsContentId, String mediaUrl) {
+    private ApplicationMedia media(
+            SnsPlatform snsCode,
+            String snsContentId,
+            String snsMediaId,
+            String mediaUrl,
+            String thumbnailUrl,
+            int mediaSequenceNo) {
         return ApplicationMedia.builder()
                 .applicationId(1L)
                 .snsCode(snsCode)
                 .snsContentId(snsContentId)
+                .snsMediaId(snsMediaId)
                 .mediaUrl(mediaUrl)
+                .thumbnailUrl(thumbnailUrl)
                 .sequenceNo(0)
+                .mediaSequenceNo(mediaSequenceNo)
                 .build();
     }
 
@@ -52,8 +60,9 @@ class ApplicationAnalysisServiceTest {
     @Test
     void 유튜브_미디어는_addYoutubeContent로_전사한다() {
         runTransactionsInline();
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L))
-                .thenReturn(List.of(media(SnsPlatform.YOUTUBE, "vid1", null)));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(media(
+                        SnsPlatform.YOUTUBE, "vid1", "vid1", null, null, 0)));
         when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
         when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
 
@@ -64,24 +73,32 @@ class ApplicationAnalysisServiceTest {
     }
 
     @Test
-    void 인스타_미디어는_media_url로_addContent한다() {
+    void 인스타_게시물의_각_미디어를_개별_ID와_URL로_addContent한다() {
         runTransactionsInline();
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L))
-                .thenReturn(List.of(media(SnsPlatform.INSTAGRAM, "mediaId1", "https://cdn/x.jpg")));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(
+                        media(SnsPlatform.INSTAGRAM, "post1", "media1",
+                                "https://cdn/1.mp4", "https://cdn/1.jpg", 0),
+                        media(SnsPlatform.INSTAGRAM, "post1", "media2",
+                                "https://cdn/2.jpg", null, 1)));
         when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
         when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService).addContent(eq(1L), any(ContentAddRequest.class));
+        verify(evaluationService).addContent(
+                1L, new ContentAddRequest("media1", "https://cdn/1.mp4", "https://cdn/1.jpg"));
+        verify(evaluationService).addContent(
+                1L, new ContentAddRequest("media2", "https://cdn/2.jpg", null));
         verify(evaluationService, never()).addYoutubeContent(any(), any());
     }
 
     @Test
     void 유튜브_videoId_없으면_skip() {
         runTransactionsInline();
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L))
-                .thenReturn(List.of(media(SnsPlatform.YOUTUBE, "  ", null)));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(media(
+                        SnsPlatform.YOUTUBE, "  ", "missing", null, null, 0)));
         when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
         when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
 

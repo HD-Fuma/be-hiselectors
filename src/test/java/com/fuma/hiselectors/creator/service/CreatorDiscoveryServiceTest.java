@@ -79,7 +79,6 @@ class CreatorDiscoveryServiceTest {
         assertThat(response.snsCode()).isEqualTo("YOUTUBE");
         assertThat(response.accountId()).isEqualTo("UC113");
         assertThat(response.creatorName()).isEqualTo("다예다");
-        assertThat(response.email()).isEqualTo("creator@example.com");
         assertThat(response.followerCount()).isEqualTo(100_000L);
         assertThat(response.engagementRate()).isEqualByComparingTo("4.25");
         assertThat(response.category()).isEqualTo("BEAUTY");

@@ -109,9 +109,12 @@ jobs:
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND referenced_table_name = 'generation'")" = "0" ]; then
           mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_generation FOREIGN KEY (generation_id) REFERENCES generation (generation_id)"
         fi
+        mysql_query "INSERT IGNORE INTO selectors_role (selectors_role_id, role_name) VALUES ('BLACKLIST', '블랙리스트')"
+        mysql_query "UPDATE selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id SET s.selectors_role_id = 'BLACKLIST' WHERE s.selectors_role_id <> 'BLACKLIST'"
 
         test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id WHERE s.selectors_role_id <> 'BLACKLIST'")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name IN ('activity_start_date', 'activity_end_date') AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES'")" = "2"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id' AND data_type = 'bigint' AND is_nullable = 'YES'")" = "1"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "activity_start_date,activity_end_date"

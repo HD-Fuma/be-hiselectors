@@ -32,6 +32,7 @@ public class InstagramDiscoveryService {
 
     private final MetaGraphApiClient metaGraphApiClient;
     private final InstagramEngagementCalculator engagementCalculator;
+    private final PublicEmailExtractor publicEmailExtractor;
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final TransactionTemplate transactionTemplate;
@@ -50,6 +51,8 @@ public class InstagramDiscoveryService {
         // 외부 네트워크 호출은 DB 저장 트랜잭션 밖에서 수행한다.
         BusinessDiscovery discovered = metaGraphApiClient.discover(
                 instagramHandle, RECENT_MEDIA_LIMIT);
+        String email = publicEmailExtractor.extract(discovered.biography())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CREATOR_EMAIL_REQUIRED));
         BigDecimal engagementRate = engagementCalculator.calculate(
                 discovered.followersCount(), discovered.media());
         LocalDateTime lastContentAt = lastContentAt(discovered);
@@ -60,6 +63,7 @@ public class InstagramDiscoveryService {
                     youtubeCreatorId,
                     sourceCreator.getCategory(),
                     discovered,
+                    email,
                     engagementRate,
                     lastContentAt,
                     recent90DayContentCount
@@ -78,6 +82,7 @@ public class InstagramDiscoveryService {
             Long sourceCreatorId,
             String sourceCategory,
             BusinessDiscovery discovered,
+            String email,
             BigDecimal engagementRate,
             LocalDateTime lastContentAt,
             int recent90DayContentCount) {
@@ -102,6 +107,7 @@ public class InstagramDiscoveryService {
                     .snsCode(SnsPlatform.INSTAGRAM.name())
                     .accountId(instagramId)
                     .creatorName(username)
+                    .email(email)
                     .followerCount(discovered.followersCount())
                     .lastContentAt(lastContentAt)
                     .engagementRate(engagementRate)

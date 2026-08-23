@@ -36,7 +36,7 @@ public class ApplicationAnalysisService {
     /** 미디어 전부 분석·적재 → 취합·리포트 저장 → 분석 상태 DONE. */
     public void analyzeAndReport(Long applicationId) {
         List<ApplicationMedia> media =
-                mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(applicationId);
+                mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         if (media.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }

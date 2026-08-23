@@ -27,6 +27,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -121,7 +122,8 @@ public class ApplicationAdminService {
         Map<Long, List<ApplicationMedia>> mediaByApplication = applicationIds.isEmpty()
                 ? Map.of()
                 : mediaRepository
-                        .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAsc(applicationIds)
+                        .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(
+                                applicationIds)
                         .stream()
                         .collect(Collectors.groupingBy(ApplicationMedia::getApplicationId));
 
@@ -140,7 +142,7 @@ public class ApplicationAdminService {
         Generation generation = generationRepository.findById(application.getGenerationId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.GENERATION_NOT_FOUND));
         List<ApplicationMedia> contents = mediaRepository
-                .findAllByApplicationIdOrderBySequenceNoAsc(applicationId);
+                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         List<ApplicationMedia> recentContents = recentContents(application, contents);
 
         return new AdminApplicationDetailResponse(
@@ -154,6 +156,7 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                application.getProfileUrl(),
                 application.getFollowerCount(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
@@ -183,10 +186,11 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                application.getProfileUrl(),
                 application.getFollowerCount(),
                 application.getContentCount(),
                 recentCount,
-                engagementRate(recentContents, application.getFollowerCount()).value(),
+                application.getEngagementRate(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
                 application.getCreatedAt(),
@@ -212,7 +216,7 @@ public class ApplicationAdminService {
                 average(recentContents, ApplicationMedia::getViewCount),
                 average(recentContents, ApplicationMedia::getLikeCount),
                 average(recentContents, ApplicationMedia::getCommentCount),
-                engagementRate(recentContents, application.getFollowerCount()),
+                engagementRate(application, recentContents),
                 contentFormats(recentContents));
     }
 
@@ -223,11 +227,16 @@ public class ApplicationAdminService {
             return List.of();
         }
         LocalDateTime collectedAfter = collectedAt.minusDays(ANALYSIS_WINDOW_DAYS);
-        return contents.stream()
+        return List.copyOf(contents.stream()
                 .filter(content -> content.getPublishedAt() != null)
                 .filter(content -> !content.getPublishedAt().isBefore(collectedAfter))
                 .filter(content -> !content.getPublishedAt().isAfter(collectedAt))
-                .toList();
+                .collect(Collectors.toMap(
+                        ApplicationMedia::getSnsContentId,
+                        Function.identity(),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new))
+                .values());
     }
 
     private UploadCadence cadence(List<ApplicationMedia> contents, boolean collected) {
@@ -264,19 +273,15 @@ public class ApplicationAdminService {
         return averageOf(measured);
     }
 
-    private MetricAverage engagementRate(List<ApplicationMedia> contents, Long followerCount) {
-        if (followerCount == null || followerCount <= 0) {
-            return new MetricAverage(null, 0);
-        }
-        List<BigDecimal> measured = contents.stream()
-                .filter(content -> content.getLikeCount() != null
-                        && content.getCommentCount() != null)
-                .map(content -> BigDecimal.valueOf(content.getLikeCount())
-                        .add(BigDecimal.valueOf(content.getCommentCount()))
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(BigDecimal.valueOf(followerCount), 8, RoundingMode.HALF_UP))
-                .toList();
-        return averageOf(measured);
+    private MetricAverage engagementRate(
+            Application application, List<ApplicationMedia> contents) {
+        long sampleCount = contents.stream()
+                .filter(content -> content.getViewCount() != null && content.getViewCount() > 0)
+                .filter(content -> content.getLikeCount() != null && content.getLikeCount() >= 0)
+                .filter(content -> content.getCommentCount() != null
+                        && content.getCommentCount() >= 0)
+                .count();
+        return new MetricAverage(application.getEngagementRate(), sampleCount);
     }
 
     private MetricAverage averageOf(List<BigDecimal> values) {
@@ -291,13 +296,23 @@ public class ApplicationAdminService {
 
     private List<ContentFormatCount> contentFormats(List<ApplicationMedia> contents) {
         Map<String, Long> counts = contents.stream().collect(Collectors.groupingBy(
-                content -> content.getContentType() == null
-                        ? "UNKNOWN" : content.getContentType().name(),
+                content -> contentType(content.getContentType()),
                 TreeMap::new,
                 Collectors.counting()));
         return counts.entrySet().stream()
                 .map(entry -> new ContentFormatCount(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    private String contentType(com.fuma.hiselectors.content.model.ContentType type) {
+        if (type == null) {
+            return "UNKNOWN";
+        }
+        return switch (type) {
+            case SHORT_FORM -> "REELS";
+            case FEED -> "POST";
+            default -> type.name();
+        };
     }
 
     private String normalize(String keyword) {

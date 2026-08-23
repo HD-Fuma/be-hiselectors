@@ -75,28 +75,28 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
     @Query(value = """
             select s from Selectors s
             where s.deleted = false
-              and exists (
-                    select 1 from PenaltyHistory p
-                    where p.selectorsId = s.id
-                      and (:generationId is null or p.generationId = :generationId)
-                      and (:status is null or p.status = :status))
+              and ((:blacklistOnly = true and s.selectorsRoleId = 'BLACKLIST')
+                   or (:blacklistOnly = false and exists (
+                        select 1 from PenaltyHistory p
+                        where p.selectorsId = s.id
+                          and (:generationId is null or p.generationId = :generationId)
+                          and (:status is null or p.status = :status))))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """,
             countQuery = """
             select count(s) from Selectors s
             where s.deleted = false
-              and exists (
-                    select 1 from PenaltyHistory p
-                    where p.selectorsId = s.id
-                      and (:generationId is null or p.generationId = :generationId)
-                      and (:status is null or p.status = :status))
+              and ((:blacklistOnly = true and s.selectorsRoleId = 'BLACKLIST')
+                   or (:blacklistOnly = false and exists (
+                        select 1 from PenaltyHistory p
+                        where p.selectorsId = s.id
+                          and (:generationId is null or p.generationId = :generationId)
+                          and (:status is null or p.status = :status))))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """)
     Page<Selectors> searchWithPenalties(
             @Param("generationId") Long generationId,

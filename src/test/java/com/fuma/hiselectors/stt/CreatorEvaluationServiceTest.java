@@ -57,7 +57,7 @@ class CreatorEvaluationServiceTest {
         when(repository.findByApplicantId(1L)).thenReturn(List.of(
                 analysis("a", "BEAUTY", "립스틱,파운데이션"),
                 analysis("b", "FOOD", "맛집,디저트")));
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L)).thenReturn(List.of(
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L)).thenReturn(List.of(
                 media("a", 100L, ContentType.SHORT_FORM),
                 media("b", 5000L, ContentType.FEED)));   // b 가 조회수 최고
 
@@ -75,7 +75,7 @@ class CreatorEvaluationServiceTest {
         stubInsight();
         when(repository.findByApplicantId(1L)).thenReturn(List.of(
                 analysis("a", "BEAUTY", "립스틱")));   // 분석된 건 a 뿐. b(조회수 최고)는 분석행 없음
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L)).thenReturn(List.of(
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L)).thenReturn(List.of(
                 media("a", 100L, ContentType.SHORT_FORM),
                 media("b", 5000L, ContentType.FEED)));
 
@@ -90,7 +90,7 @@ class CreatorEvaluationServiceTest {
     void 조회수가_전부_null이면_대표선정이_깨지지_않는다() {
         stubInsight();
         when(repository.findByApplicantId(1L)).thenReturn(List.of(analysis("a", "BEAUTY", "립스틱")));
-        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(1L)).thenReturn(List.of(
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L)).thenReturn(List.of(
                 media("a", null, ContentType.SHORT_FORM)));
 
         ApplicationReport report = service.buildReport(1L);

@@ -9,6 +9,8 @@ import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -68,7 +70,10 @@ public class CreatorAdminController {
             @RequestParam(required = false) String snsCode,
 
             @Parameter(description = "최소 팔로워/구독자 수", example = "5000")
-            @RequestParam(required = false) Long minFollower,
+            @RequestParam(required = false) @Min(0) Long minFollower,
+
+            @Parameter(description = "최대 팔로워/구독자 수", example = "100000")
+            @RequestParam(required = false) @Min(0) Long maxFollower,
 
             @Parameter(description = "최소 ER", example = "2.5")
             @RequestParam(required = false) @DecimalMin("0") BigDecimal minEngagementRate,
@@ -92,8 +97,12 @@ public class CreatorAdminController {
             @PageableDefault(size = 20, sort = "followerCount", direction = Sort.Direction.DESC)
             Pageable pageable) {
 
+        if (minFollower != null && maxFollower != null && minFollower > maxFollower) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT, "최소 팔로워/구독자 수는 최대값보다 클 수 없습니다.");
+        }
         return ResponseEntity.ok(creatorDiscoveryService.search(
-                keyword, categoryCode, snsCode, minFollower,
+                keyword, categoryCode, snsCode, minFollower, maxFollower,
                 minEngagementRate, minRecent90DayContentCount, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
     }
