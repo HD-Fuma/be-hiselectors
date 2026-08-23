@@ -166,7 +166,7 @@ public enum ErrorCode {
 
     // --- 크리에이터 제안 ---
     ADMIN_NOT_FOUND(HttpStatus.NOT_FOUND, "관리자를 찾을 수 없습니다."),
-    CREATOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "크리에이터에게 등록된 이메일이 없어 제안 메일을 보낼 수 없습니다."),
+    CREATOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "크리에이터의 공개 이메일을 확인할 수 없습니다."),
     PROPOSAL_MAIL_SEND_FAILED(HttpStatus.BAD_GATEWAY, "제안 메일 발송에 실패했습니다.");
 
     private final HttpStatus status;

@@ -179,6 +179,35 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
+    @DisplayName("공개 이메일 없는 신규 YouTube 채널은 저장하지 않는다")
+    void skipNewCreatorWithoutEmail() {
+        DiscoveredChannel channel = new DiscoveredChannel(
+                "UC_NO_EMAIL", "이메일 없는 크리에이터", "Instagram @no_email",
+                10_000L, 100_000L, null,
+                3, 100L, 4L, 1L);
+
+        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
+        when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
+                .thenReturn(List.of(channel));
+        when(youtubeClient.consumedQuota()).thenReturn(102);
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "YOUTUBE", "UC_NO_EMAIL"))
+                .thenReturn(Optional.empty());
+        when(publicEmailExtractor.extract(channel.description())).thenReturn(Optional.empty());
+
+        DiscoveryRunResult result = discoveryPipelineService.runByKeyword(1L, 25);
+
+        assertThat(result.discovered()).isEqualTo(1);
+        assertThat(result.created()).isZero();
+        assertThat(result.updated()).isZero();
+        assertThat(result.consumedQuota()).isEqualTo(102);
+        assertThat(keyword.getLastRunAt()).isNotNull();
+        verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
+        verifyNoInteractions(igHandleExtractor, brandScoreCalculator,
+                discoveryInfoRepository, discoverySourceRepository, creatorDiscoveryService);
+    }
+
+    @Test
     @DisplayName("기존 채널은 새로 만들지 않고 지표와 발굴 이력을 갱신한다")
     void updateExistingCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 2, 12, 0);

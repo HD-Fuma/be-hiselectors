@@ -38,9 +38,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장
  * </pre>
  *
- * <p><b>여기서 후보를 걸러내지 않는다.</b> 브랜드 계정도 구독자 미달 계정도 전부 저장하고,
- * 실제로 빼는 일은 조회 API 조건이 한다. 판정 기준은 반드시 한 번은 틀리는데
- * 수집 시점에 버리면 기준을 고쳐도 재수집이 필요하고 그게 쿼터를 또 쓰기 때문이다.
+ * <p><b>공개 이메일이 없는 신규 채널만 저장하지 않는다.</b> 브랜드 계정이나 구독자 미달
+ * 계정은 전부 저장하고 실제로 빼는 일은 조회 API 조건이 한다.
  */
 @Slf4j
 @Service
@@ -48,6 +47,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DiscoveryPipelineService {
 
     private static final String SNS_CODE_YOUTUBE = "YOUTUBE";
+
+    private enum SaveResult {
+        CREATED, UPDATED, SKIPPED
+    }
 
     private final YoutubeDiscoveryClient youtubeClient;
     private final IgHandleExtractor igHandleExtractor;
@@ -93,11 +96,10 @@ public class DiscoveryPipelineService {
         int created = 0;
         int updated = 0;
         for (DiscoveredChannel channel : channels) {
-            boolean isNew = save(channel, keyword, totalViews);
-            if (isNew) {
-                created++;
-            } else {
-                updated++;
+            switch (save(channel, keyword, totalViews)) {
+                case CREATED -> created++;
+                case UPDATED -> updated++;
+                case SKIPPED -> { }
             }
         }
 
@@ -116,26 +118,34 @@ public class DiscoveryPipelineService {
     /**
      * 채널 하나를 저장한다.
      *
-     * @return 새로 만들었으면 true, 기존 계정을 갱신했으면 false
+     * @return 신규 저장, 기존 갱신 또는 이메일 누락으로 건너뜀
      */
-    private boolean save(DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
-        IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
-        BrandScore brandScore = brandScoreCalculator.calculate(
-                channel.title(), channel.description(),
-                igHandle == null ? null : igHandle.handle());
-
+    private SaveResult save(DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
         // 소프트 삭제된 계정도 찾아야 중복 행이 생기지 않는다
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
                 .orElse(null);
 
         boolean isNew = creator == null;
+        String email = null;
+        if (isNew) {
+            email = publicEmailExtractor.extract(channel.description()).orElse(null);
+            if (email == null) {
+                return SaveResult.SKIPPED;
+            }
+        }
+
+        IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
+        BrandScore brandScore = brandScoreCalculator.calculate(
+                channel.title(), channel.description(),
+                igHandle == null ? null : igHandle.handle());
+
         if (isNew) {
             creator = creatorPoolRepository.save(CreatorPool.builder()
                     .snsCode(SNS_CODE_YOUTUBE)
                     .accountId(channel.channelId())
                     .creatorName(channel.title())
-                    .email(publicEmailExtractor.extract(channel.description()).orElse(null))
+                    .email(email)
                     .followerCount(channel.subscriberCount())
                     .lastContentAt(channel.lastUploadAt())
                     .engagementRate(engagementRate(channel))
@@ -158,7 +168,7 @@ public class DiscoveryPipelineService {
         // 여러 카테고리에 걸린 채널은 조회수 비중이 큰 쪽으로 잡힌다.
         creatorDiscoveryService.refreshRepresentativeCategory(creator.getId());
 
-        return isNew;
+        return isNew ? SaveResult.CREATED : SaveResult.UPDATED;
     }
 
     private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore,

@@ -55,6 +55,8 @@ class InstagramDiscoveryServiceTest {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
         });
+        lenient().when(publicEmailExtractor.extract(any()))
+                .thenReturn(Optional.of("contact@nike.com"));
     }
 
     @Test
@@ -70,8 +72,6 @@ class InstagramDiscoveryServiceTest {
         when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
-        when(publicEmailExtractor.extract(discovered.biography()))
-                .thenReturn(Optional.of("contact@nike.com"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                 "INSTAGRAM", "17841400602400210"))
                 .thenReturn(Optional.empty());
@@ -104,6 +104,29 @@ class InstagramDiscoveryServiceTest {
     }
 
     @Test
+    void 공개_이메일이_없으면_저장_트랜잭션을_시작하지_않는다() {
+        CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
+        CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
+        BusinessDiscovery discovered = new BusinessDiscovery(
+                "17841400602400210", "nike", "Nike", "Just Do It.", null,
+                291_530_362L, 1_668L, new Media(List.of()));
+
+        when(creatorPoolRepository.findById(10L)).thenReturn(Optional.of(youtubeCreator));
+        when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
+        when(info.getIgHandle()).thenReturn("nike");
+        when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
+        when(publicEmailExtractor.extract("Just Do It.")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.discoverFromYoutubeCreator(10L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.CREATOR_EMAIL_REQUIRED);
+
+        verify(transactionTemplate, never()).execute(any());
+        verifyNoInteractions(engagementCalculator);
+    }
+
+    @Test
     void 기존_인스타그램_계정은_지표를_갱신하고_복구한다() {
         CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
         CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
@@ -133,7 +156,7 @@ class InstagramDiscoveryServiceTest {
         );
         verify(existing).restore();
         verify(creatorPoolRepository, never()).saveAndFlush(any(CreatorPool.class));
-        verifyNoInteractions(publicEmailExtractor);
+        verify(publicEmailExtractor).extract(discovered.biography());
         assertThat(result.created()).isFalse();
     }
 
