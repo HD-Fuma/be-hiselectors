@@ -60,7 +60,7 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Column(name = "thumbnail_url", columnDefinition = "TEXT")
     private String thumbnailUrl;
 
-    /** Instagram 게시물 유형. REELS 또는 POST. */
+    /** 콘텐츠 유형(fetcher 원본값). 인스타=SHORT_FORM/FEED, 유튜브=LONG_FORM/SHORTS. */
     @Enumerated(EnumType.STRING)
     @Column(name = "content_type", length = 20)
     private ContentType contentType;

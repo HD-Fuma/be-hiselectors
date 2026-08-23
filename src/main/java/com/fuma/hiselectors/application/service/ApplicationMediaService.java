@@ -10,7 +10,6 @@ import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
-import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -192,7 +191,7 @@ public class ApplicationMediaService {
                 .mediaUrl(nullIfBlank(media.mediaUrl()))
                 .thumbnailUrl(media.thumbnailUrls().isEmpty()
                         ? null : media.thumbnailUrls().getLast())
-                .contentType(contentType(application.getSnsCode(), content.contentType()))
+                .contentType(content.contentType())
                 .mediaType(mediaType(media.mediaType()))
                 .caption(application.getSnsCode() == SnsPlatform.INSTAGRAM
                         ? nullIfBlank(content.caption()) : null)
@@ -206,14 +205,6 @@ public class ApplicationMediaService {
                 .commentCount(content.commentCount())
                 .collectedAt(collectedAt)
                 .build();
-    }
-
-    private ContentType contentType(SnsPlatform platform, ContentType source) {
-        if (platform != SnsPlatform.INSTAGRAM) {
-            return null;
-        }
-        return source == ContentType.SHORT_FORM || source == ContentType.REELS
-                ? ContentType.REELS : ContentType.POST;
     }
 
     private MediaType mediaType(RawContentMedia.MediaType source) {

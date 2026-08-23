@@ -12,6 +12,7 @@ import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
@@ -26,6 +27,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -208,17 +211,88 @@ public class ApplicationAdminService {
                 .max(LocalDateTime::compareTo)
                 .orElse(null);
 
+        MetricAverage averageViewCount = average(recentContents, ApplicationMedia::getViewCount);
+        MetricAverage averageLikeCount = average(recentContents, ApplicationMedia::getLikeCount);
+        MetricAverage averageCommentCount = average(recentContents, ApplicationMedia::getCommentCount);
+        PeerAverages peers = peerAverages();
+
         return new QuantitativeMetrics(
                 ANALYSIS_WINDOW_DAYS,
                 application.getContentCount(),
                 recentCount,
                 lastPublishedAt,
                 cadence(recentContents, collected),
-                average(recentContents, ApplicationMedia::getViewCount),
-                average(recentContents, ApplicationMedia::getLikeCount),
-                average(recentContents, ApplicationMedia::getCommentCount),
+                averageViewCount,
+                averageLikeCount,
+                averageCommentCount,
                 engagementRate(application, recentContents),
-                contentFormats(recentContents));
+                contentFormats(recentContents),
+                topPercentile(averageViewCount.value(), peers.viewAverages()),
+                topPercentile(averageLikeCount.value(), peers.likeAverages()),
+                topPercentile(averageCommentCount.value(), peers.commentAverages()));
+    }
+
+    /**
+     * 정량 지표 백분위 비교 모수. 미디어 수집이 끝난 전체 지원자의 평균 조회·좋아요·댓글을
+     * 한 번에 모아온다(요청당 1회). 지원자 규모가 커지면 캐싱을 고려해야 한다.
+     */
+    private PeerAverages peerAverages() {
+        List<Application> collected = applicationRepository
+                .findAllByMediaCollectionStatus(MediaCollectionStatus.DONE);
+        if (collected.isEmpty()) {
+            return new PeerAverages(List.of(), List.of(), List.of());
+        }
+        List<Long> peerIds = collected.stream().map(Application::getId).toList();
+        Map<Long, List<ApplicationMedia>> mediaByApplication = mediaRepository
+                .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(peerIds)
+                .stream()
+                .collect(Collectors.groupingBy(ApplicationMedia::getApplicationId));
+
+        List<BigDecimal> viewAverages = new ArrayList<>();
+        List<BigDecimal> likeAverages = new ArrayList<>();
+        List<BigDecimal> commentAverages = new ArrayList<>();
+        for (Application peer : collected) {
+            List<ApplicationMedia> peerRecentContents = recentContents(
+                    peer, mediaByApplication.getOrDefault(peer.getId(), List.of()));
+            addIfPresent(viewAverages, average(peerRecentContents, ApplicationMedia::getViewCount));
+            addIfPresent(likeAverages, average(peerRecentContents, ApplicationMedia::getLikeCount));
+            addIfPresent(commentAverages, average(peerRecentContents, ApplicationMedia::getCommentCount));
+        }
+        Collections.sort(viewAverages);
+        Collections.sort(likeAverages);
+        Collections.sort(commentAverages);
+        return new PeerAverages(viewAverages, likeAverages, commentAverages);
+    }
+
+    private void addIfPresent(List<BigDecimal> target, MetricAverage average) {
+        if (average.value() != null) {
+            target.add(average.value());
+        }
+    }
+
+    /**
+     * value 가 sortedPeers(오름차순, 본인 포함) 중 상위 몇 %인지. 1=최상위, 100=최하위.
+     * 동점은 평균 순위로 처리한다. 비교 대상이 없으면 null.
+     */
+    private Integer topPercentile(BigDecimal value, List<BigDecimal> sortedPeers) {
+        if (value == null || sortedPeers.isEmpty()) {
+            return null;
+        }
+        if (sortedPeers.size() == 1) {
+            return 1;
+        }
+        long strictlyLower = sortedPeers.stream().filter(peer -> peer.compareTo(value) < 0).count();
+        long equal = sortedPeers.stream().filter(peer -> peer.compareTo(value) == 0).count();
+        double averageRank = strictlyLower + (equal - 1) / 2.0;
+        double percentRank = averageRank / (sortedPeers.size() - 1) * 100;
+        long topPercent = Math.round(100 - percentRank);
+        return (int) Math.max(1, Math.min(100, topPercent));
+    }
+
+    private record PeerAverages(
+            List<BigDecimal> viewAverages,
+            List<BigDecimal> likeAverages,
+            List<BigDecimal> commentAverages) {
     }
 
     private List<ApplicationMedia> recentContents(
@@ -297,23 +371,13 @@ public class ApplicationAdminService {
 
     private List<ContentFormatCount> contentFormats(List<ApplicationMedia> contents) {
         Map<String, Long> counts = contents.stream().collect(Collectors.groupingBy(
-                content -> contentType(content.getContentType()),
+                content -> content.getContentType() == null
+                        ? "UNKNOWN" : content.getContentType().name(),
                 TreeMap::new,
                 Collectors.counting()));
         return counts.entrySet().stream()
                 .map(entry -> new ContentFormatCount(entry.getKey(), entry.getValue()))
                 .toList();
-    }
-
-    private String contentType(com.fuma.hiselectors.content.model.ContentType type) {
-        if (type == null) {
-            return "UNKNOWN";
-        }
-        return switch (type) {
-            case SHORT_FORM -> "REELS";
-            case FEED -> "POST";
-            default -> type.name();
-        };
     }
 
     private String normalize(String keyword) {

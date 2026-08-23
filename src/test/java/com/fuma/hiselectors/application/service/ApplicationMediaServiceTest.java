@@ -138,7 +138,7 @@ class ApplicationMediaServiceTest {
                     .isEqualTo("https://cdn.example.com/video-0.jpg");
             assertThat(media.getTitle()).isEqualTo("title video-0");
             assertThat(media.getDescription()).isEqualTo("description video-0");
-            assertThat(media.getContentType()).isNull();
+            assertThat(media.getContentType()).isEqualTo(ContentType.LONG_FORM);
             assertThat(media.getViewCount()).isEqualTo(100L);
         });
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
@@ -215,7 +215,7 @@ class ApplicationMediaServiceTest {
         assertThat(result.media().getFirst()).satisfies(media -> {
             assertThat(media.sequenceNo()).isZero();
             assertThat(media.mediaSequenceNo()).isZero();
-            assertThat(media.contentType()).isEqualTo(ContentType.REELS);
+            assertThat(media.contentType()).isEqualTo(ContentType.SHORT_FORM);
             assertThat(media.mediaType()).isEqualTo(MediaType.VIDEO);
             assertThat(media.caption()).isEqualTo("reel caption");
             assertThat(media.mediaUrl()).isEqualTo("https://cdn.example.com/reel.mp4");
@@ -230,7 +230,7 @@ class ApplicationMediaServiceTest {
         assertThat(result.media().get(2)).satisfies(media -> {
             assertThat(media.sequenceNo()).isEqualTo(1);
             assertThat(media.mediaSequenceNo()).isZero();
-            assertThat(media.contentType()).isEqualTo(ContentType.POST);
+            assertThat(media.contentType()).isEqualTo(ContentType.FEED);
             assertThat(media.caption()).isEqualTo("post caption");
         });
     }
@@ -299,7 +299,7 @@ class ApplicationMediaServiceTest {
                 platform,
                 contentId,
                 "https://example.com/" + contentId,
-                ContentType.FEED,
+                platform == SnsPlatform.YOUTUBE ? ContentType.LONG_FORM : ContentType.FEED,
                 texts,
                 createdAt,
                 media);
