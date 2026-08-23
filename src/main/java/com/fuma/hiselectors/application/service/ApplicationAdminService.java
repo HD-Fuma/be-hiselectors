@@ -72,6 +72,11 @@ public class ApplicationAdminService {
                 r.getStrength(),
                 r.getWarning(),
                 r.getBrandHistory(),
+                r.getRepresentativeContentUrl(),
+                r.getRepresentativeContentType(),
+                r.getRepresentativeViewCount(),
+                r.getRepresentativeCategory(),
+                splitCsv(r.getRepresentativeKeywords()),
                 r.getStatus(),
                 r.getCreatedAt());
     }

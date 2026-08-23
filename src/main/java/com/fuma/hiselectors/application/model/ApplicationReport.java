@@ -75,6 +75,26 @@ public class ApplicationReport {
     @Column(length = 500)
     private String warning;
 
+    /** 대표 콘텐츠(정량=engagement 최고) 링크. 만료되는 media_url 대신 안정적인 퍼머링크/watch URL. */
+    @Column(name = "representative_content_url", columnDefinition = "TEXT")
+    private String representativeContentUrl;
+
+    /** 대표 콘텐츠 타입(REELS/VIDEO 등). FE 렌더링용. */
+    @Column(name = "representative_content_type", length = 20)
+    private String representativeContentType;
+
+    /** 대표 선정 근거(조회수). null 가능. */
+    @Column(name = "representative_view_count")
+    private Long representativeViewCount;
+
+    /** 대표 콘텐츠 1건의 카테고리(전체 취합 category 와 별개, 콘텐츠별 값). */
+    @Column(name = "representative_category", length = 20)
+    private String representativeCategory;
+
+    /** 대표 콘텐츠 1건의 키워드. */
+    @Column(name = "representative_keywords", length = 500)
+    private String representativeKeywords;
+
     /** 처리 상태. */
     @Column(length = 20)
     private String status;

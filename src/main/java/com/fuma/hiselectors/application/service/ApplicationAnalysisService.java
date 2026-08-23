@@ -35,28 +35,34 @@ public class ApplicationAnalysisService {
 
     /** 미디어 전부 분석·적재 → 취합·리포트 저장 → 분석 상태 DONE. */
     public void analyzeAndReport(Long applicationId) {
-        List<ApplicationMedia> media = mediaRepository
-                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
+        List<ApplicationMedia> media =
+                mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         if (media.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
 
         // 미디어별 STT/OCR 적재(외부호출, 멱등). 플랫폼별 취득 경로가 다르다.
+        // 콘텐츠 1건 실패(전사 MAX_TOKENS, 만료 URL 등)는 지원자 전체를 막지 않도록 per-item 으로 잡고 skip.
         for (ApplicationMedia m : media) {
-            if (m.getSnsCode() == SnsPlatform.YOUTUBE) {
-                // 유튜브는 media_url 이 없다. videoId(=sns_content_id)로 URL 전사.
-                if (m.getSnsContentId() == null || m.getSnsContentId().isBlank()) {
-                    continue;
+            try {
+                if (m.getSnsCode() == SnsPlatform.YOUTUBE) {
+                    // 유튜브는 media_url 이 없다. videoId(=sns_content_id)로 URL 전사.
+                    if (m.getSnsContentId() == null || m.getSnsContentId().isBlank()) {
+                        continue;
+                    }
+                    evaluationService.addYoutubeContent(applicationId, m.getSnsContentId());
+                } else {
+                    // 인스타는 media_url(CDN) 필요. 없는 건 취득 불가라 skip.
+                    if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
+                        continue;
+                    }
+                    // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
+                    evaluationService.addContent(applicationId,
+                            new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
                 }
-                evaluationService.addYoutubeContent(applicationId, m.getSnsContentId());
-            } else {
-                // 인스타는 media_url(CDN) 필요. 없는 건 취득 불가라 skip.
-                if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
-                    continue;
-                }
-                evaluationService.addContent(applicationId,
-                        new ContentAddRequest(
-                                m.getSnsMediaId(), m.getMediaUrl(), m.getThumbnailUrl()));
+            } catch (RuntimeException e) {
+                log.warn("콘텐츠 1건 분석 skip: applicationId={}, snsContentId={}, reason={}",
+                        applicationId, m.getSnsContentId(), e.getMessage());
             }
         }
 
