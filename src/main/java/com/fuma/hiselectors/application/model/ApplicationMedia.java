@@ -54,6 +54,9 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Column(name = "content_type", length = 20)
     private ContentType contentType;
 
+    @Column(name = "caption", columnDefinition = "TEXT")
+    private String caption;
+
     @Column(name = "sequence_no", nullable = false)
     private int sequenceNo;
 
@@ -75,6 +78,7 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Builder
     private ApplicationMedia(Long applicationId, SnsPlatform snsCode, String snsContentId,
                              String contentUrl, String mediaUrl, ContentType contentType,
+                             String caption,
                              int sequenceNo,
                              LocalDateTime publishedAt,
                              Long viewCount, Long likeCount, Long commentCount,
@@ -85,6 +89,7 @@ public class ApplicationMedia extends BaseTimeEntity {
         this.contentUrl = contentUrl;
         this.mediaUrl = mediaUrl;
         this.contentType = contentType;
+        this.caption = caption;
         this.sequenceNo = sequenceNo;
         this.publishedAt = publishedAt;
         this.viewCount = viewCount;

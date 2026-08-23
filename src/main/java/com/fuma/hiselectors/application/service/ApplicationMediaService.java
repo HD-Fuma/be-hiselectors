@@ -4,7 +4,6 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaCollectionResponse;
 import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
-import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.client.ContentFetcher;
@@ -151,9 +150,11 @@ public class ApplicationMediaService {
                         .filter(url -> url != null && !url.isBlank())
                         .findFirst()
                         .orElse(null))
-                // videos.list duration만으로는 Shorts의 세로 비율을 확인할 수 없다.
-                .contentType(application.getSnsCode() == SnsPlatform.YOUTUBE
-                        ? null : content.contentType())
+                // fetcher 분류값 그대로 저장. 유튜브는 Shorts/롱폼 구분을 안 해 전부 LONG_FORM
+                // (videos.list duration만으론 Shorts 세로비율 확정 불가). Shorts 구분이 필요하면 fetcher 개선.
+                .contentType(content.contentType())
+                // 인스타 본문 / 유튜브 제목·설명. 리포트 분석 입력으로 태운다. 없으면 null.
+                .caption(content.caption().isBlank() ? null : content.caption())
                 .sequenceNo(sequenceNo)
                 .publishedAt(content.createdAt())
                 .viewCount(sequenceNo < STATISTICS_LIMIT ? content.viewCount() : null)

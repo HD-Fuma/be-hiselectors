@@ -13,6 +13,11 @@ public record AdminAiReportResponse(
         String strength,
         String warning,          // 유의점 + 위험 + 욕설확정
         String brandHistory,     // 언급된 협업/협찬 브랜드
+        String representativeContentUrl,   // 대표 콘텐츠(조회수 최고) 링크
+        String representativeContentType,  // REELS/VIDEO 등
+        Long representativeViewCount,      // 대표 선정 근거(조회수)
+        String representativeCategory,     // 대표 콘텐츠 카테고리
+        List<String> representativeKeywords,
         String status,
         LocalDateTime createdAt
 ) {
