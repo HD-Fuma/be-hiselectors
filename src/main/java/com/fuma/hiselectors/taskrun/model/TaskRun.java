@@ -63,6 +63,9 @@ public class TaskRun {
     @Column(name = "current_step", length = 255)
     private String currentStep;
 
+    @Column(name = "progress_message", length = 500)
+    private String progressMessage;
+
     @Column(name = "total_count")
     private Long totalCount;
 
@@ -180,6 +183,17 @@ public class TaskRun {
         Objects.requireNonNull(step, "현재 단계는 필수입니다.");
         Objects.requireNonNull(now, "기준 시각은 필수입니다.");
         this.currentStep = step;
+        touch(now);
+    }
+
+    public void changeProgressMessage(String message, Instant now) {
+        requireRunning();
+        Objects.requireNonNull(message, "진행 메시지는 필수입니다.");
+        Objects.requireNonNull(now, "기준 시각은 필수입니다.");
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("진행 메시지는 500자를 초과할 수 없습니다.");
+        }
+        this.progressMessage = message;
         touch(now);
     }
 

@@ -25,10 +25,13 @@ import com.fuma.hiselectors.creator.repository.CreatorPoolRepository;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -151,6 +154,7 @@ class DiscoveryPipelineServiceTest {
         assertThat(result.created()).isEqualTo(1);
         assertThat(result.updated()).isZero();
         assertThat(result.consumedQuota()).isEqualTo(102);
+        assertThat(result.creatorIds()).containsExactly(101L);
 
         ArgumentCaptor<CreatorPool> creatorCaptor = ArgumentCaptor.forClass(CreatorPool.class);
         verify(creatorPoolRepository).save(creatorCaptor.capture());
@@ -201,6 +205,7 @@ class DiscoveryPipelineServiceTest {
         assertThat(result.created()).isZero();
         assertThat(result.updated()).isZero();
         assertThat(result.consumedQuota()).isEqualTo(102);
+        assertThat(result.creatorIds()).isEmpty();
         assertThat(keyword.getLastRunAt()).isNotNull();
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
         verifyNoInteractions(igHandleExtractor, brandScoreCalculator,
@@ -240,6 +245,7 @@ class DiscoveryPipelineServiceTest {
 
         assertThat(result.created()).isZero();
         assertThat(result.updated()).isEqualTo(1);
+        assertThat(result.creatorIds()).containsExactly(102L);
         verify(existingCreator).updateMetrics(
                 50_000L, new BigDecimal("5.00"), uploadedAt);
         verify(existingCreator).restore();
@@ -249,5 +255,51 @@ class DiscoveryPipelineServiceTest {
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
         verifyNoInteractions(publicEmailExtractor);
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);
+    }
+
+    @Test
+    @DisplayName("저장된 크리에이터 ID는 공개 응답 JSON에 노출하지 않는다")
+    void creatorIdsAreInternalOnly() throws Exception {
+        DiscoveryRunResult result = new DiscoveryRunResult(
+                "겟레디윗미", "BEAUTY", 1, 1, 0, 102, Set.of(101L));
+
+        String json = new ObjectMapper().writeValueAsString(result);
+
+        assertThat(json).doesNotContain("creatorIds", "101");
+        assertThat(json).contains("\"keyword\":\"겟레디윗미\"");
+    }
+
+    @Test
+    @DisplayName("기존 공개 응답 JSON은 내부 크리에이터 ID 없이 역직렬화할 수 있다")
+    void deserializeLegacyPublicJsonWithoutCreatorIds() throws Exception {
+        String json = """
+                {
+                  "keyword": "겟레디윗미",
+                  "categoryCode": "BEAUTY",
+                  "discovered": 1,
+                  "created": 1,
+                  "updated": 0,
+                  "consumedQuota": 102
+                }
+                """;
+
+        DiscoveryRunResult result = new ObjectMapper()
+                .readValue(json, DiscoveryRunResult.class);
+
+        assertThat(result.creatorIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("저장된 크리에이터 ID 집합은 외부에서 변경할 수 없다")
+    void creatorIdsAreDefensivelyCopiedAndUnmodifiable() {
+        Set<Long> creatorIds = new HashSet<>(Set.of(101L));
+        DiscoveryRunResult result = new DiscoveryRunResult(
+                "겟레디윗미", "BEAUTY", 1, 1, 0, 102, creatorIds);
+
+        creatorIds.add(102L);
+
+        assertThat(result.creatorIds()).containsExactly(101L);
+        assertThatThrownBy(() -> result.creatorIds().add(103L))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 }

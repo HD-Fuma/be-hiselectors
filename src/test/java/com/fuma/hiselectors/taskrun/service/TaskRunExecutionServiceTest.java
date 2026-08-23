@@ -137,6 +137,17 @@ class TaskRunExecutionServiceTest {
     }
 
     @Test
+    void flushesAMessageOnlyReportBeforeCompleting() {
+        TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
+                command(UUID.randomUUID()),
+                context -> context.progress().describe("YouTube 7명 · Instagram 4명 수집"));
+
+        TaskRun run = find(runId(result));
+        assertThat(run.getProgressMessage()).isEqualTo("YouTube 7명 · Instagram 4명 수집");
+        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.SUCCEEDED);
+    }
+
+    @Test
     void uncaughtTaskFailureFailsTheRunningRunAndStillInvokesTerminalCallback() {
         AtomicReference<TaskTerminalContext> terminal = new AtomicReference<>();
         TrackedTask task = new TrackedTask() {

@@ -17,6 +17,7 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     private long pendingSucceeded;
     private long pendingFailed;
     private long pendingSkipped;
+    private String pendingMessage;
     private Instant lastFlushAt;
 
     public ThrottledTaskProgressReporter(
@@ -47,6 +48,15 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     }
 
     @Override
+    public void describe(String message) {
+        Objects.requireNonNull(message, "진행 메시지는 필수입니다.");
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("진행 메시지는 500자를 초과할 수 없습니다.");
+        }
+        pendingMessage = message;
+    }
+
+    @Override
     public void advance(int succeededDelta, int failedDelta, int skippedDelta) {
         requireNonNegative(succeededDelta, failedDelta, skippedDelta);
         pendingSucceeded = Math.addExact(pendingSucceeded, succeededDelta);
@@ -65,7 +75,7 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     }
 
     void flush() {
-        if (pendingItems() > 0) {
+        if (pendingItems() > 0 || pendingMessage != null) {
             persist(null, null, false);
         }
     }
@@ -77,6 +87,7 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
                 stepCode,
                 totalCount,
                 updateTotal,
+                pendingMessage,
                 pendingSucceeded,
                 pendingFailed,
                 pendingSkipped,
@@ -84,6 +95,7 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
         pendingSucceeded = 0;
         pendingFailed = 0;
         pendingSkipped = 0;
+        pendingMessage = null;
         lastFlushAt = now;
     }
 

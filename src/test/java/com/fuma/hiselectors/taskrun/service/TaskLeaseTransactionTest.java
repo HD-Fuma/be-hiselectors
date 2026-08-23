@@ -64,7 +64,7 @@ class TaskLeaseTransactionTest {
     void appliesCountsAndHeartbeatAtomicallyForTheCurrentRunningLease() {
         TaskLease lease = runningRun();
 
-        transaction.apply(lease, "STORE", 4, true, 2, 1, 1, UPDATED_AT);
+        transaction.apply(lease, "STORE", 4, true, "크리에이터 4명 수집", 2, 1, 1, UPDATED_AT);
 
         TaskRun updated = repository.findByRunId(lease.runId()).orElseThrow();
         assertThat(updated.getCurrentStep()).isEqualTo("STORE");
@@ -73,6 +73,7 @@ class TaskLeaseTransactionTest {
         assertThat(updated.getFailedCount()).isEqualTo(1);
         assertThat(updated.getSkippedCount()).isEqualTo(1);
         assertThat(updated.getProcessedCount()).isEqualTo(4);
+        assertThat(updated.getProgressMessage()).isEqualTo("크리에이터 4명 수집");
         assertThat(updated.getHeartbeatAt()).isEqualTo(UPDATED_AT);
     }
 
@@ -85,6 +86,7 @@ class TaskLeaseTransactionTest {
                 null,
                 null,
                 false,
+                null,
                 1,
                 0,
                 0,

@@ -6,6 +6,8 @@ public interface TaskProgressReporter {
 
     void changeStep(String stepCode);
 
+    void describe(String message);
+
     void advance(int succeededDelta, int failedDelta, int skippedDelta);
 
     void heartbeat();

@@ -124,6 +124,28 @@ class TaskRunTest {
     }
 
     @Test
+    void changesProgressMessageWhileRunning() {
+        TaskRun run = running();
+
+        run.changeProgressMessage("YouTube 크리에이터 7명 수집", NOW.plusSeconds(2));
+
+        assertThat(run.getProgressMessage()).isEqualTo("YouTube 크리에이터 7명 수집");
+        assertThat(run.getHeartbeatAt()).isEqualTo(NOW.plusSeconds(2));
+    }
+
+    @Test
+    void progressMessageCannotBeNullOrLongerThanFiveHundredCharacters() {
+        TaskRun run = running();
+
+        assertThatThrownBy(() -> run.changeProgressMessage(null, NOW.plusSeconds(2)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("진행 메시지는 필수입니다.");
+        assertThatThrownBy(() -> run.changeProgressMessage("가".repeat(501), NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("진행 메시지는 500자를 초과할 수 없습니다.");
+    }
+
+    @Test
     void completionUsesFailedThenPartialFailedThenSucceededPrecedence() {
         TaskRun failed = running();
         failed.addCounts(0, 2, 1, NOW.plusSeconds(2));
@@ -186,6 +208,8 @@ class TaskRunTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.changeStep("next", NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> run.changeProgressMessage("message", NOW.plusSeconds(3)))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.addCounts(1, 0, 0, NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.fail("ERROR", "message", NOW.plusSeconds(3)))
@@ -208,6 +232,14 @@ class TaskRunTest {
         Column column = TaskRun.class.getDeclaredField("heartbeatAt").getAnnotation(Column.class);
 
         assertThat(column.nullable()).isFalse();
+    }
+
+    @Test
+    void progressMessageIsMappedAsNullableVarcharFiveHundred() throws NoSuchFieldException {
+        Column column = TaskRun.class.getDeclaredField("progressMessage").getAnnotation(Column.class);
+
+        assertThat(column.nullable()).isTrue();
+        assertThat(column.length()).isEqualTo(500);
     }
 
     private TaskRun running() {

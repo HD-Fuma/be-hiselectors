@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS task_run (
     trigger_type VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL,
     current_step VARCHAR(255) NULL,
+    progress_message VARCHAR(500) NULL,
     total_count BIGINT NULL,
     processed_count BIGINT NOT NULL DEFAULT 0,
     succeeded_count BIGINT NOT NULL DEFAULT 0,

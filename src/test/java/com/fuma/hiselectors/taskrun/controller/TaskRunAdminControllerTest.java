@@ -78,6 +78,7 @@ class TaskRunAdminControllerTest {
         assertThat(taskRun.properties()).extracting(java.util.Map.Entry::getKey)
                 .containsExactlyInAnyOrderElementsOf(Set.of(
                         "runId", "taskType", "triggerType", "status", "currentStep",
+                        "progressMessage",
                         "totalCount", "processedCount", "succeededCount", "failedCount",
                         "skippedCount", "progressPercent", "startedBy", "startedAt", "finishedAt"));
     }
@@ -168,6 +169,7 @@ class TaskRunAdminControllerTest {
                 TriggerType.ADMIN_TRIGGERED,
                 TaskRunStatus.RUNNING,
                 "콘텐츠 조회",
+                "크리에이터 5명 수집",
                 10L,
                 5L,
                 4L,

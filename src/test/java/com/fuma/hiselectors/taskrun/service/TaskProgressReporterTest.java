@@ -1,9 +1,13 @@
 package com.fuma.hiselectors.taskrun.service;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import java.time.Clock;
@@ -36,7 +40,7 @@ class TaskProgressReporterTest {
     void startPersistsTheStepImmediatelyAndAllowsAnUnknownTotal() {
         reporter.start("LOAD", null);
 
-        verify(transaction).apply(lease, "LOAD", null, true, 0, 0, 0, NOW);
+        verify(transaction).apply(lease, "LOAD", null, true, null, 0, 0, 0, NOW);
     }
 
     @Test
@@ -45,11 +49,11 @@ class TaskProgressReporterTest {
         clearInvocations(transaction);
 
         reporter.advance(4, 3, 2);
-        verify(transaction, never()).apply(lease, null, null, false, 4, 3, 2, NOW);
+        verify(transaction, never()).apply(lease, null, null, false, null, 4, 3, 2, NOW);
 
         reporter.advance(1, 0, 0);
 
-        verify(transaction).apply(lease, null, null, false, 5, 3, 2, NOW);
+        verify(transaction).apply(lease, null, null, false, null, 5, 3, 2, NOW);
     }
 
     @Test
@@ -61,7 +65,7 @@ class TaskProgressReporterTest {
 
         reporter.heartbeat();
 
-        verify(transaction).apply(lease, null, null, false, 1, 1, 0, NOW.plusSeconds(2));
+        verify(transaction).apply(lease, null, null, false, null, 1, 1, 0, NOW.plusSeconds(2));
     }
 
     @Test
@@ -72,12 +76,12 @@ class TaskProgressReporterTest {
 
         reporter.changeStep("STORE");
 
-        verify(transaction).apply(lease, "STORE", null, false, 2, 1, 0, NOW);
+        verify(transaction).apply(lease, "STORE", null, false, null, 2, 1, 0, NOW);
 
         reporter.advance(4, 0, 0);
         reporter.flush();
 
-        verify(transaction).apply(lease, null, null, false, 4, 0, 0, NOW);
+        verify(transaction).apply(lease, null, null, false, null, 4, 0, 0, NOW);
     }
 
     @Test
@@ -88,7 +92,67 @@ class TaskProgressReporterTest {
 
         reporter.flush();
 
-        verify(transaction).apply(lease, null, null, false, 1, 0, 0, NOW);
+        verify(transaction).apply(lease, null, null, false, null, 1, 0, 0, NOW);
+    }
+
+    @Test
+    void countFlushPersistsOnlyTheLatestProgressMessage() {
+        reporter.describe("크리에이터 1명 수집");
+        reporter.describe("크리에이터 2명 수집");
+        verifyNoInteractions(transaction);
+
+        reporter.advance(10, 0, 0);
+
+        verify(transaction).apply(
+                lease, null, null, false, "크리에이터 2명 수집", 10, 0, 0, NOW);
+    }
+
+    @Test
+    void messageOnlyFlushPersistsThePendingMessage() {
+        reporter.describe("YouTube 크리에이터 7명 수집");
+
+        reporter.flush();
+
+        verify(transaction).apply(
+                lease, null, null, false, "YouTube 크리에이터 7명 수집", 0, 0, 0, NOW);
+    }
+
+    @Test
+    void rejectsAnOversizedMessageBeforeItBecomesPending() {
+        assertThatThrownBy(() -> reporter.describe("가".repeat(501)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("진행 메시지는 500자를 초과할 수 없습니다.");
+
+        reporter.flush();
+        verifyNoInteractions(transaction);
+    }
+
+    @Test
+    void successfulFlushClearsThePendingMessage() {
+        reporter.describe("YouTube 크리에이터 7명 수집");
+        reporter.flush();
+        clearInvocations(transaction);
+
+        reporter.advance(1, 0, 0);
+        reporter.flush();
+
+        verify(transaction).apply(lease, null, null, false, null, 1, 0, 0, NOW);
+    }
+
+    @Test
+    void failedFlushKeepsThePendingMessageForRetry() {
+        reporter.describe("YouTube 크리에이터 7명 수집");
+        doThrow(new IllegalStateException("temporary"))
+                .doNothing()
+                .when(transaction)
+                .apply(lease, null, null, false, "YouTube 크리에이터 7명 수집", 0, 0, 0, NOW);
+
+        assertThatThrownBy(reporter::flush)
+                .isInstanceOf(IllegalStateException.class);
+        reporter.flush();
+
+        verify(transaction, times(2)).apply(
+                lease, null, null, false, "YouTube 크리에이터 7명 수집", 0, 0, 0, NOW);
     }
 
     private static final class MutableClock extends Clock {

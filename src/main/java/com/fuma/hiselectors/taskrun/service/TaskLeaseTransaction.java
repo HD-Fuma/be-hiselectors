@@ -29,6 +29,7 @@ public class TaskLeaseTransaction {
             String stepCode,
             Integer totalCount,
             boolean updateTotal,
+            String progressMessage,
             long succeededDelta,
             long failedDelta,
             long skippedDelta,
@@ -40,6 +41,9 @@ public class TaskLeaseTransaction {
         }
         if (stepCode != null) {
             run.changeStep(stepCode, now);
+        }
+        if (progressMessage != null) {
+            run.changeProgressMessage(progressMessage, now);
         }
         run.addCounts(succeededDelta, failedDelta, skippedDelta, now);
         repository.flush();
