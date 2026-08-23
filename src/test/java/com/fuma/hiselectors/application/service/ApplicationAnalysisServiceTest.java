@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.application.service;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -14,6 +15,8 @@ import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.stt.ContentAddRequest;
 import com.fuma.hiselectors.stt.CreatorEvaluationService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.stt.InstagramSttClient;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -26,9 +29,11 @@ class ApplicationAnalysisServiceTest {
     private final ApplicationMediaRepository mediaRepository = mock(ApplicationMediaRepository.class);
     private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
     private final CreatorEvaluationService evaluationService = mock(CreatorEvaluationService.class);
+    private final InstagramSttClient instagramSttClient = mock(InstagramSttClient.class);
     private final TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
     private final ApplicationAnalysisService service = new ApplicationAnalysisService(
-            mediaRepository, applicationRepository, evaluationService, transactionTemplate);
+            mediaRepository, applicationRepository, evaluationService, instagramSttClient,
+            transactionTemplate);
 
     private ApplicationMedia media(
             SnsPlatform snsCode,
@@ -75,6 +80,7 @@ class ApplicationAnalysisServiceTest {
     @Test
     void 인스타_게시물의_각_미디어를_개별_ID와_URL로_addContent한다() {
         runTransactionsInline();
+        when(instagramSttClient.isHealthy()).thenReturn(true);
         when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
                 .thenReturn(List.of(
                         media(SnsPlatform.INSTAGRAM, "post1", "media1",
@@ -91,6 +97,20 @@ class ApplicationAnalysisServiceTest {
         verify(evaluationService).addContent(
                 1L, new ContentAddRequest("media2", "https://cdn/2.jpg", null));
         verify(evaluationService, never()).addYoutubeContent(any(), any());
+    }
+
+    @Test
+    void 인스타_있는데_STT워커_다운이면_처리안하고_실패() {
+        when(instagramSttClient.isHealthy()).thenReturn(false);
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(media(
+                        SnsPlatform.INSTAGRAM, "post1", "media1",
+                        "https://cdn/1.mp4", null, 0)));
+
+        assertThrows(BusinessException.class, () -> service.analyzeAndReport(1L));
+
+        verify(evaluationService, never()).addContent(any(), any());
+        verify(evaluationService, never()).buildReport(any());
     }
 
     @Test

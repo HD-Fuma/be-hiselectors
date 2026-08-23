@@ -6,9 +6,12 @@ import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.application.service.ApplicationAnalysisService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +29,12 @@ import org.springframework.stereotype.Component;
 public class ContentAnalysisScheduler {
 
     private static final int MAX_RETRY_COUNT = 3;
+
+    /** 일시적 인프라 장애. 재시도 카운트를 소진하지 않는다(복구 시 자동 재개). */
+    private static final Set<ErrorCode> TRANSIENT_ERRORS = EnumSet.of(
+            ErrorCode.ANALYZER_UNAVAILABLE,
+            ErrorCode.STT_WORKER_CALL_FAILED,
+            ErrorCode.GEMINI_API_CALL_FAILED);
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnalysisService analysisService;
@@ -69,8 +78,10 @@ public class ContentAnalysisScheduler {
                 succeeded++;
             } catch (RuntimeException e) {
                 failed++;
-                analysisService.markFailed(id, e.getMessage());
-                log.warn("지원자 콘텐츠 분석 실패: applicationId={}", id, e);
+                boolean infraDown = e instanceof BusinessException be
+                        && TRANSIENT_ERRORS.contains(be.getErrorCode());
+                analysisService.markFailed(id, e.getMessage(), !infraDown);
+                log.warn("지원자 콘텐츠 분석 실패: applicationId={}, retryCounted={}", id, !infraDown, e);
             }
         }
         if (!targets.isEmpty()) {
