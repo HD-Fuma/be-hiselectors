@@ -182,7 +182,8 @@ public class CreatorEvaluationService {
                 .contentStyle(clip(insight.contentStyle(), STYLE_MAX))
                 .tone(clip(insight.tone(), TEXT_MAX))
                 .strength(clip(join(insight.strengths()), TEXT_MAX))
-                .warning(clip(join(mergeWarnings(insight)), TEXT_MAX))
+                .cautions(clip(join(insight.cautions()), TEXT_MAX))
+                .risks(clip(join(risksWithHate(insight.risks(), insight.hateConfirmed())), TEXT_MAX))
                 .brandHistory(clip(join(insight.collabBrands()), TEXT_MAX))
                 .status(ReportStatus.AI_COMPLETED.name());
         applyRepresentative(media, rows, builder);   // buildReport 에서 이미 로드한 media 재사용
@@ -252,16 +253,13 @@ public class CreatorEvaluationService {
         return merged.isEmpty() ? null : String.join(", ", merged);
     }
 
-    /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
-    private List<String> mergeWarnings(ApplicantInsight insight) {
+    /** 위험요소 = risks taxonomy + (욕설 확정 시 표식). 유의점(cautions)과는 별도 저장. */
+    private List<String> risksWithHate(List<String> risks, boolean hateConfirmed) {
         List<String> merged = new ArrayList<>();
-        if (insight.cautions() != null) {
-            merged.addAll(insight.cautions());
+        if (risks != null) {
+            merged.addAll(risks);
         }
-        if (insight.risks() != null) {
-            merged.addAll(insight.risks());
-        }
-        if (insight.hateConfirmed()) {
+        if (hateConfirmed) {
             merged.add("욕설/혐오");
         }
         return merged;

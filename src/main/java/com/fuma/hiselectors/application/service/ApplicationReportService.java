@@ -65,7 +65,8 @@ public class ApplicationReportService {
                 .contentStyle(clip(insight.contentStyle(), 19))
                 .tone(clip(join1(insight.tone()), 500))
                 .strength(clip(join(insight.strengths()), 500))
-                .warning(clip(join(mergeWarnings(insight)), 500))
+                .cautions(clip(join(insight.cautions()), 500))
+                .risks(clip(join(risksWithHate(insight)), 500))
                 .brandHistory(clip(join(insight.collabBrands()), 500))
                 .build();
 
@@ -122,12 +123,9 @@ public class ApplicationReportService {
         return cache == null ? null : cache.get(applicationId, Map.class);
     }
 
-    /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
-    private List<String> mergeWarnings(ContentInsight insight) {
+    /** 위험요소 = risks taxonomy + (욕설 확정 시 표식). 유의점(cautions)과는 별도 저장. */
+    private List<String> risksWithHate(ContentInsight insight) {
         List<String> merged = new ArrayList<>();
-        if (insight.cautions() != null) {
-            merged.addAll(insight.cautions());
-        }
         if (insight.risks() != null) {
             merged.addAll(insight.risks());
         }
