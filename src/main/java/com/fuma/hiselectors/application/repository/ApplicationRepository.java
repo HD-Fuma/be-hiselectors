@@ -23,6 +23,9 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     boolean existsByUserIdAndGenerationId(Long userId, Long generationId);
 
+    /** 정량 지표 백분위 비교 모수. 미디어 수집이 끝난 지원자만 대상으로 한다. */
+    List<Application> findAllByMediaCollectionStatus(MediaCollectionStatus mediaCollectionStatus);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Application a where a.id = :applicationId")
     Optional<Application> findByIdForUpdate(@Param("applicationId") Long applicationId);
