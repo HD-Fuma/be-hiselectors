@@ -17,6 +17,7 @@ import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse.Quant
 import com.fuma.hiselectors.application.dto.AdminApplicationDetailResponse.UploadCadence;
 import com.fuma.hiselectors.application.dto.AdminApplicationSummaryResponse;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.service.ApplicationAdminService;
@@ -117,13 +118,14 @@ class ApplicationAdminControllerTest {
                 new MetricAverage(null, 0),
                 new MetricAverage(null, 0),
                 new MetricAverage(null, 0),
-                List.of());
+                List.of(), null, null, null);
         when(applicationAdminService.findDetail(1L)).thenReturn(
                 new AdminApplicationDetailResponse(
                         1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                         2L, "2기", SnsPlatform.YOUTUBE, "UC123",
                         "https://www.youtube.com/channel/UC123", null,
                         ApplicationStatus.PENDING, MediaCollectionStatus.DONE,
+                        ContentAnalysisStatus.DONE,
                         collectedAt.minusDays(30), collectedAt, collectedAt, metrics, List.of()));
 
         mockMvc.perform(get("/api/admin/applications/1"))

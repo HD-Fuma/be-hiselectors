@@ -41,7 +41,11 @@ public record AdminApplicationDetailResponse(
             MetricAverage averageLikeCount,
             MetricAverage averageCommentCount,
             MetricAverage engagementRate,
-            List<ContentFormatCount> contentFormats
+            List<ContentFormatCount> contentFormats,
+            // 아래 3개는 미디어 수집이 끝난 전체 지원자 중 상위 N%(1=최상위). 비교 대상이 없으면 null.
+            Integer viewCountPercentile,
+            Integer likeCountPercentile,
+            Integer commentCountPercentile
     ) {
     }
 

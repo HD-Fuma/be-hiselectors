@@ -38,7 +38,7 @@ public record ApplicationMediaResponse(
                 media.getContentUrl(),
                 media.getMediaUrl(),
                 media.getThumbnailUrl(),
-                normalize(media.getContentType()),
+                media.getContentType(),
                 media.getMediaType(),
                 media.getCaption(),
                 media.getTitle(),
@@ -50,16 +50,5 @@ public record ApplicationMediaResponse(
                 media.getLikeCount(),
                 media.getCommentCount(),
                 media.getCollectedAt());
-    }
-
-    private static ContentType normalize(ContentType type) {
-        if (type == null) {
-            return null;
-        }
-        return switch (type) {
-            case SHORT_FORM -> ContentType.REELS;
-            case FEED -> ContentType.POST;
-            default -> type;
-        };
     }
 }

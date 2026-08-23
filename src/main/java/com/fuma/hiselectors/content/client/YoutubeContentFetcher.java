@@ -14,6 +14,7 @@ import com.fuma.hiselectors.creator.discovery.dto.YoutubeVideoListResponse.Stati
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -53,6 +54,9 @@ public class YoutubeContentFetcher implements ContentFetcher {
     private static final String VIDEO_URL = "https://www.youtube.com/watch?v=";
 
     private static final int PAGE_SIZE = 50;
+
+    /** 이 길이 이하 영상은 SHORTS 로 본다. YouTube Shorts 최대 길이(3분) 기준. */
+    private static final int SHORTS_MAX_SECONDS = 180;
     private static final Pattern CHANNEL_ID = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
 
     // YouTube 영상 공개 시각을 변환할 서비스 기준 시간대
@@ -127,7 +131,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
 
     private List<FetchResult> fetchBatch(List<String> ids) {
         URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
-                .queryParam("part", "snippet,statistics")
+                .queryParam("part", "snippet,statistics,contentDetails")
                 .queryParam("id", String.join(",", ids))
                 .queryParam("key", properties.apiKey())
                 .build()
@@ -164,7 +168,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
                     SnsPlatform.YOUTUBE,
                     id,
                     VIDEO_URL + id,
-                    ContentType.LONG_FORM,
+                    classifyByDuration(item.contentDetails() == null
+                            ? null : item.contentDetails().duration()),
                     texts(item),
                     parseCreatedAt(snippet.publishedAt()),
                     List.of(new RawContentMedia(
@@ -398,14 +403,14 @@ public class YoutubeContentFetcher implements ContentFetcher {
             return contents;
         }
 
-        Map<String, Statistics> statisticsById = new HashMap<>();
+        Map<String, YoutubeVideoListResponse.Item> itemsById = new HashMap<>();
         for (int start = 0; start < contents.size(); start += PAGE_SIZE) {
             List<String> videoIds = contents.subList(start, Math.min(start + PAGE_SIZE, contents.size()))
                     .stream()
                     .map(RawContent::snsContentId)
                     .toList();
             URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
-                    .queryParam("part", "statistics")
+                    .queryParam("part", "statistics,contentDetails")
                     .queryParam("id", String.join(",", videoIds))
                     .queryParam("key", properties.apiKey())
                     .build()
@@ -415,17 +420,40 @@ public class YoutubeContentFetcher implements ContentFetcher {
             if (response.items() != null) {
                 response.items().stream()
                         .filter(item -> item != null && item.id() != null)
-                        .forEach(item -> statisticsById.put(item.id(), item.statistics()));
+                        .forEach(item -> itemsById.put(item.id(), item));
             }
         }
 
         return contents.stream().map(content -> {
-            Statistics statistics = statisticsById.get(content.snsContentId());
-            return statistics == null ? content : content.withMetrics(
+            YoutubeVideoListResponse.Item item = itemsById.get(content.snsContentId());
+            if (item == null) {
+                return content;
+            }
+            // playlistItems 응답엔 길이가 없어 LONG_FORM 으로 왔으므로 여기서 Shorts 여부를 반영한다.
+            ContentType contentType = classifyByDuration(item.contentDetails() == null
+                    ? null : item.contentDetails().duration());
+            RawContent typed = content.contentType() == contentType
+                    ? content : content.withContentType(contentType);
+            Statistics statistics = item.statistics();
+            return statistics == null ? typed : typed.withMetrics(
                     parseCount(statistics.viewCount()),
                     parseCount(statistics.likeCount()),
                     parseCount(statistics.commentCount()));
         }).toList();
+    }
+
+    // ponytail: duration 휴리스틱. YouTube 가 Shorts 여부 플래그를 안 줘서 영상 길이로 추정한다.
+    // 정확히 하려면 youtube.com/shorts/{id} 리다이렉트 확인이 필요(요청 1회 추가).
+    private ContentType classifyByDuration(String isoDuration) {
+        if (!StringUtils.hasText(isoDuration)) {
+            return ContentType.LONG_FORM;
+        }
+        try {
+            return Duration.parse(isoDuration).getSeconds() <= SHORTS_MAX_SECONDS
+                    ? ContentType.SHORTS : ContentType.LONG_FORM;
+        } catch (DateTimeParseException e) {
+            return ContentType.LONG_FORM;
+        }
     }
 
     private Long parseCount(String count) {

@@ -374,6 +374,36 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    @DisplayName("영상 길이로 SHORTS/LONG_FORM 을 판정한다")
+    void classifiesShortsByDuration() {
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("part=snippet,statistics,contentDetails"))
+                .andRespond(withSuccess("""
+                        {
+                          "items": [
+                            {
+                              "id": "short-1",
+                              "snippet": {"title": "s", "publishedAt": "2026-08-13T05:00:00Z"},
+                              "contentDetails": {"duration": "PT45S"}
+                            },
+                            {
+                              "id": "long-1",
+                              "snippet": {"title": "l", "publishedAt": "2026-08-13T05:00:00Z"},
+                              "contentDetails": {"duration": "PT5M10S"}
+                            }
+                          ]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        List<ContentFetcher.FetchResult> result =
+                client.fetchByContentIds(List.of("short-1", "long-1"));
+
+        assertThat(result.get(0).content().contentType()).isEqualTo(ContentType.SHORTS);
+        assertThat(result.get(1).content().contentType()).isEqualTo(ContentType.LONG_FORM);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("YouTube 영상 ID는 API 제한에 맞춰 50개씩 조회한다")
     void fetchContentsByIdsInBatchesOfFifty() {
         List<String> ids = java.util.stream.IntStream.rangeClosed(1, 51)

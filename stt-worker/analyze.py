@@ -11,6 +11,7 @@ import enums
 _NOUN_TAGS = frozenset({"NNG", "NNP", "SL", "SN"})
 MODEL_NAME = "jhgan/ko-sroberta-multitask"
 MIN_CONFIDENCE = 0.3
+_MAX_JOIN = 3  # 재결합 허용 형태소 개수. 넘으면 run-on 으로 보고 버림. 정상/노이즈 경계라 튜닝값.
 _STOP = frozenset({
     "요즘", "이번", "오늘", "때문", "이야기", "다음",
     "부분", "느낌", "생각", "경우", "사람", "정도",
@@ -29,24 +30,29 @@ def _kiwi() -> Kiwi:
 
 def _noun_candidates(text: str) -> list[str]:
     """단일 명사구 후보. 조사·어미 제거. kiwi가 과분할한 복합어는 원문 위치가 붙어있으면 재결합
-    (발레코어룩 등). 인접 어절을 억지로 잇는 bigram은 만들지 않는다(중복·노이즈 방지)."""
+    (발레코어룩 등). 인접 어절을 억지로 잇는 bigram은 만들지 않는다(중복·노이즈 방지).
+
+    ponytail: 형태소 _MAX_JOIN 개까지만 재결합한다. STT 자막은 띄어쓰기가 없어
+    '공깃밥반공기추가'처럼 명사 4~5개가 통째로 붙는 run-on 이 생기는데, 이걸 버린다.
+    구조가 같은 '김치말이밥'(3형태소, 정상)은 살린다 → 이 값이 정상/노이즈 경계라 튜닝 지점.
+    3형태소 애매어(먹방종료후)·STT 오탈자(함김치찌가)는 여기서 못 거른다(사전 필요)."""
     words = []
-    cur, cur_end = "", -1
+    cur, cur_end, parts = "", -1, 0
     for t in _kiwi().tokenize(text):
         if t.tag in _NOUN_TAGS or (t.tag == "XSN" and cur):
             if cur and t.start == cur_end:
-
                 cur += t.form
+                parts += 1
             else:
-                if cur:
+                if cur and parts <= _MAX_JOIN:
                     words.append(cur)
-                cur = t.form
+                cur, parts = t.form, 1
             cur_end = t.start + len(t.form)
         else:
-            if cur:
+            if cur and parts <= _MAX_JOIN:
                 words.append(cur)
-                cur, cur_end = "", -1
-    if cur:
+            cur, cur_end, parts = "", -1, 0
+    if cur and parts <= _MAX_JOIN:
         words.append(cur)
     words = [w for w in words if len(w) >= 2 and w not in _STOP]
     return list(dict.fromkeys(words))
@@ -98,6 +104,15 @@ def _selfcheck() -> None:
 
     news = analyze("오늘 여덟시 뉴스를 마치겠습니다 고맙습니다")
     assert news["category"]["label"] == "" and analyze("")["category"]["uncertain"], "빈 입력 처리 실패"
+
+    # run-on 필터: 띄어쓰기 없는 명사 4개+ 결합은 버리고, 3형태소 정상 복합어는 남긴다.
+    # (kiwi 형태소 분할이 가정과 다르면 _MAX_JOIN 을 조정. 아래 출력으로 실제 후보 확인)
+    cands = _noun_candidates("공깃밥반공기추가 열무냉김치말이밥 김치말이밥 공깃밥")
+    print("candidates:", cands)
+    assert "공깃밥반공기추가" not in cands, cands
+    assert "열무냉김치말이밥" not in cands, cands
+    assert "김치말이밥" in cands, cands
+    assert "공깃밥" in cands, cands
 
     print("ok:", beauty["keywords"])
 
