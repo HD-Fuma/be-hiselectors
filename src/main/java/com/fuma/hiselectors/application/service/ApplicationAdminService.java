@@ -160,6 +160,7 @@ public class ApplicationAdminService {
                 application.getFollowerCount(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
+                application.getAnalysisStatus(),
                 application.getCreatedAt(),
                 application.getMediaCollectedAt(),
                 application.getUpdatedAt(),

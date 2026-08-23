@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.application.dto;
 
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import java.math.BigDecimal;
@@ -22,6 +23,7 @@ public record AdminApplicationDetailResponse(
         Long followerCount,
         ApplicationStatus status,
         MediaCollectionStatus mediaCollectionStatus,
+        ContentAnalysisStatus analysisStatus,   // AI 리포트 생성 진행상태(DONE 이면 /ai-report 조회 가능, IN_PROGRESS/PENDING 이면 생성 중)
         LocalDateTime appliedAt,
         LocalDateTime mediaCollectedAt,
         LocalDateTime updatedAt,
