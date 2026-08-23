@@ -38,13 +38,15 @@ public class DiscoveryAdminController {
     private final YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
     private final InstagramDiscoveryBatchService instagramDiscoveryBatchService;
 
-    @Operation(summary = "YouTube 크리에이터 일괄 발굴",
+    @Operation(summary = "YouTube·Instagram 크리에이터 일괄 발굴",
             description = "관리자가 크리에이터 모집을 시작할 때 활성 키워드를 "
                     + "우선순위·마지막 실행 시각 순으로 일괄 실행한다. "
-                    + "일부 키워드가 실패해도 나머지 키워드는 계속 실행한다.")
+                    + "YouTube 발굴 후 추출된 Instagram 계정을 자동으로 이어서 발굴하며, "
+                    + "개별 계정이 실패해도 나머지 계정은 계속 실행한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "일괄 발굴 실행 완료"),
-            @ApiResponse(responseCode = "500", description = "YouTube API 키 설정 누락",
+            @ApiResponse(responseCode = "500",
+                    description = "YouTube 또는 Meta Graph API 설정 누락",
                     content = @Content)
     })
     @PostMapping("/youtube/run")

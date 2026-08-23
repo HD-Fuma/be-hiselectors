@@ -13,6 +13,7 @@ import com.fuma.hiselectors.category.model.DiscoveryKeyword;
 import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
+import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -33,6 +34,9 @@ class YoutubeDiscoveryBatchServiceTest {
     @Mock
     private DiscoveryPipelineService discoveryPipelineService;
 
+    @Mock
+    private InstagramDiscoveryBatchService instagramDiscoveryBatchService;
+
     @Test
     @DisplayName("Repository가 준 순서대로 실행하고 쿼터 예산을 넘기지 않는다")
     void runInRepositoryOrderWithinQuota() {
@@ -52,10 +56,11 @@ class YoutubeDiscoveryBatchServiceTest {
         YoutubeDiscoveryBatchService service = service(381, 25, 10);
         YoutubeDiscoveryBatchResult batchResult = service.run();
 
-        InOrder order = inOrder(discoveryPipelineService);
+        InOrder order = inOrder(discoveryPipelineService, instagramDiscoveryBatchService);
         order.verify(discoveryPipelineService).runByKeyword(1L, 25);
         order.verify(discoveryPipelineService).runByKeyword(2L, 25);
         order.verify(discoveryPipelineService).runByKeyword(3L, 25);
+        order.verify(instagramDiscoveryBatchService).run();
         verify(discoveryPipelineService, never()).runByKeyword(4L, 25);
 
         assertThat(batchResult.runnableKeywords()).isEqualTo(4);
@@ -115,13 +120,15 @@ class YoutubeDiscoveryBatchServiceTest {
         YoutubeDiscoveryBatchProperties batchProperties =
                 new YoutubeDiscoveryBatchProperties(10);
         YoutubeDiscoveryBatchService service = new YoutubeDiscoveryBatchService(
-                keywordRepository, discoveryPipelineService, withoutApiKey, batchProperties);
+                keywordRepository, discoveryPipelineService, withoutApiKey, batchProperties,
+                instagramDiscoveryBatchService);
 
         assertThatThrownBy(service::run)
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.YOUTUBE_API_KEY_MISSING);
         verify(keywordRepository, never()).findRunnable();
+        verify(instagramDiscoveryBatchService, never()).run();
     }
 
     @Test
@@ -144,7 +151,8 @@ class YoutubeDiscoveryBatchServiceTest {
         YoutubeDiscoveryBatchProperties batchProperties =
                 new YoutubeDiscoveryBatchProperties(maxKeywords);
         return new YoutubeDiscoveryBatchService(
-                keywordRepository, discoveryPipelineService, discovery, batchProperties);
+                keywordRepository, discoveryPipelineService, discovery, batchProperties,
+                instagramDiscoveryBatchService);
     }
 
     private DiscoveryKeyword keyword(Long id, String value) {
