@@ -33,9 +33,9 @@ public class TaskTypePolicy {
     }
 
     private Settings settings(boolean singleton, Duration staleTimeout) {
-        return new Settings(singleton, false, staleTimeout);
+        return new Settings(singleton, staleTimeout);
     }
 
-    public record Settings(boolean singleton, boolean fencedPersistence, Duration staleTimeout) {
+    public record Settings(boolean singleton, Duration staleTimeout) {
     }
 }

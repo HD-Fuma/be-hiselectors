@@ -77,9 +77,7 @@ class StaleTaskRunSchedulerTest {
     }
 
     @Test
-    void policyRegistryHasTheExactSingletonFencingAndTimeoutRules() {
-        assertThat(TaskType.values()).allSatisfy(type ->
-                assertThat(policy.forType(type).fencedPersistence()).isFalse());
+    void policyRegistryHasTheExactSingletonRecoveryAndTimeoutRules() {
         assertThat(policy.forType(TaskType.CREATOR_SYNC).singleton()).isTrue();
         assertThat(policy.forType(TaskType.CONTENT_SYNC).singleton()).isTrue();
         assertThat(policy.forType(TaskType.APPLICATION_REPORT_GENERATION).singleton()).isTrue();
@@ -87,7 +85,6 @@ class StaleTaskRunSchedulerTest {
         assertThat(policy.forType(TaskType.SETTLEMENT_CALCULATION).singleton()).isTrue();
         assertThat(policy.forType(TaskType.KAKAO_MESSAGE_SEND).singleton()).isFalse();
         assertThat(policy.forType(TaskType.PROPOSAL_EMAIL_SEND).singleton()).isFalse();
-
         assertThat(policy.forType(TaskType.CREATOR_SYNC).staleTimeout()).isEqualTo(Duration.ofMinutes(30));
         assertThat(policy.forType(TaskType.CONTENT_SYNC).staleTimeout()).isEqualTo(Duration.ofMinutes(30));
         assertThat(policy.forType(TaskType.APPLICATION_REPORT_GENERATION).staleTimeout())
@@ -116,7 +113,7 @@ class StaleTaskRunSchedulerTest {
     }
 
     @Test
-    void marksQueuedAndRunningCandidatesStaleAndRetainsConcurrencyUntilFenced() {
+    void marksQueuedAndRunningCandidatesStaleAndReleasesSingletonForRecovery() {
         TaskRun queued = queued(TaskType.CREATOR_SYNC, NOW.minus(Duration.ofMinutes(31)));
         TaskRun running = running(TaskType.KAKAO_MESSAGE_SEND, NOW.minus(Duration.ofMinutes(11)));
         UUID oldToken = running.getLeaseToken();
@@ -127,10 +124,13 @@ class StaleTaskRunSchedulerTest {
         TaskRun staleQueued = find(queued);
         TaskRun staleRunning = find(running);
         assertThat(staleQueued.getStatus()).isEqualTo(TaskRunStatus.STALE);
-        assertThat(staleQueued.getConcurrencyKey()).isEqualTo(TaskType.CREATOR_SYNC.name());
+        assertThat(staleQueued.getConcurrencyKey()).isNull();
         assertThat(staleRunning.getStatus()).isEqualTo(TaskRunStatus.STALE);
         assertThat(staleRunning.getLeaseToken()).isNotEqualTo(oldToken);
         assertThat(find(fresh).getStatus()).isEqualTo(TaskRunStatus.RUNNING);
+
+        TaskRun replacement = queued(TaskType.CREATOR_SYNC, NOW);
+        assertThat(replacement.getStatus()).isEqualTo(TaskRunStatus.QUEUED);
     }
 
     @Test
@@ -175,7 +175,7 @@ class StaleTaskRunSchedulerTest {
         try (var executor = Executors.newFixedThreadPool(2)) {
             Future<?> stale = executor.submit(() -> transactions.executeWithoutResult(ignored -> {
                 TaskRun locked = repository.findByRunIdForUpdate(run.getRunId()).orElseThrow();
-                locked.markStale(replacementToken, false, NOW);
+                locked.markStale(replacementToken, true, NOW);
                 staleLocked.countDown();
                 await(releaseStale);
             }));

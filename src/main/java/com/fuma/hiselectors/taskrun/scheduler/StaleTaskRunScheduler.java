@@ -56,7 +56,7 @@ public class StaleTaskRunScheduler {
         if (!run.getHeartbeatAt().isBefore(cutoff)) {
             return;
         }
-        run.markStale(UUID.randomUUID(), settings.fencedPersistence(), now);
+        run.markStale(UUID.randomUUID(), settings.singleton(), now);
         repository.flush();
     }
 }
