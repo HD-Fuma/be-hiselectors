@@ -60,14 +60,15 @@ public class TaskRunService {
     }
 
     @Transactional
-    public void complete(UUID runId, UUID leaseToken) {
+    public TaskRunStatus complete(UUID runId, UUID leaseToken) {
         TaskRun run = find(runId);
         requireLease(run, leaseToken);
         transition(() -> run.complete(clock.instant()));
+        return run.getStatus();
     }
 
     @Transactional
-    public void fail(UUID runId, UUID leaseToken, String errorType, String errorMessage) {
+    public TaskRunStatus fail(UUID runId, UUID leaseToken, String errorType, String errorMessage) {
         TaskRun run = find(runId);
         requireStatus(run, TaskRunStatus.RUNNING);
         requireLease(run, leaseToken);
@@ -75,6 +76,7 @@ public class TaskRunService {
                 bounded(errorType, 100),
                 bounded(errorMessage, 1000),
                 clock.instant()));
+        return run.getStatus();
     }
 
     @Transactional

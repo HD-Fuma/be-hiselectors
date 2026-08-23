@@ -67,6 +67,11 @@ management:
         include: health, scheduledtasks
 
 task-run:
+  executor:
+    core-size: ${TASK_RUN_CORE_SIZE:2}
+    max-size: ${TASK_RUN_MAX_SIZE:4}
+    queue-capacity: ${TASK_RUN_QUEUE_CAPACITY:20}
+    thread-prefix: ${TASK_RUN_THREAD_PREFIX:task-run-}
   progress:
     flush-count: ${TASK_RUN_PROGRESS_FLUSH_COUNT:10}
     flush-interval-ms: ${TASK_RUN_PROGRESS_FLUSH_INTERVAL_MS:2000}

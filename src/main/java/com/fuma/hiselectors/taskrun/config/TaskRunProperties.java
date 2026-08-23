@@ -3,13 +3,32 @@ package com.fuma.hiselectors.taskrun.config;
 import java.time.Duration;
 import java.util.Objects;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 @ConfigurationProperties(prefix = "task-run")
-public record TaskRunProperties(Progress progress, Stale stale) {
+public record TaskRunProperties(Executor executor, Progress progress, Stale stale) {
 
+    @ConstructorBinding
     public TaskRunProperties {
+        Objects.requireNonNull(executor, "executor must not be null");
         Objects.requireNonNull(progress, "progress must not be null");
         Objects.requireNonNull(stale, "stale must not be null");
+    }
+
+    public TaskRunProperties(Progress progress, Stale stale) {
+        this(new Executor(2, 4, 20, "task-run-"), progress, stale);
+    }
+
+    public record Executor(int coreSize, int maxSize, int queueCapacity, String threadPrefix) {
+
+        public Executor {
+            if (coreSize <= 0 || maxSize < coreSize || queueCapacity < 0) {
+                throw new IllegalArgumentException("executor pool settings are invalid");
+            }
+            if (threadPrefix == null || threadPrefix.isBlank()) {
+                throw new IllegalArgumentException("executor thread prefix must not be blank");
+            }
+        }
     }
 
     public record Progress(int flushCount, long flushIntervalMs) {
