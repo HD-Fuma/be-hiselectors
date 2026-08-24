@@ -23,6 +23,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class GeminiEvalClient {
 
+    private static final int MAX_OUTPUT_TOKENS = 1024;
+
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
@@ -67,7 +69,7 @@ public class GeminiEvalClient {
                 "generationConfig", Map.of(
                         "responseMimeType", "application/json",
                         "thinkingConfig", Map.of("thinkingLevel", "minimal"),
-                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+                        "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
         return parse(rawText(call(body)));
     }

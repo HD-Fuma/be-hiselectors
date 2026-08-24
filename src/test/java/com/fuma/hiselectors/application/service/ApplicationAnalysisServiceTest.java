@@ -14,6 +14,7 @@ import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.stt.ContentAddRequest;
 import com.fuma.hiselectors.stt.CreatorEvaluationService;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -50,6 +51,7 @@ class ApplicationAnalysisServiceTest {
                 .snsMediaId(snsMediaId)
                 .mediaUrl(mediaUrl)
                 .thumbnailUrl(thumbnailUrl)
+                .contentType(snsCode == SnsPlatform.YOUTUBE ? ContentType.SHORTS : null)
                 .sequenceNo(0)
                 .mediaSequenceNo(mediaSequenceNo)
                 .build();
@@ -130,7 +132,7 @@ class ApplicationAnalysisServiceTest {
     }
 
     @Test
-    void 유튜브는_조회수_상위_3개만_분석한다() {
+    void 유튜브는_Shorts_조회수_상위_1개만_분석한다() {
         runTransactionsInline();
         when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
                 .thenReturn(List.of(
@@ -145,11 +147,35 @@ class ApplicationAnalysisServiceTest {
         service.analyzeAndReport(1L);
 
         verify(evaluationService).addYoutubeContent(1L, "top");
-        verify(evaluationService).addYoutubeContent(1L, "second");
-        verify(evaluationService).addYoutubeContent(1L, "middle");
+        verify(evaluationService, never()).addYoutubeContent(1L, "second");
+        verify(evaluationService, never()).addYoutubeContent(1L, "middle");
         verify(evaluationService, never()).addYoutubeContent(1L, "low");
         verify(evaluationService, never()).addYoutubeContent(1L, "unknown");
-        verify(evaluationService, times(3)).addYoutubeContent(any(), any());
+        verify(evaluationService, times(1)).addYoutubeContent(any(), any());
+    }
+
+    @Test
+    void 유튜브_긴_영상은_Gemini_영상분석을_건너뛴다() {
+        runTransactionsInline();
+        ApplicationMedia longForm = ApplicationMedia.builder()
+                .applicationId(1L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("long")
+                .snsMediaId("long")
+                .contentType(ContentType.LONG_FORM)
+                .sequenceNo(0)
+                .mediaSequenceNo(0)
+                .viewCount(1_000L)
+                .build();
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(longForm));
+        when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
+        when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
+
+        service.analyzeAndReport(1L);
+
+        verify(evaluationService, never()).addYoutubeContent(any(), any());
+        verify(evaluationService).buildReport(1L);
     }
 
     private ApplicationMedia youtube(String videoId, Long viewCount, int sequenceNo) {
@@ -158,6 +184,7 @@ class ApplicationAnalysisServiceTest {
                 .snsCode(SnsPlatform.YOUTUBE)
                 .snsContentId(videoId)
                 .snsMediaId(videoId)
+                .contentType(ContentType.SHORTS)
                 .sequenceNo(sequenceNo)
                 .mediaSequenceNo(0)
                 .viewCount(viewCount)
