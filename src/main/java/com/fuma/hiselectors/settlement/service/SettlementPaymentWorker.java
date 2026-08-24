@@ -5,6 +5,7 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
@@ -84,10 +85,15 @@ public class SettlementPaymentWorker {
     }
 
     private boolean isSettlementAccountMissing(SettlementAccount account) {
+        SettlementType settlementType = account == null
+                ? null
+                : SettlementType.fromStorage(account.getSettlementType()).orElse(null);
         return account == null
                 || isBlank(account.getBankName())
                 || isBlank(account.getAccountNumber())
-                || isBlank(account.getAccountHolder());
+                || isBlank(account.getAccountHolder())
+                || settlementType == null
+                || !settlementType.isValidIdentifier(account.getBusinessNumber());
     }
 
     private boolean isBlank(String value) {

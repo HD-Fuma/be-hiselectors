@@ -9,6 +9,7 @@ import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class SettlementAccountService {
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseGet(() -> SettlementAccount.builder().selectorsId(selectors.getId()).build());
+        updateIdentity(account, request);
         account.update(request.bankName().trim(), request.accountNumber().trim(),
                 request.accountHolder().trim());
         SettlementAccount saved = settlementAccountRepository.save(account);
@@ -45,5 +47,80 @@ public class SettlementAccountService {
                 .findAllBySelectorsIdAndStatus(selectors.getId(), SettlementStatus.PAYMENT_HOLD_INFO)
                 .forEach(SettlementHistory::reopenFromInformationHold);
         return SettlementAccountResponse.of(saved);
+    }
+
+    private void updateIdentity(SettlementAccount account, SettlementAccountUpsertRequest request) {
+        String storedType = account.getSettlementType();
+        boolean legacyAccount = storedType == null || storedType.isBlank();
+        SettlementType currentType = SettlementType.fromStorage(storedType).orElse(null);
+        SettlementType requestedType = request.settlementType();
+        String requestedNumber = trimToNull(request.businessNumber());
+        if (!legacyAccount && currentType == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        if (legacyAccount) {
+            registerLegacyIdentity(account, requestedType, requestedNumber);
+            return;
+        }
+        if (requestedType != null && currentType != requestedType) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "정산 유형은 변경할 수 없습니다.");
+        }
+        updateRegisteredIdentifier(
+                account, currentType, requestedNumber, request.businessNumber() != null);
+    }
+
+    private void registerLegacyIdentity(
+            SettlementAccount account, SettlementType requestedType, String requestedNumber) {
+        requireValidIdentifier(requestedType, requestedNumber);
+        String storedNumber = account.getBusinessNumber();
+        if (requestedType == SettlementType.INDIVIDUAL
+                && storedNumber != null && !storedNumber.isBlank()) {
+            if (!requestedType.isSameIdentifier(storedNumber, requestedNumber)) {
+                throw new BusinessException(
+                        ErrorCode.INVALID_INPUT, "기존 주민등록번호와 일치하지 않습니다.");
+            }
+            account.registerIdentity(requestedType, storedNumber);
+            return;
+        }
+        account.registerIdentity(requestedType, requestedNumber);
+    }
+
+    private void updateRegisteredIdentifier(
+            SettlementAccount account, SettlementType currentType, String requestedNumber,
+            boolean requestedNumberProvided) {
+        String storedNumber = account.getBusinessNumber();
+        if (!currentType.isValidIdentifier(storedNumber)) {
+            if (currentType != SettlementType.INDIVIDUAL
+                    && currentType.isValidIdentifier(requestedNumber)) {
+                account.updateBusinessNumber(requestedNumber);
+                return;
+            }
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "저장된 식별번호가 올바르지 않습니다.");
+        }
+        if (!requestedNumberProvided) {
+            return;
+        }
+        requireValidIdentifier(currentType, requestedNumber);
+        if (currentType == SettlementType.INDIVIDUAL
+                && !currentType.isSameIdentifier(storedNumber, requestedNumber)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "주민등록번호는 변경할 수 없습니다.");
+        }
+        if (currentType != SettlementType.INDIVIDUAL) {
+            account.updateBusinessNumber(requestedNumber);
+        }
+    }
+
+    private void requireValidIdentifier(SettlementType settlementType, String businessNumber) {
+        if (settlementType == null || !settlementType.isValidIdentifier(businessNumber)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "식별번호 형식이 올바르지 않습니다.");
+        }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

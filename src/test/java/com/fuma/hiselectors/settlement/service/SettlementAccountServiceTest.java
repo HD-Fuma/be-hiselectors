@@ -1,22 +1,29 @@
 package com.fuma.hiselectors.settlement.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class SettlementAccountServiceTest {
@@ -32,6 +39,8 @@ class SettlementAccountServiceTest {
                 .bankName("국민은행")
                 .accountNumber("123-456")
                 .accountHolder("홍길동")
+                .businessNumber("900101-1234567")
+                .settlementType(SettlementType.INDIVIDUAL.name())
                 .build();
         SettlementAccountService service = new SettlementAccountService(
                 accountRepository, historyRepository, selectorAccessService);
@@ -46,7 +55,33 @@ class SettlementAccountServiceTest {
         assertThat(response.bankName()).isEqualTo("국민은행");
         assertThat(response.accountNumber()).isEqualTo("123-456");
         assertThat(response.accountHolder()).isEqualTo("홍길동");
+        assertThat(response.settlementType()).isEqualTo(SettlementType.INDIVIDUAL);
+        assertThat(response.businessNumber()).isEqualTo("******-*******");
         verify(selectorAccessService).requireSettlementReadable("selector-user");
+    }
+
+    @Test
+    void legacyAccountDoesNotExposeUnclassifiedBusinessNumber() {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .businessNumber("900101-1234567")
+                .build();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementReadable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+
+        var response = service.getAccount("selector-user");
+
+        assertThat(response.settlementType()).isNull();
+        assertThat(response.businessNumber()).isNull();
     }
 
     @Test
@@ -70,15 +105,255 @@ class SettlementAccountServiceTest {
                 .thenReturn(List.of(infoHold));
 
         var response = service.upsert("selector-user",
-                new SettlementAccountUpsertRequest(" 국민은행 ", " 123-456 ", " 홍길동 "));
+                new SettlementAccountUpsertRequest(" 국민은행 ", " 123-456 ", " 홍길동 ",
+                        SettlementType.INDIVIDUAL, " 900101-1234567 "));
 
         assertThat(response.bankName()).isEqualTo("국민은행");
         assertThat(response.accountNumber()).isEqualTo("123-456");
         assertThat(response.accountHolder()).isEqualTo("홍길동");
+        assertThat(response.settlementType()).isEqualTo(SettlementType.INDIVIDUAL);
+        assertThat(response.businessNumber()).isEqualTo("******-*******");
+        assertThat(account.getBusinessNumber()).isEqualTo("900101-1234567");
         assertThat(infoHold.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(blackHold.getStatus()).isEqualTo(SettlementStatus.PAYMENT_HOLD_BLACK);
         verify(selectorAccessService).requireSettlementWritable("selector-user");
         verify(accountRepository).save(account);
+    }
+
+    @Test
+    void individualTypeAndNumberArePreservedWhenOmittedAndNumberChangeIsRejected() {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = individualAccount();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+        when(historyRepository.findAllBySelectorsIdAndStatus(9L, SettlementStatus.PAYMENT_HOLD_INFO))
+                .thenReturn(List.of());
+
+        var response = service.upsert("selector-user",
+                request(null, null));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
+        assertThat(account.getBusinessNumber()).isEqualTo("900101-1234567");
+        assertThat(response.businessNumber()).isEqualTo("******-*******");
+        assertThatThrownBy(() -> service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-7654321")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+    }
+
+    @Test
+    void registeredSettlementTypeCannotChange() {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = individualAccount();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.upsert("selector-user",
+                request(SettlementType.CORPORATION, "123-45-67890")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SettlementType.class, names = {"SOLE_PROPRIETOR", "CORPORATION"})
+    void businessNumberCanChangeForBusiness(SettlementType settlementType) {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .bankName("국민은행")
+                .accountNumber("123-456")
+                .accountHolder("주식회사 셀렉터스")
+                .settlementType(settlementType.name())
+                .businessNumber("123-45-67890")
+                .build();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+        when(historyRepository.findAllBySelectorsIdAndStatus(9L, SettlementStatus.PAYMENT_HOLD_INFO))
+                .thenReturn(List.of());
+
+        var response = service.upsert("selector-user",
+                request(settlementType, " 987-65-43210 "));
+
+        assertThat(account.getBusinessNumber()).isEqualTo("987-65-43210");
+        assertThat(response.businessNumber()).isEqualTo("987-65-43210");
+    }
+
+    @Test
+    void legacyAccountRequiresTypeAndNumberToRegisterIdentity() {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .businessNumber("unclassified-number")
+                .build();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.upsert("selector-user",
+                request(SettlementType.SOLE_PROPRIETOR, null)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "INDIVIDUAL, 900101123456",
+            "INDIVIDUAL, 900101-12-34567",
+            "SOLE_PROPRIETOR, 123456789",
+            "CORPORATION, 1234-5-67890"
+    })
+    void invalidIdentifierFormatsAreRejected(
+            SettlementType settlementType, String invalidNumber) {
+        SettlementAccount account = SettlementAccount.builder().selectorsId(9L).build();
+        SettlementAccountService service = serviceFor(account);
+
+        assertThatThrownBy(() -> service.upsert(
+                "selector-user", request(settlementType, invalidNumber)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+    }
+
+    @Test
+    void legacyIndividualRegistrationAcceptsSameNumberIgnoringHyphensAndPreservesStorage() {
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .businessNumber("9001011234567")
+                .build();
+        SettlementAccountService service = serviceFor(account);
+
+        var response = service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-1234567"));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
+        assertThat(account.getBusinessNumber()).isEqualTo("9001011234567");
+        assertThat(response.businessNumber()).isEqualTo("******-*******");
+    }
+
+    @Test
+    void legacyIndividualRegistrationRejectsDifferentNumber() {
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .businessNumber("9001011234567")
+                .build();
+        SettlementAccountService service = serviceFor(account);
+
+        assertThatThrownBy(() -> service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-7654321")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+        assertThat(account.getSettlementType()).isNull();
+        assertThat(account.getBusinessNumber()).isEqualTo("9001011234567");
+    }
+
+    @Test
+    void unknownStoredTypeIsHiddenAndCannotBeUpdated() {
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .settlementType("UNKNOWN")
+                .businessNumber("900101-1234567")
+                .build();
+        SettlementAccountService service = serviceFor(account);
+
+        var response = service.getAccount("selector-user");
+
+        assertThat(response.settlementType()).isNull();
+        assertThat(response.businessNumber()).isNull();
+        assertThatThrownBy(() -> service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-1234567")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.INVALID_INPUT));
+    }
+
+    @Test
+    void invalidStoredBusinessNumberMustBeRepairedForSuccessfulUpsert() {
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .settlementType(SettlementType.CORPORATION.name())
+                .businessNumber("invalid-number")
+                .build();
+        SettlementAccountService service = serviceFor(account);
+
+        assertThatThrownBy(() -> service.upsert("selector-user", request(null, null)))
+                .isInstanceOf(BusinessException.class);
+
+        service.upsert("selector-user", request(null, "123-45-67890"));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.CORPORATION.name());
+        assertThat(account.getBusinessNumber()).isEqualTo("123-45-67890");
+    }
+
+    private SettlementAccountUpsertRequest request(
+            SettlementType settlementType, String businessNumber) {
+        return new SettlementAccountUpsertRequest(
+                "국민은행", "123-456", "홍길동", settlementType, businessNumber);
+    }
+
+    private SettlementAccount individualAccount() {
+        return SettlementAccount.builder()
+                .selectorsId(9L)
+                .bankName("국민은행")
+                .accountNumber("123-456")
+                .accountHolder("홍길동")
+                .settlementType(SettlementType.INDIVIDUAL.name())
+                .businessNumber("900101-1234567")
+                .build();
+    }
+
+    private SettlementAccountService serviceFor(SettlementAccount account) {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
+        when(selectorAccessService.requireSettlementReadable("selector-user"))
+                .thenReturn(selectors);
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+        when(historyRepository.findAllBySelectorsIdAndStatus(9L, SettlementStatus.PAYMENT_HOLD_INFO))
+                .thenReturn(List.of());
+        return new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
     }
 
     private Selectors inactiveSelectors() {

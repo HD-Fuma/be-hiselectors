@@ -49,11 +49,14 @@ public class SettlementAccount extends BaseTimeEntity {
 
     @Builder
     private SettlementAccount(Long selectorsId, String bankName, String accountNumber,
-                              String accountHolder) {
+                              String accountHolder, String businessNumber,
+                              String settlementType) {
         this.selectorsId = selectorsId;
         this.bankName = bankName;
         this.accountNumber = accountNumber;
         this.accountHolder = accountHolder;
+        this.businessNumber = businessNumber;
+        this.settlementType = settlementType;
         this.deleted = false;
     }
 
@@ -61,5 +64,14 @@ public class SettlementAccount extends BaseTimeEntity {
         this.bankName = bankName;
         this.accountNumber = accountNumber;
         this.accountHolder = accountHolder;
+    }
+
+    public void registerIdentity(SettlementType settlementType, String businessNumber) {
+        this.settlementType = settlementType.name();
+        this.businessNumber = businessNumber;
+    }
+
+    public void updateBusinessNumber(String businessNumber) {
+        this.businessNumber = businessNumber;
     }
 }
