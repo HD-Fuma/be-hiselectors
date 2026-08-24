@@ -40,7 +40,7 @@ public class ContentAnalysisScheduler {
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnalysisService analysisService;
 
-    @Value("${application.content-analysis.batch-size:5}")
+    @Value("${application.content-analysis.batch-size:1}")
     private int batchSize;
 
     /** IN_PROGRESS lease(분). 처리 중 크래시하면 이 시간 뒤 다른 워커가 회수. 최대 처리시간보다 넉넉히. */
