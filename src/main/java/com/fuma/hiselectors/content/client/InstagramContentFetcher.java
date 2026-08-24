@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse;
+import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.BusinessDiscovery;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.Media;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.MediaPage;
 import com.fuma.hiselectors.content.client.dto.RawContent;
@@ -22,6 +23,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +74,25 @@ public class InstagramContentFetcher implements ContentFetcher {
     @Override
     public SnsPlatform supports() {
         return SnsPlatform.INSTAGRAM;
+    }
+
+    @Override
+    public Optional<String> fetchProfileImageUrl(String accountId) {
+        validateAccountRequest(accountId);
+        String fields = "business_discovery.username(%s){profile_picture_url}"
+                .formatted(accountId);
+        URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), properties.businessAccountId())
+                .queryParam("fields", fields)
+                .build()
+                .encode()
+                .toUri();
+        InstagramContentResponse response = request(uri, InstagramContentResponse.class);
+        BusinessDiscovery discovery = response.businessDiscovery();
+        return discovery == null
+                ? Optional.empty()
+                : Optional.ofNullable(discovery.profilePictureUrl())
+                        .filter(url -> !url.isBlank());
     }
 
     /**
@@ -227,16 +248,19 @@ public class InstagramContentFetcher implements ContentFetcher {
     }
 
     private void validateRequest(String username, LocalDateTime since) {
+        validateAccountRequest(username);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountRequest(String username) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
         }
 
-        // username, collectedAfter가 정상인지 확인
         validateAccountId(username);
-        if (since == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
     }
 
     private void validateAccountId(String username) {

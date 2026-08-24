@@ -126,7 +126,8 @@ class ApplicationAdminControllerTest {
                 new AdminApplicationDetailResponse(
                         1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                         2L, "2기", SnsPlatform.YOUTUBE, "UC123",
-                        "지안의 생활연구소", "https://www.youtube.com/channel/UC123", null,
+                        "지안의 생활연구소", "https://www.youtube.com/channel/UC123",
+                        "https://yt3.example.com/profile.jpg", null,
                         ApplicationStatus.PENDING, MediaCollectionStatus.DONE,
                         ContentAnalysisStatus.DONE,
                         collectedAt.minusDays(30), collectedAt, collectedAt, metrics, List.of()));
@@ -138,6 +139,8 @@ class ApplicationAdminControllerTest {
                 .andExpect(jsonPath("$.data.metrics.analysisWindowDays").value(90))
                 .andExpect(jsonPath("$.data.profileUrl")
                         .value("https://www.youtube.com/channel/UC123"))
+                .andExpect(jsonPath("$.data.profileImageUrl")
+                        .value("https://yt3.example.com/profile.jpg"))
                 .andExpect(jsonPath("$.data.metrics.totalContentCount").isEmpty())
                 .andExpect(jsonPath("$.data.metrics.averageViewCount.value").isEmpty())
                 .andExpect(jsonPath("$.data.metrics.averageViewCount.sampleCount").value(0));

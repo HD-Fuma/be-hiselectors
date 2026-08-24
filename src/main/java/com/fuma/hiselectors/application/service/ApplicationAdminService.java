@@ -166,6 +166,7 @@ public class ApplicationAdminService {
                 application.getSnsAccountId(),
                 snsDisplayName(application, youtubeChannelTitles(List.of(application))),
                 application.getProfileUrl(),
+                application.getProfileImageUrl(),
                 application.getFollowerCount(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),

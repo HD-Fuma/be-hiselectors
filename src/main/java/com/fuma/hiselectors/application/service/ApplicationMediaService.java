@@ -26,11 +26,13 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ApplicationMediaService {
 
@@ -57,11 +59,13 @@ public class ApplicationMediaService {
                     application.getSnsAccountId(), collectedAfter);
             Snapshot snapshot = createSnapshot(
                     application, fetcher, contents, collectedAfter, collectedAt);
+            String profileImageUrl = profileImageUrl(fetcher, application);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 mediaRepository.deleteByApplicationId(applicationId);
                 mediaRepository.flush();
                 List<ApplicationMedia> values = mediaRepository.saveAll(snapshot.media());
+                application.updateProfileImageUrl(profileImageUrl);
                 application.completeMediaCollection(collectedAt, snapshot.engagementRate());
                 applicationRepository.save(application);
                 return values;
@@ -103,6 +107,16 @@ public class ApplicationMediaService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.INVALID_INPUT, "지원하지 않는 SNS 플랫폼입니다."));
+    }
+
+    private String profileImageUrl(ContentFetcher fetcher, Application application) {
+        try {
+            return fetcher.fetchProfileImageUrl(application.getSnsAccountId()).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("지원자 프로필 이미지 조회 실패: applicationId={}, platform={}, cause={}",
+                    application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     private Snapshot createSnapshot(

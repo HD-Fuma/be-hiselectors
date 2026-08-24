@@ -44,6 +44,28 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    void fetchesBusinessProfileImage() {
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query)
+                            .contains("business_discovery.username(nike)")
+                            .contains("profile_picture_url");
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "business_discovery": {
+                            "profile_picture_url": "https://cdn.example.com/profile.jpg"
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.fetchProfileImageUrl("nike"))
+                .contains("https://cdn.example.com/profile.jpg");
+        server.verify();
+    }
+
+    @Test
     @DisplayName("Business Discovery로 현재 기수 Instagram 콘텐츠를 모두 조회한다")
     void collectGenerationMedia() {
         server.expect(request -> {

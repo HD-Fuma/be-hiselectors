@@ -68,6 +68,7 @@ class ApplicationAdminServiceTest {
                 .policyAgreedAt(COLLECTED_AT.minusDays(30))
                 .status(ApplicationStatus.PENDING)
                 .build();
+        application.updateProfileImageUrl("https://cdn.example.com/profile.jpg");
         ReflectionTestUtils.setField(application, "id", 1L);
         ReflectionTestUtils.setField(application, "createdAt", COLLECTED_AT.minusDays(30));
         ReflectionTestUtils.setField(application, "updatedAt", COLLECTED_AT);
@@ -215,6 +216,8 @@ class ApplicationAdminServiceTest {
                 .containsExactly("POST:1", "REELS:1", "UNKNOWN:1");
         assertThat(result.profileUrl())
                 .isEqualTo("https://www.instagram.com/creator.handle/");
+        assertThat(result.profileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
         assertThat(result.contents()).hasSize(5);
     }
 

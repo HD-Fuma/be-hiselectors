@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +76,21 @@ public class YoutubeContentFetcher implements ContentFetcher {
     @Override
     public SnsPlatform supports() {
         return SnsPlatform.YOUTUBE;
+    }
+
+    @Override
+    public Optional<String> fetchProfileImageUrl(String accountId) {
+        validateAccountRequest(accountId);
+        YoutubeChannelResponse.Item channel = requestChannel(resolveChannelLookup(accountId));
+        YoutubeChannelResponse.Snippet snippet = channel.snippet();
+        if (snippet == null || snippet.thumbnails() == null) {
+            return Optional.empty();
+        }
+        return snippet.thumbnails().values().stream()
+                .filter(Objects::nonNull)
+                .map(YoutubeChannelResponse.Thumbnail::url)
+                .filter(StringUtils::hasText)
+                .reduce((ignored, last) -> last);
     }
 
     /**
@@ -238,13 +254,19 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private void validateRequest(String accountId, LocalDateTime since) {
+        validateAccountRequest(accountId);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountRequest(String accountId) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // accountId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(accountId) || since == null) {
+        if (!StringUtils.hasText(accountId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }

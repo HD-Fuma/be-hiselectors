@@ -66,6 +66,10 @@ class ApplicationMediaServiceTest {
     void setUp() {
         lenient().when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         lenient().when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        lenient().when(instagramFetcher.fetchProfileImageUrl(any()))
+                .thenReturn(Optional.empty());
+        lenient().when(youtubeFetcher.fetchProfileImageUrl(any()))
+                .thenReturn(Optional.empty());
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -94,6 +98,8 @@ class ApplicationMediaServiceTest {
         contents.add(raw(SnsPlatform.YOUTUBE, "old", COLLECTED_AT.minusDays(91)));
         contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", COLLECTED_AT));
         when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(contents);
+        when(youtubeFetcher.fetchProfileImageUrl("channel-id"))
+                .thenReturn(Optional.of("https://cdn.example.com/channel-profile.jpg"));
         when(youtubeFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected)
@@ -147,6 +153,8 @@ class ApplicationMediaServiceTest {
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
         assertThat(application.getMediaCollectedAt()).isEqualTo(COLLECTED_AT);
         assertThat(application.getEngagementRate()).isEqualByComparingTo("15.00");
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/channel-profile.jpg");
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getCollectedAt)
                 .containsOnly(COLLECTED_AT);
@@ -155,6 +163,7 @@ class ApplicationMediaServiceTest {
     @Test
     void storesOneRowPerInstagramAssetAndDropsOnlyInvalidChildren() {
         Application application = application(SnsPlatform.INSTAGRAM, "username");
+        application.updateProfileImageUrl("https://cdn.example.com/existing-profile.jpg");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
         RawContent reel = new RawContent(
                 SnsPlatform.INSTAGRAM,
@@ -197,6 +206,8 @@ class ApplicationMediaServiceTest {
                         "unavailable-media", RawContentMedia.MediaType.VIDEO, null)));
         when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN))
                 .thenReturn(List.of(reel, post, unavailable));
+        when(instagramFetcher.fetchProfileImageUrl("username"))
+                .thenThrow(new IllegalStateException("profile API failed"));
         when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected).extracting(RawContent::snsContentId)
@@ -233,6 +244,21 @@ class ApplicationMediaServiceTest {
             assertThat(media.contentType()).isEqualTo(ContentType.FEED);
             assertThat(media.caption()).isEqualTo("post caption");
         });
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/existing-profile.jpg");
+    }
+
+    @Test
+    void ignoresBlankAndOverlongProfileImageUrls() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.updateProfileImageUrl("https://cdn.example.com/existing-profile.jpg");
+
+        application.updateProfileImageUrl("   ");
+        application.updateProfileImageUrl("x".repeat(501));
+
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/existing-profile.jpg");
     }
 
     @Test

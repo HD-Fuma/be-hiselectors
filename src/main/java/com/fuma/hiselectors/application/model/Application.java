@@ -47,6 +47,9 @@ public class Application extends BaseTimeEntity {
     @Column(name = "profile_url", length = 500)
     private String profileUrl;
 
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
     @Column(name = "follower_count")
     private Long followerCount;
 
@@ -122,6 +125,14 @@ public class Application extends BaseTimeEntity {
         this.mediaCollectedAt = collectedAt;
         this.engagementRate = engagementRate;
         this.mediaCollectionError = null;
+    }
+
+    public void updateProfileImageUrl(String profileImageUrl) {
+        if (profileImageUrl != null
+                && !profileImageUrl.isBlank()
+                && profileImageUrl.length() <= 500) {
+            this.profileImageUrl = profileImageUrl;
+        }
     }
 
     public void failMediaCollection(String error) {

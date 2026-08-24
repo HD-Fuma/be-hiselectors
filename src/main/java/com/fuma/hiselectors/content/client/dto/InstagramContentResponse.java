@@ -10,7 +10,9 @@ public record InstagramContentResponse(
 ) {
 
     /** 조회 대상 Instagram 계정의 공개 게시글 정보 */
-    public record BusinessDiscovery(MediaPage media) {
+    public record BusinessDiscovery(
+            @JsonProperty("profile_picture_url") String profilePictureUrl,
+            MediaPage media) {
     }
 
     /** 현재 페이지의 게시글 목록과 다음 페이지 정보 */

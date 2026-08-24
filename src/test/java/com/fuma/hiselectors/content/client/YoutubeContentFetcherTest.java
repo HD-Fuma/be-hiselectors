@@ -121,6 +121,15 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    void fetchesChannelProfileImageFromSnippet() {
+        expectUploadsPlaylist();
+
+        assertThat(client.fetchProfileImageUrl(CHANNEL_ID))
+                .contains("https://yt3.example.com/high.jpg");
+        server.verify();
+    }
+
+    @Test
     void fetchesChannelTitlesInOneBatch() {
         String secondChannelId = "UC1111111111111111111111";
         server.expect(request -> {
@@ -493,7 +502,11 @@ class YoutubeContentFetcherTest {
                           "items": [{
                             "id": "%s",
                             "snippet": {
-                              "customUrl": "%s"
+                              "customUrl": "%s",
+                              "thumbnails": {
+                                "default": {"url": "https://yt3.example.com/default.jpg"},
+                                "high": {"url": "https://yt3.example.com/high.jpg"}
+                              }
                             },
                             "contentDetails": {
                               "relatedPlaylists": {
