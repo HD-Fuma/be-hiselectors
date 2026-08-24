@@ -216,6 +216,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker
+          cache-from: type=gha,scope=stt-worker-arm64
+          cache-to: type=gha,mode=max,scope=stt-worker-arm64
 
       - name: Deploy through SSM
         env:
