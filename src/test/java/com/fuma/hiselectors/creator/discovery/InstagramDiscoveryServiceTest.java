@@ -117,6 +117,7 @@ class InstagramDiscoveryServiceTest {
         when(info.getIgHandle()).thenReturn("nike");
         when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(publicEmailExtractor.extract("Just Do It.")).thenReturn(Optional.empty());
+        when(publicEmailExtractor.extract((String) null)).thenReturn(Optional.empty());
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                 "INSTAGRAM", "17841400602400210")).thenReturn(Optional.of(existing));
 
@@ -131,7 +132,13 @@ class InstagramDiscoveryServiceTest {
 
     @Test
     void 기존_인스타그램_계정은_지표를_갱신하고_복구한다() {
-        CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
+        CreatorPool youtubeCreator = CreatorPool.builder()
+                .snsCode("YOUTUBE")
+                .accountId("UC_SOURCE")
+                .creatorName("원본 채널")
+                .email("youtube@example.com")
+                .category("BEAUTY")
+                .build();
         CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
         CreatorPool existing = mock(CreatorPool.class);
         BusinessDiscovery discovered = discoveredAccount();
@@ -140,6 +147,9 @@ class InstagramDiscoveryServiceTest {
         when(discoveryInfoRepository.findById(10L)).thenReturn(Optional.of(info));
         when(info.getIgHandle()).thenReturn("nike");
         when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
+        when(publicEmailExtractor.extract(discovered.biography())).thenReturn(Optional.empty());
+        when(publicEmailExtractor.extract("youtube@example.com"))
+                .thenReturn(Optional.of("youtube@example.com"));
         when(engagementCalculator.calculate(291_530_362L, discovered.media()))
                 .thenReturn(new BigDecimal("0.04"));
         when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
@@ -151,7 +161,7 @@ class InstagramDiscoveryServiceTest {
 
         InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
 
-        verify(existing).updateEmail("contact@nike.com");
+        verify(existing).updateEmail("youtube@example.com");
         verify(existing).updateProfile(
                 "nike",
                 291_530_362L,

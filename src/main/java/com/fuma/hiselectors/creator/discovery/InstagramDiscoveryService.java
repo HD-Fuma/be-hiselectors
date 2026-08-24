@@ -51,8 +51,10 @@ public class InstagramDiscoveryService {
         // 외부 네트워크 호출은 DB 저장 트랜잭션 밖에서 수행한다.
         BusinessDiscovery discovered = metaGraphApiClient.discover(
                 instagramHandle, RECENT_MEDIA_LIMIT);
-        String email = publicEmailExtractor.extract(discovered.biography()).orElse(null);
-        if (email == null) {
+        String email = publicEmailExtractor.extract(discovered.biography())
+                .or(() -> publicEmailExtractor.extract(sourceCreator.getEmail()))
+                .orElse(null);
+        if (email == null || email.isBlank()) {
             transactionTemplate.execute(status -> {
                 softDeleteExisting(discovered);
                 return null;
