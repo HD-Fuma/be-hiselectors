@@ -215,6 +215,7 @@ public class PerformanceService {
         private final String productName;
         private final String brandName;
         private final String thumbnailUrl;
+        private final String detailUrl;
         private long clickCount;
         private long conversionCount;
         private long conversionAmount;
@@ -224,24 +225,26 @@ public class PerformanceService {
                 String productCode,
                 String productName,
                 String brandName,
-                String thumbnailUrl) {
+                String thumbnailUrl,
+                String detailUrl) {
             this.productId = productId;
             this.productCode = productCode;
             this.productName = productName;
             this.brandName = brandName;
             this.thumbnailUrl = thumbnailUrl;
+            this.detailUrl = detailUrl;
         }
 
         private static ProductStats from(ProductClick row) {
             return new ProductStats(
                     row.productId(), row.productCode(), row.productName(),
-                    row.brandName(), row.thumbnailUrl());
+                    row.brandName(), row.thumbnailUrl(), row.detailUrl());
         }
 
         private static ProductStats from(ProductPurchase row) {
             return new ProductStats(
                     row.productId(), row.productCode(), row.productName(),
-                    row.brandName(), row.thumbnailUrl());
+                    row.brandName(), row.thumbnailUrl(), row.detailUrl());
         }
 
         private ProductPerformanceResponse toResponse(BigDecimal settlementRate) {
@@ -251,6 +254,7 @@ public class PerformanceService {
                     productName,
                     brandName,
                     thumbnailUrl,
+                    detailUrl,
                     clickCount,
                     conversionCount,
                     conversionAmount,
