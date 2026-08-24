@@ -12,25 +12,25 @@ public record SettlementAccountResponse(
 ) {
     private static final String MASKED_INDIVIDUAL_NUMBER = "******-*******";
 
-    public static SettlementAccountResponse of(SettlementAccount account) {
+    public static SettlementAccountResponse of(
+            SettlementAccount account, String accountNumber, String businessNumber) {
         SettlementType settlementType = SettlementType.fromStorage(account.getSettlementType())
                 .orElse(null);
         return new SettlementAccountResponse(
                 account.getBankName(),
-                account.getAccountNumber(),
+                accountNumber,
                 account.getAccountHolder(),
                 settlementType,
-                responseBusinessNumber(account, settlementType));
+                responseBusinessNumber(businessNumber, settlementType));
     }
 
     private static String responseBusinessNumber(
-            SettlementAccount account, SettlementType settlementType) {
-        if (settlementType == null || account.getBusinessNumber() == null
-                || account.getBusinessNumber().isBlank()) {
+            String businessNumber, SettlementType settlementType) {
+        if (settlementType == null || businessNumber == null || businessNumber.isBlank()) {
             return null;
         }
         return settlementType == SettlementType.INDIVIDUAL
                 ? MASKED_INDIVIDUAL_NUMBER
-                : account.getBusinessNumber();
+                : businessNumber;
     }
 }

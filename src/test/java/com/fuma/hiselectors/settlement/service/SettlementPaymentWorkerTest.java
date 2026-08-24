@@ -12,10 +12,12 @@ import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Base64;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,8 @@ class SettlementPaymentWorkerTest {
 
     private static final Clock CLOCK = Clock.fixed(
             Instant.parse("2026-07-20T00:00:00Z"), ZoneId.of("Asia/Seoul"));
+    private static final SettlementAccountCrypto ACCOUNT_CRYPTO = new SettlementAccountCrypto(
+            Base64.getEncoder().encodeToString(new byte[32]));
 
     @Test
     void holdsForMissingAccountInformation() {
@@ -104,11 +108,13 @@ class SettlementPaymentWorkerTest {
     private static Stream<SettlementAccount> accountsMissingIdentityInformation() {
         return Stream.of(
                 SettlementAccount.builder().selectorsId(9L)
-                        .bankName("국민은행").accountNumber("123").accountHolder("홍길동")
-                        .businessNumber("900101-1234567")
+                        .bankName("국민은행").accountNumberEncrypted(encrypt("123"))
+                        .accountHolder("홍길동")
+                        .businessNumberEncrypted(encrypt("900101-1234567"))
                         .build(),
                 SettlementAccount.builder().selectorsId(9L)
-                        .bankName("국민은행").accountNumber("123").accountHolder("홍길동")
+                        .bankName("국민은행").accountNumberEncrypted(encrypt("123"))
+                        .accountHolder("홍길동")
                         .settlementType(SettlementType.INDIVIDUAL.name())
                         .build());
     }
@@ -125,7 +131,7 @@ class SettlementPaymentWorkerTest {
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.ofNullable(account));
         return new SettlementPaymentWorker(
-                historyRepository, selectorsRepository, accountRepository, CLOCK);
+                historyRepository, selectorsRepository, accountRepository, CLOCK, ACCOUNT_CRYPTO);
     }
 
     private SettlementAccount completeAccount() {
@@ -134,10 +140,15 @@ class SettlementPaymentWorkerTest {
 
     private SettlementAccount completeAccount(String settlementType, String businessNumber) {
         return SettlementAccount.builder().selectorsId(9L)
-                .bankName("국민은행").accountNumber("123").accountHolder("홍길동")
+                .bankName("국민은행").accountNumberEncrypted(encrypt("123"))
+                .accountHolder("홍길동")
                 .settlementType(settlementType)
-                .businessNumber(businessNumber)
+                .businessNumberEncrypted(encrypt(businessNumber))
                 .build();
+    }
+
+    private static String encrypt(String value) {
+        return ACCOUNT_CRYPTO.encrypt(value);
     }
 
     private SettlementHistory pendingHistory() {

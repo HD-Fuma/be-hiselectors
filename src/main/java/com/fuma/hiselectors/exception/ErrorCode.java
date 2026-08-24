@@ -90,6 +90,8 @@ public enum ErrorCode {
     INVALID_SETTLEMENT_AMOUNT(HttpStatus.CONFLICT, "정산 대상 매출에 원 단위 미만 금액이 포함되어 있습니다."),
     SETTLEMENT_ACTIVITY_MONTH_DUPLICATED(HttpStatus.CONFLICT, "같은 활동월의 정산 이력이 중복되어 있습니다."),
     INVALID_SETTLEMENT_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 정산 상태 변경입니다."),
+    SETTLEMENT_ENCRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보 암호화 설정이 올바르지 않습니다."),
+    SETTLEMENT_DECRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보를 복호화할 수 없습니다."),
 
     // --- 발굴 카테고리 / 키워드 ---
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."),

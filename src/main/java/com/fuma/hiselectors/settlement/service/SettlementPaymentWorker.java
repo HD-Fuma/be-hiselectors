@@ -8,6 +8,7 @@ import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -27,6 +28,7 @@ public class SettlementPaymentWorker {
     private final SelectorsRepository selectorsRepository;
     private final SettlementAccountRepository settlementAccountRepository;
     private final Clock clock;
+    private final SettlementAccountCrypto accountCrypto;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentOutcome process(Long settlementId) {
@@ -90,10 +92,11 @@ public class SettlementPaymentWorker {
                 : SettlementType.fromStorage(account.getSettlementType()).orElse(null);
         return account == null
                 || isBlank(account.getBankName())
-                || isBlank(account.getAccountNumber())
                 || isBlank(account.getAccountHolder())
                 || settlementType == null
-                || !settlementType.isValidIdentifier(account.getBusinessNumber());
+                || isBlank(accountCrypto.decrypt(account.getAccountNumberEncrypted()))
+                || !settlementType.isValidIdentifier(
+                        accountCrypto.decrypt(account.getBusinessNumberEncrypted()));
     }
 
     private boolean isBlank(String value) {

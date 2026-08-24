@@ -12,6 +12,7 @@ import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,13 +25,14 @@ public class SettlementAccountService {
     private final SettlementAccountRepository settlementAccountRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SelectorAccessService selectorAccessService;
+    private final SettlementAccountCrypto accountCrypto;
 
     public SettlementAccountResponse getAccount(String loginId) {
         Selectors selectors = selectorAccessService.requireSettlementReadable(loginId);
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        return SettlementAccountResponse.of(account);
+        return response(account);
     }
 
     @Transactional
@@ -40,13 +42,13 @@ public class SettlementAccountService {
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseGet(() -> SettlementAccount.builder().selectorsId(selectors.getId()).build());
         updateIdentity(account, request);
-        account.update(request.bankName().trim(), request.accountNumber().trim(),
+        account.update(request.bankName().trim(), accountCrypto.encrypt(request.accountNumber().trim()),
                 request.accountHolder().trim());
         SettlementAccount saved = settlementAccountRepository.save(account);
         settlementHistoryRepository
                 .findAllBySelectorsIdAndStatus(selectors.getId(), SettlementStatus.PAYMENT_HOLD_INFO)
                 .forEach(SettlementHistory::reopenFromInformationHold);
-        return SettlementAccountResponse.of(saved);
+        return response(saved);
     }
 
     private void updateIdentity(SettlementAccount account, SettlementAccountUpsertRequest request) {
@@ -72,27 +74,27 @@ public class SettlementAccountService {
     private void registerLegacyIdentity(
             SettlementAccount account, SettlementType requestedType, String requestedNumber) {
         requireValidIdentifier(requestedType, requestedNumber);
-        String storedNumber = account.getBusinessNumber();
+        String storedNumber = accountCrypto.decrypt(account.getBusinessNumberEncrypted());
         if (requestedType == SettlementType.INDIVIDUAL
                 && storedNumber != null && !storedNumber.isBlank()) {
             if (!requestedType.isSameIdentifier(storedNumber, requestedNumber)) {
                 throw new BusinessException(
                         ErrorCode.INVALID_INPUT, "기존 주민등록번호와 일치하지 않습니다.");
             }
-            account.registerIdentity(requestedType, storedNumber);
+            account.registerIdentity(requestedType, account.getBusinessNumberEncrypted());
             return;
         }
-        account.registerIdentity(requestedType, requestedNumber);
+        account.registerIdentity(requestedType, accountCrypto.encrypt(requestedNumber));
     }
 
     private void updateRegisteredIdentifier(
             SettlementAccount account, SettlementType currentType, String requestedNumber,
             boolean requestedNumberProvided) {
-        String storedNumber = account.getBusinessNumber();
+        String storedNumber = accountCrypto.decrypt(account.getBusinessNumberEncrypted());
         if (!currentType.isValidIdentifier(storedNumber)) {
             if (currentType != SettlementType.INDIVIDUAL
                     && currentType.isValidIdentifier(requestedNumber)) {
-                account.updateBusinessNumber(requestedNumber);
+                account.updateBusinessNumber(accountCrypto.encrypt(requestedNumber));
                 return;
             }
             throw new BusinessException(ErrorCode.INVALID_INPUT, "저장된 식별번호가 올바르지 않습니다.");
@@ -106,8 +108,15 @@ public class SettlementAccountService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "주민등록번호는 변경할 수 없습니다.");
         }
         if (currentType != SettlementType.INDIVIDUAL) {
-            account.updateBusinessNumber(requestedNumber);
+            account.updateBusinessNumber(accountCrypto.encrypt(requestedNumber));
         }
+    }
+
+    private SettlementAccountResponse response(SettlementAccount account) {
+        return SettlementAccountResponse.of(
+                account,
+                accountCrypto.decrypt(account.getAccountNumberEncrypted()),
+                accountCrypto.decrypt(account.getBusinessNumberEncrypted()));
     }
 
     private void requireValidIdentifier(SettlementType settlementType, String businessNumber) {
