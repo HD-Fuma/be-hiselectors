@@ -12,6 +12,22 @@ import org.springframework.data.repository.query.Param;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
+    long countByNotificationPurposeCodeAndReferenceId(String purposeCode, Long referenceId);
+
+    @Query("""
+            select count(notification)
+            from Notification notification
+            where notification.notificationPurposeCode = :purposeCode
+              and notification.referenceId = :referenceId
+              and notification.requestAt >= :startInclusive
+              and notification.requestAt < :endExclusive
+            """)
+    long countByPurposeAndReferenceInPeriod(
+            @Param("purposeCode") String purposeCode,
+            @Param("referenceId") Long referenceId,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive);
+
     @Query(
             value = """
                     select new com.fuma.hiselectors.notification.dto.NotificationHistoryResponse(

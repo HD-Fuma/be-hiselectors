@@ -143,6 +143,12 @@ purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
 
+performance:
+  notification:
+    sender-admin-login-id: ${PERFORMANCE_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    daily-cron: ${PERFORMANCE_NOTIFICATION_DAILY_CRON:0 0 9 * * *}
+    zone: ${PERFORMANCE_NOTIFICATION_ZONE:Asia/Seoul}
+
 proposal:
   mail:
     admin-position: ${PROPOSAL_ADMIN_POSITION:매니저}
@@ -179,3 +185,4 @@ settlement:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:
     sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    upcoming-cron: ${SETTLEMENT_NOTIFICATION_UPCOMING_CRON:0 0 9 * * *}
