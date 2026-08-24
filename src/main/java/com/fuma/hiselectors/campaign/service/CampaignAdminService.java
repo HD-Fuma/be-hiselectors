@@ -106,7 +106,8 @@ public class CampaignAdminService {
     @Transactional
     public void delete(Long campaignId) {
         Campaign campaign = getCampaign(campaignId);
-        if (!campaign.getEndDate().isBefore(today())) {
+        if (CampaignStatus.from(campaign.getStartDate(), campaign.getEndDate(), today())
+                != CampaignStatus.SCHEDULED) {
             throw new BusinessException(ErrorCode.CAMPAIGN_DELETE_NOT_ALLOWED);
         }
         campaign.softDelete();
