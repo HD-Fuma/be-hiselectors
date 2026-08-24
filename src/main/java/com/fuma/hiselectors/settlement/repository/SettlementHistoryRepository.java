@@ -37,6 +37,9 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
     List<SettlementHistory> findAllBySelectorsIdAndStatus(
             Long selectorsId, SettlementStatus status);
 
+    List<SettlementHistory> findAllBySelectorsIdAndStatusIn(
+            Long selectorsId, Collection<SettlementStatus> statuses);
+
     Page<SettlementHistory> findAllBySelectorsIdOrderByActivityMonthDesc(
             Long selectorsId, Pageable pageable);
 
@@ -60,6 +63,13 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
     long sumCommissionBySelectorsIdAndStatus(
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status);
+
+    @Query("""
+            select coalesce(sum(h.totalSales), 0)
+            from SettlementHistory h
+            where h.selectorsId = :selectorsId
+            """)
+    long sumSalesBySelectorsId(@Param("selectorsId") Long selectorsId);
 
     @Query("""
             select h
