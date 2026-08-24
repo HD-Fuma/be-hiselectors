@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.application.scheduler;
 
 import com.fuma.hiselectors.application.model.Application;
+import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -53,6 +54,7 @@ public class ContentAnalysisScheduler {
         LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
         List<Application> targets = applicationRepository.findAnalysisTargets(
                 MediaCollectionStatus.DONE,
+                ApplicationStatus.PENDING,
                 EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                 ContentAnalysisStatus.IN_PROGRESS,
                 leaseBefore,
@@ -67,7 +69,7 @@ public class ContentAnalysisScheduler {
             // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
             // 0이면 다른 인스턴스가 이미 처리 중 → skip.
             int claimed = applicationRepository.claimForAnalysis(
-                    id, ContentAnalysisStatus.IN_PROGRESS,
+                    id, ApplicationStatus.PENDING, ContentAnalysisStatus.IN_PROGRESS,
                     EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                     LocalDateTime.now(), leaseBefore);
             if (claimed != 1) {
