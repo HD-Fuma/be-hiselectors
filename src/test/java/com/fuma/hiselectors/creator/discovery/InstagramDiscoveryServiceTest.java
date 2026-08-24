@@ -104,9 +104,10 @@ class InstagramDiscoveryServiceTest {
     }
 
     @Test
-    void 공개_이메일이_없으면_저장_트랜잭션을_시작하지_않는다() {
+    void 공개_이메일이_없으면_기존_계정을_활성_풀에서_제외한다() {
         CreatorPool youtubeCreator = youtubeCreator("BEAUTY");
         CreatorDiscoveryInfo info = mock(CreatorDiscoveryInfo.class);
+        CreatorPool existing = mock(CreatorPool.class);
         BusinessDiscovery discovered = new BusinessDiscovery(
                 "17841400602400210", "nike", "Nike", "Just Do It.", null,
                 291_530_362L, 1_668L, new Media(List.of()));
@@ -116,13 +117,15 @@ class InstagramDiscoveryServiceTest {
         when(info.getIgHandle()).thenReturn("nike");
         when(metaGraphApiClient.discover("nike", 25)).thenReturn(discovered);
         when(publicEmailExtractor.extract("Just Do It.")).thenReturn(Optional.empty());
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "INSTAGRAM", "17841400602400210")).thenReturn(Optional.of(existing));
 
         assertThatThrownBy(() -> service.discoverFromYoutubeCreator(10L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.CREATOR_EMAIL_REQUIRED);
 
-        verify(transactionTemplate, never()).execute(any());
+        verify(existing).softDelete();
         verifyNoInteractions(engagementCalculator);
     }
 
@@ -148,6 +151,7 @@ class InstagramDiscoveryServiceTest {
 
         InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
 
+        verify(existing).updateEmail("contact@nike.com");
         verify(existing).updateProfile(
                 "nike",
                 291_530_362L,
@@ -218,6 +222,7 @@ class InstagramDiscoveryServiceTest {
 
         InstagramDiscoveryResult result = service.discoverFromYoutubeCreator(10L);
 
+        verify(winner).updateEmail("contact@nike.com");
         verify(winner).updateProfile(
                 "nike", 291_530_362L, new BigDecimal("0.04"),
                 LocalDateTime.of(2026, 8, 12, 2, 0, 58));
