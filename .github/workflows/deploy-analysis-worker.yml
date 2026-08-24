@@ -58,7 +58,8 @@ jobs:
               "SecurityGroupIds=$SECURITY_GROUP_IDS" \
               "RuntimeSecretArn=$RUNTIME_SECRET_ARN" \
               "AssignPublicIp=$ASSIGN_PUBLIC_IP" \
-              "ScheduleState=${{ inputs.schedule_state }}"
+              "ScheduleState=${{ inputs.schedule_state }}" \
+              "ScheduleExpression=rate(1 hour)"
 
       - name: Show stack outputs
         run: |
