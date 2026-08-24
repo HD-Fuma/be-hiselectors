@@ -32,14 +32,14 @@ public class SettlementAccount extends BaseTimeEntity {
     @Column(name = "bank_name", length = 20)
     private String bankName;
 
-    @Column(name = "account_number", length = 50)
-    private String accountNumber;
+    @Column(name = "account_number", length = 255)
+    private String accountNumberEncrypted;
 
     @Column(name = "account_holder", length = 50)
     private String accountHolder;
 
-    @Column(name = "business_number", length = 50)
-    private String businessNumber;
+    @Column(name = "business_number", length = 255)
+    private String businessNumberEncrypted;
 
     @Column(name = "settlement_type", length = 50)
     private String settlementType;
@@ -48,18 +48,26 @@ public class SettlementAccount extends BaseTimeEntity {
     private boolean deleted;
 
     @Builder
-    private SettlementAccount(Long selectorsId, String bankName, String accountNumber,
-                              String accountHolder) {
+    private SettlementAccount(Long selectorsId, String bankName, String accountNumberEncrypted,
+                              String accountHolder, String businessNumberEncrypted,
+                              String settlementType) {
         this.selectorsId = selectorsId;
         this.bankName = bankName;
-        this.accountNumber = accountNumber;
+        this.accountNumberEncrypted = accountNumberEncrypted;
         this.accountHolder = accountHolder;
+        this.businessNumberEncrypted = businessNumberEncrypted;
+        this.settlementType = settlementType;
         this.deleted = false;
     }
 
-    public void update(String bankName, String accountNumber, String accountHolder) {
+    public void update(String bankName, String accountNumberEncrypted, String accountHolder) {
         this.bankName = bankName;
-        this.accountNumber = accountNumber;
+        this.accountNumberEncrypted = accountNumberEncrypted;
         this.accountHolder = accountHolder;
+    }
+
+    public void registerIdentity(SettlementType settlementType, String businessNumberEncrypted) {
+        this.settlementType = settlementType.name();
+        this.businessNumberEncrypted = businessNumberEncrypted;
     }
 }

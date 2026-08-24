@@ -20,6 +20,7 @@ import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -81,7 +82,8 @@ class SettlementAdminServiceTest {
                 historyRepository, mock(SettlementAccountRepository.class), selectorsRepository,
                 snsAccountRepository,
                 purchaseHistoryRepository, clock,
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
         Selectors selectors = selectors(15L);
         SelectorsSnsAccount snsAccount = SelectorsSnsAccount.builder()
                 .selectorsId(15L)
@@ -149,7 +151,8 @@ class SettlementAdminServiceTest {
                 mock(SelectorsSnsAccountRepository.class),
                 mock(PurchaseHistoryRepository.class),
                 Clock.systemUTC(),
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
     }
 
     private Selectors selectors(Long selectorsId) {

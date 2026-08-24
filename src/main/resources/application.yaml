@@ -222,6 +222,7 @@ application:
     run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
 
 settlement:
+  account-encryption-key: ${SETTLEMENT_ACCOUNT_ENCRYPTION_KEY:}
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
   estimate:
     cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}

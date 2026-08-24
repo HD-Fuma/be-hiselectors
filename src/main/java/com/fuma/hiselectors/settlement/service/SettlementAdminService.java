@@ -15,6 +15,7 @@ import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -40,6 +41,7 @@ public class SettlementAdminService {
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final Clock clock;
     private final SettlementProvisionalEstimateService provisionalEstimateService;
+    private final SettlementAccountCrypto accountCrypto;
 
     private static final List<PurchaseStatus> VALID_PURCHASE_CONVERSION_STATUSES = List.of(
             PurchaseStatus.PURCHASED, PurchaseStatus.PURCHASE_CONFIRMED);
@@ -123,7 +125,7 @@ public class SettlementAdminService {
     private boolean isAccountRegistered(SettlementAccount account) {
         return account != null
                 && !isBlank(account.getBankName())
-                && !isBlank(account.getAccountNumber())
+                && !isBlank(accountCrypto.decrypt(account.getAccountNumberEncrypted()))
                 && !isBlank(account.getAccountHolder());
     }
 
