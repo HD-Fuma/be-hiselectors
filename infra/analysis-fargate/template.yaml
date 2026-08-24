@@ -145,7 +145,7 @@ Resources:
             - --discovery.defaults.enabled=false
           Environment:
             - Name: SPRING_PROFILES_ACTIVE
-              Value: local
+              Value: analysis
             - Name: STT_WORKER_BASE_URL
               Value: http://127.0.0.1:8900
             - Name: DDL_AUTO
