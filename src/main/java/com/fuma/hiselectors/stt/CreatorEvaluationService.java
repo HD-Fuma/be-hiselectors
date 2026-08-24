@@ -190,27 +190,29 @@ public class CreatorEvaluationService {
         return builder.build();
     }
 
+    /**
+     * 대표 콘텐츠 = 수집된 미디어 중 조회수 최고(콘텐츠 분석 성공 여부와 무관).
+     * STT/OCR·Gemini 콘텐츠 분석이 실패·스킵돼 application_content_analysis 가 비어 있어도
+     * 대표 콘텐츠는 항상 뽑히도록 media 목록에서 직접 고른다. 카테고리·키워드는 마침 그
+     * 콘텐츠가 분석에 성공했으면 덧붙이고, 아니면 비워둔다(대표 콘텐츠 노출 자체는 막지 않음).
+     */
     private void applyRepresentative(List<ApplicationMedia> mediaList, List<ApplicationContentAnalysis> rows,
                                      ApplicationReport.ApplicationReportBuilder builder) {
-        Map<String, ApplicationMedia> mediaByKey = mediaList.stream()
-                .filter(m -> m.getSnsContentId() != null)
-                .collect(Collectors.toMap(ApplicationMedia::getSnsContentId, m -> m, (a, b) -> a));
-
-        ApplicationContentAnalysis rep = rows.stream()
-                .filter(r -> mediaByKey.containsKey(r.getContentKey()))
-                .max(Comparator.comparing(
-                        (ApplicationContentAnalysis r) -> mediaByKey.get(r.getContentKey()).getViewCount(),
-                        Comparator.nullsFirst(Comparator.naturalOrder())))
+        ApplicationMedia media = mediaList.stream()
+                .filter(m -> m.getSnsContentId() != null && m.getContentUrl() != null)
+                .max(Comparator.comparing(ApplicationMedia::getViewCount, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .orElse(null);
-        if (rep == null) {
+        if (media == null) {
             return;
         }
-        ApplicationMedia media = mediaByKey.get(rep.getContentKey());
+        Map<String, ApplicationContentAnalysis> analysisByKey = rows.stream()
+                .collect(Collectors.toMap(ApplicationContentAnalysis::getContentKey, Function.identity(), (a, b) -> a));
+        ApplicationContentAnalysis analysis = analysisByKey.get(media.getSnsContentId());
         builder.representativeContentUrl(media.getContentUrl())
                 .representativeContentType(media.getContentType() == null ? null : media.getContentType().name())
                 .representativeViewCount(media.getViewCount())
-                .representativeCategory(rep.getCategory())
-                .representativeKeywords(clip(rep.getKeywords(), TEXT_MAX));
+                .representativeCategory(analysis == null ? null : analysis.getCategory())
+                .representativeKeywords(analysis == null ? null : clip(analysis.getKeywords(), TEXT_MAX));
     }
 
     /** 기존 리포트 교체 저장 + 콘텐츠 파기. 반드시 트랜잭션 안에서 호출(외부호출 없음). */

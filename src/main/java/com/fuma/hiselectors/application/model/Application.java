@@ -147,9 +147,15 @@ public class Application extends BaseTimeEntity {
         this.analysisError = null;
     }
 
-    public void failAnalysis(String error) {
+    /**
+     * @param countRetry 재시도 카운트 증가 여부. 일시적 인프라 장애(워커·LLM 다운)는 false 로 넘겨
+     *                   재시도 예산을 소진하지 않는다(복구 시 스케줄러가 자동 재개). 영구/데이터 실패는 true.
+     */
+    public void failAnalysis(String error, boolean countRetry) {
         this.analysisStatus = ContentAnalysisStatus.FAILED;
-        this.analysisRetryCount++;
+        if (countRetry) {
+            this.analysisRetryCount++;
+        }
         this.analysisError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
     }
 

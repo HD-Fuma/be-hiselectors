@@ -9,6 +9,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.stt.ContentAddRequest;
 import com.fuma.hiselectors.stt.CreatorEvaluationService;
+import com.fuma.hiselectors.stt.InstagramSttClient;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class ApplicationAnalysisService {
     private final ApplicationMediaRepository mediaRepository;
     private final ApplicationRepository applicationRepository;
     private final CreatorEvaluationService evaluationService;
+    private final InstagramSttClient instagramSttClient;
     private final TransactionTemplate transactionTemplate;
 
     /** 미디어 전부 분석·적재 → 취합·리포트 저장 → 분석 상태 DONE. */
@@ -39,6 +41,14 @@ public class ApplicationAnalysisService {
                 mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         if (media.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
+        }
+
+        // 헬스 게이트: 인스타 콘텐츠가 있는데 STT 워커가 죽어있으면 아예 시작하지 않는다.
+        // 처리 도중 워커 장애로 인스타만 빠진 '부분 리포트'가 DONE 으로 저장되는 걸 막고,
+        // transient 실패로 처리돼 재시도 예산도 소진하지 않는다(워커 복구 시 자동 재개).
+        boolean hasInstagram = media.stream().anyMatch(m -> m.getSnsCode() != SnsPlatform.YOUTUBE);
+        if (hasInstagram && !instagramSttClient.isHealthy()) {
+            throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
         }
 
         // 미디어별 STT/OCR 적재(외부호출, 멱등). 플랫폼별 취득 경로가 다르다.
@@ -56,9 +66,10 @@ public class ApplicationAnalysisService {
                     if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
                         continue;
                     }
-                    // thumbnailUrl: ApplicationMedia 에 컬럼 추가되면 null → m.getThumbnailUrl() 로 교체.
+                    // contentKey 는 미디어 단위 유니크 키(snsMediaId). 게시물ID(snsContentId)를 쓰면
+                    // 캐러셀의 여러 미디어가 같은 키가 돼 uq_aca_content_key 충돌.
                     evaluationService.addContent(applicationId,
-                            new ContentAddRequest(m.getSnsContentId(), m.getMediaUrl(), null));
+                            new ContentAddRequest(m.getSnsMediaId(), m.getMediaUrl(), m.getThumbnailUrl()));
                 }
             } catch (RuntimeException e) {
                 log.warn("콘텐츠 1건 분석 skip: applicationId={}, snsContentId={}, reason={}",
@@ -78,10 +89,12 @@ public class ApplicationAnalysisService {
         });
     }
 
-    /** 실패 기록(재시도 카운트 증가). */
-    public void markFailed(Long applicationId, String error) {
+    /**
+     * 실패 기록. countRetry=false 면 재시도 카운트를 올리지 않는다(일시적 인프라 장애용).
+     */
+    public void markFailed(Long applicationId, String error, boolean countRetry) {
         transactionTemplate.executeWithoutResult(s ->
                 applicationRepository.findById(applicationId)
-                        .ifPresent(a -> a.failAnalysis(error)));
+                        .ifPresent(a -> a.failAnalysis(error, countRetry)));
     }
 }

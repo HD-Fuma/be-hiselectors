@@ -36,6 +36,7 @@ public class ApplicationAdminController {
             @RequestParam(required = false) SnsPlatform snsCode,
             @RequestParam(required = false) ApplicationStatus status,
             @RequestParam(required = false) Long generationId,
+            @RequestParam(required = false) Boolean hasAiReport,
             @RequestParam(required = false) Boolean minimumCriteriaOnly,
             @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
             Pageable pageable) {
@@ -44,6 +45,7 @@ public class ApplicationAdminController {
                 snsCode,
                 status,
                 generationId,
+                hasAiReport,
                 minimumCriteriaOnly,
                 limitPageSize(pageable)));
     }

@@ -71,7 +71,9 @@ class CreatorEvaluationServiceTest {
     }
 
     @Test
-    void 조회수_최고라도_분석행이_없으면_대표에서_제외되고_분석된_콘텐츠가_대표() {
+    void 조회수_최고인_콘텐츠는_분석행이_없어도_대표로_선정되고_카테고리는_비어있다() {
+        // 대표 콘텐츠는 STT/OCR·Gemini 분석 성공 여부와 무관하게 항상 노출돼야 하므로,
+        // 분석행이 없는 b(조회수 최고)가 대표가 되고 카테고리·키워드만 비어 있다.
         stubInsight();
         when(repository.findByApplicantId(1L)).thenReturn(List.of(
                 analysis("a", "BEAUTY", "립스틱")));   // 분석된 건 a 뿐. b(조회수 최고)는 분석행 없음
@@ -81,9 +83,11 @@ class CreatorEvaluationServiceTest {
 
         ApplicationReport report = service.buildReport(1L);
 
-        assertThat(report.getRepresentativeContentUrl()).isEqualTo("https://insta/a");
-        assertThat(report.getRepresentativeCategory()).isEqualTo("BEAUTY");
-        assertThat(report.getRepresentativeKeywords()).isEqualTo("립스틱");
+        assertThat(report.getRepresentativeContentUrl()).isEqualTo("https://insta/b");
+        assertThat(report.getRepresentativeContentType()).isEqualTo("FEED");
+        assertThat(report.getRepresentativeViewCount()).isEqualTo(5000L);
+        assertThat(report.getRepresentativeCategory()).isNull();
+        assertThat(report.getRepresentativeKeywords()).isNull();
     }
 
     @Test
