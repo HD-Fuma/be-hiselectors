@@ -59,6 +59,8 @@ class ApplicationMediaServiceTest {
     private ContentFetcher youtubeFetcher;
     @Mock
     private TransactionTemplate transactionTemplate;
+    @Mock
+    private AnalysisQueuePublisher analysisQueuePublisher;
 
     private ApplicationMediaService service;
 
@@ -81,7 +83,8 @@ class ApplicationMediaServiceTest {
         }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
-                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK);
+                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK,
+                Optional.of(analysisQueuePublisher));
     }
 
     @Test
@@ -125,6 +128,8 @@ class ApplicationMediaServiceTest {
         });
 
         var result = service.collect(APPLICATION_ID);
+
+        verify(analysisQueuePublisher).publish(APPLICATION_ID);
 
         assertThat(result.fetchedCount()).isEqualTo(contents.size());
         assertThat(result.storedCount()).isEqualTo(52);
