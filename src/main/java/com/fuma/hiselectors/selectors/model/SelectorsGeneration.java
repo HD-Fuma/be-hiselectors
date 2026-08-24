@@ -41,6 +41,15 @@ public class SelectorsGeneration {
     @Column(name = "generation_id", nullable = false)
     private Long generationId;
 
+    @Column(name = "total_sales", nullable = false)
+    private long totalSales;
+
+    @Column(name = "confirmed_purchase_count", nullable = false)
+    private long confirmedPurchaseCount;
+
+    @Column(name = "paid_commission_amount", nullable = false)
+    private long paidCommissionAmount;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
@@ -49,5 +58,12 @@ public class SelectorsGeneration {
     private SelectorsGeneration(Long selectorsId, Long generationId) {
         this.selectorsId = selectorsId;
         this.generationId = generationId;
+    }
+
+    public void addSettledSettlement(
+            long totalSales, long confirmedPurchaseCount, long paidCommissionAmount) {
+        this.totalSales += totalSales;
+        this.confirmedPurchaseCount += confirmedPurchaseCount;
+        this.paidCommissionAmount += paidCommissionAmount;
     }
 }

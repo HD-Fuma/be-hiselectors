@@ -11,6 +11,7 @@ import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,7 @@ public class GenerationAdminService {
         LocalDateTime activityEndDate = request.activityEndDate() == null
                 ? generation.getActivityEndDate() : request.activityEndDate();
 
+        validateSelectedActivityPeriodIsImmutable(generation, request);
         validatePeriods(startDate, endDate, activityStartDate, activityEndDate);
         validateNoActiveActivityOverlap(activityStartDate, activityEndDate, generationId);
         if (generation.getStatus() == GenerationStatus.ACTIVE) {
@@ -120,6 +122,23 @@ public class GenerationAdminService {
         if (generationRepository.existsActivityOverlapping(
                 activityStartDate, activityEndDate, excludedId)) {
             throw new BusinessException(ErrorCode.GENERATION_ACTIVITY_OVERLAPPED);
+        }
+    }
+
+    private void validateSelectedActivityPeriodIsImmutable(
+            Generation generation, GenerationUpdateRequest request) {
+        if (generation.getSelectorExcellenceSelectedAt() == null) {
+            return;
+        }
+        boolean changesActivityStart = request.activityStartDate() != null
+                && !Objects.equals(
+                        request.activityStartDate(), generation.getActivityStartDate());
+        boolean changesActivityEnd = request.activityEndDate() != null
+                && !Objects.equals(request.activityEndDate(), generation.getActivityEndDate());
+        if (changesActivityStart || changesActivityEnd) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT,
+                    "우수 활동자 선정이 완료된 기수의 활동 기간은 변경할 수 없습니다.");
         }
     }
 }

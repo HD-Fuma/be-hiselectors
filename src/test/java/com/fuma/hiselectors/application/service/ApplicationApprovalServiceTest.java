@@ -55,9 +55,11 @@ class ApplicationApprovalServiceTest {
                 .generationId(2L)
                 .snsCode(SnsPlatform.YOUTUBE)
                 .snsAccountId("UC-approved")
+                .profileUrl("https://www.youtube.com/channel/UC-approved")
                 .followerCount(12_345L)
                 .status(ApplicationStatus.PENDING)
                 .build();
+        application.updateProfileImageUrl("https://cdn.example.com/profile.jpg");
         ReflectionTestUtils.setField(application, "id", 31L);
         user = User.builder().name("스무자를넘어가는셀렉터스닉네임확인용이름").build();
         ReflectionTestUtils.setField(user, "id", 7L);
@@ -80,7 +82,7 @@ class ApplicationApprovalServiceTest {
         assertThat(response.status()).isEqualTo(ApplicationStatus.APPROVED);
         ArgumentCaptor<Selectors> selectorsCaptor = ArgumentCaptor.forClass(Selectors.class);
         verify(selectorsRepository).saveAndFlush(selectorsCaptor.capture());
-        assertThat(selectorsCaptor.getValue().getSelectorsCode()).isEqualTo("SEL-31");
+        assertThat(selectorsCaptor.getValue().getSelectorsCode()).isEqualTo("RC000061287T");
         assertThat(selectorsCaptor.getValue().getSelectorsNickname()).hasSize(20);
         ArgumentCaptor<SelectorsGeneration> membershipCaptor =
                 ArgumentCaptor.forClass(SelectorsGeneration.class);
@@ -93,7 +95,11 @@ class ApplicationApprovalServiceTest {
         assertThat(accountCaptor.getValue().getSelectorsId()).isEqualTo(9L);
         assertThat(accountCaptor.getValue().getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(accountCaptor.getValue().getAccountId()).isEqualTo("UC-approved");
+        assertThat(accountCaptor.getValue().getProfileUrl())
+                .isEqualTo("https://www.youtube.com/channel/UC-approved");
         assertThat(accountCaptor.getValue().getFollowerCount()).isEqualTo(12_345L);
+        assertThat(accountCaptor.getValue().getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
     }
 
     @Test
@@ -107,8 +113,10 @@ class ApplicationApprovalServiceTest {
                 .selectorsId(9L)
                 .snsCode(SnsPlatform.INSTAGRAM)
                 .accountId("old-account")
+                .profileUrl("https://www.instagram.com/old-account/")
                 .followerCount(10L)
                 .deleted(true)
+                .profileImageUrl("https://old.example.com/profile.jpg")
                 .build();
         when(selectorsRepository.findByUserIdForUpdate(7L)).thenReturn(Optional.of(selectors));
         when(snsAccountRepository.findBySelectorsId(9L)).thenReturn(Optional.of(account));
@@ -118,7 +126,11 @@ class ApplicationApprovalServiceTest {
 
         assertThat(account.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(account.getAccountId()).isEqualTo("UC-approved");
+        assertThat(account.getProfileUrl())
+                .isEqualTo("https://www.youtube.com/channel/UC-approved");
         assertThat(account.getFollowerCount()).isEqualTo(12_345L);
+        assertThat(account.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
         assertThat(account.isDeleted()).isFalse();
         verify(snsAccountRepository, never()).save(any());
     }

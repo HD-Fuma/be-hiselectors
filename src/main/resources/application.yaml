@@ -80,6 +80,26 @@ management:
       exposure:
         include: health, scheduledtasks
 
+task-run:
+  executor:
+    core-size: ${TASK_RUN_CORE_SIZE:2}
+    max-size: ${TASK_RUN_MAX_SIZE:4}
+    queue-capacity: ${TASK_RUN_QUEUE_CAPACITY:20}
+    thread-prefix: ${TASK_RUN_THREAD_PREFIX:task-run-}
+  progress:
+    flush-count: ${TASK_RUN_PROGRESS_FLUSH_COUNT:10}
+    flush-interval-ms: ${TASK_RUN_PROGRESS_FLUSH_INTERVAL_MS:2000}
+  stale:
+    fixed-delay: ${TASK_RUN_STALE_FIXED_DELAY_MS:60000}
+    timeouts:
+      creator-sync: ${TASK_RUN_CREATOR_SYNC_STALE_TIMEOUT:30m}
+      content-sync: ${TASK_RUN_CONTENT_SYNC_STALE_TIMEOUT:30m}
+      application-report-generation: ${TASK_RUN_APPLICATION_REPORT_STALE_TIMEOUT:120m}
+      content-report-generation: ${TASK_RUN_CONTENT_REPORT_STALE_TIMEOUT:120m}
+      settlement-calculation: ${TASK_RUN_SETTLEMENT_STALE_TIMEOUT:30m}
+      kakao-message-send: ${TASK_RUN_KAKAO_MESSAGE_STALE_TIMEOUT:10m}
+      proposal-email-send: ${TASK_RUN_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
+
 jwt:
   secret: ${JWT_SECRET}
   access-token-validity-seconds: ${JWT_EXPIRE_SECONDS:3600}
@@ -181,6 +201,11 @@ selectors:
     enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
     cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
     zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+  excellence:
+    enabled: ${SELECTORS_EXCELLENCE_ENABLED:true}
+    cron: ${SELECTORS_EXCELLENCE_CRON:0 20 0 * * *}
+    zone: ${SELECTORS_EXCELLENCE_ZONE:Asia/Seoul}
+    grace-days: ${SELECTORS_EXCELLENCE_GRACE_DAYS:7}
 
 content:
   batch:

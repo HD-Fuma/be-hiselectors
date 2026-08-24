@@ -81,6 +81,77 @@ class SelectorsSnsAccountRepositoryTest {
     }
 
     @Test
+    @DisplayName("SNS 프로필 URL을 저장한다")
+    void saveProfileUrl() {
+        SelectorsSnsAccount saved = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("youtube-channel")
+                        .profileUrl("https://www.youtube.com/channel/youtube-channel")
+                        .build());
+
+        entityManager.clear();
+
+        assertThat(accountRepository.findById(saved.getId()).orElseThrow().getProfileUrl())
+                .isEqualTo("https://www.youtube.com/channel/youtube-channel");
+    }
+
+    @Test
+    @DisplayName("같은 SNS 계정의 새 프로필 URL이 없으면 기존 URL을 유지한다")
+    void keepProfileUrlWhenSameAccountHasNoNewUrl() {
+        SelectorsSnsAccount account = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("youtube-channel")
+                        .profileUrl("https://www.youtube.com/channel/youtube-channel")
+                        .profileImageUrl("https://cdn.example.com/profile.jpg")
+                        .build());
+
+        account.synchronize(SnsPlatform.YOUTUBE, "youtube-channel", 2_000L, null, null);
+        entityManager.flush();
+        entityManager.clear();
+
+        SelectorsSnsAccount found = accountRepository.findById(account.getId()).orElseThrow();
+        assertThat(found.getProfileUrl())
+                .isEqualTo("https://www.youtube.com/channel/youtube-channel");
+        assertThat(found.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
+        assertThat(found.getFollowerCount()).isEqualTo(2_000L);
+    }
+
+    @Test
+    @DisplayName("같은 SNS 계정의 프로필 이미지는 비어 있을 때만 채운다")
+    void fillOnlyMissingProfileImageForSameAccount() {
+        SelectorsSnsAccount missingImage = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("youtube-channel")
+                        .build());
+
+        missingImage.synchronize(
+                SnsPlatform.YOUTUBE, "youtube-channel", 2_000L,
+                null, "https://cdn.example.com/profile.jpg");
+        entityManager.flush();
+        entityManager.clear();
+
+        SelectorsSnsAccount found = accountRepository.findById(missingImage.getId()).orElseThrow();
+        assertThat(found.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
+
+        found.synchronize(
+                SnsPlatform.YOUTUBE, "youtube-channel", 3_000L,
+                null, "https://cdn.example.com/replacement.jpg");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(accountRepository.findById(missingImage.getId()).orElseThrow()
+                .getProfileImageUrl()).isEqualTo("https://cdn.example.com/profile.jpg");
+    }
+
+    @Test
     @DisplayName("수집 완료 시각을 저장한다")
     void updateLastCollectedAt() {
         SelectorsSnsAccount account = accountRepository.save(
@@ -117,7 +188,7 @@ class SelectorsSnsAccountRepositoryTest {
                 .getLastCollectedAt()).isEqualTo(collectedAt);
 
         SelectorsSnsAccount changed = accountRepository.findById(account.getId()).orElseThrow();
-        changed.synchronize(SnsPlatform.INSTAGRAM, "instagram-account", 100L);
+        changed.synchronize(SnsPlatform.INSTAGRAM, "instagram-account", 100L, null, null);
         entityManager.flush();
         entityManager.clear();
 
@@ -196,13 +267,14 @@ class SelectorsSnsAccountRepositoryTest {
                         .selectorsId(1L)
                         .snsCode(SnsPlatform.INSTAGRAM)
                         .accountId("old-account")
+                        .profileUrl("https://www.instagram.com/old-account/")
                         .followerCount(10L)
                         .deleted(true)
                         .lastCollectedAt(collectedAt)
                         .profileImageUrl("https://old.example/profile.jpg")
                         .build());
 
-        account.synchronize(SnsPlatform.YOUTUBE, "UC-approved", 12_345L);
+        account.synchronize(SnsPlatform.YOUTUBE, "UC-approved", 12_345L, null, null);
         entityManager.flush();
         entityManager.clear();
 
@@ -210,6 +282,7 @@ class SelectorsSnsAccountRepositoryTest {
         assertThat(found.getId()).isEqualTo(account.getId());
         assertThat(found.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(found.getAccountId()).isEqualTo("UC-approved");
+        assertThat(found.getProfileUrl()).isNull();
         assertThat(found.getFollowerCount()).isEqualTo(12_345L);
         assertThat(found.isDeleted()).isFalse();
         assertThat(found.getLastCollectedAt()).isNull();

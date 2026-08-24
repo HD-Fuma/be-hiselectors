@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaCollectionResponse;
 import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
+import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
@@ -13,6 +14,8 @@ import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -49,6 +52,8 @@ public class ApplicationMediaService {
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private final Optional<AnalysisQueuePublisher> analysisQueuePublisher;
+    private final SelectorsRepository selectorsRepository;
+    private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
         Application application = findApplication(applicationId);
@@ -68,14 +73,20 @@ public class ApplicationMediaService {
             ContentFetcher.Profile profile = profile(fetcher, application);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
+                Application lockedApplication = applicationRepository
+                        .findByIdForUpdate(applicationId)
+                        .orElseThrow(() -> new BusinessException(
+                                ErrorCode.APPLICATION_USER_NOT_FOUND));
                 mediaRepository.deleteByApplicationId(applicationId);
                 mediaRepository.flush();
                 List<ApplicationMedia> values = mediaRepository.saveAll(snapshot.media());
-                application.updateProfileImageUrl(profile.imageUrl());
-                application.fillMissingPublicMetrics(
+                lockedApplication.updateProfileImageUrl(profile.imageUrl());
+                lockedApplication.fillMissingPublicMetrics(
                         profile.followerCount(), profile.contentCount());
-                application.completeMediaCollection(collectedAt, snapshot.engagementRate());
-                applicationRepository.save(application);
+                lockedApplication.completeMediaCollection(
+                        collectedAt, snapshot.engagementRate());
+                applicationRepository.save(lockedApplication);
+                synchronizeProfileImageUrl(lockedApplication);
                 return values;
             }));
 
@@ -87,8 +98,11 @@ public class ApplicationMediaService {
                     saved.stream().map(ApplicationMediaResponse::from).toList());
         } catch (RuntimeException e) {
             transactionTemplate.executeWithoutResult(status -> {
-                application.failMediaCollection(e.getMessage());
-                applicationRepository.save(application);
+                applicationRepository.findByIdForUpdate(applicationId)
+                        .ifPresent(lockedApplication -> {
+                            lockedApplication.failMediaCollection(e.getMessage());
+                            applicationRepository.save(lockedApplication);
+                        });
             });
             throw e;
         }
@@ -140,6 +154,23 @@ public class ApplicationMediaService {
             }
             return new ContentFetcher.Profile(null, null, null);
         }
+    }
+
+    private void synchronizeProfileImageUrl(Application application) {
+        if (application.getStatus() != ApplicationStatus.APPROVED
+                || !hasText(application.getProfileImageUrl())) {
+            return;
+        }
+        selectorsRepository.findByUserIdForUpdate(application.getUserId())
+                .filter(selectors -> !selectors.isDeleted())
+                .filter(selectors -> Objects.equals(
+                        selectors.getApplicationId(), application.getId()))
+                .flatMap(selectors -> selectorsSnsAccountRepository
+                        .findBySelectorsIdAndDeletedFalse(selectors.getId()))
+                .ifPresent(account -> account.synchronizeProfileImageUrl(
+                        application.getSnsCode(),
+                        application.getSnsAccountId(),
+                        application.getProfileImageUrl()));
     }
 
     private Snapshot createSnapshot(
