@@ -56,13 +56,14 @@ public class YoutubeSttClient {
                         Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", properties.maxOutputTokensOrDefault()));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        String uri = ENDPOINT.formatted(properties.youtubeModelOrDefault());
         try {
             return restClient.post()
                     .uri(uri)
@@ -72,7 +73,7 @@ public class YoutubeSttClient {
                     .retrieve()
                     .body(GeminiResponse.class);
         } catch (RestClientException e) {
-            log.warn("Gemini STT 호출 실패. model={}", properties.modelOrDefault(), e);
+            log.warn("Gemini STT 호출 실패. model={}", properties.youtubeModelOrDefault(), e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
