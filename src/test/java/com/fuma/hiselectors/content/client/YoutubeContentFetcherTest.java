@@ -514,8 +514,10 @@ class YoutubeContentFetcherTest {
                               }
                             },
                             "statistics": {
+                              "viewCount": "987654",
                               "subscriberCount": "12345",
-                              "videoCount": "120"
+                              "videoCount": "120",
+                              "hiddenSubscriberCount": false
                             }
                           }]
                         }

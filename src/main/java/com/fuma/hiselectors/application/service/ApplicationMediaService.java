@@ -115,12 +115,24 @@ public class ApplicationMediaService {
     }
 
     private ContentFetcher.Profile profile(ContentFetcher fetcher, Application application) {
+        if (hasText(application.getProfileImageUrl())
+                && application.getContentCount() != null) {
+            return new ContentFetcher.Profile(null, null, null);
+        }
         try {
             ContentFetcher.Profile profile = fetcher.fetchProfile(application.getSnsAccountId());
-            return profile == null ? new ContentFetcher.Profile(null, null, null) : profile;
+            ContentFetcher.Profile value = profile == null
+                    ? new ContentFetcher.Profile(null, null, null) : profile;
+            if (application.getContentCount() == null && value.contentCount() == null) {
+                throw new IllegalStateException("공개 프로필 전체 콘텐츠 수가 없습니다.");
+            }
+            return value;
         } catch (RuntimeException e) {
             log.warn("지원자 공개 프로필 조회 실패: applicationId={}, platform={}, cause={}",
                     application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
+            if (application.getContentCount() == null) {
+                throw e;
+            }
             return new ContentFetcher.Profile(null, null, null);
         }
     }

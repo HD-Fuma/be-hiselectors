@@ -17,6 +17,7 @@ import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -30,6 +31,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,10 +50,13 @@ class ApplicationServiceTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
     private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+    private final ContentFetcher instagramFetcher = mock(ContentFetcher.class);
+    private final ContentFetcher youtubeFetcher = mock(ContentFetcher.class);
     private final OAuthStateProvider oAuthStateProvider = mock(OAuthStateProvider.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final ApplicationService service = new ApplicationService(
             applicationRepository, userRepository, generationRepository, selectorsRepository,
+            List.of(instagramFetcher, youtubeFetcher),
             oAuthStateProvider, passwordEncoder, CLOCK);
 
     private ApplicationCreateRequest request() {
@@ -79,23 +84,12 @@ class ApplicationServiceTest {
             """)
     void createsPendingTestApplicationFromSupportedProfileUrl(
             String profileUrl, SnsPlatform platform, String accountId, String canonicalUrl) {
-        Generation generation = Generation.builder().generationName("2기").build();
-        ReflectionTestUtils.setField(generation, "id", 2L);
-        when(generationRepository
-                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
-                        NOW, NOW, com.fuma.hiselectors.generation.model.GenerationStatus.ACTIVE))
-                .thenReturn(Optional.of(generation));
-        when(passwordEncoder.encode(any())).thenReturn("encoded-password");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
-            User saved = invocation.getArgument(0);
-            ReflectionTestUtils.setField(saved, "id", 7L);
-            return saved;
-        });
-        when(applicationRepository.save(any(Application.class))).thenAnswer(invocation -> {
-            Application saved = invocation.getArgument(0);
-            ReflectionTestUtils.setField(saved, "id", 31L);
-            return saved;
-        });
+        stubTestCreation();
+        stubContentFetchers();
+        ContentFetcher fetcher = platform == SnsPlatform.INSTAGRAM
+                ? instagramFetcher : youtubeFetcher;
+        when(fetcher.fetchProfile(accountId)).thenReturn(new ContentFetcher.Profile(
+                "https://cdn.example.com/profile.jpg", 12_345L, 120L));
 
         assertThat(service.createTest(profileUrl)).isEqualTo(31L);
 
@@ -112,10 +106,35 @@ class ApplicationServiceTest {
             assertThat(saved.getSnsCode()).isEqualTo(platform);
             assertThat(saved.getSnsAccountId()).isEqualTo(accountId);
             assertThat(saved.getProfileUrl()).isEqualTo(canonicalUrl);
+            assertThat(saved.getProfileImageUrl())
+                    .isEqualTo("https://cdn.example.com/profile.jpg");
+            assertThat(saved.getFollowerCount()).isEqualTo(12_345L);
+            assertThat(saved.getContentCount()).isEqualTo(120L);
             assertThat(saved.isAlarmYn()).isFalse();
             assertThat(saved.getPolicyAgreedAt()).isEqualTo(NOW);
             assertThat(saved.getStatus()).isEqualTo(ApplicationStatus.PENDING);
             assertThat(saved.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.PENDING);
+        });
+        verify(fetcher).fetchProfile(accountId);
+    }
+
+    @Test
+    void createsTestApplicationWhenPublicProfileLookupFails() {
+        stubTestCreation();
+        stubContentFetchers();
+        when(instagramFetcher.fetchProfile("creator.name"))
+                .thenThrow(new IllegalStateException("profile API failed"));
+
+        assertThat(service.createTest("https://instagram.com/creator.name/"))
+                .isEqualTo(31L);
+
+        ArgumentCaptor<Application> application = ArgumentCaptor.forClass(Application.class);
+        verify(applicationRepository).save(application.capture());
+        assertThat(application.getValue()).satisfies(saved -> {
+            assertThat(saved.getProfileImageUrl()).isNull();
+            assertThat(saved.getFollowerCount()).isNull();
+            assertThat(saved.getContentCount()).isNull();
+            assertThat(saved.getStatus()).isEqualTo(ApplicationStatus.PENDING);
         });
     }
 
@@ -249,5 +268,30 @@ class ApplicationServiceTest {
                 .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         any(), any(), any());
         verify(applicationRepository, never()).save(any());
+    }
+
+    private void stubTestCreation() {
+        Generation generation = Generation.builder().generationName("2기").build();
+        ReflectionTestUtils.setField(generation, "id", 2L);
+        when(generationRepository
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
+                        NOW, NOW, com.fuma.hiselectors.generation.model.GenerationStatus.ACTIVE))
+                .thenReturn(Optional.of(generation));
+        when(passwordEncoder.encode(any())).thenReturn("encoded-password");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 7L);
+            return saved;
+        });
+        when(applicationRepository.save(any(Application.class))).thenAnswer(invocation -> {
+            Application saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 31L);
+            return saved;
+        });
+    }
+
+    private void stubContentFetchers() {
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
     }
 }

@@ -6,6 +6,7 @@ import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -18,17 +19,20 @@ import com.fuma.hiselectors.user.repository.UserRepository;
 import java.net.URI;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ApplicationService {
@@ -43,6 +47,7 @@ public class ApplicationService {
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
     private final SelectorsRepository selectorsRepository;
+    private final List<ContentFetcher> contentFetchers;
     private final OAuthStateProvider oAuthStateProvider;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
@@ -55,6 +60,7 @@ public class ApplicationService {
                 .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         now, now, GenerationStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACTIVE_GENERATION_NOT_FOUND));
+        ContentFetcher.Profile profile = fetchPublicProfile(account);
 
         String token = UUID.randomUUID().toString().replace("-", "");
         User user = userRepository.save(User.builder()
@@ -63,17 +69,35 @@ public class ApplicationService {
                 .name(clip("[테스트] " + account.accountId(), 50))
                 .alimtalk("N")
                 .build());
-        Application application = applicationRepository.save(Application.builder()
+        Application application = Application.builder()
                 .userId(user.getId())
                 .generationId(generation.getId())
                 .snsCode(account.platform())
                 .snsAccountId(account.accountId())
                 .profileUrl(account.profileUrl())
+                .followerCount(profile.followerCount())
+                .contentCount(profile.contentCount())
                 .alarmYn(false)
                 .policyAgreedAt(now)
                 .status(ApplicationStatus.PENDING)
-                .build());
+                .build();
+        application.updateProfileImageUrl(profile.imageUrl());
+        applicationRepository.save(application);
         return application.getId();
+    }
+
+    private ContentFetcher.Profile fetchPublicProfile(TestAccount account) {
+        try {
+            return contentFetchers.stream()
+                    .filter(fetcher -> fetcher.supports() == account.platform())
+                    .findFirst()
+                    .map(fetcher -> fetcher.fetchProfile(account.accountId()))
+                    .orElseGet(() -> new ContentFetcher.Profile(null, null, null));
+        } catch (RuntimeException e) {
+            log.warn("테스트 지원자 공개 프로필 조회 실패: platform={}, cause={}",
+                    account.platform(), e.getClass().getSimpleName());
+            return new ContentFetcher.Profile(null, null, null);
+        }
     }
 
     @Transactional

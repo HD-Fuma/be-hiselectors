@@ -210,8 +210,6 @@ class ApplicationMediaServiceTest {
                         "unavailable-media", RawContentMedia.MediaType.VIDEO, null)));
         when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN, 10))
                 .thenReturn(List.of(reel, post, unavailable));
-        when(instagramFetcher.fetchProfile("username"))
-                .thenThrow(new IllegalStateException("profile API failed"));
         when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected).extracting(RawContent::snsContentId)
@@ -253,6 +251,7 @@ class ApplicationMediaServiceTest {
                 .isEqualTo("https://cdn.example.com/existing-profile.jpg");
         assertThat(application.getFollowerCount()).isEqualTo(999L);
         assertThat(application.getContentCount()).isEqualTo(88L);
+        verify(instagramFetcher, never()).fetchProfile(any());
     }
 
     @Test
@@ -293,6 +292,23 @@ class ApplicationMediaServiceTest {
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
         assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
         assertThat(application.getMediaCollectionError()).isEqualTo("API failed");
+    }
+
+    @Test
+    void retriesWhenRequiredPublicProfileCountIsMissing() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/profile.jpg", 12_345L, null));
+
+        assertThatThrownBy(() -> service.collect(APPLICATION_ID))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(mediaRepository, never()).deleteByApplicationId(any());
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
+        assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
     }
 
     @Test
