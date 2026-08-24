@@ -55,6 +55,17 @@ spring:
           starttls:
             enable: true
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+media:
+  s3:
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${MEDIA_S3_BUCKET:}
+    public-base-url: ${MEDIA_PUBLIC_BASE_URL:}
+
 # 액추에이터 헬스체크가 매번 SMTP 연결을 시도해 실패 로그를 남기지 않도록 끈다.
 # (실제 발송은 제안 API 호출 시에만 일어난다.)
 management:
