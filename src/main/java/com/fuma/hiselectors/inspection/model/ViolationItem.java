@@ -134,11 +134,10 @@ public class ViolationItem extends BaseTimeEntity {
     }
 
     private static Long representativeMediaId(List<EvidenceLocation> locations) {
-        List<Long> ids = locations.stream()
+        return locations.stream()
                 .map(EvidenceLocation::contentMediaId)
                 .filter(java.util.Objects::nonNull)
-                .distinct()
-                .toList();
-        return ids.size() == 1 ? ids.getFirst() : null;
+                .findFirst()
+                .orElse(null);
     }
 }

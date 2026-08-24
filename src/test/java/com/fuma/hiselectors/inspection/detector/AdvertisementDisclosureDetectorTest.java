@@ -9,6 +9,7 @@ import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,15 @@ class AdvertisementDisclosureDetectorTest {
                 content, version, selectors(), List.of(media)));
 
         assertThat(result).singleElement()
-                .satisfies(violation -> assertThat(violation.evidence().confidence()).isEqualTo(1.0));
+                .satisfies(violation -> {
+                    assertThat(violation.evidence().confidence()).isEqualTo(1.0);
+                    assertThat(violation.evidence().source()).isEqualTo(EvidenceSource.RULE);
+                    assertThat(violation.evidence().locations()).singleElement()
+                            .satisfies(location -> {
+                                assertThat(location.mediaType()).isEqualTo(MediaType.TEXT);
+                                assertThat(location.startIndex()).isNull();
+                            });
+                });
     }
 
     private Selectors selectors() {

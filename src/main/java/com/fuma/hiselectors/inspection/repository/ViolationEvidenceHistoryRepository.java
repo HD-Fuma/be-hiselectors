@@ -27,4 +27,11 @@ public interface ViolationEvidenceHistoryRepository
     List<ViolationEvidenceHistory> findAllByContentVersionIdAndViolationItemIdIn(
             @Param("contentVersionId") Long contentVersionId,
             @Param("violationItemIds") List<Long> violationItemIds);
+
+    List<ViolationEvidenceHistory>
+    findAllByContentVersionIdAndInspectionPolicyIdOrderByIdAsc(
+            Long contentVersionId, Long inspectionPolicyId);
+
+    List<ViolationEvidenceHistory> findAllByContentVersionIdOrderByDetectedAtAscIdAsc(
+            Long contentVersionId);
 }

@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.ViolationEvidenceHistory;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.inspection.repository.ViolationEvidenceHistoryRepository;
@@ -48,7 +49,8 @@ class ViolationEvidenceHistoryServiceTest {
     void overwritesSnapshotForSameVersionAndPolicy() {
         ViolationEvidenceHistoryRepository repository = mock(ViolationEvidenceHistoryRepository.class);
         ViolationEvidenceHistory existing = ViolationEvidenceHistory.create(
-                20L, 2L, 9L, new ViolationEvidence("이전", 0.4, List.of()),
+                20L, 2L, 9L,
+                new ViolationEvidence("이전", 0.4, List.of(), EvidenceSource.AI),
                 LocalDateTime.of(2026, 8, 19, 1, 0));
         when(repository.findByViolationItemIdAndContentVersionIdAndInspectionPolicyId(
                 20L, 2L, 9L)).thenReturn(Optional.of(existing));
@@ -79,7 +81,8 @@ class ViolationEvidenceHistoryServiceTest {
         ContentVersion version = ContentVersion.create(10L, 2L, "v2");
         ReflectionTestUtils.setField(version, "id", 2L);
         ViolationItem item = ViolationItem.pending(
-                version, 100L, new ViolationEvidence("최신", 1.0, List.of()));
+                version, 100L,
+                new ViolationEvidence("최신", 1.0, List.of(), EvidenceSource.AI));
         ReflectionTestUtils.setField(item, "id", 20L);
         return item;
     }

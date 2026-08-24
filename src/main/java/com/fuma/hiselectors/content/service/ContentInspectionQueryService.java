@@ -79,7 +79,9 @@ public class ContentInspectionQueryService {
                 row.storedAt(),
                 row.latestVersionId(),
                 row.latestVersionNo(),
-                row.inspectionStatus() == null ? null : row.inspectionStatus().name(),
+                row.inspectionDecision() != null
+                        ? row.inspectionDecision().name()
+                        : row.inspectionStatus() == null ? null : row.inspectionStatus().name(),
                 row.inspectedAt(),
                 row.latestVersionStoredAt(),
                 row.accountId(),

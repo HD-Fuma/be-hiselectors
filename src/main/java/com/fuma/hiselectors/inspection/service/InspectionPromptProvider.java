@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class InspectionPromptProvider {
 
-    public static final String AI_PROMPT_VERSION = "content-inspection-v1";
+    public static final String AI_PROMPT_VERSION = "content-inspection-v2";
     public static final String YOUTUBE_EXTRACTION_PROMPT_VERSION = "youtube-extraction-v1";
 
     private final String aiPrompt = read("prompts/content-inspection.txt");

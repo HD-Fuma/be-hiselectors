@@ -56,7 +56,7 @@ class ContentInspectionQueryServiceTest {
         ContentInspectionQueryRow row = new ContentInspectionQueryRow(
                 1L, 11L, "셀렉터", SnsPlatform.INSTAGRAM, "post-1",
                 "https://instagram.com/p/post-1", ContentType.FEED, storedAt,
-                101L, 2L, null, null, versionStoredAt,
+                101L, 2L, null, null, null, versionStoredAt,
                 "selectors-account", "https://cdn.example.com/profile.jpg");
         PageRequest pageable = PageRequest.of(0, 20);
         when(contentRepository.findInspectionRowsByGenerationId(10L, pageable))
