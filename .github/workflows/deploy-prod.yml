@@ -64,6 +64,10 @@ jobs:
             -u "$DB_USERNAME" "$DB_NAME"
         }
 
+        mysql_query "UPDATE product SET detail_url = CONCAT('https://hiselectors.shop/product/', product_code, '?ptrsRefCd=RC000003200T') WHERE product_code IS NOT NULL AND NOT (detail_url <=> CONCAT('https://hiselectors.shop/product/', product_code, '?ptrsRefCd=RC000003200T'))"
+        test "$(mysql_query "SELECT COUNT(*) FROM product WHERE product_code IS NOT NULL AND NOT (detail_url <=> CONCAT('https://hiselectors.shop/product/', product_code, '?ptrsRefCd=RC000003200T'))")" = "0"
+        echo "product-detail-urls=verified"
+
         TASK_RUN_MIGRATION_FILE="$(mktemp)"
         cleanup_task_run_migration() {
           rm -f "$TASK_RUN_MIGRATION_FILE"
