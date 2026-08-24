@@ -56,7 +56,8 @@ class ApplicationAdminControllerTest {
         var response = new AdminApplicationSummaryResponse(
                 1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                 2L, "2기", SnsPlatform.INSTAGRAM, "creator.handle",
-                "https://www.instagram.com/creator.handle/", 1_000L, 500L, 12L,
+                "creator.handle", "https://www.instagram.com/creator.handle/",
+                1_000L, 500L, 12L,
                 new BigDecimal("1.50"), ApplicationStatus.PENDING,
                 MediaCollectionStatus.DONE, collectedAt.minusDays(30), collectedAt, collectedAt);
         when(applicationAdminService.search(
@@ -76,6 +77,8 @@ class ApplicationAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[0].id").value(1))
                 .andExpect(jsonPath("$.data.content[0].applicantName").value("김지안"))
+                .andExpect(jsonPath("$.data.content[0].snsDisplayName")
+                        .value("creator.handle"))
                 .andExpect(jsonPath("$.data.content[0].profileUrl")
                         .value("https://www.instagram.com/creator.handle/"))
                 .andExpect(jsonPath("$.data.content[0].totalContentCount").value(500))
@@ -123,13 +126,15 @@ class ApplicationAdminControllerTest {
                 new AdminApplicationDetailResponse(
                         1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                         2L, "2기", SnsPlatform.YOUTUBE, "UC123",
-                        "https://www.youtube.com/channel/UC123", null,
+                        "지안의 생활연구소", "https://www.youtube.com/channel/UC123", null,
                         ApplicationStatus.PENDING, MediaCollectionStatus.DONE,
                         ContentAnalysisStatus.DONE,
                         collectedAt.minusDays(30), collectedAt, collectedAt, metrics, List.of()));
 
         mockMvc.perform(get("/api/admin/applications/1"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.snsAccountId").value("UC123"))
+                .andExpect(jsonPath("$.data.snsDisplayName").value("지안의 생활연구소"))
                 .andExpect(jsonPath("$.data.metrics.analysisWindowDays").value(90))
                 .andExpect(jsonPath("$.data.profileUrl")
                         .value("https://www.youtube.com/channel/UC123"))

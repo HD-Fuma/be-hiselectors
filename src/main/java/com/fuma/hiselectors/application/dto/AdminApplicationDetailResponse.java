@@ -19,6 +19,7 @@ public record AdminApplicationDetailResponse(
         String generationName,
         SnsPlatform snsCode,
         String snsAccountId,
+        String snsDisplayName,
         String profileUrl,
         Long followerCount,
         ApplicationStatus status,

@@ -129,6 +129,42 @@ public class YoutubeContentFetcher implements ContentFetcher {
         return results;
     }
 
+    public Map<String, String> fetchChannelTitles(List<String> channelIds) {
+        if (!properties.hasApiKey() || channelIds == null || channelIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = channelIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(CHANNEL_ID.asMatchPredicate())
+                .distinct()
+                .toList();
+        Map<String, String> titles = new HashMap<>();
+        for (int start = 0; start < ids.size(); start += PAGE_SIZE) {
+            List<String> batch = ids.subList(start, Math.min(start + PAGE_SIZE, ids.size()));
+            URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
+                    .queryParam("part", "snippet")
+                    .queryParam("id", String.join(",", batch))
+                    .queryParam("key", properties.apiKey())
+                    .build()
+                    .encode()
+                    .toUri();
+            try {
+                YoutubeChannelResponse response = request(uri, YoutubeChannelResponse.class);
+                if (response.items() != null) {
+                    response.items().stream()
+                            .filter(item -> item != null && StringUtils.hasText(item.id()))
+                            .filter(item -> item.snippet() != null
+                                    && StringUtils.hasText(item.snippet().title()))
+                            .forEach(item -> titles.put(item.id(), item.snippet().title()));
+                }
+            } catch (BusinessException e) {
+                log.warn("YouTube 채널명 조회 실패. 채널 수={}", batch.size());
+            }
+        }
+        return Map.copyOf(titles);
+    }
+
     private List<FetchResult> fetchBatch(List<String> ids) {
         URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
                 .queryParam("part", "snippet,statistics,contentDetails")

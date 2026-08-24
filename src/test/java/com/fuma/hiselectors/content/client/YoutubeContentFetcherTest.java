@@ -17,6 +17,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -116,6 +117,52 @@ class YoutubeContentFetcherTest {
                             "https://i.ytimg.com/video-new/default.jpg",
                             "https://i.ytimg.com/video-new/high.jpg")));
         });
+        server.verify();
+    }
+
+    @Test
+    void fetchesChannelTitlesInOneBatch() {
+        String secondChannelId = "UC1111111111111111111111";
+        server.expect(request -> {
+                    assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/channels");
+                    assertThat(decodedQuery(request.getURI().getRawQuery()))
+                            .contains("part=snippet")
+                            .contains("id=" + CHANNEL_ID + "," + secondChannelId)
+                            .contains("key=" + API_KEY);
+                })
+                .andRespond(withSuccess("""
+                        {"items":[
+                          {"id":"%s","snippet":{"title":"채널 하나"}},
+                          {"id":"%s","snippet":{"title":"채널 둘"}}
+                        ]}
+                        """.formatted(CHANNEL_ID, secondChannelId), MediaType.APPLICATION_JSON));
+
+        Map<String, String> titles = client.fetchChannelTitles(
+                List.of(CHANNEL_ID, secondChannelId));
+
+        assertThat(titles).containsExactlyInAnyOrderEntriesOf(Map.of(
+                CHANNEL_ID, "채널 하나",
+                secondChannelId, "채널 둘"));
+        server.verify();
+    }
+
+    @Test
+    void fetchesNextChannelTitleBatchAfterOneFails() {
+        List<String> channelIds = IntStream.rangeClosed(0, 50)
+                .mapToObj(index -> "UC%022d".formatted(index))
+                .toList();
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=" + String.join(",", channelIds.subList(0, 50))))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("id=" + channelIds.getLast()))
+                .andRespond(withSuccess("""
+                        {"items":[{"id":"%s","snippet":{"title":"마지막 채널"}}]}
+                        """.formatted(channelIds.getLast()), MediaType.APPLICATION_JSON));
+
+        Map<String, String> titles = client.fetchChannelTitles(channelIds);
+
+        assertThat(titles).containsOnly(Map.entry(channelIds.getLast(), "마지막 채널"));
         server.verify();
     }
 
