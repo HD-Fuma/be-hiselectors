@@ -8,10 +8,23 @@ import static org.mockito.Mockito.verify;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 class AnalysisQueuePublisherTest {
+
+    private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withUserConfiguration(AnalysisQueuePublisher.class)
+            .withPropertyValues(
+                    "application.content-analysis.queue-url=https://sqs.example.com/analysis.fifo",
+                    "media.s3.region=ap-northeast-2");
+
+    @Test
+    void createsPublisherBeanFromConfiguration() {
+        contextRunner.run(context ->
+                assertThat(context).hasSingleBean(AnalysisQueuePublisher.class));
+    }
 
     @Test
     void publishesApplicationIdToSingleFifoGroup() {

@@ -266,7 +266,8 @@ jobs:
             docker pull "$IMAGE_URI"
             docker pull "$WORKER_IMAGE_URI"
             cd /srv/hiselectors
-            docker compose up -d --wait --wait-timeout 180 api
+            # 장애 복구 배포도 진행할 수 있도록 기존 컨테이너의 health는 여기서 기다리지 않는다.
+            docker compose up -d api
             OLD_API_CONTAINER="$(docker compose ps -q api)"
             test -n "$OLD_API_CONTAINER"
             OLD_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$OLD_API_CONTAINER")"
