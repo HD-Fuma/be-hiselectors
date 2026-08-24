@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +22,7 @@ import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.service.ApplicationAdminService;
+import com.fuma.hiselectors.application.service.ApplicationService;
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import java.math.BigDecimal;
@@ -34,20 +36,38 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.MediaType;
 
 class ApplicationAdminControllerTest {
 
     private ApplicationAdminService applicationAdminService;
+    private ApplicationService applicationService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         applicationAdminService = mock(ApplicationAdminService.class);
+        applicationService = mock(ApplicationService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new ApplicationAdminController(applicationAdminService))
+                .standaloneSetup(new ApplicationAdminController(
+                        applicationAdminService, applicationService))
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
+    }
+
+    @Test
+    void createsTestApplicationFromProfileUrl() throws Exception {
+        when(applicationService.createTest("https://www.instagram.com/creator/"))
+                .thenReturn(31L);
+
+        mockMvc.perform(post("/api/admin/applications/test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"profileUrl":"https://www.instagram.com/creator/"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.id").value(31));
     }
 
     @Test

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.dto.ApplicationCreateRequest;
@@ -31,7 +32,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 class ApplicationServiceTest {
 
@@ -44,9 +49,10 @@ class ApplicationServiceTest {
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
     private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
     private final OAuthStateProvider oAuthStateProvider = mock(OAuthStateProvider.class);
+    private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final ApplicationService service = new ApplicationService(
             applicationRepository, userRepository, generationRepository, selectorsRepository,
-            oAuthStateProvider, CLOCK);
+            oAuthStateProvider, passwordEncoder, CLOCK);
 
     private ApplicationCreateRequest request() {
         return new ApplicationCreateRequest("verification-token", true, true);
@@ -63,6 +69,69 @@ class ApplicationServiceTest {
                 .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
                         any(), any(), any()))
                 .thenReturn(Optional.of(Generation.builder().generationName("1기").build()));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            https://instagram.com/creator.name/|INSTAGRAM|creator.name|https://www.instagram.com/creator.name/
+            https://m.youtube.com/@creator?feature=shared|YOUTUBE|@creator|https://www.youtube.com/@creator
+            https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw|YOUTUBE|UC_x5XG1OV2P6uZZ5FSM9Ttw|https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw
+            """)
+    void createsPendingTestApplicationFromSupportedProfileUrl(
+            String profileUrl, SnsPlatform platform, String accountId, String canonicalUrl) {
+        Generation generation = Generation.builder().generationName("2기").build();
+        ReflectionTestUtils.setField(generation, "id", 2L);
+        when(generationRepository
+                .findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
+                        NOW, NOW, com.fuma.hiselectors.generation.model.GenerationStatus.ACTIVE))
+                .thenReturn(Optional.of(generation));
+        when(passwordEncoder.encode(any())).thenReturn("encoded-password");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 7L);
+            return saved;
+        });
+        when(applicationRepository.save(any(Application.class))).thenAnswer(invocation -> {
+            Application saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 31L);
+            return saved;
+        });
+
+        assertThat(service.createTest(profileUrl)).isEqualTo(31L);
+
+        ArgumentCaptor<User> user = ArgumentCaptor.forClass(User.class);
+        ArgumentCaptor<Application> application = ArgumentCaptor.forClass(Application.class);
+        verify(userRepository).save(user.capture());
+        verify(applicationRepository).save(application.capture());
+        assertThat(user.getValue().getHiId()).startsWith("test_").hasSize(20);
+        assertThat(user.getValue().getName()).startsWith("[테스트] ");
+        assertThat(user.getValue().getAlimtalk()).isEqualTo("N");
+        assertThat(application.getValue()).satisfies(saved -> {
+            assertThat(saved.getUserId()).isEqualTo(7L);
+            assertThat(saved.getGenerationId()).isEqualTo(2L);
+            assertThat(saved.getSnsCode()).isEqualTo(platform);
+            assertThat(saved.getSnsAccountId()).isEqualTo(accountId);
+            assertThat(saved.getProfileUrl()).isEqualTo(canonicalUrl);
+            assertThat(saved.isAlarmYn()).isFalse();
+            assertThat(saved.getPolicyAgreedAt()).isEqualTo(NOW);
+            assertThat(saved.getStatus()).isEqualTo(ApplicationStatus.PENDING);
+            assertThat(saved.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.PENDING);
+        });
+    }
+
+    @Test
+    void rejectsNonProfileOrUntrustedTestUrlsBeforeWriting() {
+        for (String value : java.util.List.of(
+                "http://instagram.com/creator",
+                "https://instagram.com/p/post-id",
+                "https://youtube.com/watch?v=video-id",
+                "https://youtube.com.evil.example/@creator")) {
+            assertThatThrownBy(() -> service.createTest(value))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.INVALID_INPUT);
+        }
+        verifyNoInteractions(userRepository, applicationRepository, generationRepository);
     }
 
     @Test

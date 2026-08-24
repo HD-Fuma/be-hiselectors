@@ -131,12 +131,12 @@ class ApplicationAdminRepositoryTest {
 
         var firstPage = applicationRepository.searchAdmin(
                 null, null, ApplicationStatus.PENDING,
-                generation.getId(), null, PageRequest.of(0, 2));
+                generation.getId(), null, null, PageRequest.of(0, 2));
 
         assertThat(firstPage.getTotalElements()).isEqualTo(3);
         assertThat(applicationRepository.searchAdmin(
                 null, null, ApplicationStatus.PENDING,
-                generation.getId(), null, PageRequest.of(0, 20)))
+                generation.getId(), null, null, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(regular.getId(), sparse.getId(), unknown.getId())
                 .doesNotContain(nullHiId.getId(), blankHiId.getId());

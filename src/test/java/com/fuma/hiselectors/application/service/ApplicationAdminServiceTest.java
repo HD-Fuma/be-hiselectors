@@ -133,7 +133,7 @@ class ApplicationAdminServiceTest {
         ReflectionTestUtils.setField(application, "snsAccountId", channelId);
         var pageable = PageRequest.of(0, 20);
         when(applicationRepository.searchAdmin(
-                null, SnsPlatform.YOUTUBE, null, null, null, pageable))
+                null, SnsPlatform.YOUTUBE, null, null, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
         when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
         when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
@@ -145,7 +145,7 @@ class ApplicationAdminServiceTest {
                 .thenReturn(Map.of(channelId, "지안의 생활연구소"));
 
         var summary = service.search(
-                null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+                null, SnsPlatform.YOUTUBE, null, null, null, null, pageable)
                 .getContent().getFirst();
 
         assertThat(summary.snsAccountId()).isEqualTo(channelId);
@@ -153,7 +153,7 @@ class ApplicationAdminServiceTest {
         assertThat(application.getSnsAccountId()).isEqualTo(channelId);
 
         when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId))).thenReturn(Map.of());
-        assertThat(service.search(null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+        assertThat(service.search(null, SnsPlatform.YOUTUBE, null, null, null, null, pageable)
                 .getContent().getFirst().snsDisplayName()).isEqualTo(channelId);
     }
 
