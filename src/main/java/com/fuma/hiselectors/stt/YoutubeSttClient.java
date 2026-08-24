@@ -56,7 +56,7 @@ public class YoutubeSttClient {
                         Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
-                        "thinkingConfig", Map.of("thinkingBudget", 0),
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", properties.maxOutputTokensOrDefault()));
 
         return parse(rawText(call(body)));

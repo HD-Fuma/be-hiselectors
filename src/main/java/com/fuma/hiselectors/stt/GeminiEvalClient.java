@@ -66,7 +66,7 @@ public class GeminiEvalClient {
                 "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
                 "generationConfig", Map.of(
                         "responseMimeType", "application/json",
-                        "thinkingConfig", Map.of("thinkingBudget", 0),
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", properties.maxOutputTokensOrDefault()));
 
         return parse(rawText(call(body)));

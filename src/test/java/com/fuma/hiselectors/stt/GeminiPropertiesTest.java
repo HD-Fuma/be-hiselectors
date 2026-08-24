@@ -11,7 +11,7 @@ class GeminiPropertiesTest {
         GeminiProperties properties = new GeminiProperties(
                 "key", null, null, null, null, null);
 
-        assertEquals("gemini-2.5-flash-lite", properties.youtubeModelOrDefault());
-        assertEquals("gemini-2.5-flash-lite", properties.reportModelOrDefault());
+        assertEquals("gemini-3.5-flash-lite", properties.youtubeModelOrDefault());
+        assertEquals("gemini-3.5-flash-lite", properties.reportModelOrDefault());
     }
 }
