@@ -100,11 +100,11 @@ public class CampaignAdminController {
         return ResponseEntity.ok(campaignAdminService.update(campaignId, request));
     }
 
-    @Operation(summary = "캠페인 삭제", description = "종료일이 지난 캠페인만 삭제 처리한다. 데이터는 soft delete 된다.")
+    @Operation(summary = "캠페인 삭제", description = "시작 전 캠페인만 삭제 처리한다. 데이터는 soft delete 된다.")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "삭제 성공"),
             @ApiResponse(responseCode = "404", description = "캠페인 없음", content = @Content),
-            @ApiResponse(responseCode = "409", description = "종료되지 않은 캠페인", content = @Content)
+            @ApiResponse(responseCode = "409", description = "진행 중이거나 종료된 캠페인", content = @Content)
     })
     @DeleteMapping("/{campaignId}")
     public ResponseEntity<Void> delete(@PathVariable Long campaignId) {

@@ -75,6 +75,7 @@ class NotificationRepositoryTest {
                 LocalDateTime.of(2026, 8, 15, 0, 0),
                 LocalDateTime.of(2026, 8, 16, 0, 0),
                 "hi-selector",
+                null,
                 PageRequest.of(0, 20, Sort.by(Sort.Order.desc("requestAt"))));
 
         assertThat(history.getTotalElements()).isEqualTo(1);
@@ -82,5 +83,37 @@ class NotificationRepositoryTest {
         assertThat(result.recipientName()).isEqualTo("김하이");
         assertThat(result.recipientHiId()).isEqualTo("hi-selector");
         assertThat(result.receiver()).isEqualTo("recipient-uuid");
+    }
+
+    @Test
+    @DisplayName("발송 채널로 이력을 걸러 조회한다")
+    void searchHistoryByChannel() {
+        notificationRepository.save(Notification.builder()
+                .notificationPurposeCode("SELECTION_APPROVED")
+                .notificationChannel(NotificationChannel.KAKAO_MESSAGE)
+                .receiver("kakao-uuid")
+                .body("카카오 메시지")
+                .requestAt(LocalDateTime.of(2026, 8, 15, 9, 0))
+                .build());
+        notificationRepository.save(Notification.builder()
+                .notificationPurposeCode("SETTLEMENT_MISSING")
+                .notificationChannel(NotificationChannel.EMAIL)
+                .receiver("creator@example.com")
+                .body("이메일")
+                .requestAt(LocalDateTime.of(2026, 8, 15, 10, 0))
+                .build());
+        em.flush();
+        em.clear();
+
+        PageRequest pageable = PageRequest.of(0, 20, Sort.by(Sort.Order.desc("requestAt")));
+        Page<NotificationHistoryResponse> kakao = notificationRepository.searchHistory(
+                null, null, null, null, null, NotificationChannel.KAKAO_MESSAGE, pageable);
+        Page<NotificationHistoryResponse> email = notificationRepository.searchHistory(
+                null, null, null, null, null, NotificationChannel.EMAIL, pageable);
+
+        assertThat(kakao.getTotalElements()).isEqualTo(1);
+        assertThat(kakao.getContent().getFirst().channel()).isEqualTo(NotificationChannel.KAKAO_MESSAGE);
+        assertThat(email.getTotalElements()).isEqualTo(1);
+        assertThat(email.getContent().getFirst().channel()).isEqualTo(NotificationChannel.EMAIL);
     }
 }

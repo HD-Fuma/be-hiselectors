@@ -82,7 +82,7 @@ class CampaignAdminIntegrationTest {
     }
 
     @Test
-    void admin_can_create_search_update_and_soft_delete_ended_campaign() throws Exception {
+    void admin_can_create_search_update_and_soft_delete_scheduled_campaign() throws Exception {
         Product onSale = productRepository.save(product("P-1", ProductStatus.ON_SALE));
         Product soldOut = productRepository.save(product("P-2", ProductStatus.SOLD_OUT));
 
@@ -119,13 +119,13 @@ class CampaignAdminIntegrationTest {
                 .andExpect(jsonPath("$.data.productIds[0]").value(onSale.getId()));
 
         CampaignUpdateRequest replaceProducts = new CampaignUpdateRequest(
-                null, null, TODAY.minusDays(2), TODAY.minusDays(1), null, List.of());
+                null, null, TODAY.plusDays(2), TODAY.plusDays(3), null, List.of());
         mockMvc.perform(patch("/api/admin/campaigns/{id}", id)
                         .header("Authorization", bearer("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replaceProducts)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("ENDED"))
+                .andExpect(jsonPath("$.data.status").value("SCHEDULED"))
                 .andExpect(jsonPath("$.data.productIds").isEmpty());
 
         mockMvc.perform(delete("/api/admin/campaigns/{id}", id)
@@ -441,20 +441,27 @@ class CampaignAdminIntegrationTest {
     }
 
     @Test
-    void active_campaign_cannot_be_deleted_and_deleted_campaign_cannot_be_read() throws Exception {
+    void only_scheduled_campaign_can_be_deleted_and_deleted_campaign_cannot_be_read() throws Exception {
         Long activeId = createCampaign("활성", TODAY, TODAY, List.of());
         mockMvc.perform(delete("/api/admin/campaigns/{id}", activeId)
                         .header("Authorization", bearer("ADMIN")))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("CAMPAIGN_DELETE_NOT_ALLOWED"));
+                .andExpect(jsonPath("$.code").value("CAMPAIGN_DELETE_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.message").value("시작 전 캠페인만 삭제할 수 있습니다."));
         mockMvc.perform(get("/api/admin/campaigns/999999").header("Authorization", bearer("ADMIN")))
                 .andExpect(status().isNotFound());
 
-        Long endedId = createCampaign("삭제", TODAY.minusDays(2), TODAY.minusDays(1), List.of());
+        Long endedId = createCampaign("종료", TODAY.minusDays(2), TODAY.minusDays(1), List.of());
         mockMvc.perform(delete("/api/admin/campaigns/{id}", endedId)
                         .header("Authorization", bearer("ADMIN")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CAMPAIGN_DELETE_NOT_ALLOWED"));
+
+        Long scheduledId = createCampaign("삭제", TODAY.plusDays(1), TODAY.plusDays(2), List.of());
+        mockMvc.perform(delete("/api/admin/campaigns/{id}", scheduledId)
+                        .header("Authorization", bearer("ADMIN")))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(get("/api/admin/campaigns/{id}", endedId).header("Authorization", bearer("ADMIN")))
+        mockMvc.perform(get("/api/admin/campaigns/{id}", scheduledId).header("Authorization", bearer("ADMIN")))
                 .andExpect(status().isNotFound());
     }
 

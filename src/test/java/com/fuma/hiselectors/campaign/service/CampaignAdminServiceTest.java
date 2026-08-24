@@ -56,7 +56,7 @@ class CampaignAdminServiceTest {
         ProductRepository productRepository = mock(ProductRepository.class);
         ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
         Campaign campaign = Campaign.builder().title("제목").description("설명")
-                .startDate(LocalDate.of(2026, 8, 20)).endDate(LocalDate.of(2026, 8, 23)).build();
+                .startDate(LocalDate.of(2026, 8, 25)).endDate(LocalDate.of(2026, 8, 26)).build();
         ReflectionTestUtils.setField(campaign, "id", 1L);
         when(campaignRepository.findByIdAndIsDeletedFalseForUpdate(1L)).thenReturn(Optional.of(campaign));
         CampaignAdminService service = new CampaignAdminService(campaignRepository, campaignProductRepository,

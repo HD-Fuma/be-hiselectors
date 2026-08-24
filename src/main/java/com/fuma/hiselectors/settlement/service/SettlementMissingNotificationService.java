@@ -43,7 +43,7 @@ public class SettlementMissingNotificationService {
             return;
         }
         try {
-            notificationService.sendToFriend(senderAdminLoginId,
+            notificationService.sendToFriendAsSystem(senderAdminLoginId,
                     new NotificationMessageCommand(
                             null,
                             selectors.getUserId(),

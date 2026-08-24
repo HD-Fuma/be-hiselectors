@@ -41,7 +41,9 @@ class InspectionPolicyServiceTest {
                 new InspectionExtractionProperties(
                         new InspectionExtractionProperties.Instagram(
                                 "whisper-test", "ocr-test")),
-                new GeminiProperties("key", "gemini-test", MediaResolution.LOW, 8192),
+                new GeminiProperties(
+                        "key", "gemini-test", "youtube-test", "report-test",
+                        MediaResolution.LOW, 8192),
                 new InspectionPromptProvider(),
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), ZoneOffset.UTC));

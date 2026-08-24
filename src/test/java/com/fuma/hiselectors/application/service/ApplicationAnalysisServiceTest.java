@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -126,5 +127,40 @@ class ApplicationAnalysisServiceTest {
 
         verify(evaluationService, never()).addYoutubeContent(any(), any());
         verify(evaluationService, never()).addContent(any(), any());
+    }
+
+    @Test
+    void 유튜브는_조회수_상위_3개만_분석한다() {
+        runTransactionsInline();
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(
+                        youtube("low", 10L, 0),
+                        youtube("top", 400L, 1),
+                        youtube("middle", 200L, 2),
+                        youtube("second", 300L, 3),
+                        youtube("unknown", null, 4)));
+        when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
+        when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
+
+        service.analyzeAndReport(1L);
+
+        verify(evaluationService).addYoutubeContent(1L, "top");
+        verify(evaluationService).addYoutubeContent(1L, "second");
+        verify(evaluationService).addYoutubeContent(1L, "middle");
+        verify(evaluationService, never()).addYoutubeContent(1L, "low");
+        verify(evaluationService, never()).addYoutubeContent(1L, "unknown");
+        verify(evaluationService, times(3)).addYoutubeContent(any(), any());
+    }
+
+    private ApplicationMedia youtube(String videoId, Long viewCount, int sequenceNo) {
+        return ApplicationMedia.builder()
+                .applicationId(1L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId(videoId)
+                .snsMediaId(videoId)
+                .sequenceNo(sequenceNo)
+                .mediaSequenceNo(0)
+                .viewCount(viewCount)
+                .build();
     }
 }

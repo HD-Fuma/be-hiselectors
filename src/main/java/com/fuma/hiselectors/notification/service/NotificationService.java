@@ -13,6 +13,7 @@ import com.fuma.hiselectors.notification.dto.NotificationSendResponse;
 import com.fuma.hiselectors.notification.model.KakaoTemplateType;
 import com.fuma.hiselectors.notification.model.Notification;
 import com.fuma.hiselectors.notification.model.NotificationChannel;
+import com.fuma.hiselectors.notification.model.NotificationInitiatorType;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.sender.NotificationSender;
@@ -47,7 +48,14 @@ public class NotificationService {
                                                    NotificationMessageCommand command) {
         Admin admin = adminRepository.findByLoginId(adminLoginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
-        return sendToFriend(admin, command);
+        return sendToFriend(admin, command, NotificationInitiatorType.ADMIN, admin.getId());
+    }
+
+    public NotificationSendResponse sendToFriendAsSystem(String senderAdminLoginId,
+                                                          NotificationMessageCommand command) {
+        Admin admin = adminRepository.findByLoginId(senderAdminLoginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        return sendToFriend(admin, command, NotificationInitiatorType.SYSTEM, null);
     }
 
     @Transactional
@@ -104,7 +112,8 @@ public class NotificationService {
                 DEFAULT_TEMPLATE_TYPE, command);
         Long notificationId = recorder.createRequested(
                 command.notificationType().getPurposeCode(), command.referenceId(),
-                receiverUuid, created.body());
+                receiverUuid, created.body(),
+                NotificationInitiatorType.ADMIN, admin.getId());
         try {
             notificationSender.sendToFriend(connectionId, receiverUuid, created.template());
             recorder.markSent(notificationId);
@@ -121,7 +130,8 @@ public class NotificationService {
                 DEFAULT_TEMPLATE_TYPE, command);
         Long notificationId = recorder.createRequested(
                 command.notificationType().getPurposeCode(), command.referenceId(),
-                "ME:" + connectionId, created.body());
+                "ME:" + connectionId, created.body(),
+                NotificationInitiatorType.ADMIN, admin.getId());
         try {
             notificationSender.sendToMe(connectionId, created.template());
             recorder.markSent(notificationId);
@@ -133,7 +143,9 @@ public class NotificationService {
     }
 
     private NotificationSendResponse sendToFriend(Admin admin,
-                                                    NotificationMessageCommand command) {
+                                                    NotificationMessageCommand command,
+                                                    NotificationInitiatorType initiatedByType,
+                                                    Long initiatedById) {
         Long connectionId = requireConnection(admin);
         if (command.recipientUserId() == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "수신 사용자 ID가 필요합니다.");
@@ -148,7 +160,8 @@ public class NotificationService {
                 DEFAULT_TEMPLATE_TYPE, command);
         Long notificationId = recorder.createRequested(
                 command.notificationType().getPurposeCode(), command.referenceId(),
-                recipient.getKakaoMessageUuid(), created.body());
+                recipient.getKakaoMessageUuid(), created.body(),
+                initiatedByType, initiatedById);
         try {
             notificationSender.sendToFriend(connectionId, recipient.getKakaoMessageUuid(),
                     created.template());

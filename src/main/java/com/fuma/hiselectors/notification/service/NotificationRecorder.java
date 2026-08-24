@@ -4,6 +4,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.notification.model.Notification;
 import com.fuma.hiselectors.notification.model.NotificationChannel;
+import com.fuma.hiselectors.notification.model.NotificationInitiatorType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -20,9 +21,20 @@ public class NotificationRecorder {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long createRequested(String purposeCode, Long referenceId,
                                 String receiver, String body) {
+        return createRequested(purposeCode, referenceId, receiver, body,
+                NotificationInitiatorType.SYSTEM, null);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Long createRequested(String purposeCode, Long referenceId,
+                                String receiver, String body,
+                                NotificationInitiatorType initiatedByType,
+                                Long initiatedById) {
         Notification notification = Notification.builder()
                 .notificationPurposeCode(purposeCode)
                 .referenceId(referenceId)
+                .initiatedByType(initiatedByType)
+                .initiatedById(initiatedById)
                 .notificationChannel(NotificationChannel.KAKAO_MESSAGE)
                 .receiver(receiver)
                 .body(body)

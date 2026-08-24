@@ -274,7 +274,7 @@ public class PerformanceNotificationService {
     }
 
     private void send(Selectors selectors, NotificationType type, String detail) {
-        notificationService.sendToFriend(senderAdminLoginId,
+        notificationService.sendToFriendAsSystem(senderAdminLoginId,
                 new NotificationMessageCommand(
                         null,
                         selectors.getUserId(),

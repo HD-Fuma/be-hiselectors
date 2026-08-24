@@ -66,10 +66,10 @@ class ApplicationMediaServiceTest {
     void setUp() {
         lenient().when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         lenient().when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
-        lenient().when(instagramFetcher.fetchProfileImageUrl(any()))
-                .thenReturn(Optional.empty());
-        lenient().when(youtubeFetcher.fetchProfileImageUrl(any()))
-                .thenReturn(Optional.empty());
+        lenient().when(instagramFetcher.fetchProfile(any()))
+                .thenReturn(new ContentFetcher.Profile(null, null, null));
+        lenient().when(youtubeFetcher.fetchProfile(any()))
+                .thenReturn(new ContentFetcher.Profile(null, null, null));
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -98,8 +98,9 @@ class ApplicationMediaServiceTest {
         contents.add(raw(SnsPlatform.YOUTUBE, "old", COLLECTED_AT.minusDays(91)));
         contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", COLLECTED_AT));
         when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(contents);
-        when(youtubeFetcher.fetchProfileImageUrl("channel-id"))
-                .thenReturn(Optional.of("https://cdn.example.com/channel-profile.jpg"));
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/channel-profile.jpg", 12_345L, 120L));
         when(youtubeFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected)
@@ -155,6 +156,8 @@ class ApplicationMediaServiceTest {
         assertThat(application.getEngagementRate()).isEqualByComparingTo("15.00");
         assertThat(application.getProfileImageUrl())
                 .isEqualTo("https://cdn.example.com/channel-profile.jpg");
+        assertThat(application.getFollowerCount()).isEqualTo(12_345L);
+        assertThat(application.getContentCount()).isEqualTo(120L);
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getCollectedAt)
                 .containsOnly(COLLECTED_AT);
@@ -164,6 +167,7 @@ class ApplicationMediaServiceTest {
     void storesOneRowPerInstagramAssetAndDropsOnlyInvalidChildren() {
         Application application = application(SnsPlatform.INSTAGRAM, "username");
         application.updateProfileImageUrl("https://cdn.example.com/existing-profile.jpg");
+        application.fillMissingPublicMetrics(999L, 88L);
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
         RawContent reel = new RawContent(
                 SnsPlatform.INSTAGRAM,
@@ -204,10 +208,8 @@ class ApplicationMediaServiceTest {
                 COLLECTED_AT.minusDays(2),
                 List.of(new RawContentMedia(
                         "unavailable-media", RawContentMedia.MediaType.VIDEO, null)));
-        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN))
+        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN, 10))
                 .thenReturn(List.of(reel, post, unavailable));
-        when(instagramFetcher.fetchProfileImageUrl("username"))
-                .thenThrow(new IllegalStateException("profile API failed"));
         when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
             assertThat(selected).extracting(RawContent::snsContentId)
@@ -247,6 +249,9 @@ class ApplicationMediaServiceTest {
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
         assertThat(application.getProfileImageUrl())
                 .isEqualTo("https://cdn.example.com/existing-profile.jpg");
+        assertThat(application.getFollowerCount()).isEqualTo(999L);
+        assertThat(application.getContentCount()).isEqualTo(88L);
+        verify(instagramFetcher, never()).fetchProfile(any());
     }
 
     @Test
@@ -259,6 +264,17 @@ class ApplicationMediaServiceTest {
 
         assertThat(application.getProfileImageUrl())
                 .isEqualTo("https://cdn.example.com/existing-profile.jpg");
+    }
+
+    @Test
+    void fillsOnlyMissingPublicMetrics() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+
+        application.fillMissingPublicMetrics(999L, 88L);
+        application.fillMissingPublicMetrics(1L, 2L);
+
+        assertThat(application.getFollowerCount()).isEqualTo(999L);
+        assertThat(application.getContentCount()).isEqualTo(88L);
     }
 
     @Test
@@ -276,6 +292,23 @@ class ApplicationMediaServiceTest {
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
         assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
         assertThat(application.getMediaCollectionError()).isEqualTo("API failed");
+    }
+
+    @Test
+    void retriesWhenRequiredPublicProfileCountIsMissing() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/profile.jpg", 12_345L, null));
+
+        assertThatThrownBy(() -> service.collect(APPLICATION_ID))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(mediaRepository, never()).deleteByApplicationId(any());
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
+        assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
     }
 
     @Test

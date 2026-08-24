@@ -3,6 +3,7 @@ package com.fuma.hiselectors.notification.service;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.notification.dto.NotificationHistoryResponse;
+import com.fuma.hiselectors.notification.model.NotificationChannel;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ public class NotificationAdminService {
             LocalDate from,
             LocalDate to,
             String recipientKeyword,
+            NotificationChannel channel,
             int page,
             int size) {
         if (from != null && to != null && from.isAfter(to)) {
@@ -40,7 +42,7 @@ public class NotificationAdminService {
                 Sort.by(Sort.Order.desc("requestAt"), Sort.Order.desc("id")));
 
         return notificationRepository.searchHistory(
-                normalizedPurpose, status, fromAt, toExclusive, normalizedKeyword, pageable);
+                normalizedPurpose, status, fromAt, toExclusive, normalizedKeyword, channel, pageable);
     }
 
     private String normalize(String value) {
