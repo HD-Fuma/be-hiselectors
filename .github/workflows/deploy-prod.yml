@@ -202,13 +202,23 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
+      - name: Build and push ARM64 STT worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./stt-worker
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker
+
       - name: Deploy through SSM
         env:
           REMOTE_SCRIPT: |
             set -eu
             IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+            WORKER_IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker'
             aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
             docker pull "$IMAGE_URI"
+            docker pull "$WORKER_IMAGE_URI"
             cd /srv/hiselectors
             docker compose up -d --wait --wait-timeout 180 api
             OLD_API_CONTAINER="$(docker compose ps -q api)"
@@ -249,6 +259,7 @@ jobs:
             trap 'exit 130' 2
             trap 'exit 143' 15
 
+            docker rm -f hiselectors-stt-worker >/dev/null 2>&1 || true
             docker compose stop -t 30 api
             export MYSQL_PWD="$DB_PASSWORD"
             mysql_query() {
@@ -265,6 +276,23 @@ jobs:
 
             docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
+            API_CONTAINER="$(docker compose ps -q api)"
+            docker run -d \
+              --name hiselectors-stt-worker \
+              --restart always \
+              --network "container:$API_CONTAINER" \
+              -e STT_BACKEND=sagemaker \
+              -e STT_S3_BUCKET=hi-selectors-stt \
+              -e STT_ENDPOINT=whisper-large-v3-async \
+              -e AWS_REGION='${{ env.AWS_REGION }}' \
+              "$WORKER_IMAGE_URI"
+            for _ in $(seq 1 30); do
+              if docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"; then
+                break
+              fi
+              sleep 2
+            done
+            docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"
             DEPLOY_VERIFIED=true
             trap - 0 1 2 15
             docker image prune -f
