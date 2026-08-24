@@ -36,22 +36,34 @@ public class YoutubeDiscoveryBatchService {
     }
 
     public YoutubeDiscoveryBatchResult runYoutubeOnly() {
-        return runYoutubeOnly(ignored -> { });
+        return runYoutubeOnly(false, ignored -> { });
     }
 
     public YoutubeDiscoveryBatchResult runYoutubeOnly(
             Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
+        return runYoutubeOnly(false, progressCallback);
+    }
+
+    public YoutubeDiscoveryBatchResult runYoutubeOnly(
+            boolean test, Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
         Objects.requireNonNull(progressCallback, "progressCallback");
         if (!discoveryProperties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
         List<DiscoveryKeyword> runnableKeywords = keywordRepository.findRunnable();
+        List<DiscoveryKeyword> selectedKeywords = runnableKeywords;
+        if (test) {
+            Set<Long> categoryIds = new HashSet<>();
+            selectedKeywords = runnableKeywords.stream()
+                    .filter(keyword -> categoryIds.add(keyword.getCategory().getId()))
+                    .toList();
+        }
         int dailyQuota = Math.max(0, discoveryProperties.dailyQuotaOrDefault());
         int reservedQuotaPerKeyword = discoveryProperties.quotaPerKeyword();
         int quotaKeywordLimit = dailyQuota / reservedQuotaPerKeyword;
         int runLimit = Math.min(
-                runnableKeywords.size(),
+                selectedKeywords.size(),
                 Math.min(quotaKeywordLimit, batchProperties.maxKeywordsPerRunOrDefault()));
 
         int attempted = 0;
@@ -63,7 +75,7 @@ public class YoutubeDiscoveryBatchService {
         int updated = 0;
         Set<Long> collectedCreatorIds = new HashSet<>();
 
-        for (DiscoveryKeyword keyword : runnableKeywords.subList(0, runLimit)) {
+        for (DiscoveryKeyword keyword : selectedKeywords.subList(0, runLimit)) {
             attempted++;
             try {
                 DiscoveryRunResult result = discoveryPipelineService.runByKeyword(
