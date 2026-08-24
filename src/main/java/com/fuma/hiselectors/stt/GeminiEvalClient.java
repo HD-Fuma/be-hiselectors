@@ -17,7 +17,7 @@ import tools.jackson.databind.ObjectMapper;
  * Instagram 취합 단계 LLM. 지원자 콘텐츠들의 전사·자막(application_content_analysis)을 합쳐
  * Gemini에 1회 던져 정성 insight(스타일·톤·강점·유의·위험·브랜드)를 뽑는다.
  * 콘텐츠별로 LLM을 안 태우고(=취득 자유로운 인스타의 이점) 취합 시 한 번만 태워 비용을 아낀다.
- * category·keywords 는 로컬 분석(콘텐츠별)에서 결정적으로 취합하므로 여기서 다루지 않는다.
+ * category·keywords 는 로컬 분석 결과가 비었을 때만 fallback으로 사용한다.
  */
 @Slf4j
 @Component
@@ -34,6 +34,8 @@ public class GeminiEvalClient {
             설명·마크다운·코드펜스 없이 JSON 객체만 낸다.
             {
               "summary": "이 지원자의 콘텐츠가 전반적으로 어떤 주제·형식·특징인지 2~3문장으로 서술",
+              "category": "BEAUTY|FASHION|FOOD|LIVING_LIFE|KIDS_FAMILY|CULTURE_SERVICE|SPORTS_LEISURE|TRAVEL|PET_LIFE 중 가장 가까운 하나",
+              "keywords": ["콘텐츠 핵심 키워드. 최대 5개, 명사형 단어 또는 짧은 명사구"],
               "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
               "tone": "유쾌코믹|차분잔잔|진지전문|친근수다|감성무드|자극과장|시니컬솔직 중 하나",
               "strengths": ["크리에이터·콘텐츠의 강점. 문장이 아니라 명사구 단답형으로, 15자 내외. 예: 반응이 상세함, 리뷰가 좋은 편"],

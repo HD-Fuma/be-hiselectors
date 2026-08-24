@@ -50,7 +50,8 @@ class CreatorEvaluationServiceTest {
 
     private void stubInsight() {
         when(evalClient.insight(any())).thenReturn(new ApplicantInsight(
-                "요약", "style", "tone", List.of("강점"), List.of(), List.of(), false, List.of()));
+                "요약", "BEAUTY", List.of("스킨케어", "리뷰"),
+                "style", "tone", List.of("강점"), List.of(), List.of(), false, List.of()));
     }
 
     @Test
@@ -124,5 +125,19 @@ class CreatorEvaluationServiceTest {
         verify(evalClient).insight(input.capture());
         assertThat(input.getValue()).hasSize(1_501)
                 .doesNotContain("STT_END", "OCR_END");
+    }
+
+    @Test
+    void 로컬_카테고리와_키워드가_없으면_Gemini_결과로_채운다() {
+        stubInsight();
+        when(repository.findByApplicantId(1L)).thenReturn(List.of(
+                analysis("a", null, null)));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of());
+
+        ApplicationReport report = service.buildReport(1L);
+
+        assertThat(report.getCategory()).isEqualTo("BEAUTY");
+        assertThat(report.getKeywords()).isEqualTo("스킨케어, 리뷰");
     }
 }

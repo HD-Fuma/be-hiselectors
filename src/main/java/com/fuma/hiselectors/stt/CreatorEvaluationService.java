@@ -40,6 +40,9 @@ public class CreatorEvaluationService {
     private static final int OCR_INPUT_MAX = 500;
     private static final int POST_TEXT_INPUT_MAX = 500;
     private static final int REPORT_INPUT_MAX = 10_000;
+    private static final Set<String> CATEGORY_CODES = Set.of(
+            "BEAUTY", "FASHION", "FOOD", "LIVING_LIFE", "KIDS_FAMILY",
+            "CULTURE_SERVICE", "SPORTS_LEISURE", "TRAVEL", "PET_LIFE");
 
     // summary(json 컬럼)용 인코더. 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감.
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -181,11 +184,13 @@ public class CreatorEvaluationService {
         }
 
         ApplicantInsight insight = evalClient.insight(clip(merged, REPORT_INPUT_MAX));
+        String localCategory = mode(rows, ApplicationContentAnalysis::getCategory);
+        String localKeywords = union(rows, ApplicationContentAnalysis::getKeywords);
         ApplicationReport.ApplicationReportBuilder builder = ApplicationReport.builder()
                 .applicationId(applicationId)
                 .summary(toJson(insight.summary()))
-                .category(mode(rows, ApplicationContentAnalysis::getCategory))
-                .keywords(clip(union(rows, ApplicationContentAnalysis::getKeywords), TEXT_MAX))
+                .category(firstNonBlank(localCategory, validCategory(insight.category())))
+                .keywords(clip(firstNonBlank(localKeywords, join(insight.keywords())), TEXT_MAX))
                 .contentStyle(clip(insight.contentStyle(), STYLE_MAX))
                 .tone(clip(insight.tone(), TEXT_MAX))
                 .strength(clip(join(insight.strengths()), TEXT_MAX))
@@ -292,6 +297,18 @@ public class CreatorEvaluationService {
 
     private String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? blankToNull(fallback) : primary;
+    }
+
+    private String validCategory(String category) {
+        if (category == null) {
+            return null;
+        }
+        String normalized = category.trim().toUpperCase(Locale.ROOT);
+        return CATEGORY_CODES.contains(normalized) ? normalized : null;
     }
 
     /** 전사·자막 둘 다 비었으면 분석할 내용 없음. */

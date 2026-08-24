@@ -13,6 +13,8 @@ public record ApplicantInsight(
         /** "이 지원자 콘텐츠는 이런 식이다" 서술 요약(2~3문장). */
         String summary,
 
+        String category,
+        List<String> keywords,
         String contentStyle,
         String tone,
         List<String> strengths,
