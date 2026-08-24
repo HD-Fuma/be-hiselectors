@@ -121,11 +121,11 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
-    void fetchesChannelProfileImageFromSnippet() {
+    void fetchesPublicChannelProfile() {
         expectUploadsPlaylist();
 
-        assertThat(client.fetchProfileImageUrl(CHANNEL_ID))
-                .contains("https://yt3.example.com/high.jpg");
+        assertThat(client.fetchProfile(CHANNEL_ID)).isEqualTo(new ContentFetcher.Profile(
+                "https://yt3.example.com/high.jpg", 12_345L, 120L));
         server.verify();
     }
 
@@ -493,7 +493,7 @@ class YoutubeContentFetcherTest {
                     assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/channels");
                     String query = decodedQuery(request.getURI().getRawQuery());
                     assertThat(query)
-                            .contains("part=snippet,contentDetails")
+                            .contains("part=snippet,contentDetails,statistics")
                             .contains(expectedAccountQuery)
                             .contains("key=" + API_KEY);
                 })
@@ -512,6 +512,10 @@ class YoutubeContentFetcherTest {
                               "relatedPlaylists": {
                                 "uploads": "%s"
                               }
+                            },
+                            "statistics": {
+                              "subscriberCount": "12345",
+                              "videoCount": "120"
                             }
                           }]
                         }

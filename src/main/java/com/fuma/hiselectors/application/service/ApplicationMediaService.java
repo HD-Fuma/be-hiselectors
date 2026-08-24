@@ -62,13 +62,15 @@ public class ApplicationMediaService {
                     : fetcher.fetchByAccount(application.getSnsAccountId(), collectedAfter);
             Snapshot snapshot = createSnapshot(
                     application, fetcher, contents, collectedAfter, collectedAt);
-            String profileImageUrl = profileImageUrl(fetcher, application);
+            ContentFetcher.Profile profile = profile(fetcher, application);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 mediaRepository.deleteByApplicationId(applicationId);
                 mediaRepository.flush();
                 List<ApplicationMedia> values = mediaRepository.saveAll(snapshot.media());
-                application.updateProfileImageUrl(profileImageUrl);
+                application.updateProfileImageUrl(profile.imageUrl());
+                application.fillMissingPublicMetrics(
+                        profile.followerCount(), profile.contentCount());
                 application.completeMediaCollection(collectedAt, snapshot.engagementRate());
                 applicationRepository.save(application);
                 return values;
@@ -112,13 +114,14 @@ public class ApplicationMediaService {
                         ErrorCode.INVALID_INPUT, "지원하지 않는 SNS 플랫폼입니다."));
     }
 
-    private String profileImageUrl(ContentFetcher fetcher, Application application) {
+    private ContentFetcher.Profile profile(ContentFetcher fetcher, Application application) {
         try {
-            return fetcher.fetchProfileImageUrl(application.getSnsAccountId()).orElse(null);
+            ContentFetcher.Profile profile = fetcher.fetchProfile(application.getSnsAccountId());
+            return profile == null ? new ContentFetcher.Profile(null, null, null) : profile;
         } catch (RuntimeException e) {
-            log.warn("지원자 프로필 이미지 조회 실패: applicationId={}, platform={}, cause={}",
+            log.warn("지원자 공개 프로필 조회 실패: applicationId={}, platform={}, cause={}",
                     application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
-            return null;
+            return new ContentFetcher.Profile(null, null, null);
         }
     }
 

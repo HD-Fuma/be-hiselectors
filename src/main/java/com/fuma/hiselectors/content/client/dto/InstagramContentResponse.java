@@ -12,6 +12,8 @@ public record InstagramContentResponse(
     /** 조회 대상 Instagram 계정의 공개 게시글 정보 */
     public record BusinessDiscovery(
             @JsonProperty("profile_picture_url") String profilePictureUrl,
+            @JsonProperty("followers_count") Long followersCount,
+            @JsonProperty("media_count") Long mediaCount,
             MediaPage media) {
     }
 

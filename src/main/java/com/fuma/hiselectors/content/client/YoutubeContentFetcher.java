@@ -25,7 +25,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -79,18 +78,23 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     @Override
-    public Optional<String> fetchProfileImageUrl(String accountId) {
+    public Profile fetchProfile(String accountId) {
         validateAccountRequest(accountId);
         YoutubeChannelResponse.Item channel = requestChannel(resolveChannelLookup(accountId));
         YoutubeChannelResponse.Snippet snippet = channel.snippet();
-        if (snippet == null || snippet.thumbnails() == null) {
-            return Optional.empty();
-        }
-        return snippet.thumbnails().values().stream()
-                .filter(Objects::nonNull)
-                .map(YoutubeChannelResponse.Thumbnail::url)
-                .filter(StringUtils::hasText)
-                .reduce((ignored, last) -> last);
+        String imageUrl = snippet == null || snippet.thumbnails() == null
+                ? null
+                : snippet.thumbnails().values().stream()
+                        .filter(Objects::nonNull)
+                        .map(YoutubeChannelResponse.Thumbnail::url)
+                        .filter(StringUtils::hasText)
+                        .reduce((ignored, last) -> last)
+                        .orElse(null);
+        YoutubeChannelResponse.Statistics statistics = channel.statistics();
+        return new Profile(
+                imageUrl,
+                statistics == null ? null : parseCount(statistics.subscriberCount()),
+                statistics == null ? null : parseCount(statistics.videoCount()));
     }
 
     /**
@@ -276,9 +280,9 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private YoutubeChannelResponse.Item requestChannel(ChannelLookup lookup) {
-        // snippet에서 공개 핸들, contentDetails에서 업로드 영상 목록 ID 조회
+        // snippet에서 프로필, contentDetails에서 업로드 목록, statistics에서 공개 통계 조회
         URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                .queryParam("part", "snippet,contentDetails")
+                .queryParam("part", "snippet,contentDetails,statistics")
                 .queryParam(lookup.parameter(), lookup.value())
                 .queryParam("key", properties.apiKey())
                 .build()
