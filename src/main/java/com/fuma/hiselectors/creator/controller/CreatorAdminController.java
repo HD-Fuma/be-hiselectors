@@ -4,6 +4,7 @@ import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
@@ -21,6 +22,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -105,6 +108,23 @@ public class CreatorAdminController {
                 keyword, categoryCode, snsCode, minFollower, maxFollower,
                 minEngagementRate, minRecent90DayContentCount, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
+    }
+
+    @Operation(summary = "기존 YouTube·Instagram 크리에이터 풀 초기화",
+            description = "현재 풀을 목록과 후보에서 숨기고 재생성 가능한 발굴 정보만 삭제한다. "
+                    + "제안·리포트 이력과 이를 참조하는 크리에이터 ID는 보존하며, "
+                    + "재발굴 조건을 통과한 계정은 다음 풀 구축 때 같은 ID로 복원된다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "초기화 성공"),
+            @ApiResponse(responseCode = "400", description = "확인 문구 불일치", content = @Content)
+    })
+    @DeleteMapping
+    public ResponseEntity<CreatorPoolResetResponse> resetPool(
+            @Parameter(description = "오조작 방지 확인 문구", example = "DELETE_CREATOR_POOL")
+            @RequestParam String confirmation,
+            Principal principal) {
+        return ResponseEntity.ok(
+                creatorDiscoveryService.resetPool(confirmation, principal.getName()));
     }
 
     @Operation(summary = "발굴 크리에이터 기본 상세 조회",

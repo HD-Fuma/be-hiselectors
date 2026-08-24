@@ -4,6 +4,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.InfluenceRankedCreator;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
@@ -87,6 +89,20 @@ class CreatorAdminControllerTest {
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
 
         verifyNoInteractions(creatorDiscoveryService);
+    }
+
+    @Test
+    void 확인된_크리에이터_풀_초기화를_실행한다() throws Exception {
+        when(creatorDiscoveryService.resetPool("DELETE_CREATOR_POOL", "admin"))
+                .thenReturn(new CreatorPoolResetResponse(598));
+
+        mockMvc.perform(delete("/api/admin/creators")
+                        .param("confirmation", "DELETE_CREATOR_POOL")
+                        .principal(() -> "admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.softDeletedCount").value(598));
+
+        verify(creatorDiscoveryService).resetPool("DELETE_CREATOR_POOL", "admin");
     }
 
     @Test

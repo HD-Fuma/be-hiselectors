@@ -38,7 +38,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장
  * </pre>
  *
- * <p><b>공개 이메일이 없는 신규 채널만 저장하지 않는다.</b> 브랜드 계정이나 구독자 미달
+ * <p><b>현재 공개 이메일이 없는 채널은 활성 풀에 유지하지 않는다.</b> 브랜드 계정이나 구독자 미달
  * 계정은 전부 저장하고 실제로 빼는 일은 조회 API 조건이 한다.
  */
 @Slf4j
@@ -126,14 +126,14 @@ public class DiscoveryPipelineService {
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
                 .orElse(null);
 
-        boolean isNew = creator == null;
-        String email = null;
-        if (isNew) {
-            email = publicEmailExtractor.extract(channel.description()).orElse(null);
-            if (email == null) {
-                return SaveResult.SKIPPED;
+        String email = publicEmailExtractor.extract(channel.description()).orElse(null);
+        if (email == null) {
+            if (creator != null) {
+                creator.softDelete();
             }
+            return SaveResult.SKIPPED;
         }
+        boolean isNew = creator == null;
 
         IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
         BrandScore brandScore = brandScoreCalculator.calculate(
@@ -152,6 +152,7 @@ public class DiscoveryPipelineService {
                     .category(keyword.getCategory().getCode())
                     .build());
         } else {
+            creator.updateEmail(email);
             creator.updateMetrics(channel.subscriberCount(),
                     engagementRate(channel), channel.lastUploadAt());
             // 지웠던 계정이 다시 발굴되면 되살린다
