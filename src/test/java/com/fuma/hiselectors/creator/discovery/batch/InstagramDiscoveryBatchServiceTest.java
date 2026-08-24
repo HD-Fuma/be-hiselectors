@@ -75,6 +75,22 @@ class InstagramDiscoveryBatchServiceTest {
                 .isEqualTo(ErrorCode.META_GRAPH_CONFIG_MISSING);
     }
 
+    @Test
+    void propagatesMetaApiFailure() {
+        CreatorDiscoveryInfo candidate = candidate(1L, "creator");
+        when(discoveryInfoRepository
+                .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
+                        "YOUTUBE"))
+                .thenReturn(List.of(candidate));
+        when(instagramDiscoveryService.discoverFromYoutubeCreator(1L))
+                .thenThrow(new BusinessException(ErrorCode.META_GRAPH_API_CALL_FAILED));
+
+        assertThatThrownBy(service::run)
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.META_GRAPH_API_CALL_FAILED);
+    }
+
     private CreatorDiscoveryInfo candidate(Long id, String handle) {
         CreatorDiscoveryInfo candidate = mock(CreatorDiscoveryInfo.class);
         when(candidate.getId()).thenReturn(id);
