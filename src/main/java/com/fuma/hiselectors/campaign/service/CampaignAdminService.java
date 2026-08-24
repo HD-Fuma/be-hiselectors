@@ -21,11 +21,14 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -43,6 +46,7 @@ public class CampaignAdminService {
     private final CampaignProductRepository campaignProductRepository;
     private final ProductRepository productRepository;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     public Page<CampaignResponse> search(String keyword, LocalDate startDate, LocalDate endDate,
                                          CampaignStatus status, Pageable pageable) {
@@ -76,19 +80,28 @@ public class CampaignAdminService {
         ensureAllAvailable(products);
         Campaign campaign = campaignRepository.save(Campaign.builder()
                 .title(request.title().trim()).description(request.description().trim())
-                .startDate(request.startDate()).endDate(request.endDate()).thumbnailUrl(request.thumbnailUrl()).build());
+                .startDate(request.startDate()).endDate(request.endDate())
+                .thumbnailUrl(trimToNull(request.thumbnailUrl())).build());
         saveLinks(campaign, products);
         return toResponse(campaign);
     }
 
     @Transactional
     public CampaignResponse update(Long campaignId, CampaignUpdateRequest request) {
-        Campaign campaign = getCampaign(campaignId);
+        Campaign campaign = getCampaignForUpdate(campaignId);
         LocalDate startDate = request.startDate() == null ? campaign.getStartDate() : request.startDate();
         LocalDate endDate = request.endDate() == null ? campaign.getEndDate() : request.endDate();
         validateDates(startDate, endDate);
+        String previousThumbnailUrl = campaign.getThumbnailUrl();
+        String requestedThumbnailUrl = trimToNull(request.thumbnailUrl());
         campaign.update(trimToNull(request.title()), trimToNull(request.description()), request.startDate(),
-                request.endDate(), request.thumbnailUrl());
+                request.endDate(), requestedThumbnailUrl);
+        boolean removeThumbnail = Boolean.TRUE.equals(request.removeThumbnail());
+        if (removeThumbnail) {
+            campaign.clearThumbnail();
+        }
+        publishThumbnailRemovals(previousThumbnailUrl, requestedThumbnailUrl,
+                campaign.getThumbnailUrl(), removeThumbnail);
 
         if (request.productIds() != null) {
             List<CampaignProduct> existingLinks = campaignProductRepository.findAllByCampaignIdOrderByIdAsc(campaignId);
@@ -105,7 +118,7 @@ public class CampaignAdminService {
 
     @Transactional
     public void delete(Long campaignId) {
-        Campaign campaign = getCampaign(campaignId);
+        Campaign campaign = getCampaignForUpdate(campaignId);
         if (!campaign.getEndDate().isBefore(today())) {
             throw new BusinessException(ErrorCode.CAMPAIGN_DELETE_NOT_ALLOWED);
         }
@@ -146,6 +159,23 @@ public class CampaignAdminService {
     private Campaign getCampaign(Long campaignId) {
         return campaignRepository.findByIdAndIsDeletedFalse(campaignId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CAMPAIGN_NOT_FOUND));
+    }
+
+    private Campaign getCampaignForUpdate(Long campaignId) {
+        return campaignRepository.findByIdAndIsDeletedFalseForUpdate(campaignId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CAMPAIGN_NOT_FOUND));
+    }
+
+    private void publishThumbnailRemovals(String previousUrl, String requestedUrl,
+                                          String currentUrl, boolean removeThumbnail) {
+        Set<String> removalUrls = new LinkedHashSet<>();
+        if (previousUrl != null && !Objects.equals(previousUrl, currentUrl)) {
+            removalUrls.add(previousUrl);
+        }
+        if (removeThumbnail && requestedUrl != null && !Objects.equals(requestedUrl, currentUrl)) {
+            removalUrls.add(requestedUrl);
+        }
+        removalUrls.forEach(url -> eventPublisher.publishEvent(new CampaignThumbnailRemovalRequested(url)));
     }
 
     private List<Product> getProducts(List<Long> productIds) {

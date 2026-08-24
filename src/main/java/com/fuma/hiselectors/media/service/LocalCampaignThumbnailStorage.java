@@ -32,4 +32,20 @@ public class LocalCampaignThumbnailStorage implements CampaignThumbnailStorage {
         }
         return properties.publicBaseUrl().replaceAll("/+$", "") + "/" + key;
     }
+
+    @Override
+    public void delete(String url) {
+        CampaignThumbnailUrl.managedKey(properties.publicBaseUrl(), url).ifPresent(key -> {
+            Path root = Path.of(properties.directory()).toAbsolutePath().normalize();
+            Path target = root.resolve(key).normalize();
+            if (!target.startsWith(root)) {
+                return;
+            }
+            try {
+                Files.deleteIfExists(target);
+            } catch (IOException e) {
+                throw new BusinessException(ErrorCode.MEDIA_DELETE_FAILED);
+            }
+        });
+    }
 }
