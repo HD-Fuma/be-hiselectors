@@ -17,12 +17,12 @@ MEDIA_S3_BUCKET=hiselectors-media
 MEDIA_PUBLIC_BASE_URL=https://media.hiselectors.shop
 ```
 
-애플리케이션의 EC2 IAM Role에는 업로드 경로만 허용한다.
+애플리케이션의 EC2 IAM Role에는 캠페인 썸네일 객체 경로만 허용한다.
 
 ```json
 {
   "Effect": "Allow",
-  "Action": "s3:PutObject",
+  "Action": ["s3:PutObject", "s3:DeleteObject"],
   "Resource": "arn:aws:s3:::hiselectors-media/campaigns/*"
 }
 ```

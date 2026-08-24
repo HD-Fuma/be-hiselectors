@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @Component
@@ -33,9 +34,25 @@ public class S3CampaignThumbnailStorage implements CampaignThumbnailStorage {
         try {
             s3Client.putObject(request, RequestBody.fromBytes(bytes));
         } catch (SdkException e) {
-            throw new BusinessException(ErrorCode.MEDIA_UPLOAD_FAILED);
+            throw new BusinessException(ErrorCode.MEDIA_UPLOAD_FAILED, e);
         }
         return properties.publicBaseUrl().replaceAll("/+$", "") + "/" + key;
+    }
+
+    @Override
+    public void delete(String url) {
+        validateConfiguration();
+        CampaignThumbnailUrl.managedKey(properties.publicBaseUrl(), url).ifPresent(key -> {
+            DeleteObjectRequest request = DeleteObjectRequest.builder()
+                    .bucket(properties.bucket())
+                    .key(key)
+                    .build();
+            try {
+                s3Client.deleteObject(request);
+            } catch (SdkException e) {
+                throw new BusinessException(ErrorCode.MEDIA_DELETE_FAILED, e);
+            }
+        });
     }
 
     private void validateConfiguration() {

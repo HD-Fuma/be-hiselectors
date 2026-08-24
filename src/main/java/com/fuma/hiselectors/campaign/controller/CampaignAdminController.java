@@ -86,7 +86,8 @@ public class CampaignAdminController {
     }
 
     @Operation(summary = "캠페인 수정",
-            description = "null 인 필드는 변경하지 않는다. productIds를 전달하면 기존 연결 상품을 해당 목록으로 교체한다.")
+            description = "전달한 필드만 수정한다. productIds를 전달하면 기존 연결 상품을 해당 목록으로 교체한다. "
+                    + "removeThumbnail을 생략하면 썸네일을 유지하고, true면 thumbnailUrl보다 우선해 썸네일을 제거한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "요청 값 또는 기간이 올바르지 않음", content = @Content),

@@ -83,13 +83,17 @@ class CampaignThumbnailServiceTest {
 
     @Test
     void mapsS3FailureToMediaUploadBusinessError() {
+        RuntimeException cause = S3Exception.builder().message("unavailable").build();
         when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
-                .thenThrow(S3Exception.builder().message("unavailable").build());
+                .thenThrow(cause);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "campaign.png", "image/png", PNG);
 
         assertThatThrownBy(() -> service.upload(file))
                 .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.MEDIA_UPLOAD_FAILED));
+                        exception -> {
+                            assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.MEDIA_UPLOAD_FAILED);
+                            assertThat(exception.getCause()).isSameAs(cause);
+                        });
     }
 }

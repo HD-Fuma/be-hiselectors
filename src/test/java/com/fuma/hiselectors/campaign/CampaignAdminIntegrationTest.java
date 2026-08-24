@@ -15,6 +15,7 @@ import com.fuma.hiselectors.campaign.model.Campaign;
 import com.fuma.hiselectors.campaign.model.CampaignProduct;
 import com.fuma.hiselectors.campaign.repository.CampaignProductRepository;
 import com.fuma.hiselectors.campaign.repository.CampaignRepository;
+import com.fuma.hiselectors.campaign.service.CampaignThumbnailRemovalRequested;
 import com.fuma.hiselectors.product.model.Product;
 import com.fuma.hiselectors.product.model.ProductStatus;
 import com.fuma.hiselectors.product.repository.ProductRepository;
@@ -39,6 +40,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -55,6 +58,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ContextConfiguration(classes = CampaignAdminIntegrationTest.FixedClockConfiguration.class)
 @ActiveProfiles("test")
+@RecordApplicationEvents
 class CampaignAdminIntegrationTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 8, 18);
@@ -67,6 +71,7 @@ class CampaignAdminIntegrationTest {
     @Autowired private JwtTokenProvider jwtTokenProvider;
     @Autowired private MutableClock clock;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private ApplicationEvents applicationEvents;
 
     @BeforeEach
     void resetClock() {
@@ -136,6 +141,77 @@ class CampaignAdminIntegrationTest {
                                 "실패", "설명", TODAY, TODAY, null, List.of(soldOut.getId())))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PRODUCT_NOT_AVAILABLE"));
+    }
+
+    @Test
+    void patch_keeps_thumbnail_when_removal_and_url_fields_are_omitted() throws Exception {
+        String originalUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174000", "png");
+        Long id = createCampaignWithThumbnail(originalUrl);
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"제목 변경\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").value(originalUrl));
+
+        assertThat(applicationEvents.stream(CampaignThumbnailRemovalRequested.class)).isEmpty();
+    }
+
+    @Test
+    void patch_remove_thumbnail_clears_url_and_wins_over_replacement_url() throws Exception {
+        String originalUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174000", "png");
+        String replacementUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174001", "webp");
+        Long id = createCampaignWithThumbnail(originalUrl);
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"thumbnailUrl":"%s","removeThumbnail":true}
+                                """.formatted(replacementUrl)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").isEmpty());
+
+        assertThat(campaignRepository.findById(id).orElseThrow().getThumbnailUrl()).isNull();
+        assertThat(applicationEvents.stream(CampaignThumbnailRemovalRequested.class)
+                .map(CampaignThumbnailRemovalRequested::url))
+                .containsExactly(originalUrl, replacementUrl);
+    }
+
+    @Test
+    void patch_remove_thumbnail_publishes_duplicate_cleanup_url_once() throws Exception {
+        String thumbnailUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174000", "png");
+        Long id = createCampaignWithThumbnail(thumbnailUrl);
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"thumbnailUrl":"%s","removeThumbnail":true}
+                                """.formatted(thumbnailUrl)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").isEmpty());
+
+        assertThat(applicationEvents.stream(CampaignThumbnailRemovalRequested.class)
+                .map(CampaignThumbnailRemovalRequested::url)).containsExactly(thumbnailUrl);
+    }
+
+    @Test
+    void patch_replacement_publishes_previous_thumbnail_removal() throws Exception {
+        String originalUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174000", "jpg");
+        String replacementUrl = managedThumbnailUrl("123e4567-e89b-12d3-a456-426614174001", "png");
+        Long id = createCampaignWithThumbnail(originalUrl);
+
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id)
+                        .header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"thumbnailUrl\":\"" + replacementUrl + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.thumbnailUrl").value(replacementUrl));
+
+        assertThat(applicationEvents.stream(CampaignThumbnailRemovalRequested.class)
+                .map(CampaignThumbnailRemovalRequested::url)).containsExactly(originalUrl);
     }
 
     @Test
@@ -320,6 +396,15 @@ class CampaignAdminIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + "\"startDate\":\"2026-08-19\"}"))
                 .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/admin/campaigns").header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CampaignCreateRequest(
+                                "제목", "설명", TODAY, TODAY, "   ", List.of()))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(patch("/api/admin/campaigns/{id}", id).header("Authorization", bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"thumbnailUrl\":\"   \"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -478,6 +563,16 @@ class CampaignAdminIntegrationTest {
                                 title, "설명", startDate, endDate, null, productIds))))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).at("/data/id").asLong();
+    }
+
+    private Long createCampaignWithThumbnail(String thumbnailUrl) {
+        return campaignRepository.saveAndFlush(Campaign.builder()
+                .title("썸네일 캠페인").description("설명")
+                .startDate(TODAY).endDate(TODAY).thumbnailUrl(thumbnailUrl).build()).getId();
+    }
+
+    private String managedThumbnailUrl(String uuid, String extension) {
+        return "https://media.hiselectors.shop/campaigns/" + uuid + "." + extension;
     }
 
     private Product product(String code, ProductStatus status) {
