@@ -124,7 +124,7 @@ Resources:
               - import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/health',timeout=3)
             Interval: 10
             Timeout: 5
-            Retries: 12
+            Retries: 10
             StartPeriod: 20
           LogConfiguration:
             LogDriver: awslogs
