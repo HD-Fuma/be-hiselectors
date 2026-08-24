@@ -5,6 +5,7 @@ import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.stt.ContentAddRequest;
@@ -32,7 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class ApplicationAnalysisService {
 
-    private static final int MAX_YOUTUBE_VIDEOS = 3;
+    private static final int MAX_YOUTUBE_VIDEOS = 1;
 
     private final ApplicationMediaRepository mediaRepository;
     private final ApplicationRepository applicationRepository;
@@ -56,7 +57,7 @@ public class ApplicationAnalysisService {
             throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
         }
 
-        // 비용이 큰 YouTube 영상 분석은 조회수 상위 3건만 수행한다.
+        // 비용이 큰 YouTube 영상 분석은 Shorts 중 조회수 상위 1건만 수행한다.
         Set<String> youtubeTargets = topYoutubeVideoIds(media);
 
         // 미디어별 STT/OCR 적재(외부호출, 멱등). 플랫폼별 취득 경로가 다르다.
@@ -102,6 +103,7 @@ public class ApplicationAnalysisService {
         Set<String> selected = new HashSet<>();
         media.stream()
                 .filter(m -> m.getSnsCode() == SnsPlatform.YOUTUBE)
+                .filter(m -> m.getContentType() == ContentType.SHORTS)
                 .filter(m -> m.getSnsContentId() != null && !m.getSnsContentId().isBlank())
                 .filter(m -> seen.add(m.getSnsContentId()))
                 .sorted(Comparator.comparing(

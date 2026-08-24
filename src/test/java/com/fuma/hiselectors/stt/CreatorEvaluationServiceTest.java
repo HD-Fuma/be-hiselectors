@@ -3,6 +3,7 @@ package com.fuma.hiselectors.stt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
@@ -17,6 +18,7 @@ import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class CreatorEvaluationServiceTest {
@@ -101,5 +103,26 @@ class CreatorEvaluationServiceTest {
 
         assertThat(report.getRepresentativeContentUrl()).isEqualTo("https://insta/a");
         assertThat(report.getRepresentativeViewCount()).isNull();
+    }
+
+    @Test
+    void Gemini_리포트_입력은_콘텐츠별로_잘라서_보낸다() {
+        stubInsight();
+        ApplicationContentAnalysis longAnalysis = ApplicationContentAnalysis.builder()
+                .applicantId(1L).contentKey("long").source("instagram")
+                .stt("가".repeat(2_000) + "STT_END")
+                .ocr("나".repeat(1_000) + "OCR_END")
+                .hateSuspected(false)
+                .build();
+        when(repository.findByApplicantId(1L)).thenReturn(List.of(longAnalysis));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of());
+
+        service.buildReport(1L);
+
+        ArgumentCaptor<String> input = ArgumentCaptor.forClass(String.class);
+        verify(evalClient).insight(input.capture());
+        assertThat(input.getValue()).hasSize(1_501)
+                .doesNotContain("STT_END", "OCR_END");
     }
 }
