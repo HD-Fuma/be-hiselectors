@@ -153,7 +153,8 @@ public class SelectorAccessService {
         LocalDateTime cutoff = now.minusYears(1);
         SelectorsGenerationResponse previous = generations.stream().filter(generation ->
                         generation.activityEndDate() != null
-                                && generation.activityEndDate().isBefore(now)
+                                && (!selectors.isActive()
+                                || generation.activityEndDate().isBefore(now))
                                 && !generation.activityEndDate().isBefore(cutoff))
                 .findFirst().orElse(null);
         SelectorAccessLevel level = previous == null

@@ -147,7 +147,8 @@ class SelectorAccessServiceTest {
     }
 
     @Test
-    void generationEndedMoreThanOneYearAgoHasNoSelectorAccess() {
+    void inactiveGenerationEndedMoreThanOneYearAgoHasNoSelectorAccess() {
+        ReflectionTestUtils.setField(selectors, "selectorsRoleId", Selectors.INACTIVE_ROLE);
         when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of(generation(
                 NOW.minusYears(2), NOW.minusYears(1).minusNanos(1), NOW.minusYears(2))));
 
@@ -181,13 +182,13 @@ class SelectorAccessServiceTest {
     }
 
     @Test
-    void inactiveRoleCanUseSettlementGuardsButNotCurrentGuard() {
+    void inactiveRoleGetsPreviousAccessForSettlementButNotCurrentGuard() {
         ReflectionTestUtils.setField(selectors, "selectorsRoleId", Selectors.INACTIVE_ROLE);
         when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of(generation(
                 NOW.minusDays(1), NOW.plusMonths(2), NOW.minusMinutes(1))));
 
         assertThat(service.getAccess("hi-user").accessLevel())
-                .isEqualTo(SelectorAccessLevel.NONE);
+                .isEqualTo(SelectorAccessLevel.PREVIOUS);
         assertThat(service.requireSettlementReadable("hi-user")).isSameAs(selectors);
         assertThat(service.requireSettlementHistoryReadable("hi-user")).isSameAs(selectors);
         assertThatThrownBy(() -> service.requireCurrent("hi-user"))
