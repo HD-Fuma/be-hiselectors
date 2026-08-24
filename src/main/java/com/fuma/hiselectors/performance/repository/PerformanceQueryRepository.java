@@ -100,7 +100,7 @@ public class PerformanceQueryRepository {
             Long selectorsId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         return entityManager.createQuery("""
                         select product.id, product.productCode, product.productName,
-                               product.brandName, product.thumbnailUrl, count(c)
+                               product.brandName, product.thumbnailUrl, product.detailUrl, count(c)
                         from ClickLog c
                         join Product product on product.id = c.referenceId
                         where c.selectorsId = :selectorsId
@@ -108,7 +108,7 @@ public class PerformanceQueryRepository {
                           and c.createdAt >= :startInclusive
                           and c.createdAt < :endExclusive
                         group by product.id, product.productCode, product.productName,
-                                 product.brandName, product.thumbnailUrl
+                                 product.brandName, product.thumbnailUrl, product.detailUrl
                         """, Object[].class)
                 .setParameter("selectorsId", selectorsId)
                 .setParameter("linkType", ViewPageType.PRODUCT)
@@ -117,7 +117,8 @@ public class PerformanceQueryRepository {
                 .getResultList().stream()
                 .map(row -> new ProductClick(
                         (Long) row[0], (String) row[1], (String) row[2],
-                        (String) row[3], (String) row[4], ((Number) row[5]).longValue()))
+                        (String) row[3], (String) row[4], (String) row[5],
+                        ((Number) row[6]).longValue()))
                 .toList();
     }
 
@@ -125,7 +126,7 @@ public class PerformanceQueryRepository {
             Long selectorsId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         return entityManager.createQuery("""
                         select product.id, product.productCode, product.productName,
-                               product.brandName, product.thumbnailUrl,
+                               product.brandName, product.thumbnailUrl, product.detailUrl,
                                count(p), coalesce(sum(p.paidAmount), 0)
                         from PurchaseHistory p
                         join Product product on product.id = p.productId
@@ -134,7 +135,7 @@ public class PerformanceQueryRepository {
                           and p.purchasedAt >= :startInclusive
                           and p.purchasedAt < :endExclusive
                         group by product.id, product.productCode, product.productName,
-                                 product.brandName, product.thumbnailUrl
+                                 product.brandName, product.thumbnailUrl, product.detailUrl
                         """, Object[].class)
                 .setParameter("selectorsId", selectorsId)
                 .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED)
@@ -143,8 +144,8 @@ public class PerformanceQueryRepository {
                 .getResultList().stream()
                 .map(row -> new ProductPurchase(
                         (Long) row[0], (String) row[1], (String) row[2],
-                        (String) row[3], (String) row[4],
-                        ((Number) row[5]).longValue(), (BigDecimal) row[6]))
+                        (String) row[3], (String) row[4], (String) row[5],
+                        ((Number) row[6]).longValue(), (BigDecimal) row[7]))
                 .toList();
     }
 
@@ -164,6 +165,7 @@ public class PerformanceQueryRepository {
             String productName,
             String brandName,
             String thumbnailUrl,
+            String detailUrl,
             long clickCount
     ) {
     }
@@ -174,6 +176,7 @@ public class PerformanceQueryRepository {
             String productName,
             String brandName,
             String thumbnailUrl,
+            String detailUrl,
             long conversionCount,
             BigDecimal conversionAmount
     ) {

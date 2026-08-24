@@ -23,7 +23,7 @@ Parameters:
     AllowedValues: [ENABLED, DISABLED]
   ScheduleExpression:
     Type: String
-    Default: rate(1 minute)
+    Default: rate(15 minutes)
   SttBucket:
     Type: String
     Default: hi-selectors-stt
@@ -145,7 +145,7 @@ Resources:
             - --discovery.defaults.enabled=false
           Environment:
             - Name: SPRING_PROFILES_ACTIVE
-              Value: local
+              Value: analysis
             - Name: STT_WORKER_BASE_URL
               Value: http://127.0.0.1:8900
             - Name: DDL_AUTO
@@ -295,7 +295,7 @@ Resources:
   Schedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Name: hiselectors-analysis-every-minute
+      Name: hiselectors-analysis-schedule
       State: !Ref ScheduleState
       FlexibleTimeWindow:
         Mode: "OFF"

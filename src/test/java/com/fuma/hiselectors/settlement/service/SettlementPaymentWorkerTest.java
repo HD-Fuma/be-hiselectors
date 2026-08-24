@@ -5,6 +5,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
+import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
@@ -13,11 +15,14 @@ import com.fuma.hiselectors.settlement.model.SettlementType;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.YearMonth;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -84,6 +89,22 @@ class SettlementPaymentWorkerTest {
     }
 
     @Test
+    void recordsGenerationPerformanceWhenSettlementBecomesSettled() {
+        SettlementHistory history = pendingHistory();
+        SelectorsGeneration membership = SelectorsGeneration.builder()
+                .selectorsId(9L).generationId(3L).build();
+
+        var outcome = worker(
+                history, completeAccount(), "ACTIVE", List.of(membership)).process(1L);
+
+        assertThat(outcome).isEqualTo(SettlementPaymentWorker.PaymentOutcome.SETTLED);
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.SETTLED);
+        assertThat(membership.getTotalSales()).isEqualTo(10_000L);
+        assertThat(membership.getConfirmedPurchaseCount()).isEqualTo(2L);
+        assertThat(membership.getPaidCommissionAmount()).isEqualTo(300L);
+    }
+
+    @Test
     void incompleteAccountDoesNotReopenInformationHold() {
         SettlementHistory history = heldInformationHistory();
         SettlementAccount incompleteAccount = completeAccount(
@@ -121,7 +142,14 @@ class SettlementPaymentWorkerTest {
 
     private SettlementPaymentWorker worker(
             SettlementHistory history, SettlementAccount account, String selectorsRole) {
+        return worker(history, account, selectorsRole, List.of());
+    }
+
+    private SettlementPaymentWorker worker(
+            SettlementHistory history, SettlementAccount account, String selectorsRole,
+            List<SelectorsGeneration> memberships) {
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorsGenerationRepository generationRepository = mock(SelectorsGenerationRepository.class);
         SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
         Selectors selectors = mock(Selectors.class);
@@ -130,8 +158,14 @@ class SettlementPaymentWorkerTest {
         when(selectors.getSelectorsRoleId()).thenReturn(selectorsRole);
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.ofNullable(account));
+        when(generationRepository.findAllBySelectorsIdAndActivityMonthForUpdate(
+                9L,
+                YearMonth.of(2026, 5).atDay(1).atStartOfDay(),
+                YearMonth.of(2026, 6).atDay(1).atStartOfDay()))
+                .thenReturn(memberships);
         return new SettlementPaymentWorker(
-                historyRepository, selectorsRepository, accountRepository, CLOCK, ACCOUNT_CRYPTO);
+                historyRepository, generationRepository, selectorsRepository,
+                accountRepository, CLOCK, ACCOUNT_CRYPTO);
     }
 
     private SettlementAccount completeAccount() {
@@ -153,6 +187,9 @@ class SettlementPaymentWorkerTest {
 
     private SettlementHistory pendingHistory() {
         SettlementHistory history = SettlementHistory.create(9L, LocalDateTime.of(2026, 5, 1, 0, 0));
+        history.updateCalculation(
+                10_000L, 2L, new BigDecimal("3.00"), 300L,
+                LocalDateTime.of(2026, 6, 1, 3, 0));
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.of(2026, 6, 21, 0, 0));
         return history;
     }

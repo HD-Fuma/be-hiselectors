@@ -9,10 +9,29 @@ import java.time.YearMonth;
 import org.springframework.data.domain.Page;
 
 public record SelectorSettlementDetailResponse(
+        boolean accountRegistered,
         SelectorProfile profile,
         SettlementSummary settlementSummary,
         Page<SettlementEstimateResponse> histories
 ) {
+
+    public SelectorSettlementDetailResponse(
+            SelectorProfile profile,
+            SettlementSummary settlementSummary,
+            Page<SettlementEstimateResponse> histories) {
+        this(false, profile, settlementSummary, histories);
+    }
+
+    public static SelectorSettlementDetailResponse of(
+            boolean accountRegistered,
+            Selectors selectors,
+            SelectorsSnsAccount snsAccount,
+            SettlementSummary settlementSummary,
+            Page<SettlementEstimateResponse> histories) {
+        return new SelectorSettlementDetailResponse(
+                accountRegistered,
+                SelectorProfile.of(selectors, snsAccount), settlementSummary, histories);
+    }
 
     public static SelectorSettlementDetailResponse of(
             Selectors selectors,
@@ -20,7 +39,7 @@ public record SelectorSettlementDetailResponse(
             SettlementSummary settlementSummary,
             Page<SettlementEstimateResponse> histories) {
         return new SelectorSettlementDetailResponse(
-                SelectorProfile.of(selectors, snsAccount), settlementSummary, histories);
+                false, SelectorProfile.of(selectors, snsAccount), settlementSummary, histories);
     }
 
     public record SelectorProfile(
@@ -54,7 +73,8 @@ public record SelectorSettlementDetailResponse(
             YearMonth currentMonth,
             Long nextMonthScheduledCommission,
             YearMonth nextPaymentMonth,
-            SettlementStatus nextPaymentSettlementStatus
+            SettlementStatus nextPaymentSettlementStatus,
+            Long cumulativeSalesAmount
     ) {
     }
 }

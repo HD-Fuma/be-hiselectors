@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.settlement.service;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
+import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
@@ -11,8 +13,11 @@ import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 /** 지급 대상 한 건을 독립 트랜잭션으로 처리한다. */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SettlementPaymentWorker {
 
     private static final String BLACKLIST_ROLE = "BLACKLIST";
 
     private final SettlementHistoryRepository settlementHistoryRepository;
+    private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsRepository selectorsRepository;
     private final SettlementAccountRepository settlementAccountRepository;
     private final Clock clock;
@@ -52,7 +59,29 @@ public class SettlementPaymentWorker {
         }
 
         history.transitionTo(SettlementStatus.SETTLED, processedAt);
+        recordSettledSettlement(history);
         return PaymentOutcome.SETTLED;
+    }
+
+    private void recordSettledSettlement(SettlementHistory history) {
+        YearMonth activityMonth = YearMonth.from(history.getActivityMonth());
+        List<SelectorsGeneration> memberships = selectorsGenerationRepository
+                .findAllBySelectorsIdAndActivityMonthForUpdate(
+                        history.getSelectorsId(),
+                        activityMonth.atDay(1).atStartOfDay(),
+                        activityMonth.plusMonths(1).atDay(1).atStartOfDay());
+        if (memberships.size() != 1) {
+            log.warn("기수별 정산 성과 집계 대상이 명확하지 않음: settlementId={}, selectorsId={}, "
+                            + "activityMonth={}, membershipCount={}",
+                    history.getId(), history.getSelectorsId(), activityMonth, memberships.size());
+            return;
+        }
+
+        memberships.getFirst().addSettledSettlement(
+                history.getTotalSales(),
+                history.getConfirmedPurchaseCount() == null
+                        ? 0L : history.getConfirmedPurchaseCount(),
+                history.getSettlementAmount());
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
