@@ -29,7 +29,7 @@ public class CampaignThumbnailAdminController {
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "업로드 성공"),
             @ApiResponse(responseCode = "400", description = "파일 형식 또는 크기 오류", content = @Content),
-            @ApiResponse(responseCode = "502", description = "S3 업로드 실패", content = @Content)
+            @ApiResponse(responseCode = "502", description = "미디어 저장 실패", content = @Content)
     })
     @PostMapping(value = "/campaign-thumbnails", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<CampaignThumbnailUploadResponse> uploadCampaignThumbnail(

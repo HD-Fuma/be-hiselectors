@@ -36,7 +36,7 @@ class CampaignThumbnailServiceTest {
         s3Client = mock(S3Client.class);
         S3MediaProperties properties = new S3MediaProperties(
                 "ap-northeast-2", "hiselectors-media", "https://media.hiselectors.shop/");
-        service = new CampaignThumbnailService(s3Client, properties);
+        service = new CampaignThumbnailService(new S3CampaignThumbnailStorage(s3Client, properties));
     }
 
     @Test
