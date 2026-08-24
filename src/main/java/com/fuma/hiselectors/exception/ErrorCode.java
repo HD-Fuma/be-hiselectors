@@ -159,6 +159,12 @@ public enum ErrorCode {
     // --- 콘텐츠 검수 / 위반 ---
     CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
     CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),
+    HISTORICAL_CONTENT_VERSION_INSPECTION_NOT_ALLOWED(
+            HttpStatus.CONFLICT, "최신 콘텐츠 버전만 검수할 수 있습니다."),
+    INVALID_CONTENT_INSPECTION_CONFIRMATION(
+            HttpStatus.BAD_REQUEST, "콘텐츠 검수 확정 요청이 올바르지 않습니다."),
+    CONTENT_INSPECTION_ALREADY_CONFIRMED(
+            HttpStatus.CONFLICT, "이미 확정된 콘텐츠 검수입니다."),
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다."),

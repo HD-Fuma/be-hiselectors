@@ -6,6 +6,7 @@ import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
@@ -108,7 +109,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                 : raw.violations().stream().map(violation -> new DetectedViolation(
                         ViolationTypeCode.valueOf(violation.violationType()),
                         new ViolationEvidence(violation.reason(), violation.confidence(),
-                                violation.locations()))).toList();
+                                violation.locations(), EvidenceSource.AI))).toList();
         return new AiInspectionResponse(report, violations);
     }
 
@@ -148,7 +149,8 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "startTime", Map.of("type", "number"),
                         "endTime", Map.of("type", "number"),
                         "bbox", boundingBox,
-                        "excerpt", Map.of("type", "string")));
+                        "excerpt", Map.of("type", "string")),
+                "required", List.of("contentMediaId", "mediaType", "excerpt"));
 
         Map<String, Object> report = Map.of(
                 "type", "object",

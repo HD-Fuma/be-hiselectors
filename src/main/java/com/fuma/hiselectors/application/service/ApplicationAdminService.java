@@ -17,6 +17,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -55,6 +56,7 @@ public class ApplicationAdminService {
     private final ApplicationReportRepository reportRepository;
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
+    private final YoutubeContentFetcher youtubeContentFetcher;
 
     // 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감(주입 아님).
     private final tools.jackson.databind.ObjectMapper objectMapper =
@@ -123,6 +125,7 @@ public class ApplicationAdminService {
         Map<Long, Generation> generations = byId(generationRepository.findAllById(
                 applications.stream().map(Application::getGenerationId).distinct().toList()),
                 Generation::getId);
+        Map<String, String> youtubeTitles = youtubeChannelTitles(applications.getContent());
         Map<Long, List<ApplicationMedia>> mediaByApplication = applicationIds.isEmpty()
                 ? Map.of()
                 : mediaRepository
@@ -135,7 +138,8 @@ public class ApplicationAdminService {
                 application,
                 requiredUser(users, application.getUserId()),
                 requiredGeneration(generations, application.getGenerationId()),
-                mediaByApplication.getOrDefault(application.getId(), List.of())));
+                mediaByApplication.getOrDefault(application.getId(), List.of()),
+                snsDisplayName(application, youtubeTitles)));
     }
 
     public AdminApplicationDetailResponse findDetail(Long applicationId) {
@@ -160,6 +164,7 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                snsDisplayName(application, youtubeChannelTitles(List.of(application))),
                 application.getProfileUrl(),
                 application.getFollowerCount(),
                 application.getStatus(),
@@ -176,7 +181,8 @@ public class ApplicationAdminService {
             Application application,
             User user,
             Generation generation,
-            List<ApplicationMedia> contents) {
+            List<ApplicationMedia> contents,
+            String snsDisplayName) {
         List<ApplicationMedia> recentContents = recentContents(application, contents);
         Long recentCount = application.getMediaCollectedAt() == null
                 ? null : (long) recentContents.size();
@@ -191,6 +197,7 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                snsDisplayName,
                 application.getProfileUrl(),
                 application.getFollowerCount(),
                 application.getContentCount(),
@@ -201,6 +208,23 @@ public class ApplicationAdminService {
                 application.getCreatedAt(),
                 application.getMediaCollectedAt(),
                 application.getUpdatedAt());
+    }
+
+    private Map<String, String> youtubeChannelTitles(List<Application> applications) {
+        List<String> channelIds = applications.stream()
+                .filter(application -> application.getSnsCode() == SnsPlatform.YOUTUBE)
+                .map(Application::getSnsAccountId)
+                .toList();
+        return channelIds.isEmpty()
+                ? Map.of()
+                : youtubeContentFetcher.fetchChannelTitles(channelIds);
+    }
+
+    private String snsDisplayName(Application application, Map<String, String> youtubeTitles) {
+        return application.getSnsCode() == SnsPlatform.YOUTUBE
+                ? youtubeTitles.getOrDefault(
+                        application.getSnsAccountId(), application.getSnsAccountId())
+                : application.getSnsAccountId();
     }
 
     private QuantitativeMetrics metrics(

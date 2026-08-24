@@ -41,7 +41,7 @@ public class ProposalMailService {
 
     @PostConstruct
     void loadTemplate() {
-        String raw = read(TEMPLATE_PATH);
+        String raw = read(TEMPLATE_PATH).replace("\r\n", "\n");
         int split = raw.indexOf(SUBJECT_DELIMITER);
         if (split < 0) {
             throw new IllegalStateException("제안 메일 템플릿에 제목/본문 구분자(---)가 없습니다.");

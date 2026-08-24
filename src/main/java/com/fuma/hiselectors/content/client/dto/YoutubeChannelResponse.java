@@ -8,7 +8,7 @@ public record YoutubeChannelResponse(List<Item> items) {
     public record Item(String id, Snippet snippet, ContentDetails contentDetails) {
     }
 
-    public record Snippet(String customUrl) {
+    public record Snippet(String title, String customUrl) {
     }
 
     public record ContentDetails(RelatedPlaylists relatedPlaylists) {

@@ -75,6 +75,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
                     version.id,
                     version.versionNo,
                     version.status,
+                    version.inspectionDecision,
                     version.inspectedAt,
                     version.createdAt,
                     account.accountId,

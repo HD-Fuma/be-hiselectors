@@ -49,7 +49,7 @@ public class InstagramContentFetcher implements ContentFetcher {
                     + "children{id,media_type,media_url,thumbnail_url}";
     private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS;
 
-    private static final int PAGE_SIZE = 25;
+    private static final int PAGE_SIZE = 10;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
 
     // Meta 게시물 작성 시각을 변환할 서비스 기준 시간대

@@ -13,6 +13,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
 import com.fuma.hiselectors.product.repository.ProductRepository;
+import com.fuma.hiselectors.performance.notification.PurchaseCreatedEvent;
 import com.fuma.hiselectors.purchase.dto.PurchaseRequest;
 import com.fuma.hiselectors.purchase.dto.PurchaseResponse;
 import com.fuma.hiselectors.purchase.model.PurchaseHistory;
@@ -26,7 +27,9 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class PurchaseServiceTest {
@@ -36,6 +39,7 @@ class PurchaseServiceTest {
     private SelectorsRepository selectorsRepository;
     private ProductRepository productRepository;
     private SelectorAccessService selectorAccessService;
+    private ApplicationEventPublisher eventPublisher;
     private PurchaseService purchaseService;
 
     @BeforeEach
@@ -45,9 +49,10 @@ class PurchaseServiceTest {
         selectorsRepository = mock(SelectorsRepository.class);
         productRepository = mock(ProductRepository.class);
         selectorAccessService = mock(SelectorAccessService.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         purchaseService = new PurchaseService(
                 purchaseHistoryRepository, userRepository, selectorsRepository, productRepository,
-                selectorAccessService);
+                selectorAccessService, eventPublisher);
     }
 
     @Test
@@ -65,6 +70,12 @@ class PurchaseServiceTest {
         InOrder order = inOrder(selectorsRepository, selectorAccessService);
         order.verify(selectorsRepository).findBySelectorsCodeForUpdate("SELECTOR-1");
         order.verify(selectorAccessService).requireCurrent(selectors);
+
+        ArgumentCaptor<PurchaseCreatedEvent> eventCaptor =
+                ArgumentCaptor.forClass(PurchaseCreatedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().purchaseId()).isEqualTo(101L);
+        assertThat(eventCaptor.getValue().selectorsId()).isEqualTo(2L);
     }
 
     @Test
@@ -77,6 +88,7 @@ class PurchaseServiceTest {
         purchaseService.purchase(new PurchaseRequest(1L, null, "PRODUCT-1", 2));
 
         verify(selectorsRepository, never()).findBySelectorsCodeForUpdate(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

@@ -28,6 +28,9 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
 
     List<SettlementHistory> findAllByStatusIn(Collection<SettlementStatus> statuses);
 
+    List<SettlementHistory> findAllByStatusAndActivityYearMonthAndSettlementAmountGreaterThan(
+            SettlementStatus status, Integer activityYearMonth, Long settlementAmount);
+
     List<SettlementHistory> findAllByStatusInAndUpdatedAtLessThanEqual(
             Collection<SettlementStatus> statuses, LocalDateTime updatedAt);
 

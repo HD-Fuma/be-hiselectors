@@ -17,6 +17,7 @@ public record AdminApplicationSummaryResponse(
         String generationName,
         SnsPlatform snsCode,
         String snsAccountId,
+        String snsDisplayName,
         String profileUrl,
         Long followerCount,
         Long totalContentCount,

@@ -12,6 +12,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -21,6 +22,7 @@ import com.fuma.hiselectors.user.repository.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,9 +43,10 @@ class ApplicationAdminServiceTest {
             mock(ApplicationReportRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
+    private final YoutubeContentFetcher youtubeContentFetcher = mock(YoutubeContentFetcher.class);
     private final ApplicationAdminService service = new ApplicationAdminService(
             applicationRepository, mediaRepository, reportRepository, userRepository,
-            generationRepository);
+            generationRepository, youtubeContentFetcher);
 
     private Application application;
     private User user;
@@ -120,6 +123,37 @@ class ApplicationAdminServiceTest {
         verify(applicationRepository).searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
                 20L, true, pageable);
+    }
+
+    @Test
+    void searchShowsYoutubeTitleWithoutReplacingStoredChannelId() {
+        String channelId = "UC0000000000000000000000";
+        ReflectionTestUtils.setField(application, "snsCode", SnsPlatform.YOUTUBE);
+        ReflectionTestUtils.setField(application, "snsAccountId", channelId);
+        var pageable = PageRequest.of(0, 20);
+        when(applicationRepository.searchAdmin(
+                null, SnsPlatform.YOUTUBE, null, null, null, pageable))
+                .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
+        when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
+        when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
+        when(mediaRepository
+                .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(
+                        List.of(1L)))
+                .thenReturn(List.of());
+        when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId)))
+                .thenReturn(Map.of(channelId, "지안의 생활연구소"));
+
+        var summary = service.search(
+                null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+                .getContent().getFirst();
+
+        assertThat(summary.snsAccountId()).isEqualTo(channelId);
+        assertThat(summary.snsDisplayName()).isEqualTo("지안의 생활연구소");
+        assertThat(application.getSnsAccountId()).isEqualTo(channelId);
+
+        when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId))).thenReturn(Map.of());
+        assertThat(service.search(null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+                .getContent().getFirst().snsDisplayName()).isEqualTo(channelId);
     }
 
     @Test

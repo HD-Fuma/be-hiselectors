@@ -16,6 +16,7 @@ import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.inspection.dto.ReinspectStaleResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService.InspectionResult;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -48,9 +49,11 @@ class StaleContentInspectionServiceTest {
                 eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
                 eq(ContentVersionStatus.INSPECTING), any(Pageable.class)))
                 .thenReturn(List.of(13L));
-        when(inspectionService.inspect(11L)).thenReturn(new InspectionResult(11L, 1));
+        when(inspectionService.inspect(11L)).thenReturn(new InspectionResult(
+                11L, 11L, false, ContentVersionCreationReason.INITIAL, 1));
         doThrow(new RuntimeException("gemini")).when(inspectionService).inspect(12L);
-        when(inspectionService.inspect(13L)).thenReturn(new InspectionResult(13L, 0));
+        when(inspectionService.inspect(13L)).thenReturn(new InspectionResult(
+                13L, 13L, false, ContentVersionCreationReason.SOURCE_CHANGE, 0));
         StaleContentInspectionService service = new StaleContentInspectionService(
                 policies, generations, versions, inspectionService);
 

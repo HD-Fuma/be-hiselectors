@@ -22,6 +22,7 @@ public class SettlementPaymentService {
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementPaymentWorker settlementPaymentWorker;
     private final SettlementMissingNotificationService settlementMissingNotificationService;
+    private final SettlementStatusNotificationService settlementStatusNotificationService;
     private final SettlementSchedulePolicy settlementSchedulePolicy;
     private final Clock clock;
 
@@ -54,7 +55,10 @@ public class SettlementPaymentService {
                 SettlementPaymentWorker.PaymentOutcome outcome = settlementPaymentWorker
                         .process(history.getId());
                 switch (outcome) {
-                    case SETTLED -> settledCount++;
+                    case SETTLED -> {
+                        settledCount++;
+                        notifyCompleted(history.getId());
+                    }
                     case HELD_INFO -> {
                         heldCount++;
                         settlementMissingNotificationService.notifyMissing(
@@ -82,6 +86,14 @@ public class SettlementPaymentService {
 
     private int toYearMonthKey(YearMonth yearMonth) {
         return yearMonth.getYear() * 100 + yearMonth.getMonthValue();
+    }
+
+    private void notifyCompleted(Long settlementId) {
+        try {
+            settlementStatusNotificationService.notifyCompleted(settlementId);
+        } catch (RuntimeException exception) {
+            log.warn("정산 완료 알림 호출 실패: settlementId={}", settlementId, exception);
+        }
     }
 
     private void reopenResolvedHolds() {
