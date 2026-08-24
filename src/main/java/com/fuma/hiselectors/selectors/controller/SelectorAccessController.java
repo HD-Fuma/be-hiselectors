@@ -5,6 +5,7 @@ import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,5 +20,11 @@ public class SelectorAccessController {
     @GetMapping
     public ResponseEntity<SelectorAccessResponse> getAccess(Principal principal) {
         return ResponseEntity.ok(selectorAccessService.getAccess(principal.getName()));
+    }
+
+    @DeleteMapping
+    public ResponseEntity<Void> endActivity(Principal principal) {
+        selectorAccessService.endActivity(principal.getName());
+        return ResponseEntity.noContent().build();
     }
 }

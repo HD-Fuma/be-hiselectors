@@ -17,6 +17,11 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
 
     Optional<Selectors> findBySelectorsCode(String selectorsCode);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Selectors s where s.selectorsCode = :selectorsCode")
+    Optional<Selectors> findBySelectorsCodeForUpdate(
+            @Param("selectorsCode") String selectorsCode);
+
     Optional<Selectors> findByUserId(Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

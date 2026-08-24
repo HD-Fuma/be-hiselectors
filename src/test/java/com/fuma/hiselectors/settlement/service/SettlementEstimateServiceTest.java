@@ -18,6 +18,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class SettlementEstimateServiceTest {
 
@@ -27,7 +28,10 @@ class SettlementEstimateServiceTest {
         SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
         SettlementProvisionalEstimateService provisionalService =
                 mock(SettlementProvisionalEstimateService.class);
-        Selectors selectors = mock(Selectors.class);
+        Selectors selectors = Selectors.builder()
+                .selectorsRoleId(Selectors.INACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 9L);
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-16T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         SettlementEstimateService service = new SettlementEstimateService(
@@ -40,8 +44,8 @@ class SettlementEstimateServiceTest {
         SettlementProvisionalEstimate provisional = new SettlementProvisionalEstimate(
                 3L, 12_000L, 360L, LocalDateTime.of(2026, 8, 16, 9, 0));
 
-        when(selectors.getId()).thenReturn(9L);
-        when(selectorAccessService.requireCurrent("selector-user")).thenReturn(selectors);
+        when(selectorAccessService.requireSettlementReadable("selector-user"))
+                .thenReturn(selectors);
         when(historyRepository.findBySelectorsIdAndActivityYearMonth(9L, 202608))
                 .thenReturn(Optional.of(history));
         when(provisionalService.calculate(history)).thenReturn(provisional);
@@ -50,6 +54,7 @@ class SettlementEstimateServiceTest {
 
         assertThat(result.activityMonth()).isEqualTo(java.time.YearMonth.of(2026, 8));
         assertThat(result.provisionalEstimate()).isEqualTo(provisional);
+        verify(selectorAccessService).requireSettlementReadable("selector-user");
         verify(provisionalService).calculate(history);
     }
 
@@ -77,6 +82,7 @@ class SettlementEstimateServiceTest {
         assertThat(result.selectedYear()).isEqualTo(2025);
         assertThat(result.availableYears()).containsExactly(2026, 2025);
         assertThat(result.histories()).isEmpty();
+        verify(selectorAccessService).requireSettlementHistoryReadable("selector-user");
         verify(historyRepository)
                 .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
                         9L, LocalDateTime.of(2025, 1, 1, 0, 0), LocalDateTime.of(2026, 1, 1, 0, 0));

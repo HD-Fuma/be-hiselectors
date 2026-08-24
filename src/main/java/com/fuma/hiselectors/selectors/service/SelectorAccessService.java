@@ -52,9 +52,44 @@ public class SelectorAccessService {
         return require(resolve(selectors), SelectorAccessLevel.CURRENT);
     }
 
+    public Selectors requireSettlementReadable(String loginId) {
+        ResolvedAccess resolved = resolve(loginId);
+        if (resolved.selectors() != null && !resolved.selectors().isBlacklisted()) {
+            return resolved.selectors();
+        }
+        throw new BusinessException(ErrorCode.ACCESS_DENIED);
+    }
+
+    @Transactional
+    public Selectors requireSettlementWritable(String loginId) {
+        User user = userRepository.findByHiId(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        return selectorsRepository.findByUserIdForUpdate(user.getId())
+                .filter(selectors -> !selectors.isDeleted() && !selectors.isBlacklisted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACCESS_DENIED));
+    }
+
     public Selectors requireSettlementHistoryReadable(String loginId) {
-        return require(loginId, SelectorAccessLevel.CURRENT, SelectorAccessLevel.PREVIOUS,
-                SelectorAccessLevel.BLACKLIST);
+        ResolvedAccess resolved = resolve(loginId);
+        if (resolved.selectors() != null) {
+            return resolved.selectors();
+        }
+        throw new BusinessException(ErrorCode.ACCESS_DENIED);
+    }
+
+    @Transactional
+    public void endActivity(String loginId) {
+        User user = userRepository.findByHiId(loginId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        Selectors selectors = selectorsRepository.findByUserIdForUpdate(user.getId())
+                .filter(value -> !value.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        if (!selectors.isActive()) {
+            return;
+        }
+
+        requireCurrent(selectors);
+        selectors.deactivate();
     }
 
     private Selectors require(String loginId, SelectorAccessLevel... allowed) {

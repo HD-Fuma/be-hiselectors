@@ -28,7 +28,7 @@ public class SettlementEstimateService {
     private final SettlementProvisionalEstimateService provisionalEstimateService;
 
     public SettlementEstimateResponse getEstimate(String loginId, YearMonth requestedMonth) {
-        Selectors selectors = selectorAccessService.requireCurrent(loginId);
+        Selectors selectors = selectorAccessService.requireSettlementReadable(loginId);
         YearMonth activityMonth = resolveReadableMonth(requestedMonth);
         SettlementHistory history = settlementHistoryRepository
                 .findBySelectorsIdAndActivityYearMonth(
