@@ -7,6 +7,7 @@ import jakarta.persistence.LockModeType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,6 +18,42 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PurchaseHistoryRepository extends JpaRepository<PurchaseHistory, Long> {
+
+    @Query("""
+            select coalesce(sum(p.paidAmount), 0)
+            from PurchaseHistory p
+            where p.selectorsId = :selectorsId
+              and p.status = :status
+            """)
+    BigDecimal sumPaidAmountBySelectorsIdAndStatus(
+            @Param("selectorsId") Long selectorsId,
+            @Param("status") PurchaseStatus status);
+
+    @Query("""
+            select distinct p.selectorsId
+            from PurchaseHistory p
+            where p.selectorsId is not null
+              and p.status = :status
+              and p.confirmedAt = :confirmedAt
+            order by p.selectorsId
+            """)
+    List<Long> findDistinctSelectorsIdsByStatusAndConfirmedAt(
+            @Param("status") PurchaseStatus status,
+            @Param("confirmedAt") LocalDateTime confirmedAt);
+
+    @Query("""
+            select distinct p.selectorsId
+            from PurchaseHistory p
+            where p.selectorsId is not null
+              and p.status = :status
+              and p.confirmedAt >= :startInclusive
+              and p.confirmedAt < :endExclusive
+            order by p.selectorsId
+            """)
+    List<Long> findDistinctSelectorsIdsByStatusAndConfirmedAtBetween(
+            @Param("status") PurchaseStatus status,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive);
 
     @Query("""
             select new com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse(
@@ -84,6 +121,21 @@ public interface PurchaseHistoryRepository extends JpaRepository<PurchaseHistory
     PurchaseSettlementSummary summarizeConfirmedPurchasesForActivityMonth(
             @Param("selectorsId") Long selectorsId,
             @Param("status") PurchaseStatus status,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive);
+
+    @Query("""
+            select coalesce(sum(p.paidAmount), 0) as totalSales,
+                   count(p) as purchaseCount
+            from PurchaseHistory p
+            where p.selectorsId = :selectorsId
+              and p.status in :statuses
+              and p.purchasedAt >= :startInclusive
+              and p.purchasedAt < :endExclusive
+            """)
+    PurchaseProvisionalSettlementSummary summarizeProvisionalPurchasesForActivityMonth(
+            @Param("selectorsId") Long selectorsId,
+            @Param("statuses") Collection<PurchaseStatus> statuses,
             @Param("startInclusive") LocalDateTime startInclusive,
             @Param("endExclusive") LocalDateTime endExclusive);
 

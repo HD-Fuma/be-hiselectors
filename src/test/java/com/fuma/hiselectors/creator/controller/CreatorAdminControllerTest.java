@@ -4,6 +4,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.InfluenceRankedCreator;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
@@ -27,6 +29,9 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.MethodValidationInterceptor;
@@ -47,14 +52,63 @@ class CreatorAdminControllerTest {
         proxyFactory.addAdvice(new MethodValidationInterceptor(
                 Validation.buildDefaultValidatorFactory().getValidator()));
         mockMvc = MockMvcBuilders.standaloneSetup(proxyFactory.getProxy())
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
     }
 
     @Test
+    void 팔로워_범위를_목록조회에_전달한다() throws Exception {
+        mockMvc.perform(get("/api/admin/creators")
+                        .param("minFollower", "5000")
+                        .param("maxFollower", "100000"))
+                .andExpect(status().isOk());
+
+        verify(creatorDiscoveryService).search(
+                null, null, null, 5_000L, 100_000L,
+                null, null, null, null, null,
+                PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "followerCount")));
+    }
+
+    @Test
+    void 팔로워_범위가_음수면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/admin/creators")
+                        .param("maxFollower", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        verifyNoInteractions(creatorDiscoveryService);
+    }
+
+    @Test
+    void 최소_팔로워가_최대값보다_크면_400을_반환한다() throws Exception {
+        mockMvc.perform(get("/api/admin/creators")
+                        .param("minFollower", "100001")
+                        .param("maxFollower", "100000"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+        verifyNoInteractions(creatorDiscoveryService);
+    }
+
+    @Test
+    void 확인된_크리에이터_풀_초기화를_실행한다() throws Exception {
+        when(creatorDiscoveryService.resetPool("DELETE_CREATOR_POOL", "admin"))
+                .thenReturn(new CreatorPoolResetResponse(598));
+
+        mockMvc.perform(delete("/api/admin/creators")
+                        .param("confirmation", "DELETE_CREATOR_POOL")
+                        .principal(() -> "admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.softDeletedCount").value(598));
+
+        verify(creatorDiscoveryService).resetPool("DELETE_CREATOR_POOL", "admin");
+    }
+
+    @Test
     void 크리에이터_기본_상세정보를_조회한다() throws Exception {
         CreatorDetailResponse response = new CreatorDetailResponse(
-                113L, "YOUTUBE", "UC113", "다예다", "creator@example.com",
+                113L, "YOUTUBE", "UC113", "다예다",
                 100_000L, new BigDecimal("4.25"),
                 LocalDateTime.of(2026, 8, 12, 20, 0), "BEAUTY",
                 List.of(new CategoryShare("BEAUTY", new BigDecimal("1.00"))),
@@ -70,6 +124,7 @@ class CreatorAdminControllerTest {
                 .andExpect(jsonPath("$.data.id").value(113))
                 .andExpect(jsonPath("$.data.snsCode").value("YOUTUBE"))
                 .andExpect(jsonPath("$.data.creatorName").value("다예다"))
+                .andExpect(jsonPath("$.data.email").doesNotExist())
                 .andExpect(jsonPath("$.data.category").value("BEAUTY"))
                 .andExpect(jsonPath("$.data.categoryShares[0].categoryCode")
                         .value("BEAUTY"))

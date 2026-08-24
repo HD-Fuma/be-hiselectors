@@ -1,7 +1,11 @@
 package com.fuma.hiselectors.content.model;
 
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -42,24 +46,102 @@ public class ContentVersion {
     @Column(name = "content_hash", nullable = false, length = 64)
     private String contentHash;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "creation_reason", nullable = false, length = 30)
+    private ContentVersionCreationReason creationReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Enumerated(EnumType.STRING)
     @Column(length = 20)
-    private String status;
+    private ContentVersionStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inspection_decision", length = 20)
+    private ContentInspectionDecision inspectionDecision;
 
     @Column(name = "inspected_at")
     private LocalDateTime inspectedAt;
 
     @Builder
     private ContentVersion(Long contentId, Long adminId, Long versionNo, String contentHash,
-                           LocalDateTime createdAt, String status, LocalDateTime inspectedAt) {
+                           ContentVersionCreationReason creationReason,
+                           LocalDateTime createdAt, ContentVersionStatus status,
+                           LocalDateTime inspectedAt) {
         this.contentId = contentId;
         this.adminId = adminId;
         this.versionNo = versionNo;
         this.contentHash = contentHash;
+        this.creationReason = creationReason;
         this.createdAt = createdAt;
         this.status = status;
         this.inspectedAt = inspectedAt;
+    }
+
+    public static ContentVersion create(Long contentId, Long versionNo, String contentHash) {
+        return create(contentId, versionNo, contentHash, inferredReason(versionNo),
+                LocalDateTime.now());
+    }
+
+    public static ContentVersion create(Long contentId, Long versionNo, String contentHash,
+                                        LocalDateTime createdAt) {
+        return create(contentId, versionNo, contentHash, inferredReason(versionNo), createdAt);
+    }
+
+    public static ContentVersion create(Long contentId, Long versionNo, String contentHash,
+                                        ContentVersionCreationReason creationReason,
+                                        LocalDateTime createdAt) {
+        return ContentVersion.builder()
+                .contentId(contentId)
+                .versionNo(versionNo)
+                .contentHash(contentHash)
+                .creationReason(creationReason)
+                .createdAt(createdAt)
+                .status(ContentVersionStatus.PENDING)
+                .build();
+    }
+
+    private static ContentVersionCreationReason inferredReason(Long versionNo) {
+        return versionNo != null && versionNo == 1L
+                ? ContentVersionCreationReason.INITIAL
+                : ContentVersionCreationReason.SOURCE_CHANGE;
+    }
+
+    public void startInspection() {
+        if (status == ContentVersionStatus.INSPECTING) {
+            throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
+        }
+        if (status == null
+                || status == ContentVersionStatus.PENDING
+                || status == ContentVersionStatus.COMPLETED
+                || status == ContentVersionStatus.FAILED) {
+            status = ContentVersionStatus.INSPECTING;
+            inspectionDecision = null;
+            return;
+        }
+        throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
+    }
+
+    public void completeInspection(LocalDateTime inspectedAt) {
+        if (status != ContentVersionStatus.INSPECTING) {
+            throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
+        }
+        status = ContentVersionStatus.COMPLETED;
+        this.inspectedAt = inspectedAt;
+    }
+
+    public void failInspection() {
+        if (status != ContentVersionStatus.INSPECTING) {
+            throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
+        }
+        status = ContentVersionStatus.FAILED;
+    }
+
+    public void confirmInspection(ContentInspectionDecision decision) {
+        if (status != ContentVersionStatus.COMPLETED || inspectionDecision != null) {
+            throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
+        }
+        inspectionDecision = decision;
     }
 }

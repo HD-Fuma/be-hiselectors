@@ -29,4 +29,14 @@ class SettlementSchedulePolicyTest {
         assertThat(policy.paymentDate(YearMonth.of(2027, 4)))
                 .isEqualTo(LocalDate.of(2027, 6, 18));
     }
+
+    @Test
+    void resolvesLatestPayableActivityMonthForDailyCatchUp() {
+        assertThat(policy.latestPayableActivityMonth(LocalDate.of(2026, 8, 19)))
+                .isEqualTo(YearMonth.of(2026, 5));
+        assertThat(policy.latestPayableActivityMonth(LocalDate.of(2026, 8, 20)))
+                .isEqualTo(YearMonth.of(2026, 6));
+        assertThat(policy.latestPayableActivityMonth(LocalDate.of(2026, 8, 21)))
+                .isEqualTo(YearMonth.of(2026, 6));
+    }
 }

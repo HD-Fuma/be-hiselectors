@@ -19,13 +19,20 @@ public record SettlementEstimateResponse(
         Long confirmedSalesAmount,
         BigDecimal settlementRate,
         Long settlementAmount,
+        SettlementProvisionalEstimate provisionalEstimate,
         SettlementStatus status,
         LocalDateTime calculatedAt,
         LocalDateTime updatedAt
 ) {
 
+    public static SettlementEstimateResponse of(SettlementHistory history, Selectors selectors) {
+        return of(history, selectors, null);
+    }
+
     public static SettlementEstimateResponse of(
-            SettlementHistory history, Selectors selectors) {
+            SettlementHistory history,
+            Selectors selectors,
+            SettlementProvisionalEstimate provisionalEstimate) {
         return new SettlementEstimateResponse(
                 history.getId(),
                 selectors.getId(),
@@ -38,6 +45,7 @@ public record SettlementEstimateResponse(
                 history.getTotalSales(),
                 history.getSettlementRate(),
                 history.getSettlementAmount(),
+                provisionalEstimate,
                 history.getStatus(),
                 history.getCalculatedAt(),
                 history.getUpdatedAt()

@@ -2,6 +2,7 @@ package com.fuma.hiselectors.stt;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class YoutubeSttClient {
 
+    private static final int MAX_OUTPUT_TOKENS = 1024;
+
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
@@ -25,40 +28,16 @@ public class YoutubeSttClient {
     private static final String OCR_MARKER = "===자막===";
     private static final String ANALYSIS_MARKER = "===분석===";
 
-    // 영상 입력 비용은 어차피 이 호출에서 낸다. 맥락 판단이 필요한 정성 필드(요약·스타일·톤·강점·
-    // 위험·브랜드·욕설확정)를 같은 호출에 얹어 output 토큰만 추가한다. 키워드·카테고리·1차 욕설
-    // 스크리닝은 결정적/DB정렬이라 로컬 엔진(stt-worker)이 transcript 위에서 따로 처리한다.
-    private static final String PROMPT = """
-            이 유튜브 영상을 분석해 아래 형식 그대로만 출력하세요. 설명은 붙이지 마세요.
-            각 항목은 서로 독립적으로, 겹쳐도 그대로 각각 완전히 채우세요.
-            ===음성===
-            오디오에서 사람이 말한 내용을 처음부터 끝까지 한국어로 빠짐없이 전사하세요. \
-            요약과 별개입니다. 축약·생략·요약하지 말고 들리는 말을 그대로 전부 적으세요. \
-            말이 전혀 없으면 비워 두세요.
-            ===자막===
-            화면에 보이는 텍스트를 전부 적으세요(자막, 제목, 상표·라벨, 그래픽 문구 등). \
-            음성과 겹치더라도 그대로 적으세요. 없으면 비워 두세요.
-            ===요약===
-            영상 내용을 한국어 3~5문장으로 요약하세요. 없으면 비워 두세요.
-            ===분석===
-            아래 JSON 하나만 출력하세요. 키·형식을 정확히 지키고 코드펜스는 쓰지 마세요.
-            {
-              "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
-              "tone": "유쾌코믹|차분잔잔|진지전문|친근수다|감성무드|자극과장|시니컬솔직 중 하나",
-              "strengths": ["크리에이터·콘텐츠의 강점"],
-              "cautions": ["브랜드 협업 시 유의점"],
-              "risks": ["정치종교논란|허위과장광고|미검증건강주장|선정성|저작권|사행성 중 해당되는 것만, 없으면 빈 배열"],
-              "hateConfirmed": false,
-              "collabBrands": ["협찬·협업으로 보이는 브랜드명만. 방송사·플랫폼(SBS·유튜브 등)이나 크리에이터 본인은 제외. 없으면 빈 배열"]
-            }""";
-
     private final GeminiProperties properties;
+    private final InspectionPromptProvider promptProvider;
     // 작은 분석 JSON 파싱용. 상태 없는 파서라 빈 주입 없이 직접 만든다.
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public YoutubeSttClient(GeminiProperties properties) {
+    public YoutubeSttClient(GeminiProperties properties,
+                            InspectionPromptProvider promptProvider) {
         this.properties = properties;
+        this.promptProvider = promptProvider;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         // 영상 분석은 수십 초~분까지 걸릴 수 있어 응답 제한을 넉넉히 둔다.
@@ -76,16 +55,17 @@ public class YoutubeSttClient {
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("parts", List.of(
                         Map.of("fileData", Map.of("fileUri", url)),
-                        Map.of("text", PROMPT)))),
+                        Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
-                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
+                        "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        String uri = ENDPOINT.formatted(properties.youtubeModelOrDefault());
         try {
             return restClient.post()
                     .uri(uri)
@@ -95,7 +75,7 @@ public class YoutubeSttClient {
                     .retrieve()
                     .body(GeminiResponse.class);
         } catch (RestClientException e) {
-            log.warn("Gemini STT 호출 실패. model={}", properties.modelOrDefault(), e);
+            log.warn("Gemini STT 호출 실패. model={}", properties.youtubeModelOrDefault(), e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
@@ -110,7 +90,7 @@ public class YoutubeSttClient {
         String finish = candidate.finishReason();
         if (finish != null && !"STOP".equals(finish)) {
             // MAX_TOKENS(출력 잘림), SAFETY, RECITATION 등 → 불완전/차단이므로 실패.
-            // 잘린 전사를 성공으로 반환하지 않는다. 잘리면 gemini.max-output-tokens 를 올린다.
+            // 압축 추출이 잘렸다면 불완전 결과이므로 실패 처리한다.
             log.warn("Gemini 정상 종료 아님. finishReason={}", finish);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }

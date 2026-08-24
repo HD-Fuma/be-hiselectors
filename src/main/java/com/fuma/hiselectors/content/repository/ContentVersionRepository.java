@@ -1,9 +1,15 @@
 package com.fuma.hiselectors.content.repository;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionStatus;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,4 +24,48 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
             """)
     List<ContentVersion> findCurrentByContentIdIn(
             @Param("contentIds") Collection<Long> contentIds);
+
+    List<ContentVersion> findAllByContentIdOrderByVersionNoDesc(Long contentId);
+
+    Optional<ContentVersion> findByIdAndContentId(Long id, Long contentId);
+
+    Optional<ContentVersion> findFirstByContentIdAndContentHashOrderByVersionNoDesc(
+            Long contentId, String contentHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select cv from ContentVersion cv where cv.id = :contentVersionId")
+    Optional<ContentVersion> findByIdForUpdate(@Param("contentVersionId") Long contentVersionId);
+
+    @Query("""
+            select cv.id
+            from ContentVersion cv, Content c, Selectors selectors, SelectorsGeneration sg
+            where c.id = cv.contentId
+              and selectors.id = c.selectorsId
+              and sg.selectorsId = selectors.id
+              and sg.generationId = :generationId
+              and selectors.deleted = false
+              and c.deleted = false
+              and c.snsCode = :platform
+              and (cv.status is null or cv.status <> :excludedStatus)
+              and cv.versionNo = (
+                    select max(innerCv.versionNo) from ContentVersion innerCv
+                    where innerCv.contentId = cv.contentId)
+              and (
+                    not exists (
+                        select 1 from ContentReport cr where cr.contentVersionId = cv.id)
+                 or not exists (
+                        select 1 from ContentReport cr
+                        where cr.contentVersionId = cv.id
+                          and cr.id = (
+                                select max(latestCr.id) from ContentReport latestCr
+                                where latestCr.contentVersionId = cv.id)
+                          and cr.inspectionPolicyId = :inspectionPolicyId)
+              )
+            """)
+    List<Long> findStaleLatestVersionIds(
+            @Param("generationId") Long generationId,
+            @Param("platform") SnsPlatform platform,
+            @Param("inspectionPolicyId") Long inspectionPolicyId,
+            @Param("excludedStatus") ContentVersionStatus excludedStatus,
+            Pageable pageable);
 }

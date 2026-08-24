@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse.BusinessDiscovery;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -22,8 +23,8 @@ class MetaGraphApiClientTest {
     void businessDiscovery_필드를_한번만_인코딩해_요청한다() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
-        MetaGraphProperties properties = new MetaGraphProperties(
-                "https://graph.facebook.com", "v26.0", "test-token", "ig-user-id"
+        InstagramCollectionProperties properties = new InstagramCollectionProperties(
+                "v24.0", "ig-user-id", "test-token"
         );
         MetaGraphApiClient client = new MetaGraphApiClient(
                 properties, restClientBuilder.build()
@@ -43,7 +44,7 @@ class MetaGraphApiClientTest {
 
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
-                            .isEqualTo("/v26.0/ig-user-id");
+                            .isEqualTo("/v24.0/ig-user-id");
                     assertThat(request.getURI().getRawQuery())
                             .contains("fields=business_discovery.username(imdayeda)%7B")
                             .contains("media.limit(5)%7B")
@@ -87,8 +88,8 @@ class MetaGraphApiClientTest {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MetaGraphApiClient client = new MetaGraphApiClient(
-                new MetaGraphProperties(
-                        "https://graph.facebook.com", "v26.0", "test-token", "ig-user-id"),
+                new InstagramCollectionProperties(
+                        "v24.0", "ig-user-id", "test-token"),
                 restClientBuilder.build()
         );
         server.expect(request -> { })

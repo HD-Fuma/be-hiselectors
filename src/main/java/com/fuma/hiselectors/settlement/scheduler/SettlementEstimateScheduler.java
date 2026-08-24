@@ -20,7 +20,7 @@ public class SettlementEstimateScheduler {
         SettlementBatchService.SettlementBatchResult result =
                 settlementBatchService.calculateOpenActivityMonth();
         log.info(
-                "활동월 예상 정산 산정 배치 완료: activityMonth={}, processed={}, skipped={}, failed={}",
+                "당월까지 예상 정산 산정 배치 완료: throughActivityMonth={}, processed={}, skipped={}, failed={}",
                 result.activityMonth(),
                 result.processedCount(),
                 result.skippedCount(),

@@ -5,6 +5,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.product.model.Product;
 import com.fuma.hiselectors.product.repository.ProductRepository;
+import com.fuma.hiselectors.performance.notification.PurchaseCreatedEvent;
 import com.fuma.hiselectors.purchase.dto.PurchaseRequest;
 import com.fuma.hiselectors.purchase.dto.PurchaseResponse;
 import com.fuma.hiselectors.purchase.model.PurchaseHistory;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +34,7 @@ public class PurchaseService {
     private final SelectorsRepository selectorsRepository;
     private final ProductRepository productRepository;
     private final SelectorAccessService selectorAccessService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public PurchaseResponse purchase(PurchaseRequest request) {
@@ -68,7 +71,7 @@ public class PurchaseService {
         if (!StringUtils.hasText(selectorsCode)) {
             return null;
         }
-        Selectors selectors = selectorsRepository.findBySelectorsCode(selectorsCode)
+        Selectors selectors = selectorsRepository.findBySelectorsCodeForUpdate(selectorsCode)
                 .filter(value -> !value.isDeleted() && !value.isBlacklisted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         selectorAccessService.requireCurrent(selectors);
@@ -100,6 +103,9 @@ public class PurchaseService {
         PurchaseHistory saved = purchaseHistoryRepository.saveAndFlush(purchaseHistory);
         String orderNo = "ORD" + purchasedAt.getYear() + String.format("%05d", saved.getId());
         saved.assignOrderNumber(orderNo);
+        if (selectorsId != null) {
+            eventPublisher.publishEvent(new PurchaseCreatedEvent(saved.getId(), selectorsId));
+        }
         return PurchaseResponse.of(saved, PurchaseProcessingResult.CREATED);
     }
 

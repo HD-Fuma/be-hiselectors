@@ -3,6 +3,7 @@ package com.fuma.hiselectors.config;
 import com.fuma.hiselectors.security.jwt.JwtAuthenticationEntryPoint;
 import com.fuma.hiselectors.security.jwt.JwtAuthenticationFilter;
 import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
+import com.fuma.hiselectors.security.jwt.JwtAccessDeniedHandler;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -25,6 +26,7 @@ public class SecurityConfig {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
     private final Environment environment;
 
     // 인증 없이 접근을 허용할 경로 (헬스체크, 로그인, 정적 리소스 등)
@@ -56,12 +58,16 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(PUBLIC_ENDPOINTS).permitAll();
                     // STT 테스트 경로는 로컬에서만 공개. 운영에선 관리자만(미인증+과금 남용 방지).
                     if (environment.matchesProfiles("local")) {
                         auth.requestMatchers("/stt-test.html", "/api/stt/**").permitAll();
+                        auth.requestMatchers("/actuator/scheduledtasks").permitAll();
+                        auth.requestMatchers("/media/**").permitAll();
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                     auth.requestMatchers("/api/stt/**").hasRole("ADMIN");

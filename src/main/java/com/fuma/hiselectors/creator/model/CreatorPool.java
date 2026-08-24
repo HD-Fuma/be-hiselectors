@@ -109,6 +109,12 @@ public class CreatorPool extends BaseTimeEntity {
         updateMetrics(followerCount, engagementRate, lastContentAt);
     }
 
+    public void updateEmail(String email) {
+        if (email != null && !email.isBlank()) {
+            this.email = email;
+        }
+    }
+
     /** 사용자명을 식별자로 저장했던 기존 Instagram 행을 불변 ID 기반으로 이전한다. */
     public void migrateAccountId(String accountId) {
         if (accountId != null && !accountId.isBlank()) {

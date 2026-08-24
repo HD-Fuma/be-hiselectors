@@ -1,0 +1,68 @@
+name: Deploy analysis worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Existing API image tag; blank uses this commit SHA
+        required: false
+      schedule_state:
+        description: Keep DISABLED until a one-shot task succeeds
+        required: true
+        default: DISABLED
+        type: choice
+        options: [DISABLED, ENABLED]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: 167595589232.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: be-hiselectors
+  STACK_NAME: hiselectors-analysis
+  IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy Fargate analysis stack
+        env:
+          SUBNET_IDS: ${{ vars.ANALYSIS_SUBNET_IDS }}
+          SECURITY_GROUP_IDS: ${{ vars.ANALYSIS_SECURITY_GROUP_IDS }}
+          RUNTIME_SECRET_ARN: ${{ secrets.ANALYSIS_RUNTIME_SECRET_ARN }}
+          ASSIGN_PUBLIC_IP: ${{ vars.ANALYSIS_ASSIGN_PUBLIC_IP || 'DISABLED' }}
+        run: |
+          test -n "$SUBNET_IDS"
+          test -n "$SECURITY_GROUP_IDS"
+          test -n "$RUNTIME_SECRET_ARN"
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/analysis-fargate/template.yaml \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              "ApiImageUri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+              "WorkerImageUri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG-worker" \
+              "SubnetIds=$SUBNET_IDS" \
+              "SecurityGroupIds=$SECURITY_GROUP_IDS" \
+              "RuntimeSecretArn=$RUNTIME_SECRET_ARN" \
+              "AssignPublicIp=$ASSIGN_PUBLIC_IP" \
+              "ScheduleState=${{ inputs.schedule_state }}"
+
+      - name: Show stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs' \
+            --output table

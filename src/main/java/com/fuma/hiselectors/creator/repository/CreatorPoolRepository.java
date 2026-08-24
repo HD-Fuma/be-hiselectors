@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -35,6 +36,15 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     /** 화면 조회용. 소프트 삭제된 계정은 제외한다. */
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update CreatorPool creator
+            set creator.deleted = true
+            where creator.deleted = false
+              and creator.snsCode in :snsCodes
+            """)
+    int softDeleteAllActiveByPlatforms(@Param("snsCodes") List<String> snsCodes);
 
     /** 브랜드 계정을 제외한 카테고리·플랫폼별 영향력 계산 후보. */
     @Query("""
@@ -98,6 +108,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxFollower is null or c.followerCount <= :maxFollower)
               and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
               and (:minRecent90DayContentCount is null
                    or i.recent90DayContentCount >= :minRecent90DayContentCount)
@@ -116,6 +127,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
               and (:categoryCode is null or c.category = :categoryCode)
               and (:snsCode is null or c.snsCode = :snsCode)
               and (:minFollower is null or c.followerCount >= :minFollower)
+              and (:maxFollower is null or c.followerCount <= :maxFollower)
               and (:minEngagementRate is null or c.engagementRate >= :minEngagementRate)
               and (:minRecent90DayContentCount is null
                    or i.recent90DayContentCount >= :minRecent90DayContentCount)
@@ -127,6 +139,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
                                 @Param("categoryCode") String categoryCode,
                                 @Param("snsCode") String snsCode,
                                 @Param("minFollower") Long minFollower,
+                                @Param("maxFollower") Long maxFollower,
                                 @Param("minEngagementRate") BigDecimal minEngagementRate,
                                 @Param("minRecent90DayContentCount")
                                 Integer minRecent90DayContentCount,
@@ -139,7 +152,7 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
                                         Long minFollower, Integer maxBrandScore,
                                         BigDecimal minIgConfidence, LocalDateTime activeAfter,
                                         Pageable pageable) {
-        return search(null, categoryCode, snsCode, minFollower, null, null,
+        return search(null, categoryCode, snsCode, minFollower, null, null, null,
                 maxBrandScore, minIgConfidence, activeAfter, pageable);
     }
 }

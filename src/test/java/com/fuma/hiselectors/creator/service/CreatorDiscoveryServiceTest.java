@@ -2,12 +2,16 @@ package com.fuma.hiselectors.creator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorPool;
 import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository;
@@ -15,13 +19,17 @@ import com.fuma.hiselectors.creator.repository.CreatorDiscoverySourceRepository;
 import com.fuma.hiselectors.creator.repository.CreatorPoolRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.logging.BatchEventLogger;
+import com.fuma.hiselectors.logging.BatchLogContext;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -34,6 +42,8 @@ class CreatorDiscoveryServiceTest {
     private CreatorDiscoveryInfoRepository discoveryInfoRepository;
     @Mock
     private CreatorDiscoverySourceRepository discoverySourceRepository;
+    @Mock
+    private BatchEventLogger batchEventLogger;
 
     private CreatorDiscoveryService creatorDiscoveryService;
 
@@ -42,7 +52,8 @@ class CreatorDiscoveryServiceTest {
         creatorDiscoveryService = new CreatorDiscoveryService(
                 creatorPoolRepository,
                 discoveryInfoRepository,
-                discoverySourceRepository);
+                discoverySourceRepository,
+                batchEventLogger);
     }
 
     @Test
@@ -79,7 +90,6 @@ class CreatorDiscoveryServiceTest {
         assertThat(response.snsCode()).isEqualTo("YOUTUBE");
         assertThat(response.accountId()).isEqualTo("UC113");
         assertThat(response.creatorName()).isEqualTo("다예다");
-        assertThat(response.email()).isEqualTo("creator@example.com");
         assertThat(response.followerCount()).isEqualTo(100_000L);
         assertThat(response.engagementRate()).isEqualByComparingTo("4.25");
         assertThat(response.category()).isEqualTo("BEAUTY");
@@ -123,5 +133,45 @@ class CreatorDiscoveryServiceTest {
 
         verify(discoveryInfoRepository, never()).findById(999L);
         verify(discoverySourceRepository, never()).findCategoryShares(999L);
+    }
+
+    @Test
+    void 기존_유튜브와_인스타그램_풀을_안전하게_초기화한다() {
+        BatchLogContext logContext = mock(BatchLogContext.class);
+        when(batchEventLogger.start("creator-pool-reset")).thenReturn(logContext);
+        when(discoverySourceRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(515);
+        when(discoveryInfoRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(497);
+        when(creatorPoolRepository.softDeleteAllActiveByPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(598);
+
+        CreatorPoolResetResponse response = creatorDiscoveryService.resetPool(
+                "DELETE_CREATOR_POOL", "admin");
+
+        assertThat(response.softDeletedCount()).isEqualTo(598);
+        InOrder order = inOrder(
+                discoverySourceRepository, discoveryInfoRepository, creatorPoolRepository);
+        order.verify(discoverySourceRepository).deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"));
+        order.verify(discoveryInfoRepository).deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"));
+        order.verify(creatorPoolRepository).softDeleteAllActiveByPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"));
+        verify(batchEventLogger).succeeded(logContext, Map.of(
+                "deletedSourceCount", 515L,
+                "deletedInfoCount", 497L,
+                "softDeletedCount", 598L), Map.of("adminLoginId", "admin"));
+    }
+
+    @Test
+    void 초기화_확인_문구가_다르면_아무것도_지우지_않는다() {
+        assertThatThrownBy(() -> creatorDiscoveryService.resetPool("초기화", "admin"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+
+        verifyNoInteractions(creatorPoolRepository, discoveryInfoRepository,
+                discoverySourceRepository, batchEventLogger);
     }
 }

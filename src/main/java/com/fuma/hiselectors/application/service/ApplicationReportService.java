@@ -1,6 +1,9 @@
 package com.fuma.hiselectors.application.service;
 
+import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
+import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.application.service.LocalAnalyzerClient.LocalAnalysis;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -17,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 @Slf4j
@@ -31,6 +35,9 @@ public class ApplicationReportService {
     private final LocalAnalyzerClient analyzer;
     private final CacheManager cacheManager;
     private final ObjectMapper objectMapper;
+    private final ApplicationRepository applicationRepository;
+    private final ApplicationReportRepository reportRepository;
+    private final ApplicantReportAggregator aggregator;
 
     /** 콘텐츠 1개를 분석해 캐시에 쌓는다. application_report 저장은 지원자 단위 취합 시점에 별도로 수행. */
     public ApplicationReport analyzeContent(
@@ -58,12 +65,41 @@ public class ApplicationReportService {
                 .contentStyle(clip(insight.contentStyle(), 19))
                 .tone(clip(join1(insight.tone()), 500))
                 .strength(clip(join(insight.strengths()), 500))
-                .warning(clip(join(mergeWarnings(insight)), 500))
+                .cautions(clip(join(insight.cautions()), 500))
+                .risks(clip(join(risksWithHate(insight)), 500))
                 .brandHistory(clip(join(insight.collabBrands()), 500))
                 .build();
 
         cacheReport(applicationId, snsCode + ":" + snsContentId, report);
         return report;
+    }
+
+    /**
+     * 캐시에 쌓인 콘텐츠별 분석을 지원자 1건으로 취합해 application_report 에 저장한다.
+     * 지원자당 1건(멱등 upsert). 재실행 시 기존 리포트를 지우고 다시 저장한다.
+     */
+    @Transactional
+    public ApplicationReport aggregateAndSave(Long applicationId) {
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.APPLICATION_NOT_FOUND));
+
+        List<ApplicationReport> contents = getCachedReports(applicationId);
+        if (contents.isEmpty()) {
+            throw new BusinessException(ErrorCode.REPORT_CONTENT_EMPTY);
+        }
+
+        ApplicationReport aggregated = aggregator.aggregate(application, contents);
+        reportRepository.deleteByApplicationId(applicationId);
+        ApplicationReport saved = reportRepository.save(aggregated);
+        log.info("지원자 리포트 취합·저장 완료. applicationId={}, contents={}, quantity={}, quality={}",
+                applicationId, contents.size(), saved.getQuantityScore(), saved.getQualityScore());
+        return saved;
+    }
+
+    /** 저장된 지원자 단위 리포트 조회. */
+    public ApplicationReport getSavedReport(Long applicationId) {
+        return reportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
     }
 
     // 콘텐츠키로 매핑 → 같은 콘텐츠 재요청은 교체(멱등). 취합 로직이 getCachedReports 로 꺼내 쓴다.
@@ -87,12 +123,9 @@ public class ApplicationReportService {
         return cache == null ? null : cache.get(applicationId, Map.class);
     }
 
-    /** 유의점 + 넓은 위험 + (욕설 확정 시 표식)을 합친다. */
-    private List<String> mergeWarnings(ContentInsight insight) {
+    /** 위험요소 = risks taxonomy + (욕설 확정 시 표식). 유의점(cautions)과는 별도 저장. */
+    private List<String> risksWithHate(ContentInsight insight) {
         List<String> merged = new ArrayList<>();
-        if (insight.cautions() != null) {
-            merged.addAll(insight.cautions());
-        }
         if (insight.risks() != null) {
             merged.addAll(insight.risks());
         }

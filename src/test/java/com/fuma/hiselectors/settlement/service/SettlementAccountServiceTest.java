@@ -6,7 +6,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
@@ -18,25 +17,52 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class SettlementAccountServiceTest {
 
     @Test
-    void upsertReopensOnlyInformationHold() {
-        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+    void inactiveSelectorCanGetAccountWithSettlementGuard() {
         SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
         SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
-        Selectors selectors = mock(Selectors.class);
+        Selectors selectors = inactiveSelectors();
+        SettlementAccount account = SettlementAccount.builder()
+                .selectorsId(9L)
+                .bankName("국민은행")
+                .accountNumber("123-456")
+                .accountHolder("홍길동")
+                .build();
+        SettlementAccountService service = new SettlementAccountService(
+                accountRepository, historyRepository, selectorAccessService);
+
+        when(selectorAccessService.requireSettlementReadable("selector-user"))
+                .thenReturn(selectors);
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(account));
+
+        var response = service.getAccount("selector-user");
+
+        assertThat(response.bankName()).isEqualTo("국민은행");
+        assertThat(response.accountNumber()).isEqualTo("123-456");
+        assertThat(response.accountHolder()).isEqualTo("홍길동");
+        verify(selectorAccessService).requireSettlementReadable("selector-user");
+    }
+
+    @Test
+    void inactiveSelectorCanUpsertAccountAndReopenOnlyInformationHold() {
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
+        Selectors selectors = inactiveSelectors();
         SettlementAccount account = SettlementAccount.builder().selectorsId(9L).build();
         SettlementHistory infoHold = heldHistory(SettlementStatus.PAYMENT_HOLD_INFO);
         SettlementHistory blackHold = heldHistory(SettlementStatus.PAYMENT_HOLD_BLACK);
         SettlementAccountService service = new SettlementAccountService(
-                selectorsRepository, accountRepository, historyRepository, selectorAccessService);
+                accountRepository, historyRepository, selectorAccessService);
 
-        when(selectors.getId()).thenReturn(9L);
-        when(selectorAccessService.requireCurrent("selector-user")).thenReturn(selectors);
-        when(selectorsRepository.findByIdForUpdate(9L)).thenReturn(Optional.of(selectors));
+        when(selectorAccessService.requireSettlementWritable("selector-user"))
+                .thenReturn(selectors);
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.of(account));
         when(accountRepository.save(account)).thenReturn(account);
@@ -51,7 +77,16 @@ class SettlementAccountServiceTest {
         assertThat(response.accountHolder()).isEqualTo("홍길동");
         assertThat(infoHold.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(blackHold.getStatus()).isEqualTo(SettlementStatus.PAYMENT_HOLD_BLACK);
+        verify(selectorAccessService).requireSettlementWritable("selector-user");
         verify(accountRepository).save(account);
+    }
+
+    private Selectors inactiveSelectors() {
+        Selectors selectors = Selectors.builder()
+                .selectorsRoleId(Selectors.INACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 9L);
+        return selectors;
     }
 
     private SettlementHistory heldHistory(SettlementStatus holdStatus) {

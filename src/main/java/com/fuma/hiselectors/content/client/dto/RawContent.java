@@ -73,6 +73,11 @@ public record RawContent(
                 media, viewCount, likeCount, commentCount);
     }
 
+    public RawContent withContentType(ContentType contentType) {
+        return new RawContent(snsCode, snsContentId, contentUrl, contentType, texts, createdAt,
+                media, viewCount, likeCount, commentCount);
+    }
+
     /** 셀렉터스 콘텐츠 판별용 전체 TEXT 결합 */
     public String caption() {
         return String.join("\n", texts);

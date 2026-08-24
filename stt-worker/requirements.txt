@@ -5,7 +5,7 @@ transformers==5.15.0
 torch==2.13.0
 
 # Instagram 취득 + STT/OCR 코어 (acquire.py, media_stt.py)
-yt-dlp==2026.8.19       # 릴스 URL → mp4 직접 다운로드
+# 취득은 Graph API media_url(공식 API)만 — yt-dlp 스크래핑은 ToS 위반이라 사용 안 함.
 faster-whisper==1.2.1
 rapidocr==3.9.2          # v2. v1(rapidocr-onnxruntime)은 한국어 사전 없음 → 반드시 v2
 onnxruntime==1.29.0
@@ -15,3 +15,4 @@ av==18.1.0              # faster-whisper 의존. 프레임 샘플링에도 사�
 fastapi==0.141.1
 uvicorn==0.52.3
 pydantic==2.13.4
+boto3==1.40.18

@@ -5,12 +5,14 @@ import com.fuma.hiselectors.content.dto.ContentInspectionQueryRow;
 import com.fuma.hiselectors.content.dto.ContentFormatCountProjection;
 import com.fuma.hiselectors.content.dto.ContentPerformanceQueryRow;
 import com.fuma.hiselectors.content.model.Content;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -52,6 +54,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
               and sg.selectorsId = selectors.id
               and sg.generationId = :generationId
               and selectors.deleted = false
+              and selectors.selectorsRoleId = 'ACTIVE'
             order by content.id
             """)
     List<Content> findAllByGenerationId(@Param("generationId") Long generationId);
@@ -72,6 +75,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
                     version.id,
                     version.versionNo,
                     version.status,
+                    version.inspectionDecision,
                     version.inspectedAt,
                     version.createdAt,
                     account.accountId,
@@ -159,4 +163,8 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
     Page<ContentPerformanceQueryRow> findPerformanceRowsByGenerationId(
             @Param("generationId") Long generationId,
             Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Content c where c.id = :contentId")
+    Optional<Content> findByIdForUpdate(@Param("contentId") Long contentId);
 }

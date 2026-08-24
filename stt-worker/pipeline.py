@@ -1,6 +1,5 @@
-"""릴스 URL 하나 → 취득 → STT/OCR → 정성 분석. 전 과정 무저장(끝나면 파일 삭제).
-CLI:  python pipeline.py <릴스URL>
-서버: serve.py 의 POST /reel 이 run() 을 부른다."""
+"""Graph API 미디어 URL → 취득 → STT/OCR → 정성 분석. 전 과정 무저장(끝나면 파일 삭제).
+서버: serve.py 의 POST /reel 이 run() 을 부른다. (yt-dlp 미사용 — ToS 준수, media_url만)"""
 from __future__ import annotations
 
 import os
@@ -11,11 +10,10 @@ import analyze
 import media_stt
 
 
-def run(url: str | None = None, media_url: str | None = None,
-        thumbnail_url: str | None = None) -> dict:
-    """{source, stt, ocr, analysis}. media_url 있으면 CDN 직다운(yt-dlp 안 씀), 없으면 url 로 yt-dlp.
+def run(media_url: str | None = None, thumbnail_url: str | None = None) -> dict:
+    """{source, stt, ocr, analysis}. media_url(mp4/이미지) 있으면 CDN 직다운, 없으면 thumbnail_url 폴백.
     다운로드 파일은 분석 후 삭제(비동의 원문 미보관)."""
-    path = acquire.fetch(url=url, media_url=media_url, thumbnail_url=thumbnail_url)
+    path = acquire.fetch(media_url=media_url, thumbnail_url=thumbnail_url)
     work_dir = os.path.dirname(path)
     try:
         t = media_stt.transcribe(path)
@@ -35,5 +33,5 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) != 2:
-        sys.exit("usage: python pipeline.py <릴스URL>")
-    print(json.dumps(run(sys.argv[1]), ensure_ascii=False, indent=2))
+        sys.exit("usage: python pipeline.py <media_url>")
+    print(json.dumps(run(media_url=sys.argv[1]), ensure_ascii=False, indent=2))

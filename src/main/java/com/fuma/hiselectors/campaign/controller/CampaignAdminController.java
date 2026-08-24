@@ -86,7 +86,8 @@ public class CampaignAdminController {
     }
 
     @Operation(summary = "캠페인 수정",
-            description = "null 인 필드는 변경하지 않는다. productIds를 전달하면 기존 연결 상품을 해당 목록으로 교체한다.")
+            description = "전달한 필드만 수정한다. productIds를 전달하면 기존 연결 상품을 해당 목록으로 교체한다. "
+                    + "removeThumbnail을 생략하면 썸네일을 유지하고, true면 thumbnailUrl보다 우선해 썸네일을 제거한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "요청 값 또는 기간이 올바르지 않음", content = @Content),
@@ -99,11 +100,11 @@ public class CampaignAdminController {
         return ResponseEntity.ok(campaignAdminService.update(campaignId, request));
     }
 
-    @Operation(summary = "캠페인 삭제", description = "종료일이 지난 캠페인만 삭제 처리한다. 데이터는 soft delete 된다.")
+    @Operation(summary = "캠페인 삭제", description = "시작 전 캠페인만 삭제 처리한다. 데이터는 soft delete 된다.")
     @ApiResponses({
             @ApiResponse(responseCode = "204", description = "삭제 성공"),
             @ApiResponse(responseCode = "404", description = "캠페인 없음", content = @Content),
-            @ApiResponse(responseCode = "409", description = "종료되지 않은 캠페인", content = @Content)
+            @ApiResponse(responseCode = "409", description = "진행 중이거나 종료된 캠페인", content = @Content)
     })
     @DeleteMapping("/{campaignId}")
     public ResponseEntity<Void> delete(@PathVariable Long campaignId) {

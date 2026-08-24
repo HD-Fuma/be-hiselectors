@@ -8,7 +8,6 @@ import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorDiscoverySource;
 import com.fuma.hiselectors.creator.model.CreatorPool;
-import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository.RecentActivityBackfillTarget;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -105,81 +104,6 @@ class CreatorDiscoveryRepositoryTest {
         CreatorDiscoveryInfo found = infoRepository.findById(creator.getId()).orElseThrow();
         assertThat(found.getId()).isEqualTo(creator.getId());
         assertThat(found.getIgHandle()).isEqualTo("fitgpt_daily");
-    }
-
-    @Test
-    @DisplayName("최근 활동 백필은 실행 시점에 활성 YouTube인 누락 정보만 생성한다")
-    void findAndFillRecentActivityBackfillTargets() {
-        CreatorPool target = saveCreator("YOUTUBE", "UC-target", "백필 대상");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(target)
-                .brandScore(0)
-                .build());
-
-        CreatorPool populated = saveCreator("YOUTUBE", "UC-populated", "이미 수집");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(populated)
-                .brandScore(0)
-                .recent90DayContentCount(4)
-                .build());
-
-        CreatorPool deleted = saveCreator("YOUTUBE", "UC-deleted", "삭제 계정");
-        deleted.softDelete();
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(deleted)
-                .brandScore(0)
-                .build());
-
-        CreatorPool instagram = saveCreator("INSTAGRAM", "ig-id", "인스타 계정");
-        infoRepository.save(CreatorDiscoveryInfo.builder()
-                .creatorPool(instagram)
-                .brandScore(0)
-                .build());
-        CreatorPool noInfo = saveCreator("YOUTUBE", "UC-no-info", "발굴 정보 없음");
-        CreatorPool deletedAfterLookup =
-                saveCreator("YOUTUBE", "UC-deleted-after-lookup", "조회 후 삭제");
-        CreatorPool changedPlatformAfterLookup =
-                saveCreator("YOUTUBE", "UC-changed-platform", "조회 후 플랫폼 변경");
-        em.flush();
-        em.clear();
-
-        List<RecentActivityBackfillTarget> targets =
-                infoRepository.findRecentActivityBackfillTargets("YOUTUBE");
-
-        assertThat(targets).extracting(RecentActivityBackfillTarget::getCreatorId)
-                .containsExactly(target.getId(), noInfo.getId(), deletedAfterLookup.getId(),
-                        changedPlatformAfterLookup.getId());
-        assertThat(targets).extracting(RecentActivityBackfillTarget::getAccountId)
-                .containsExactly("UC-target", "UC-no-info", "UC-deleted-after-lookup",
-                        "UC-changed-platform");
-
-        creatorPoolRepository.findById(deletedAfterLookup.getId()).orElseThrow().softDelete();
-        em.getEntityManager().createQuery("""
-                        update CreatorPool c
-                           set c.snsCode = 'INSTAGRAM'
-                         where c.id = :creatorId
-                        """)
-                .setParameter("creatorId", changedPlatformAfterLookup.getId())
-                .executeUpdate();
-        em.flush();
-        em.clear();
-
-        assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 0)).isEqualTo(1);
-        assertThat(infoRepository.fillRecent90DayContentCount(target.getId(), 7)).isZero();
-        assertThat(infoRepository.insertRecent90DayContentCount(noInfo.getId(), 6)).isEqualTo(1);
-        assertThat(infoRepository.insertRecent90DayContentCount(
-                deletedAfterLookup.getId(), 6)).isZero();
-        assertThat(infoRepository.insertRecent90DayContentCount(
-                changedPlatformAfterLookup.getId(), 6)).isZero();
-        em.clear();
-        assertThat(infoRepository.findById(target.getId()).orElseThrow()
-                .getRecent90DayContentCount()).isZero();
-        CreatorDiscoveryInfo created = infoRepository.findById(noInfo.getId()).orElseThrow();
-        assertThat(created.getBrandScore()).isZero();
-        assertThat(created.getRecent90DayContentCount()).isEqualTo(6);
-        assertThat(created.getDiscoveredAt()).isNotNull();
-        assertThat(infoRepository.findById(deletedAfterLookup.getId())).isEmpty();
-        assertThat(infoRepository.findById(changedPlatformAfterLookup.getId())).isEmpty();
     }
 
     @Test
@@ -389,6 +313,36 @@ class CreatorDiscoveryRepositoryTest {
         em.clear();
 
         assertThat(sourceRepository.findCategoryShares(creator.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("풀 초기화는 파생 데이터만 지우고 중심 행은 소프트 삭제한다")
+    void resetCreatorPoolData() {
+        CreatorPool active = saveCreator("YOUTUBE", "UC_active", "활성 계정");
+        CreatorPool alreadyDeleted = saveCreator("INSTAGRAM", "ig_deleted", "기존 삭제 계정");
+        alreadyDeleted.softDelete();
+        DiscoveryKeyword keyword = saveKeyword("BEAUTY", "뷰티", "메이크업");
+        for (CreatorPool creator : List.of(active, alreadyDeleted)) {
+            infoRepository.save(CreatorDiscoveryInfo.builder()
+                    .creatorPool(creator).brandScore(0).build());
+            sourceRepository.save(CreatorDiscoverySource.builder()
+                    .creatorPool(creator).keyword(keyword)
+                    .viewShare(BigDecimal.ONE).build());
+        }
+        em.flush();
+        em.clear();
+
+        assertThat(sourceRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(2);
+        assertThat(infoRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(2);
+        assertThat(creatorPoolRepository.softDeleteAllActiveByPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(1);
+        em.clear();
+
+        assertThat(sourceRepository.count()).isZero();
+        assertThat(infoRepository.count()).isZero();
+        assertThat(creatorPoolRepository.findAll()).hasSize(2).allMatch(CreatorPool::isDeleted);
     }
 
     @TestConfiguration

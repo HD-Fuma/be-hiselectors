@@ -5,16 +5,14 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /** 지원자 콘텐츠 1건 분석·적재 요청. content_key 로 멱등(같은 키 재요청 시 재분석 안 함). */
 public record ContentAddRequest(
 
-        @Schema(description = "콘텐츠 고유 키(릴스 shortcode 또는 media id). 멱등 키", requiredMode =
-                Schema.RequiredMode.REQUIRED)
+        @Schema(description = "콘텐츠 고유 키 = Graph API media id(=sns_media_id). 멱등 키 겸 "
+                + "media_url 만료 시 재취득 키(fetchMediaUrls). shortcode·permalink 아님.",
+                requiredMode = Schema.RequiredMode.REQUIRED)
         String contentKey,
 
-        @Schema(description = "릴스 permalink(yt-dlp 폴백용)")
-        String reelUrl,
-
-        @Schema(description = "Graph API media_url. 있으면 CDN 직다운(yt-dlp 생략)")
+        @Schema(description = "Graph API media_url. 워커가 CDN 직다운")
         String mediaUrl,
 
-        @Schema(description = "Graph API thumbnail_url. 영상 실패 시 폴백")
+        @Schema(description = "Graph API thumbnail_url. media_url 없을 때 폴백")
         String thumbnailUrl) {
 }

@@ -44,6 +44,12 @@ public class Application extends BaseTimeEntity {
     @Column(name = "sns_account_id", nullable = false, length = 200)
     private String snsAccountId;
 
+    @Column(name = "profile_url", length = 500)
+    private String profileUrl;
+
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
     @Column(name = "follower_count")
     private Long followerCount;
 
@@ -55,7 +61,7 @@ public class Application extends BaseTimeEntity {
     @Column(name = "last_content_at")
     private LocalDateTime lastContentAt;
 
-    @Column(name = "engagement_rate", precision = 5, scale = 2)
+    @Column(name = "engagement_rate", precision = 8, scale = 2)
     private BigDecimal engagementRate;
 
     @Column(name = "alarm_yn", nullable = false)
@@ -81,8 +87,22 @@ public class Application extends BaseTimeEntity {
     @Column(name = "media_collection_error", length = 500)
     private String mediaCollectionError;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "analysis_status", nullable = false, length = 20)
+    private ContentAnalysisStatus analysisStatus = ContentAnalysisStatus.PENDING;
+
+    @Column(name = "analysis_retry_count", nullable = false)
+    private int analysisRetryCount;
+
+    @Column(name = "analyzed_at")
+    private LocalDateTime analyzedAt;
+
+    @Column(name = "analysis_error", length = 500)
+    private String analysisError;
+
     @Builder
     private Application(Long userId, Long generationId, SnsPlatform snsCode, String snsAccountId,
+                        String profileUrl,
                         Long followerCount, Long contentCount,
                         LocalDateTime lastContentAt, BigDecimal engagementRate,
                         boolean alarmYn, LocalDateTime policyAgreedAt, ApplicationStatus status) {
@@ -90,6 +110,7 @@ public class Application extends BaseTimeEntity {
         this.generationId = generationId;
         this.snsCode = snsCode;
         this.snsAccountId = snsAccountId;
+        this.profileUrl = profileUrl;
         this.followerCount = followerCount;
         this.contentCount = contentCount;
         this.lastContentAt = lastContentAt;
@@ -99,16 +120,52 @@ public class Application extends BaseTimeEntity {
         this.status = status;
     }
 
-    public void completeMediaCollection(LocalDateTime collectedAt) {
+    public void completeMediaCollection(LocalDateTime collectedAt, BigDecimal engagementRate) {
         this.mediaCollectionStatus = MediaCollectionStatus.DONE;
         this.mediaCollectedAt = collectedAt;
+        this.engagementRate = engagementRate;
         this.mediaCollectionError = null;
+    }
+
+    public void updateProfileImageUrl(String profileImageUrl) {
+        if (profileImageUrl != null
+                && !profileImageUrl.isBlank()
+                && profileImageUrl.length() <= 500) {
+            this.profileImageUrl = profileImageUrl;
+        }
+    }
+
+    public void fillMissingPublicMetrics(Long followerCount, Long contentCount) {
+        if (this.followerCount == null && followerCount != null && followerCount >= 0) {
+            this.followerCount = followerCount;
+        }
+        if (this.contentCount == null && contentCount != null && contentCount >= 0) {
+            this.contentCount = contentCount;
+        }
     }
 
     public void failMediaCollection(String error) {
         this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
         this.mediaCollectionRetryCount++;
         this.mediaCollectionError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
+    }
+
+    public void completeAnalysis(LocalDateTime analyzedAt) {
+        this.analysisStatus = ContentAnalysisStatus.DONE;
+        this.analyzedAt = analyzedAt;
+        this.analysisError = null;
+    }
+
+    /**
+     * @param countRetry 재시도 카운트 증가 여부. 일시적 인프라 장애(워커·LLM 다운)는 false 로 넘겨
+     *                   재시도 예산을 소진하지 않는다(복구 시 스케줄러가 자동 재개). 영구/데이터 실패는 true.
+     */
+    public void failAnalysis(String error, boolean countRetry) {
+        this.analysisStatus = ContentAnalysisStatus.FAILED;
+        if (countRetry) {
+            this.analysisRetryCount++;
+        }
+        this.analysisError = error == null ? null : error.substring(0, Math.min(error.length(), 500));
     }
 
     public void changeStatus(ApplicationStatus target) {

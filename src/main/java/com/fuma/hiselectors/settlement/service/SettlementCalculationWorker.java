@@ -17,6 +17,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -53,9 +54,17 @@ public class SettlementCalculationWorker {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         LocalDateTime monthStart = activityMonth.atDay(1).atStartOfDay();
 
-        SettlementHistory history = settlementHistoryRepository
-                .findBySelectorsIdAndActivityMonth(selectorsId, monthStart)
-                .orElse(null);
+        List<SettlementHistory> monthlyHistories = settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        selectorsId,
+                        monthStart,
+                        activityMonth.plusMonths(1).atDay(1).atStartOfDay());
+        if (monthlyHistories.size() > 1) {
+            throw new BusinessException(
+                    ErrorCode.SETTLEMENT_ACTIVITY_MONTH_DUPLICATED,
+                    "selectorsId=" + selectorsId + ", activityMonth=" + activityMonth);
+        }
+        SettlementHistory history = monthlyHistories.isEmpty() ? null : monthlyHistories.getFirst();
         if (history != null && !history.isCalculating()) {
             if (forcePaymentPendingRecalculation
                     && finalizeSettlement
