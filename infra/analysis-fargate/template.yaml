@@ -83,12 +83,12 @@ Resources:
                 Action:
                   - sagemaker:DescribeEndpoint
                   - sagemaker:InvokeEndpointAsync
-                Resource: !Sub arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SttEndpoint}
+                Resource: !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SttEndpoint}"
               - Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*"
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -168,25 +168,25 @@ Resources:
               Value: https://hiselectors.shop/instagram/callback
           Secrets:
             - Name: DB_HOST
-              ValueFrom: !Sub ${RuntimeSecretArn}:DB_HOST::
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_HOST::"
             - Name: DB_PORT
-              ValueFrom: !Sub ${RuntimeSecretArn}:DB_PORT::
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_PORT::"
             - Name: DB_NAME
-              ValueFrom: !Sub ${RuntimeSecretArn}:DB_NAME::
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_NAME::"
             - Name: DB_USERNAME
-              ValueFrom: !Sub ${RuntimeSecretArn}:DB_USERNAME::
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_USERNAME::"
             - Name: DB_PASSWORD
-              ValueFrom: !Sub ${RuntimeSecretArn}:DB_PASSWORD::
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_PASSWORD::"
             - Name: JWT_SECRET
-              ValueFrom: !Sub ${RuntimeSecretArn}:JWT_SECRET::
+              ValueFrom: !Sub "${RuntimeSecretArn}:JWT_SECRET::"
             - Name: GEMINI_API_KEY
-              ValueFrom: !Sub ${RuntimeSecretArn}:GEMINI_API_KEY::
+              ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEY::"
             - Name: META_API_VERSION
-              ValueFrom: !Sub ${RuntimeSecretArn}:META_API_VERSION::
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_API_VERSION::"
             - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
-              ValueFrom: !Sub ${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::"
             - Name: META_LONG_LIVED_ACCESS_TOKEN
-              ValueFrom: !Sub ${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::"
           LogConfiguration:
             LogDriver: awslogs
             Options:
