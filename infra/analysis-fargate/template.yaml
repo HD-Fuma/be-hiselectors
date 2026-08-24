@@ -13,6 +13,9 @@ Parameters:
   RuntimeSecretArn:
     Type: String
     Description: Secrets Manager JSON with DB, JWT, Gemini, and Meta values
+  ApiInstanceRoleName:
+    Type: String
+    Default: hiselectors-ec2-role
   AssignPublicIp:
     Type: String
     Default: DISABLED
@@ -23,7 +26,7 @@ Parameters:
     AllowedValues: [ENABLED, DISABLED]
   ScheduleExpression:
     Type: String
-    Default: rate(15 minutes)
+    Default: rate(1 hour)
   SttBucket:
     Type: String
     Default: hi-selectors-stt
@@ -42,6 +45,38 @@ Resources:
     Properties:
       LogGroupName: /hiselectors/analysis-job
       RetentionInDays: 14
+
+  AnalysisDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: hiselectors-analysis-dlq.fifo
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600
+
+  AnalysisQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: hiselectors-analysis.fifo
+      FifoQueue: true
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AnalysisDeadLetterQueue.Arn
+        maxReceiveCount: 100
+
+  AnalysisQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref AnalysisQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiInstanceRoleName}"
+            Action: sqs:SendMessage
+            Resource: !GetAtt AnalysisQueue.Arn
 
   TaskExecutionRole:
     Type: AWS::IAM::Role
@@ -222,6 +257,13 @@ Resources:
                 Resource:
                   - !GetAtt TaskExecutionRole.Arn
                   - !GetAtt TaskRole.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt AnalysisQueue.Arn
 
   Dispatcher:
     Type: AWS::Lambda::Function
@@ -247,6 +289,13 @@ Resources:
           ecs = boto3.client("ecs")
 
           def handler(event, context):
+              records = event.get("Records", [])
+              sqs_record = records[0] if records and records[0].get("eventSource") == "aws:sqs" else None
+
+              def sqs_result(failed):
+                  failures = [{"itemIdentifier": sqs_record["messageId"]}] if failed else []
+                  return {"batchItemFailures": failures}
+
               cluster = os.environ["CLUSTER_ARN"]
               family = os.environ["TASK_FAMILY"]
               active = []
@@ -255,6 +304,8 @@ Resources:
                       cluster=cluster, family=family, desiredStatus=status
                   )["taskArns"]
               if active:
+                  if sqs_record:
+                      return sqs_result(True)
                   return {"started": False, "reason": "already-running", "taskArn": active[0]}
 
               response = ecs.run_task(
@@ -271,7 +322,19 @@ Resources:
               )
               if response.get("failures"):
                   raise RuntimeError(str(response["failures"]))
+              if sqs_record:
+                  return sqs_result(False)
               return {"started": True, "taskArn": response["tasks"][0]["taskArn"]}
+
+  AnalysisQueueEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt AnalysisQueue.Arn
+      FunctionName: !Ref Dispatcher
+      BatchSize: 1
+      Enabled: true
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
 
   SchedulerInvokeRole:
     Type: AWS::IAM::Role
@@ -313,3 +376,7 @@ Outputs:
     Value: !Ref Dispatcher
   LogGroupName:
     Value: !Ref LogGroup
+  AnalysisQueueUrl:
+    Value: !Ref AnalysisQueue
+  AnalysisQueueArn:
+    Value: !GetAtt AnalysisQueue.Arn

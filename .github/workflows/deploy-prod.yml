@@ -288,6 +288,10 @@ jobs:
             DB_NAME="${DB_NAME:-hiselectors}"
             DB_USERNAME="${DB_USERNAME:-root}"
             test -n "$DB_HOST"
+            if [ -n "${ANALYSIS_QUEUE_URL:-}" ]; then
+              sed -i '/^APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=/d' .env
+              printf 'APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=%s\n' "$ANALYSIS_QUEUE_URL" >> .env
+            fi
 
             DEPLOY_VERIFIED=false
             rollback() {
@@ -344,7 +348,15 @@ jobs:
             docker image prune -f
         run: |
           test -n "$EC2_INSTANCE_ID"
-          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["1200"]}')"
+          ANALYSIS_QUEUE_URL="$(aws cloudformation describe-stacks \
+            --stack-name hiselectors-analysis \
+            --query "Stacks[0].Outputs[?OutputKey=='AnalysisQueueUrl'].OutputValue | [0]" \
+            --output text 2>/dev/null || true)"
+          [ "$ANALYSIS_QUEUE_URL" != "None" ] || ANALYSIS_QUEUE_URL=
+          PARAMETERS="$(jq -cn \
+            --arg queue_url "$ANALYSIS_QUEUE_URL" \
+            --arg command "$REMOTE_SCRIPT" \
+            '{commands:[("export ANALYSIS_QUEUE_URL=" + ($queue_url | @sh) + "\n" + $command)],executionTimeout:["1200"]}')"
           COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
