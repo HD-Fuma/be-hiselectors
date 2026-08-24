@@ -272,8 +272,6 @@ jobs:
 
             docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
-            mysql_query "UPDATE application a JOIN users u ON u.user_id = a.user_id SET a.media_collection_status = 'PENDING', a.media_collection_retry_count = 0, a.media_collected_at = NULL, a.media_collection_error = NULL, a.engagement_rate = NULL WHERE NULLIF(TRIM(a.profile_image_url), '') IS NULL AND NULLIF(TRIM(u.hi_id), '') IS NOT NULL AND a.media_collection_status = 'DONE'"
-            echo "application-profile-image-backfill=queued"
             DEPLOY_VERIFIED=true
             trap - 0 1 2 15
             docker image prune -f
