@@ -71,7 +71,7 @@ public class PurchaseService {
         if (!StringUtils.hasText(selectorsCode)) {
             return null;
         }
-        Selectors selectors = selectorsRepository.findBySelectorsCode(selectorsCode)
+        Selectors selectors = selectorsRepository.findBySelectorsCodeForUpdate(selectorsCode)
                 .filter(value -> !value.isDeleted() && !value.isBlacklisted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         selectorAccessService.requireCurrent(selectors);

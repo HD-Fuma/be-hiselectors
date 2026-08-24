@@ -3,7 +3,6 @@ package com.fuma.hiselectors.settlement.service;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.selectors.model.Selectors;
-import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.service.SelectorAccessService;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementAccountUpsertRequest;
@@ -21,13 +20,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SettlementAccountService {
 
-    private final SelectorsRepository selectorsRepository;
     private final SettlementAccountRepository settlementAccountRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SelectorAccessService selectorAccessService;
 
     public SettlementAccountResponse getAccount(String loginId) {
-        Selectors selectors = selectorAccessService.requireReadable(loginId);
+        Selectors selectors = selectorAccessService.requireSettlementReadable(loginId);
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
@@ -36,9 +34,7 @@ public class SettlementAccountService {
 
     @Transactional
     public SettlementAccountResponse upsert(String loginId, SettlementAccountUpsertRequest request) {
-        Selectors selectors = selectorsRepository.findByIdForUpdate(
-                        selectorAccessService.requireCurrent(loginId).getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        Selectors selectors = selectorAccessService.requireSettlementWritable(loginId);
         SettlementAccount account = settlementAccountRepository
                 .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectors.getId())
                 .orElseGet(() -> SettlementAccount.builder().selectorsId(selectors.getId()).build());

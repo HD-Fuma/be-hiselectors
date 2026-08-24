@@ -4,7 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
+import com.fuma.hiselectors.content.repository.ContentRepository;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +33,9 @@ class SelectorsSnsAccountRepositoryTest {
 
     @Autowired
     private ContentBatchAccountRepository batchAccountRepository;
+
+    @Autowired
+    private ContentRepository contentRepository;
 
     @Autowired
     private TestEntityManager entityManager;
@@ -121,6 +129,62 @@ class SelectorsSnsAccountRepositoryTest {
         assertThat(found.getSnsCode()).isEqualTo(SnsPlatform.INSTAGRAM);
         assertThat(found.getAccountId()).isEqualTo("instagram-account");
         assertThat(found.getLastCollectedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("활동 중인 셀렉터스의 SNS 계정과 콘텐츠만 수집 대상으로 조회한다")
+    void findOnlyActiveSelectorsDataForContentCollection() {
+        Long generationId = 1L;
+        Selectors activeSelectors = entityManager.persist(Selectors.builder()
+                .userId(1L)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build());
+        Selectors inactiveSelectors = entityManager.persist(Selectors.builder()
+                .userId(2L)
+                .selectorsRoleId(Selectors.INACTIVE_ROLE)
+                .build());
+        entityManager.persist(SelectorsGeneration.builder()
+                .selectorsId(activeSelectors.getId())
+                .generationId(generationId)
+                .build());
+        entityManager.persist(SelectorsGeneration.builder()
+                .selectorsId(inactiveSelectors.getId())
+                .generationId(generationId)
+                .build());
+        SelectorsSnsAccount activeAccount = entityManager.persist(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(activeSelectors.getId())
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("active-channel")
+                        .build());
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(inactiveSelectors.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("inactive-channel")
+                .build());
+        Content activeContent = entityManager.persist(Content.builder()
+                .selectorsId(activeSelectors.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("active-content")
+                .contentUrl("https://example.com/active-content")
+                .contentType(ContentType.SHORTS)
+                .build());
+        entityManager.persist(Content.builder()
+                .selectorsId(inactiveSelectors.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("inactive-content")
+                .contentUrl("https://example.com/inactive-content")
+                .contentType(ContentType.SHORTS)
+                .build());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(batchAccountRepository.findAllByGenerationId(generationId))
+                .extracting(SelectorsSnsAccount::getId)
+                .containsExactly(activeAccount.getId());
+        assertThat(contentRepository.findAllByGenerationId(generationId))
+                .extracting(Content::getId)
+                .containsExactly(activeContent.getId());
     }
 
     @Test

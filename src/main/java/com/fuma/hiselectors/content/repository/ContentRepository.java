@@ -54,6 +54,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
               and sg.selectorsId = selectors.id
               and sg.generationId = :generationId
               and selectors.deleted = false
+              and selectors.selectorsRoleId = 'ACTIVE'
             order by content.id
             """)
     List<Content> findAllByGenerationId(@Param("generationId") Long generationId);
