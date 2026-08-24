@@ -18,6 +18,18 @@ import org.springframework.test.util.ReflectionTestUtils;
 class ProposalMailServiceTest {
 
     @Test
+    void 운영체제_줄바꿈과_무관하게_기본_템플릿을_불러온다() {
+        ProposalMailService service = new ProposalMailService(
+                mock(JavaMailSender.class),
+                new ProposalMailProperties("매니저", "admin@example.com", "https://example.com"));
+
+        service.loadTemplate();
+
+        assertThat(ReflectionTestUtils.getField(service, "subjectTemplate")).isNotNull();
+        assertThat(ReflectionTestUtils.getField(service, "bodyTemplate")).isNotNull();
+    }
+
+    @Test
     void 편집한_제목과_본문의_변수를_치환해_평문으로_발송한다() throws Exception {
         JavaMailSender mailSender = mock(JavaMailSender.class);
         ProposalMailService service = new ProposalMailService(

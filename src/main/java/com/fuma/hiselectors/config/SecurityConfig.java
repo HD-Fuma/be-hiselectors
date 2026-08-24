@@ -67,6 +67,7 @@ public class SecurityConfig {
                     if (environment.matchesProfiles("local")) {
                         auth.requestMatchers("/stt-test.html", "/api/stt/**").permitAll();
                         auth.requestMatchers("/actuator/scheduledtasks").permitAll();
+                        auth.requestMatchers("/media/**").permitAll();
                     }
                     auth.requestMatchers("/api/admin/**").hasRole("ADMIN");
                     auth.requestMatchers("/api/stt/**").hasRole("ADMIN");
