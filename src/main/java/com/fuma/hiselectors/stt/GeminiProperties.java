@@ -9,7 +9,7 @@ public record GeminiProperties(
         MediaResolution mediaResolution,
         Integer maxOutputTokens) {
 
-    private static final String DEFAULT_MODEL = "gemini-3.5-flash-lite";
+    private static final String DEFAULT_MODEL = "gemini-3.6-flash";
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
     public boolean hasApiKey() {
