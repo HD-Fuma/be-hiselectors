@@ -58,6 +58,24 @@ jobs:
             mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
             -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
         }
+        mysql_apply_file() {
+          docker run --rm -i --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            -u "$DB_USERNAME" "$DB_NAME"
+        }
+
+        TASK_RUN_MIGRATION_FILE="$(mktemp)"
+        cleanup_task_run_migration() {
+          rm -f "$TASK_RUN_MIGRATION_FILE"
+        }
+        trap cleanup_task_run_migration EXIT HUP INT TERM
+        printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d > "$TASK_RUN_MIGRATION_FILE"
+        cat "$TASK_RUN_MIGRATION_FILE" | mysql_apply_file
+
+        task_run_table_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'task_run'")"
+        task_run_unique_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'task_run' AND non_unique = 0 AND index_name IN ('uq_task_run_run_id', 'uq_task_run_concurrency_key', 'uq_task_run_idempotency_key')")"
+        test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
+        echo "task-run-migration=verified"
 
         profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
         if [ "$profile_image_column_count" = "0" ]; then
@@ -153,6 +171,10 @@ jobs:
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND column_name = 'generation_id' AND referenced_table_name = 'generation' AND referenced_column_name = 'generation_id'")" = "1"
         echo "008-expand=verified"
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -161,7 +183,11 @@ jobs:
       - name: Expand 008 through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
-          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
+          TASK_RUN_MIGRATION_B64="$(base64 -w0 docs/task-run-migration.sql)"
+          printf -v TASK_RUN_MIGRATION_ASSIGNMENT 'TASK_RUN_MIGRATION_B64=%q\n' "$TASK_RUN_MIGRATION_B64"
+          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
+          test "${#REMOTE_COMMAND}" -lt 24000
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \

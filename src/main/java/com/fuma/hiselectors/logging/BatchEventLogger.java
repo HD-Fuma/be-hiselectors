@@ -74,6 +74,51 @@ public class BatchEventLogger {
         terminal(run, Status.FAILED, null, null, null, error);
     }
 
+    public void taskRunTerminal(
+            UUID runId,
+            String status,
+            Instant startedAt,
+            Instant finishedAt,
+            Map<String, Long> counts,
+            Map<String, Object> details,
+            String errorType,
+            String errorMessage) {
+        Objects.requireNonNull(runId, "runId");
+        Objects.requireNonNull(finishedAt, "finishedAt");
+        if (errorType == null || errorType.isBlank()) {
+            throw new IllegalArgumentException("Error type is required");
+        }
+        if (errorMessage == null || errorMessage.isBlank()) {
+            throw new IllegalArgumentException("Error message is required");
+        }
+
+        Status terminalStatus;
+        try {
+            terminalStatus = Status.valueOf(status);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Unsupported task run status", exception);
+        }
+        if (terminalStatus != Status.PARTIAL_FAILED
+                && terminalStatus != Status.FAILED
+                && terminalStatus != Status.STALE) {
+            throw new IllegalArgumentException("Unsupported task run status");
+        }
+
+        long durationMs = startedAt == null
+                ? 0
+                : Math.max(0, Duration.between(startedAt, finishedAt).toMillis());
+        BatchLogContext run = new BatchLogContext("task-run", runId.toString(), finishedAt);
+        emit(
+                run,
+                terminalStatus,
+                finishedAt,
+                durationMs,
+                validateCounts(counts),
+                validateDetails(details),
+                null,
+                new EventError(errorType, bounded(errorMessage, MAX_DETAIL_STRING_LENGTH)));
+    }
+
     private void terminal(
             BatchLogContext run,
             Status status,
@@ -176,6 +221,10 @@ public class BatchEventLogger {
                 || value instanceof BigDecimal;
     }
 
+    private static String bounded(String value, int maxLength) {
+        return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record Event(
             int schemaVersion,
@@ -198,7 +247,9 @@ public class BatchEventLogger {
         STARTED,
         SUCCEEDED,
         PARTIAL_FAILURE,
+        PARTIAL_FAILED,
         FAILED,
-        SKIPPED
+        SKIPPED,
+        STALE
     }
 }
