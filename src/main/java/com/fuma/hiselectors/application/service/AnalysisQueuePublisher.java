@@ -2,9 +2,11 @@ package com.fuma.hiselectors.application.service;
 
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
@@ -16,9 +18,11 @@ public class AnalysisQueuePublisher {
     private final String queueUrl;
     private final SqsClient sqsClient;
 
+    @Autowired
     public AnalysisQueuePublisher(
-            @Value("${application.content-analysis.queue-url}") String queueUrl) {
-        this(queueUrl, SqsClient.create());
+            @Value("${application.content-analysis.queue-url}") String queueUrl,
+            @Value("${media.s3.region}") String region) {
+        this(queueUrl, SqsClient.builder().region(Region.of(region)).build());
     }
 
     AnalysisQueuePublisher(String queueUrl, SqsClient sqsClient) {
