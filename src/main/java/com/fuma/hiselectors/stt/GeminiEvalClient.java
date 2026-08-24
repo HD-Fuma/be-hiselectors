@@ -66,13 +66,14 @@ public class GeminiEvalClient {
                 "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
                 "generationConfig", Map.of(
                         "responseMimeType", "application/json",
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", properties.maxOutputTokensOrDefault()));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        String uri = ENDPOINT.formatted(properties.reportModelOrDefault());
         try {
             return restClient.post()
                     .uri(uri)
@@ -82,7 +83,7 @@ public class GeminiEvalClient {
                     .retrieve()
                     .body(GeminiResponse.class);
         } catch (RestClientException e) {
-            log.warn("Gemini 취합 호출 실패. model={}", properties.modelOrDefault(), e);
+            log.warn("Gemini 취합 호출 실패. model={}", properties.reportModelOrDefault(), e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
