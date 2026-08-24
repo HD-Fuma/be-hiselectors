@@ -165,6 +165,18 @@ class CreatorPoolSearchTest {
     }
 
     @Test
+    @DisplayName("최대 구독자 기준으로 거른다")
+    void filterByMaxFollower() {
+        Page<CreatorSummary> result = creatorPoolRepository.search(
+                null, null, null, null, 300_000L,
+                null, null, null, null, null, FIRST_PAGE);
+
+        assertThat(result.getContent())
+                .extracting(CreatorSummary::creatorName)
+                .containsExactlyInAnyOrder("운동일기 초보", "헬스마스터TV");
+    }
+
+    @Test
     @DisplayName("IG 핸들 신뢰도로 거른다")
     void filterByIgConfidence() {
         // 0.95(URL) 로 찾은 것만 남기면 0.35(단순 멘션) 는 빠진다
@@ -223,7 +235,7 @@ class CreatorPoolSearchTest {
         em.clear();
 
         Page<CreatorSummary> result = creatorPoolRepository.search(
-                "핏지피티", "FITNESS", "YOUTUBE", 5_000L,
+                "핏지피티", "FITNESS", "YOUTUBE", 5_000L, null,
                 new BigDecimal("3.00"), 10, 1, null, null, FIRST_PAGE);
 
         assertThat(result.getContent())

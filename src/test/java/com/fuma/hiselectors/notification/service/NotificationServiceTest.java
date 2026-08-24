@@ -20,6 +20,7 @@ import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.KakaoTemplateType;
 import com.fuma.hiselectors.notification.model.Notification;
 import com.fuma.hiselectors.notification.model.NotificationChannel;
+import com.fuma.hiselectors.notification.model.NotificationInitiatorType;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
@@ -57,6 +58,7 @@ class NotificationServiceTest {
         Admin admin = mock(Admin.class);
         recipient = mock(UserKakaoRecipient.class);
         when(adminRepository.findByLoginId("admin")).thenReturn(Optional.of(admin));
+        when(admin.getId()).thenReturn(6L);
         when(admin.getKakaoSenderConnectionId()).thenReturn(1L);
         when(recipientRepository.findByUserId(2L)).thenReturn(Optional.of(recipient));
         when(recipient.getStatus()).thenReturn(KakaoRecipientStatus.READY);
@@ -64,7 +66,8 @@ class NotificationServiceTest {
         when(recipient.getId()).thenReturn(4L);
         when(templateFactoryResolver.create(KakaoTemplateType.TEXT, command))
                 .thenReturn(new CreatedKakaoTemplate(template, "본문"));
-        when(recorder.createRequested("SELECTION_APPROVED", 3L, "uuid", "본문"))
+        when(recorder.createRequested("SELECTION_APPROVED", 3L, "uuid", "본문",
+                NotificationInitiatorType.ADMIN, 6L))
                 .thenReturn(5L);
     }
 

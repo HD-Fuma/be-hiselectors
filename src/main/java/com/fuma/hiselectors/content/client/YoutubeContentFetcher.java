@@ -14,6 +14,7 @@ import com.fuma.hiselectors.creator.discovery.dto.YoutubeVideoListResponse.Stati
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.net.URI;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -23,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +54,9 @@ public class YoutubeContentFetcher implements ContentFetcher {
     private static final String VIDEO_URL = "https://www.youtube.com/watch?v=";
 
     private static final int PAGE_SIZE = 50;
+
+    /** 이 길이 이하 영상은 SHORTS 로 본다. YouTube Shorts 최대 길이(3분) 기준. */
+    private static final int SHORTS_MAX_SECONDS = 180;
     private static final Pattern CHANNEL_ID = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
 
     // YouTube 영상 공개 시각을 변환할 서비스 기준 시간대
@@ -70,6 +75,26 @@ public class YoutubeContentFetcher implements ContentFetcher {
     @Override
     public SnsPlatform supports() {
         return SnsPlatform.YOUTUBE;
+    }
+
+    @Override
+    public Profile fetchProfile(String accountId) {
+        validateAccountRequest(accountId);
+        YoutubeChannelResponse.Item channel = requestChannel(resolveChannelLookup(accountId));
+        YoutubeChannelResponse.Snippet snippet = channel.snippet();
+        String imageUrl = snippet == null || snippet.thumbnails() == null
+                ? null
+                : snippet.thumbnails().values().stream()
+                        .filter(Objects::nonNull)
+                        .map(YoutubeChannelResponse.Thumbnail::url)
+                        .filter(StringUtils::hasText)
+                        .reduce((ignored, last) -> last)
+                        .orElse(null);
+        YoutubeChannelResponse.Statistics statistics = channel.statistics();
+        return new Profile(
+                imageUrl,
+                statistics == null ? null : parseCount(statistics.subscriberCount()),
+                statistics == null ? null : parseCount(statistics.videoCount()));
     }
 
     /**
@@ -124,9 +149,45 @@ public class YoutubeContentFetcher implements ContentFetcher {
         return results;
     }
 
+    public Map<String, String> fetchChannelTitles(List<String> channelIds) {
+        if (!properties.hasApiKey() || channelIds == null || channelIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = channelIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(CHANNEL_ID.asMatchPredicate())
+                .distinct()
+                .toList();
+        Map<String, String> titles = new HashMap<>();
+        for (int start = 0; start < ids.size(); start += PAGE_SIZE) {
+            List<String> batch = ids.subList(start, Math.min(start + PAGE_SIZE, ids.size()));
+            URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
+                    .queryParam("part", "snippet")
+                    .queryParam("id", String.join(",", batch))
+                    .queryParam("key", properties.apiKey())
+                    .build()
+                    .encode()
+                    .toUri();
+            try {
+                YoutubeChannelResponse response = request(uri, YoutubeChannelResponse.class);
+                if (response.items() != null) {
+                    response.items().stream()
+                            .filter(item -> item != null && StringUtils.hasText(item.id()))
+                            .filter(item -> item.snippet() != null
+                                    && StringUtils.hasText(item.snippet().title()))
+                            .forEach(item -> titles.put(item.id(), item.snippet().title()));
+                }
+            } catch (BusinessException e) {
+                log.warn("YouTube 채널명 조회 실패. 채널 수={}", batch.size());
+            }
+        }
+        return Map.copyOf(titles);
+    }
+
     private List<FetchResult> fetchBatch(List<String> ids) {
         URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
-                .queryParam("part", "snippet,statistics")
+                .queryParam("part", "snippet,statistics,contentDetails")
                 .queryParam("id", String.join(",", ids))
                 .queryParam("key", properties.apiKey())
                 .build()
@@ -163,10 +224,12 @@ public class YoutubeContentFetcher implements ContentFetcher {
                     SnsPlatform.YOUTUBE,
                     id,
                     VIDEO_URL + id,
-                    ContentType.LONG_FORM,
+                    classifyByDuration(item.contentDetails() == null
+                            ? null : item.contentDetails().duration()),
                     texts(item),
                     parseCreatedAt(snippet.publishedAt()),
-                    List.of(new RawContentMedia(id, MediaType.VIDEO, null)));
+                    List.of(new RawContentMedia(
+                            id, MediaType.VIDEO, null, thumbnailUrls(snippet))));
             YoutubeContentResponse.Statistics statistics = item.statistics();
             Engagement engagement = new Engagement(
                     count(statistics == null ? null : statistics.viewCount()),
@@ -195,40 +258,31 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private void validateRequest(String accountId, LocalDateTime since) {
+        validateAccountRequest(accountId);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountRequest(String accountId) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // accountId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(accountId) || since == null) {
+        if (!StringUtils.hasText(accountId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
 
     private String requestUploadsPlaylistId(String accountId) {
-        ChannelLookup lookup = resolveChannelLookup(accountId);
-        if (!"id".equals(lookup.parameter())) {
-            return uploadsPlaylistId(requestChannel(lookup));
-        }
-
-        // 기존 DB의 UC 채널 ID로 현재 공개 핸들을 찾는다.
-        YoutubeChannelResponse.Item channelById = requestChannel(lookup);
-        String handle = channelById.snippet() == null
-                ? null
-                : normalizeHandle(channelById.snippet().customUrl());
-        if (!StringUtils.hasText(handle)) {
-            throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
-        }
-        // 실제 콘텐츠 수집 기준은 공개 핸들이다.
-        return uploadsPlaylistId(requestChannel(
-                new ChannelLookup("forHandle", handle)));
+        return uploadsPlaylistId(requestChannel(resolveChannelLookup(accountId)));
     }
 
     private YoutubeChannelResponse.Item requestChannel(ChannelLookup lookup) {
-        // snippet에서 공개 핸들, contentDetails에서 업로드 영상 목록 ID 조회
+        // snippet에서 프로필, contentDetails에서 업로드 목록, statistics에서 공개 통계 조회
         URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                .queryParam("part", "snippet,contentDetails")
+                .queryParam("part", "snippet,contentDetails,statistics")
                 .queryParam(lookup.parameter(), lookup.value())
                 .queryParam("key", properties.apiKey())
                 .build()
@@ -252,13 +306,6 @@ public class YoutubeContentFetcher implements ContentFetcher {
             throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
         }
         return channel.contentDetails().relatedPlaylists().uploads();
-    }
-
-    private String normalizeHandle(String customUrl) {
-        if (!StringUtils.hasText(customUrl)) {
-            return null;
-        }
-        return removeHandlePrefix(customUrl.trim());
     }
 
     private ChannelLookup resolveChannelLookup(String accountId) {
@@ -386,7 +433,8 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 texts(item),
                 createdAt,
                 // YouTube는 영상 파일 직접 주소를 제공하지 않아 mediaUrl은 null
-                List.of(new RawContentMedia(videoId, MediaType.VIDEO, null)));
+                List.of(new RawContentMedia(
+                        videoId, MediaType.VIDEO, null, thumbnailUrls(item.snippet()))));
     }
 
     @Override
@@ -395,14 +443,14 @@ public class YoutubeContentFetcher implements ContentFetcher {
             return contents;
         }
 
-        Map<String, Statistics> statisticsById = new HashMap<>();
+        Map<String, YoutubeVideoListResponse.Item> itemsById = new HashMap<>();
         for (int start = 0; start < contents.size(); start += PAGE_SIZE) {
             List<String> videoIds = contents.subList(start, Math.min(start + PAGE_SIZE, contents.size()))
                     .stream()
                     .map(RawContent::snsContentId)
                     .toList();
             URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
-                    .queryParam("part", "statistics")
+                    .queryParam("part", "statistics,contentDetails")
                     .queryParam("id", String.join(",", videoIds))
                     .queryParam("key", properties.apiKey())
                     .build()
@@ -412,17 +460,40 @@ public class YoutubeContentFetcher implements ContentFetcher {
             if (response.items() != null) {
                 response.items().stream()
                         .filter(item -> item != null && item.id() != null)
-                        .forEach(item -> statisticsById.put(item.id(), item.statistics()));
+                        .forEach(item -> itemsById.put(item.id(), item));
             }
         }
 
         return contents.stream().map(content -> {
-            Statistics statistics = statisticsById.get(content.snsContentId());
-            return statistics == null ? content : content.withMetrics(
+            YoutubeVideoListResponse.Item item = itemsById.get(content.snsContentId());
+            if (item == null) {
+                return content;
+            }
+            // playlistItems 응답엔 길이가 없어 LONG_FORM 으로 왔으므로 여기서 Shorts 여부를 반영한다.
+            ContentType contentType = classifyByDuration(item.contentDetails() == null
+                    ? null : item.contentDetails().duration());
+            RawContent typed = content.contentType() == contentType
+                    ? content : content.withContentType(contentType);
+            Statistics statistics = item.statistics();
+            return statistics == null ? typed : typed.withMetrics(
                     parseCount(statistics.viewCount()),
                     parseCount(statistics.likeCount()),
                     parseCount(statistics.commentCount()));
         }).toList();
+    }
+
+    // ponytail: duration 휴리스틱. YouTube 가 Shorts 여부 플래그를 안 줘서 영상 길이로 추정한다.
+    // 정확히 하려면 youtube.com/shorts/{id} 리다이렉트 확인이 필요(요청 1회 추가).
+    private ContentType classifyByDuration(String isoDuration) {
+        if (!StringUtils.hasText(isoDuration)) {
+            return ContentType.LONG_FORM;
+        }
+        try {
+            return Duration.parse(isoDuration).getSeconds() <= SHORTS_MAX_SECONDS
+                    ? ContentType.SHORTS : ContentType.LONG_FORM;
+        } catch (DateTimeParseException e) {
+            return ContentType.LONG_FORM;
+        }
     }
 
     private Long parseCount(String count) {
@@ -448,6 +519,18 @@ public class YoutubeContentFetcher implements ContentFetcher {
             texts.add(description);
         }
         return texts;
+    }
+
+    private List<String> thumbnailUrls(YoutubeContentResponse.Snippet snippet) {
+        if (snippet == null || snippet.thumbnails() == null) {
+            return List.of();
+        }
+        return snippet.thumbnails().values().stream()
+                .filter(Objects::nonNull)
+                .map(YoutubeContentResponse.Thumbnail::url)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
     }
 
     private LocalDateTime parseCreatedAt(String publishedAt) {

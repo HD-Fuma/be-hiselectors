@@ -39,7 +39,8 @@ class ApplicationControllerTest {
     @Test
     void 성공응답은_ApiResult_봉투로_감싼다() throws Exception {
         ApplicationResponse response = new ApplicationResponse(
-                1L, 10L, 3L, SnsPlatform.YOUTUBE, "UC123", 100L, 42L,
+                1L, 10L, 3L, SnsPlatform.YOUTUBE, "UC123",
+                "https://www.youtube.com/channel/UC123", 100L, 42L,
                 null, null, true, LocalDateTime.now(), ApplicationStatus.PENDING,
                 LocalDateTime.now());
         when(applicationService.create(eq("user1"), any())).thenReturn(response);
@@ -64,6 +65,8 @@ class ApplicationControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.profileUrl")
+                        .value("https://www.youtube.com/channel/UC123"))
                 .andExpect(jsonPath("$.data.contentCount").value(42))
                 .andExpect(jsonPath("$.data.status").value("PENDING"));
     }

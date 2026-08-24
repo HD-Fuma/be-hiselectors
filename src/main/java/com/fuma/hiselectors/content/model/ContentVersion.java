@@ -46,6 +46,10 @@ public class ContentVersion {
     @Column(name = "content_hash", nullable = false, length = 64)
     private String contentHash;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "creation_reason", nullable = false, length = 30)
+    private ContentVersionCreationReason creationReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -53,35 +57,55 @@ public class ContentVersion {
     @Column(length = 20)
     private ContentVersionStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inspection_decision", length = 20)
+    private ContentInspectionDecision inspectionDecision;
+
     @Column(name = "inspected_at")
     private LocalDateTime inspectedAt;
 
     @Builder
     private ContentVersion(Long contentId, Long adminId, Long versionNo, String contentHash,
+                           ContentVersionCreationReason creationReason,
                            LocalDateTime createdAt, ContentVersionStatus status,
                            LocalDateTime inspectedAt) {
         this.contentId = contentId;
         this.adminId = adminId;
         this.versionNo = versionNo;
         this.contentHash = contentHash;
+        this.creationReason = creationReason;
         this.createdAt = createdAt;
         this.status = status;
         this.inspectedAt = inspectedAt;
     }
 
     public static ContentVersion create(Long contentId, Long versionNo, String contentHash) {
-        return create(contentId, versionNo, contentHash, LocalDateTime.now());
+        return create(contentId, versionNo, contentHash, inferredReason(versionNo),
+                LocalDateTime.now());
     }
 
     public static ContentVersion create(Long contentId, Long versionNo, String contentHash,
+                                        LocalDateTime createdAt) {
+        return create(contentId, versionNo, contentHash, inferredReason(versionNo), createdAt);
+    }
+
+    public static ContentVersion create(Long contentId, Long versionNo, String contentHash,
+                                        ContentVersionCreationReason creationReason,
                                         LocalDateTime createdAt) {
         return ContentVersion.builder()
                 .contentId(contentId)
                 .versionNo(versionNo)
                 .contentHash(contentHash)
+                .creationReason(creationReason)
                 .createdAt(createdAt)
                 .status(ContentVersionStatus.PENDING)
                 .build();
+    }
+
+    private static ContentVersionCreationReason inferredReason(Long versionNo) {
+        return versionNo != null && versionNo == 1L
+                ? ContentVersionCreationReason.INITIAL
+                : ContentVersionCreationReason.SOURCE_CHANGE;
     }
 
     public void startInspection() {
@@ -93,6 +117,7 @@ public class ContentVersion {
                 || status == ContentVersionStatus.COMPLETED
                 || status == ContentVersionStatus.FAILED) {
             status = ContentVersionStatus.INSPECTING;
+            inspectionDecision = null;
             return;
         }
         throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
@@ -111,5 +136,12 @@ public class ContentVersion {
             throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
         }
         status = ContentVersionStatus.FAILED;
+    }
+
+    public void confirmInspection(ContentInspectionDecision decision) {
+        if (status != ContentVersionStatus.COMPLETED || inspectionDecision != null) {
+            throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
+        }
+        inspectionDecision = decision;
     }
 }

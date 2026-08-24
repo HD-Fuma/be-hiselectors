@@ -70,6 +70,7 @@ class SettlementAdminHistoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.profile.selectorsCode").value("SEL-0015"))
                 .andExpect(jsonPath("$.data.profile.followerCount").value(76200))
+                .andExpect(jsonPath("$.data.accountRegistered").value(false))
                 .andExpect(jsonPath("$.data.settlementSummary.cumulativePurchaseConversionCount")
                         .value(11))
                 .andExpect(jsonPath("$.data.settlementSummary.nextMonthScheduledCommission")
@@ -102,7 +103,8 @@ class SettlementAdminHistoryControllerTest {
                         YearMonth.of(2026, 8),
                         300L,
                         YearMonth.of(2026, 9),
-                        SettlementStatus.CALCULATING),
+                        SettlementStatus.PAYMENT_PENDING,
+                        10_000L),
                 new PageImpl<>(List.of(response()), PageRequest.of(0, 12), 1));
     }
 

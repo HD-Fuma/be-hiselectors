@@ -10,11 +10,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.common.ApiResultAdvice;
-import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchResult;
-import com.fuma.hiselectors.creator.discovery.batch.InstagramDiscoveryBatchService;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
-import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchResult;
-import com.fuma.hiselectors.creator.discovery.scheduler.YoutubeDiscoveryBatchService;
+import com.fuma.hiselectors.creator.task.CreatorSyncTask;
+import com.fuma.hiselectors.creator.task.InstagramCreatorSyncTask;
+import com.fuma.hiselectors.admin.model.Admin;
+import com.fuma.hiselectors.admin.repository.AdminRepository;
+import com.fuma.hiselectors.taskrun.model.TaskRun;
+import com.fuma.hiselectors.taskrun.model.TaskType;
+import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskExecutionContext;
+import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
+import com.fuma.hiselectors.taskrun.service.TaskStartResult;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
+import java.time.Instant;
+import java.util.Optional;
+import java.util.UUID;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
@@ -22,14 +32,19 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.ObjectMapper;
 
 class DiscoveryAdminControllerTest {
 
     private InstagramDiscoveryService instagramDiscoveryService;
-    private YoutubeDiscoveryBatchService youtubeDiscoveryBatchService;
-    private InstagramDiscoveryBatchService instagramDiscoveryBatchService;
+    private TaskRunExecutionService taskRunExecutionService;
+    private AdminRepository adminRepository;
+    private CreatorSyncTask creatorSyncTask;
+    private InstagramCreatorSyncTask instagramCreatorSyncTask;
+    private Admin admin;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -37,13 +52,22 @@ class DiscoveryAdminControllerTest {
         DiscoveryPipelineService discoveryPipelineService =
                 mock(DiscoveryPipelineService.class);
         instagramDiscoveryService = mock(InstagramDiscoveryService.class);
-        youtubeDiscoveryBatchService = mock(YoutubeDiscoveryBatchService.class);
-        instagramDiscoveryBatchService = mock(InstagramDiscoveryBatchService.class);
+        taskRunExecutionService = mock(TaskRunExecutionService.class);
+        adminRepository = mock(AdminRepository.class);
+        creatorSyncTask = mock(CreatorSyncTask.class);
+        instagramCreatorSyncTask = mock(InstagramCreatorSyncTask.class);
+        admin = mock(Admin.class);
+        when(admin.getId()).thenReturn(7L);
+        when(admin.getName()).thenReturn("관리자");
+        when(adminRepository.findByLoginId("admin")).thenReturn(Optional.of(admin));
         mockMvc = MockMvcBuilders.standaloneSetup(new DiscoveryAdminController(
                         discoveryPipelineService,
                         instagramDiscoveryService,
-                        youtubeDiscoveryBatchService,
-                        instagramDiscoveryBatchService
+                        taskRunExecutionService,
+                        creatorSyncTask,
+                        instagramCreatorSyncTask,
+                        adminRepository,
+                        new ObjectMapper()
                 ))
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
@@ -51,41 +75,66 @@ class DiscoveryAdminControllerTest {
 
     @Test
     void runsYoutubeDiscoveryBatch() throws Exception {
-        YoutubeDiscoveryBatchResult result = new YoutubeDiscoveryBatchResult(
-                5, 3, 2, 1,
-                306, 204, 20, 12, 8);
-        when(youtubeDiscoveryBatchService.run()).thenReturn(result);
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(org.mockito.ArgumentMatchers.any(),
+                org.mockito.Mockito.same(creatorSyncTask)))
+                .thenReturn(new TaskStartResult.Created(run(TaskType.CREATOR_SYNC, key)));
 
-        mockMvc.perform(post("/api/admin/discovery/youtube/run"))
-                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.runnableKeywords").value(5))
-                .andExpect(jsonPath("$.data.attemptedKeywords").value(3))
-                .andExpect(jsonPath("$.data.succeededKeywords").value(2))
-                .andExpect(jsonPath("$.data.failedKeywords").value(1))
-                .andExpect(jsonPath("$.data.created").value(12))
-                .andExpect(jsonPath("$.data.updated").value(8));
+                .andExpect(jsonPath("$.data.taskType").value("CREATOR_SYNC"))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
 
-        verify(youtubeDiscoveryBatchService).run();
+        verify(taskRunExecutionService).submit(org.mockito.ArgumentMatchers.argThat(command ->
+                        command.idempotencyKey().equals(key)
+                                && command.startedByAdminId().equals(7L)
+                                && command.businessPayload().get("source").asText().equals("youtube")),
+                org.mockito.Mockito.same(creatorSyncTask));
+    }
+
+    @Test
+    void runsQuickYoutubeDiscoveryBatch() throws Exception {
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new TaskStartResult.Created(run(TaskType.CREATOR_SYNC, key)));
+
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .param("test", "true")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        ArgumentCaptor<TrackedTask> task = ArgumentCaptor.forClass(TrackedTask.class);
+        verify(taskRunExecutionService).submit(org.mockito.ArgumentMatchers.argThat(command ->
+                        command.idempotencyKey().equals(key)
+                                && command.startedByAdminId().equals(7L)
+                                && command.businessPayload().get("source").asText()
+                                .equals("youtube-test")),
+                task.capture());
+        TaskExecutionContext context = mock(TaskExecutionContext.class);
+        task.getValue().execute(context);
+        verify(creatorSyncTask).executeTest(context);
     }
 
     @Test
     void runsInstagramDiscoveryBatch() throws Exception {
-        InstagramDiscoveryBatchResult result = new InstagramDiscoveryBatchResult(
-                5, 4, 1, 2, 2
-        );
-        when(instagramDiscoveryBatchService.run()).thenReturn(result);
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(org.mockito.ArgumentMatchers.any(),
+                org.mockito.Mockito.same(instagramCreatorSyncTask)))
+                .thenReturn(new TaskStartResult.Replayed(run(TaskType.CREATOR_SYNC, key)));
 
-        mockMvc.perform(post("/api/admin/discovery/instagram/run"))
-                .andExpect(status().isOk())
+        mockMvc.perform(post("/api/admin/discovery/instagram/run")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.attemptedCreators").value(5))
-                .andExpect(jsonPath("$.data.succeededCreators").value(4))
-                .andExpect(jsonPath("$.data.failedCreators").value(1))
-                .andExpect(jsonPath("$.data.createdCreators").value(2))
-                .andExpect(jsonPath("$.data.updatedCreators").value(2));
-
-        verify(instagramDiscoveryBatchService).run();
+                .andExpect(jsonPath("$.data.taskType").value("CREATOR_SYNC"));
     }
 
     @Test
@@ -103,7 +152,8 @@ class DiscoveryAdminControllerTest {
         when(instagramDiscoveryService.discoverFromYoutubeCreator(10L))
                 .thenReturn(result);
 
-        mockMvc.perform(post("/api/admin/discovery/creators/10/instagram"))
+        mockMvc.perform(post("/api/admin/discovery/creators/10/instagram")
+                        .principal(() -> "admin"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.sourceCreatorId").value(10))
@@ -122,8 +172,35 @@ class DiscoveryAdminControllerTest {
         when(instagramDiscoveryService.discoverFromYoutubeCreator(10L))
                 .thenThrow(new BusinessException(ErrorCode.INSTAGRAM_HANDLE_NOT_FOUND));
 
-        mockMvc.perform(post("/api/admin/discovery/creators/10/instagram"))
+        mockMvc.perform(post("/api/admin/discovery/creators/10/instagram")
+                        .principal(() -> "admin"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("INSTAGRAM_HANDLE_NOT_FOUND"));
+    }
+
+    @Test
+    void rejectsMissingIdempotencyKey() throws Exception {
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .principal(() -> "admin"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsConflictWhenCreatorSyncIsAlreadyActive() throws Exception {
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(org.mockito.ArgumentMatchers.any(),
+                org.mockito.Mockito.same(creatorSyncTask)))
+                .thenReturn(new TaskStartResult.ActiveConflict(run(TaskType.CREATOR_SYNC, key)));
+
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("TASK_ALREADY_RUNNING"));
+    }
+
+    private TaskRun run(TaskType type, UUID key) {
+        return TaskRun.queued(type, TriggerType.ADMIN_TRIGGERED, 7L, key,
+                "fingerprint", type.name(), Instant.parse("2026-08-24T00:00:00Z"));
     }
 }

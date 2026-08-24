@@ -58,6 +58,53 @@ jobs:
             mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
             -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
         }
+        mysql_apply_file() {
+          docker run --rm -i --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            -u "$DB_USERNAME" "$DB_NAME"
+        }
+
+        TASK_RUN_MIGRATION_FILE="$(mktemp)"
+        cleanup_task_run_migration() {
+          rm -f "$TASK_RUN_MIGRATION_FILE"
+        }
+        trap cleanup_task_run_migration EXIT HUP INT TERM
+        printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d > "$TASK_RUN_MIGRATION_FILE"
+        cat "$TASK_RUN_MIGRATION_FILE" | mysql_apply_file
+
+        task_run_table_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'task_run'")"
+        task_run_unique_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'task_run' AND non_unique = 0 AND index_name IN ('uq_task_run_run_id', 'uq_task_run_concurrency_key', 'uq_task_run_idempotency_key')")"
+        test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
+        echo "task-run-migration=verified"
+
+        profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
+        if [ "$profile_image_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE application ADD COLUMN profile_image_url VARCHAR(500) NULL AFTER profile_url"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        echo "application-profile-image=verified"
+
+        selectors_profile_url_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url'")"
+        if [ "$selectors_profile_url_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE selectors_sns_account ADD COLUMN profile_url VARCHAR(500) NULL AFTER account_id"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        selectors_profile_identity_mismatch_count="$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE NOT (account.sns_code <=> app.sns_code) OR NOT (BINARY account.account_id <=> BINARY app.sns_account_id)")"
+        assert_eq selectors-profile-identity-mismatch "$selectors_profile_identity_mismatch_count" 0
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_url = app.profile_url WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL")" = "0"
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_image_url = TRIM(app.profile_image_url) WHERE app.status = 'APPROVED' AND selector.is_deleted = 0 AND account.is_deleted = 0 AND account.sns_code = app.sns_code AND BINARY account.account_id = BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_image_url), '') IS NULL AND NULLIF(TRIM(app.profile_image_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE app.status = 'APPROVED' AND selector.is_deleted = 0 AND account.is_deleted = 0 AND account.sns_code = app.sns_code AND BINARY account.account_id = BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_image_url), '') IS NULL AND NULLIF(TRIM(app.profile_image_url), '') IS NOT NULL")" = "0"
+        echo "selectors-sns-profile=verified"
+
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
+        mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
+          mysql_query "ALTER TABLE application_media MODIFY COLUMN media_sequence_no INT NOT NULL"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM application_media WHERE media_sequence_no IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND data_type = 'int' AND is_nullable = 'NO'")" = "1"
+        echo "application-media-sequence=verified"
 
         activity_start_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date'")"
         activity_end_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date'")"
@@ -109,9 +156,12 @@ jobs:
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND referenced_table_name = 'generation'")" = "0" ]; then
           mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_generation FOREIGN KEY (generation_id) REFERENCES generation (generation_id)"
         fi
+        mysql_query "INSERT IGNORE INTO selectors_role (selectors_role_id, role_name) VALUES ('BLACKLIST', '블랙리스트')"
+        mysql_query "UPDATE selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id SET s.selectors_role_id = 'BLACKLIST' WHERE s.selectors_role_id <> 'BLACKLIST'"
 
         test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id WHERE s.selectors_role_id <> 'BLACKLIST'")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name IN ('activity_start_date', 'activity_end_date') AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES'")" = "2"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id' AND data_type = 'bigint' AND is_nullable = 'YES'")" = "1"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "activity_start_date,activity_end_date"
@@ -121,6 +171,10 @@ jobs:
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND column_name = 'generation_id' AND referenced_table_name = 'generation' AND referenced_column_name = 'generation_id'")" = "1"
         echo "008-expand=verified"
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -129,7 +183,11 @@ jobs:
       - name: Expand 008 through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
-          PARAMETERS="$(jq -cn --arg command "$REMOTE_SCRIPT" '{commands:[$command],executionTimeout:["600"]}')"
+          TASK_RUN_MIGRATION_B64="$(base64 -w0 docs/task-run-migration.sql)"
+          printf -v TASK_RUN_MIGRATION_ASSIGNMENT 'TASK_RUN_MIGRATION_B64=%q\n' "$TASK_RUN_MIGRATION_B64"
+          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
+          test "${#REMOTE_COMMAND}" -lt 24000
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name AWS-RunShellScript \
@@ -156,7 +214,7 @@ jobs:
 
   deploy:
     needs: database-008-expand
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -178,8 +236,6 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
 
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push ARM64 image
@@ -190,13 +246,25 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
+      - name: Build and push ARM64 STT worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./stt-worker
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker
+          cache-from: type=gha,scope=stt-worker-arm64
+          cache-to: type=gha,mode=max,scope=stt-worker-arm64
+
       - name: Deploy through SSM
         env:
           REMOTE_SCRIPT: |
             set -eu
             IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+            WORKER_IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker'
             aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
             docker pull "$IMAGE_URI"
+            docker pull "$WORKER_IMAGE_URI"
             cd /srv/hiselectors
             docker compose up -d --wait --wait-timeout 180 api
             OLD_API_CONTAINER="$(docker compose ps -q api)"
@@ -237,6 +305,7 @@ jobs:
             trap 'exit 130' 2
             trap 'exit 143' 15
 
+            docker rm -f hiselectors-stt-worker >/dev/null 2>&1 || true
             docker compose stop -t 30 api
             export MYSQL_PWD="$DB_PASSWORD"
             mysql_query() {
@@ -253,6 +322,23 @@ jobs:
 
             docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
+            API_CONTAINER="$(docker compose ps -q api)"
+            docker run -d \
+              --name hiselectors-stt-worker \
+              --restart always \
+              --network "container:$API_CONTAINER" \
+              -e STT_BACKEND=sagemaker \
+              -e STT_S3_BUCKET=hi-selectors-stt \
+              -e STT_ENDPOINT=whisper-large-v3-async \
+              -e AWS_REGION='${{ env.AWS_REGION }}' \
+              "$WORKER_IMAGE_URI"
+            for _ in $(seq 1 30); do
+              if docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"; then
+                break
+              fi
+              sleep 2
+            done
+            docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"
             DEPLOY_VERIFIED=true
             trap - 0 1 2 15
             docker image prune -f

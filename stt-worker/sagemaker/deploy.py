@@ -49,7 +49,12 @@ sm.create_endpoint_config(
         "InitialInstanceCount": 1,
     }],
     AsyncInferenceConfig={
-        "OutputConfig": {"S3OutputPath": f"s3://{BUCKET}/whisper/output/"},
+        "OutputConfig": {
+            "S3OutputPath": f"s3://{BUCKET}/whisper/output/",
+            # 실패는 OutputPath 에 안 써진다 → 별도 실패 경로 지정. client 가 이걸 폴링해
+            # 추론 에러를 580초 매달리지 않고 즉시 실패로 감지한다.
+            "S3FailurePath": f"s3://{BUCKET}/whisper/failure/",
+        },
     },
 )
 
@@ -85,5 +90,36 @@ aas.put_scaling_policy(
         "ScaleInCooldown": 300,
         "ScaleOutCooldown": 60,
     },
+)
+
+# 5) 0→1 스케일아웃(위 타깃트래킹은 못 함 — 인스턴스 0이면 "per instance"가 정의불가라
+#    알람이 안 뜬다). scale-from-zero 정석: HasBacklogWithoutCapacity(백로그 있는데 용량 0)
+#    알람 → StepScaling 으로 0→1. 이게 없으면 유휴 후 첫 요청이 영영 안 깨어난다.
+pol = aas.put_scaling_policy(
+    PolicyName="whisper-scale-from-zero",
+    ServiceNamespace="sagemaker",
+    ResourceId=rid,
+    ScalableDimension="sagemaker:variant:DesiredInstanceCount",
+    PolicyType="StepScaling",
+    StepScalingPolicyConfiguration={
+        "AdjustmentType": "ChangeInCapacity",
+        "MetricAggregationType": "Maximum",
+        "Cooldown": 300,
+        "StepAdjustments": [{"MetricIntervalLowerBound": 0, "ScalingAdjustment": 1}],
+    },
+)
+cw = boto3.client("cloudwatch", region_name=REGION)
+cw.put_metric_alarm(
+    AlarmName=f"{ENDPOINT}-has-backlog-without-capacity",
+    Namespace="AWS/SageMaker",
+    MetricName="HasBacklogWithoutCapacity",
+    Dimensions=[{"Name": "EndpointName", "Value": ENDPOINT}],
+    Statistic="Maximum",
+    Period=60,
+    EvaluationPeriods=1,
+    Threshold=1.0,
+    ComparisonOperator="GreaterThanOrEqualToThreshold",
+    TreatMissingData="missing",
+    AlarmActions=[pol["PolicyARN"]],
 )
 print("deployed:", ENDPOINT)

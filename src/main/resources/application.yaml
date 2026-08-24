@@ -55,12 +55,50 @@ spring:
           starttls:
             enable: true
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+media:
+  s3:
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${MEDIA_S3_BUCKET:}
+    public-base-url: ${MEDIA_PUBLIC_BASE_URL:}
+  local:
+    directory: ${MEDIA_LOCAL_DIRECTORY:./.local-media}
+    public-base-url: ${MEDIA_LOCAL_PUBLIC_BASE_URL:http://127.0.0.1:${server.port}/media}
+
 # 액추에이터 헬스체크가 매번 SMTP 연결을 시도해 실패 로그를 남기지 않도록 끈다.
 # (실제 발송은 제안 API 호출 시에만 일어난다.)
 management:
   health:
     mail:
       enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health, scheduledtasks
+
+task-run:
+  executor:
+    core-size: ${TASK_RUN_CORE_SIZE:2}
+    max-size: ${TASK_RUN_MAX_SIZE:4}
+    queue-capacity: ${TASK_RUN_QUEUE_CAPACITY:20}
+    thread-prefix: ${TASK_RUN_THREAD_PREFIX:task-run-}
+  progress:
+    flush-count: ${TASK_RUN_PROGRESS_FLUSH_COUNT:10}
+    flush-interval-ms: ${TASK_RUN_PROGRESS_FLUSH_INTERVAL_MS:2000}
+  stale:
+    fixed-delay: ${TASK_RUN_STALE_FIXED_DELAY_MS:60000}
+    timeouts:
+      creator-sync: ${TASK_RUN_CREATOR_SYNC_STALE_TIMEOUT:30m}
+      content-sync: ${TASK_RUN_CONTENT_SYNC_STALE_TIMEOUT:30m}
+      application-report-generation: ${TASK_RUN_APPLICATION_REPORT_STALE_TIMEOUT:120m}
+      content-report-generation: ${TASK_RUN_CONTENT_REPORT_STALE_TIMEOUT:120m}
+      settlement-calculation: ${TASK_RUN_SETTLEMENT_STALE_TIMEOUT:30m}
+      kakao-message-send: ${TASK_RUN_KAKAO_MESSAGE_STALE_TIMEOUT:10m}
+      proposal-email-send: ${TASK_RUN_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
 
 jwt:
   secret: ${JWT_SECRET}
@@ -76,6 +114,10 @@ youtube:
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
     api-key: ${youtube.collection.api-key}
+    daily-quota: ${youtube.collection.daily-quota}
+    max-results-per-keyword: ${youtube.collection.max-results-per-keyword}
+    batch:
+      max-keywords-per-run: ${youtube.collection.batch.max-keywords-per-run}
 
   collection:
     api-key: ${YOUTUBE_API_KEY:}
@@ -92,7 +134,9 @@ discovery:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+  model: ${GEMINI_MODEL:gemini-3.6-flash}
+  youtube-model: ${GEMINI_YOUTUBE_MODEL:gemini-3.5-flash-lite}
+  report-model: ${GEMINI_REPORT_MODEL:gemini-3.5-flash-lite}
 
 # Instagram STT/OCR 파이썬 워커 (faster-whisper + RapidOCR)
 stt:
@@ -139,6 +183,12 @@ purchase:
   auto-confirm:
     cron: ${PURCHASE_AUTO_CONFIRM_CRON:0 5 0 * * *}
 
+performance:
+  notification:
+    sender-admin-login-id: ${PERFORMANCE_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    daily-cron: ${PERFORMANCE_NOTIFICATION_DAILY_CRON:0 0 9 * * *}
+    zone: ${PERFORMANCE_NOTIFICATION_ZONE:Asia/Seoul}
+
 proposal:
   mail:
     admin-position: ${PROPOSAL_ADMIN_POSITION:매니저}
@@ -151,6 +201,11 @@ selectors:
     enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
     cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
     zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+  excellence:
+    enabled: ${SELECTORS_EXCELLENCE_ENABLED:true}
+    cron: ${SELECTORS_EXCELLENCE_CRON:0 20 0 * * *}
+    zone: ${SELECTORS_EXCELLENCE_ZONE:Asia/Seoul}
+    grace-days: ${SELECTORS_EXCELLENCE_GRACE_DAYS:7}
 
 content:
   batch:
@@ -162,6 +217,9 @@ application:
     fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:60000}
     initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:20000}
     batch-size: ${APPLICATION_MEDIA_COLLECTION_BATCH_SIZE:20}
+  content-analysis:
+    scheduler-enabled: ${APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED:true}
+    run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
 
 settlement:
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
@@ -175,3 +233,4 @@ settlement:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:
     sender-admin-login-id: ${SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
+    upcoming-cron: ${SETTLEMENT_NOTIFICATION_UPCOMING_CRON:0 0 9 * * *}

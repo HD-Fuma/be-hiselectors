@@ -10,7 +10,11 @@ public record InstagramContentResponse(
 ) {
 
     /** 조회 대상 Instagram 계정의 공개 게시글 정보 */
-    public record BusinessDiscovery(MediaPage media) {
+    public record BusinessDiscovery(
+            @JsonProperty("profile_picture_url") String profilePictureUrl,
+            @JsonProperty("followers_count") Long followersCount,
+            @JsonProperty("media_count") Long mediaCount,
+            MediaPage media) {
     }
 
     /** 현재 페이지의 게시글 목록과 다음 페이지 정보 */
@@ -33,6 +37,8 @@ public record InstagramContentResponse(
             String timestamp,
             // 이미지나 영상 파일 직접 주소이며 응답에 없을 수 있음
             @JsonProperty("media_url") String mediaUrl,
+            // 영상 대표 이미지 주소이며 응답에 없을 수 있음
+            @JsonProperty("thumbnail_url") String thumbnailUrl,
             @JsonProperty("view_count") Long viewCount,
             @JsonProperty("like_count") Long likeCount,
             @JsonProperty("comments_count") Long commentsCount,

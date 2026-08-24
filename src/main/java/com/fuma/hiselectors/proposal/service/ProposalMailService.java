@@ -41,7 +41,7 @@ public class ProposalMailService {
 
     @PostConstruct
     void loadTemplate() {
-        String raw = read(TEMPLATE_PATH);
+        String raw = read(TEMPLATE_PATH).replace("\r\n", "\n");
         int split = raw.indexOf(SUBJECT_DELIMITER);
         if (split < 0) {
             throw new IllegalStateException("제안 메일 템플릿에 제목/본문 구분자(---)가 없습니다.");
@@ -52,14 +52,19 @@ public class ProposalMailService {
 
     /** 크리에이터에게 제안 메일을 보낸다. 실패하면 예외를 던져 이력 저장까지 롤백시킨다. */
     public void send(CreatorPool creator, Admin admin) {
+        send(creator, admin, subjectTemplate, bodyTemplate);
+    }
+
+    /** 관리자가 편집한 제목과 본문으로 제안 메일을 보낸다. */
+    public void send(CreatorPool creator, Admin admin, String subjectTemplate, String bodyTemplate) {
         Map<String, String> vars = Map.of(
-                "${creatorName}", nullToEmpty(creator.getCreatorName()),
+                "${creatorName}", creatorName(creator),
                 "${adminName}", nullToEmpty(admin.getName()),
                 "${adminPosition}", nullToEmpty(properties.adminPosition()),
                 "${adminEmail}", nullToEmpty(properties.adminEmail()),
                 "${proposalLink}", nullToEmpty(properties.applyUrl()));
 
-        String subject = substitute(subjectTemplate, vars);
+        String subject = substitute(subjectTemplate.trim(), vars);
         String body = substitute(bodyTemplate, vars);
 
         try {
@@ -86,6 +91,12 @@ public class ProposalMailService {
 
     private static String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String creatorName(CreatorPool creator) {
+        return creator.getCreatorName() == null || creator.getCreatorName().isBlank()
+                ? nullToEmpty(creator.getAccountId())
+                : creator.getCreatorName();
     }
 
     private static String read(String path) {

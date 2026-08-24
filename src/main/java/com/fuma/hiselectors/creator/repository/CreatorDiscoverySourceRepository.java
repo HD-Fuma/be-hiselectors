@@ -5,7 +5,9 @@ import com.fuma.hiselectors.creator.model.CreatorDiscoverySource;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface CreatorDiscoverySourceRepository
         extends JpaRepository<CreatorDiscoverySource, Long> {
@@ -20,6 +22,16 @@ public interface CreatorDiscoverySourceRepository
 
     /** 이 카테고리의 키워드 중 하나라도 발굴 이력이 있는지. 카테고리 삭제 판단에 쓴다. */
     boolean existsByKeywordCategoryId(Long categoryId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            delete from CreatorDiscoverySource source
+            where source.creatorPool.id in (
+                select creator.id from CreatorPool creator
+                where creator.snsCode in :snsCodes
+            )
+            """)
+    int deleteAllByCreatorPlatforms(@Param("snsCodes") List<String> snsCodes);
 
     /**
      * 대표 카테고리 산출용. 카테고리별 조회수 비중 합을 큰 순으로 준다.

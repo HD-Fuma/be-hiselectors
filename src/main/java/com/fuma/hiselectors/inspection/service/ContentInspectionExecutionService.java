@@ -5,6 +5,8 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentReportRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -24,7 +26,9 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -44,6 +48,7 @@ public class ContentInspectionExecutionService {
     private final List<RuleViolationDetector> ruleDetectors;
     private final AiViolationDetector aiViolationDetector;
     private final ViolationResultMerger resultMerger;
+    private final EvidenceLocationNormalizer evidenceLocationNormalizer;
     private final ViolationReconciliationService reconciliationService;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
@@ -57,7 +62,8 @@ public class ContentInspectionExecutionService {
                     status -> persist(preparation, analysis)));
         } catch (RuntimeException inspectionFailure) {
             try {
-                transactionTemplate.executeWithoutResult(status -> fail(contentVersionId));
+                transactionTemplate.executeWithoutResult(
+                        status -> fail(preparation.version().getId()));
             } catch (RuntimeException statusFailure) {
                 inspectionFailure.addSuppressed(statusFailure);
             }
@@ -66,17 +72,48 @@ public class ContentInspectionExecutionService {
     }
 
     private InspectionPreparation prepare(Long contentVersionId) {
-        ContentVersion version = contentVersionRepository.findByIdForUpdate(contentVersionId)
+        ContentVersion requested = contentVersionRepository.findById(contentVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        version.startInspection();
-        Content content = contentRepository.findById(version.getContentId())
+        Content content = contentRepository.findByIdForUpdate(requested.getContentId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
+        requested = contentVersionRepository.findByIdForUpdate(contentVersionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
+        if (!requested.getVersionNo().equals(content.getLastVersionNo())) {
+            throw new BusinessException(
+                    ErrorCode.HISTORICAL_CONTENT_VERSION_INSPECTION_NOT_ALLOWED);
+        }
         InspectionPolicy policy = inspectionPolicyService.requireActive(content.getSnsCode());
         Selectors selectors = selectorsRepository.findById(content.getSelectorsId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         List<ContentMedia> media = contentMediaRepository
                 .findByContentVersionIdOrderBySequenceNoAsc(contentVersionId);
-        return new InspectionPreparation(content, version, selectors, media, policy);
+        ContentVersion version = requested;
+        boolean versionCreated = false;
+        if (preprocessingService.requiresNewVersion(content, media, policy)) {
+            version = contentVersionRepository.save(ContentVersion.create(
+                    content.getId(), content.nextVersionNo(), requested.getContentHash(),
+                    ContentVersionCreationReason.EXTRACTION_CHANGE,
+                    LocalDateTime.now(clock)));
+            media = contentMediaRepository.saveAll(cloneMedia(media, version.getId()));
+            versionCreated = true;
+        }
+        version.startInspection();
+        return new InspectionPreparation(
+                contentVersionId, content, version, selectors, media, policy, versionCreated);
+    }
+
+    private List<ContentMedia> cloneMedia(List<ContentMedia> source, Long targetVersionId) {
+        return source.stream()
+                .map(media -> ContentMedia.create(
+                        targetVersionId,
+                        media.getMediaType(),
+                        media.getMediaUrl(),
+                        media.getSnsMediaId(),
+                        media.getSequenceNo(),
+                        media.getMediaType() == MediaType.TEXT
+                                ? new LinkedHashMap<>(media.bodyOrEmpty())
+                                : Map.of()))
+                .toList();
     }
 
     private InspectionAnalysis analyze(InspectionPreparation preparation) {
@@ -91,6 +128,7 @@ public class ContentInspectionExecutionService {
                 .orElseGet(() -> aiViolationDetector.inspect(context, preparation.policy()));
         List<DetectedViolation> merged = resultMerger.mergeRuleFirst(
                 rules, aiResponse.violations());
+        merged = evidenceLocationNormalizer.normalize(context, merged);
         return new InspectionAnalysis(
                 aiResponse.report(), merged, preprocessing.extractionUpdate());
     }
@@ -98,17 +136,23 @@ public class ContentInspectionExecutionService {
     private InspectionResult persist(
             InspectionPreparation preparation, InspectionAnalysis analysis) {
         Long contentVersionId = preparation.version().getId();
+        Content content = contentRepository.findByIdForUpdate(
+                        preparation.content().getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         ContentVersion version = contentVersionRepository.findByIdForUpdate(contentVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        Content content = contentRepository.findById(version.getContentId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         analysis.extractionUpdate().ifPresent(update -> applyExtraction(contentVersionId, update));
         contentReportRepository.save(ContentReport.create(
                 contentVersionId, analysis.report(), preparation.policy().getId()));
         reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
-        return new InspectionResult(contentVersionId, analysis.violations().size());
+        return new InspectionResult(
+                preparation.requestedContentVersionId(),
+                contentVersionId,
+                preparation.versionCreated(),
+                preparation.version().getCreationReason(),
+                analysis.violations().size());
     }
 
     private void applyExtraction(Long contentVersionId, MediaExtractionUpdate update) {
@@ -126,15 +170,22 @@ public class ContentInspectionExecutionService {
         version.failInspection();
     }
 
-    public record InspectionResult(Long contentVersionId, int violationCount) {
+    public record InspectionResult(
+            Long requestedContentVersionId,
+            Long inspectedContentVersionId,
+            boolean versionCreated,
+            ContentVersionCreationReason creationReason,
+            int violationCount) {
     }
 
     private record InspectionPreparation(
+            Long requestedContentVersionId,
             Content content,
             ContentVersion version,
             Selectors selectors,
             List<ContentMedia> media,
-            InspectionPolicy policy) {
+            InspectionPolicy policy,
+            boolean versionCreated) {
     }
 
     private record InspectionAnalysis(

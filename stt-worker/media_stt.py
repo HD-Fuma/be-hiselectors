@@ -59,9 +59,23 @@ def _dedupe(lines: list[str]) -> list[str]:
     return list(dict.fromkeys(s for s in (ln.strip() for ln in lines) if s))
 
 
+def _has_audio(path: str) -> bool:
+    """오디오 스트림 존재 여부. 무음 영상은 whisper decode_audio 가 IndexError 를 던지므로 선제 차단."""
+    import av
+    try:
+        with av.open(path) as c:
+            return bool(c.streams.audio)
+    except Exception:
+        return False
+
+
 def stt(path: str) -> str:
     """음성 전사(한국어). STT_BACKEND=sagemaker 면 GPU 엔드포인트로 오프로드(오디오만 전송),
-    아니면 로컬 faster-whisper. 워커 CPU는 취득·OCR만 지고 무거운 STT만 GPU로 뺄 수 있다."""
+    아니면 로컬 faster-whisper. 워커 CPU는 취득·OCR만 지고 무거운 STT만 GPU로 뺄 수 있다.
+    오디오 트랙이 없는 영상(무음 릴스 등)은 STT 를 건너뛰고 빈 값을 돌려준다(OCR 은 별도 수행)."""
+    if not _has_audio(path):
+        logging.info("오디오 스트림 없음 → STT 건너뜀: %s", path)
+        return ""
     if os.environ.get("STT_BACKEND") == "sagemaker":
         from sagemaker import client  # stt-worker/sagemaker/client.py
         return client.stt(path)
@@ -119,6 +133,9 @@ def _selfcheck() -> None:
 
     ext = os.path.splitext("cover.jpg")[1].lower()
     assert ext in IMAGE_EXT, "이미지 확장자 인식 실패"
+
+    # 없는 파일/오디오 없는 파일은 크래시 대신 False (whisper IndexError 선제 차단).
+    assert _has_audio("nonexistent.mp4") is False, "_has_audio 예외 처리 실패"
 
     # 실제 미디어가 있으면 end-to-end 까지(무거운 모델 다운로드는 이때만).
     #   OCR:  OCR_SAMPLE=<이미지/영상 경로>

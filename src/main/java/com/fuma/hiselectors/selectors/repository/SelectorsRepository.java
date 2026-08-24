@@ -17,6 +17,11 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
 
     Optional<Selectors> findBySelectorsCode(String selectorsCode);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Selectors s where s.selectorsCode = :selectorsCode")
+    Optional<Selectors> findBySelectorsCodeForUpdate(
+            @Param("selectorsCode") String selectorsCode);
+
     Optional<Selectors> findByUserId(Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -25,6 +30,44 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
 
     @Query("select s.id from Selectors s order by s.id")
     List<Long> findAllIds();
+
+    @Query("""
+            select s.id
+            from Selectors s
+            where s.deleted = false
+              and s.selectorsRoleId = :activeRole
+              and not exists (
+                  select 1
+                  from PurchaseHistory p
+                  where p.selectorsId = s.id
+                    and p.purchasedAt >= :startInclusive
+                    and p.purchasedAt < :endExclusive)
+            order by s.id
+            """)
+    List<Long> findActiveIdsWithoutPurchasesBetween(
+            @Param("activeRole") String activeRole,
+            @Param("startInclusive") java.time.LocalDateTime startInclusive,
+            @Param("endExclusive") java.time.LocalDateTime endExclusive);
+
+    @Query("""
+            select distinct s.id
+            from Selectors s
+            join SelectorsGeneration sg on sg.selectorsId = s.id
+            join Generation g on g.id = sg.generationId
+            where s.deleted = false
+              and s.selectorsRoleId = :activeRole
+              and g.activityStartDate <= :now
+              and g.activityEndDate >= :now
+              and g.activityStartDate <= :cutoff
+              and sg.createdAt <= :cutoff
+              and not exists (
+                  select 1 from ClickLog c where c.selectorsId = s.id)
+            order by s.id
+            """)
+    List<Long> findActiveIdsWithoutViewsAfterActivityStarted(
+            @Param("activeRole") String activeRole,
+            @Param("now") java.time.LocalDateTime now,
+            @Param("cutoff") java.time.LocalDateTime cutoff);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Selectors s where s.id = :selectorsId")
@@ -75,28 +118,28 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
     @Query(value = """
             select s from Selectors s
             where s.deleted = false
-              and exists (
-                    select 1 from PenaltyHistory p
-                    where p.selectorsId = s.id
-                      and (:generationId is null or p.generationId = :generationId)
-                      and (:status is null or p.status = :status))
+              and ((:blacklistOnly = true and s.selectorsRoleId = 'BLACKLIST')
+                   or (:blacklistOnly = false and exists (
+                        select 1 from PenaltyHistory p
+                        where p.selectorsId = s.id
+                          and (:generationId is null or p.generationId = :generationId)
+                          and (:status is null or p.status = :status))))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """,
             countQuery = """
             select count(s) from Selectors s
             where s.deleted = false
-              and exists (
-                    select 1 from PenaltyHistory p
-                    where p.selectorsId = s.id
-                      and (:generationId is null or p.generationId = :generationId)
-                      and (:status is null or p.status = :status))
+              and ((:blacklistOnly = true and s.selectorsRoleId = 'BLACKLIST')
+                   or (:blacklistOnly = false and exists (
+                        select 1 from PenaltyHistory p
+                        where p.selectorsId = s.id
+                          and (:generationId is null or p.generationId = :generationId)
+                          and (:status is null or p.status = :status))))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
-              and (:blacklistOnly = false or s.selectorsRoleId = 'BLACKLIST')
             """)
     Page<Selectors> searchWithPenalties(
             @Param("generationId") Long generationId,

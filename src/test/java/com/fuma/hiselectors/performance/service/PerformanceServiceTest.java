@@ -158,13 +158,15 @@ class PerformanceServiceTest {
     private ProductClick click(Long productId, long clickCount) {
         return new ProductClick(
                 productId, "P-" + productId, "상품 " + productId,
-                "브랜드", "https://example.com/" + productId + ".jpg", clickCount);
+                "브랜드", "https://example.com/" + productId + ".jpg",
+                "https://example.com/" + productId, clickCount);
     }
 
     private ProductPurchase purchase(Long productId, long count, String amount) {
         return new ProductPurchase(
                 productId, "P-" + productId, "상품 " + productId,
                 "브랜드", "https://example.com/" + productId + ".jpg",
+                "https://example.com/" + productId,
                 count, new BigDecimal(amount));
     }
 

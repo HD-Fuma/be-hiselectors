@@ -3,6 +3,7 @@ package com.fuma.hiselectors.inspection.detector;
 import com.fuma.hiselectors.inspection.detector.MediaBodyTextExtractor.TextSource;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
@@ -44,7 +45,7 @@ public class AffiliateLinkDetector implements RuleViolationDetector {
                 .toList();
         return List.of(new DetectedViolation(
                 ViolationTypeCode.AFFILIATE_LINK_INVALID,
-                new ViolationEvidence(reason, 1.0, locations)));
+                new ViolationEvidence(reason, 1.0, locations, EvidenceSource.RULE)));
     }
 
     private List<LinkLocation> extractLinks(List<TextSource> sources) {

@@ -9,6 +9,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
@@ -65,9 +66,24 @@ class ApplicationAdminRepositoryTest {
                 .applicationId(sparse.getId())
                 .snsCode(SnsPlatform.YOUTUBE)
                 .snsContentId("UC-sparse-outside-window")
+                .snsMediaId("UC-sparse-outside-window-media")
                 .contentUrl("https://example.com/UC-sparse/outside-window")
+                .mediaType(MediaType.VIDEO)
                 .sequenceNo(3)
+                .mediaSequenceNo(0)
                 .publishedAt(COLLECTED_AT.minusDays(91))
+                .collectedAt(COLLECTED_AT)
+                .build());
+        mediaRepository.save(ApplicationMedia.builder()
+                .applicationId(sparse.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("UC-sparse-0")
+                .snsMediaId("UC-sparse-0-second-media")
+                .contentUrl("https://example.com/UC-sparse/0")
+                .mediaType(MediaType.VIDEO)
+                .sequenceNo(0)
+                .mediaSequenceNo(1)
+                .publishedAt(COLLECTED_AT)
                 .collectedAt(COLLECTED_AT)
                 .build());
         em.flush();
@@ -78,7 +94,7 @@ class ApplicationAdminRepositoryTest {
     void filtersKeywordPlatformStatusAndGenerationTogether() {
         var result = applicationRepository.searchAdmin(
                 "지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                generation.getId(), null, PageRequest.of(0, 20));
+                generation.getId(), null, null, PageRequest.of(0, 20));
 
         assertThat(result.getContent())
                 .extracting(Application::getId)
@@ -95,26 +111,46 @@ class ApplicationAdminRepositoryTest {
     @Test
     void omittedMinimumCriteriaReturnsAllApplicants() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), null, PageRequest.of(0, 2));
+                null, null, null, generation.getId(), null, null, PageRequest.of(0, 2));
 
         assertThat(result.getTotalElements()).isEqualTo(4);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), null, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, null, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(
                         regular.getId(), lowFollower.getId(), sparse.getId(), unknown.getId());
     }
 
     @Test
+    void excludesApplicantsWithoutMemberNumber() {
+        Application nullHiId = savePendingApplication(null, "null-hi-id");
+        Application blankHiId = savePendingApplication("   ", "blank-hi-id");
+        em.flush();
+        em.clear();
+
+        var firstPage = applicationRepository.searchAdmin(
+                null, null, ApplicationStatus.PENDING,
+                generation.getId(), null, null, PageRequest.of(0, 2));
+
+        assertThat(firstPage.getTotalElements()).isEqualTo(3);
+        assertThat(applicationRepository.searchAdmin(
+                null, null, ApplicationStatus.PENDING,
+                generation.getId(), null, null, PageRequest.of(0, 20)))
+                .extracting(Application::getId)
+                .containsExactlyInAnyOrder(regular.getId(), sparse.getId(), unknown.getId())
+                .doesNotContain(nullHiId.getId(), blankHiId.getId());
+    }
+
+    @Test
     void minimumCriteriaIsAppliedBeforePaging() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), true, PageRequest.of(0, 1));
+                null, null, null, generation.getId(), null, true, PageRequest.of(0, 1));
 
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), true, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, true, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(lowFollower.getId(), sparse.getId())
                 .doesNotContain(regular.getId());
@@ -123,12 +159,12 @@ class ApplicationAdminRepositoryTest {
     @Test
     void falseMinimumCriteriaReturnsOnlyApplicantsWhoAreNotBelowCriteria() {
         var result = applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), false, PageRequest.of(0, 1));
+                null, null, null, generation.getId(), null, false, PageRequest.of(0, 1));
 
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getTotalPages()).isEqualTo(2);
         assertThat(applicationRepository.searchAdmin(
-                null, null, null, generation.getId(), false, PageRequest.of(0, 20)))
+                null, null, null, generation.getId(), null, false, PageRequest.of(0, 20)))
                 .extracting(Application::getId)
                 .containsExactlyInAnyOrder(regular.getId(), unknown.getId())
                 .doesNotContain(lowFollower.getId(), sparse.getId());
@@ -136,15 +172,32 @@ class ApplicationAdminRepositoryTest {
 
     @Test
     void minimumCriteriaIgnoresContentsOutsideCollectionWindow() {
-        assertThat(mediaRepository.findAllByApplicationIdOrderBySequenceNoAsc(sparse.getId()))
-                .hasSize(4);
+        assertThat(mediaRepository
+                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(sparse.getId()))
+                .hasSize(5);
 
         var result = applicationRepository.searchAdmin(
-                "UC-sparse", null, null, generation.getId(), true, PageRequest.of(0, 20));
+                "UC-sparse", null, null, generation.getId(), null, true, PageRequest.of(0, 20));
 
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(sparse.getId());
+    }
+
+    private Application savePendingApplication(String hiId, String accountId) {
+        User user = em.persist(User.builder()
+                .hiId(hiId)
+                .name("일괄 테스트")
+                .build());
+        return applicationRepository.save(Application.builder()
+                .userId(user.getId())
+                .generationId(generation.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsAccountId(accountId)
+                .alarmYn(true)
+                .policyAgreedAt(COLLECTED_AT.minusDays(30))
+                .status(ApplicationStatus.PENDING)
+                .build());
     }
 
     private Application saveApplication(
@@ -171,7 +224,7 @@ class ApplicationAdminRepositoryTest {
                 .status(status)
                 .build();
         if (collected) {
-            application.completeMediaCollection(COLLECTED_AT);
+            application.completeMediaCollection(COLLECTED_AT, null);
         }
         application = applicationRepository.save(application);
         for (int sequenceNo = 0; sequenceNo < mediaCount; sequenceNo++) {
@@ -179,9 +232,13 @@ class ApplicationAdminRepositoryTest {
                     .applicationId(application.getId())
                     .snsCode(platform)
                     .snsContentId(accountId + "-" + sequenceNo)
+                    .snsMediaId(accountId + "-" + sequenceNo + "-media")
                     .contentUrl("https://example.com/" + accountId + "/" + sequenceNo)
-                    .contentType(platform == SnsPlatform.INSTAGRAM ? ContentType.FEED : null)
+                    .contentType(platform == SnsPlatform.INSTAGRAM ? ContentType.POST : null)
+                    .mediaType(platform == SnsPlatform.INSTAGRAM
+                            ? MediaType.IMAGE : MediaType.VIDEO)
                     .sequenceNo(sequenceNo)
+                    .mediaSequenceNo(0)
                     .publishedAt(COLLECTED_AT.minusDays(sequenceNo))
                     .collectedAt(COLLECTED_AT)
                     .build());

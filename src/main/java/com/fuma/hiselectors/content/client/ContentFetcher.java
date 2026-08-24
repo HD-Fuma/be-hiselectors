@@ -20,6 +20,17 @@ public interface ContentFetcher {
      */
     List<RawContent> fetchByAccount(String accountId, LocalDateTime since);
 
+    /** 지원자 리포트처럼 수집량 상한이 필요한 호출. 기본 구현은 기존 전체 조회를 유지한다. */
+    default List<RawContent> fetchByAccount(
+            String accountId, LocalDateTime since, int maxContents) {
+        return fetchByAccount(accountId, since);
+    }
+
+    /** SNS 계정의 공개 프로필 정보. 플랫폼이 제공하지 않는 값은 null. */
+    default Profile fetchProfile(String accountId) {
+        return new Profile(null, null, null);
+    }
+
     /** 저장 대상으로 선택된 콘텐츠의 수집 시점 성과 조회 */
     default List<RawContent> addStatistics(List<RawContent> contents) {
         return contents;
@@ -34,6 +45,9 @@ public interface ContentFetcher {
     default List<FetchResult> fetchByAccountContentIds(
             String accountId, List<String> snsContentIds) {
         return fetchByContentIds(snsContentIds);
+    }
+
+    record Profile(String imageUrl, Long followerCount, Long contentCount) {
     }
 
     record FetchResult(

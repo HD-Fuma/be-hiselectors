@@ -39,6 +39,20 @@ public class InstagramSttClient {
      * @param thumbnailUrl Graph API thumbnail_url. media_url 없을 때(저작권 릴스) 폴백
      * @return 취득·STT·OCR·분석 결과. 저장하지 않는다.
      */
+    /** STT 워커 생존 확인. GET /health 200 이면 true, 통신 실패/오류면 false. */
+    public boolean isHealthy() {
+        try {
+            restClient.get()
+                    .uri(properties.baseUrlOrDefault() + "/health")
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (RestClientException e) {
+            log.info("STT 워커 헬스체크 실패. baseUrl={}", properties.baseUrlOrDefault());
+            return false;
+        }
+    }
+
     public InstagramAnalysisResult analyze(String mediaUrl, String thumbnailUrl) {
         Map<String, Object> body = new HashMap<>();
         if (mediaUrl != null) {

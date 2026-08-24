@@ -315,6 +315,36 @@ class CreatorDiscoveryRepositoryTest {
         assertThat(sourceRepository.findCategoryShares(creator.getId())).isEmpty();
     }
 
+    @Test
+    @DisplayName("풀 초기화는 파생 데이터만 지우고 중심 행은 소프트 삭제한다")
+    void resetCreatorPoolData() {
+        CreatorPool active = saveCreator("YOUTUBE", "UC_active", "활성 계정");
+        CreatorPool alreadyDeleted = saveCreator("INSTAGRAM", "ig_deleted", "기존 삭제 계정");
+        alreadyDeleted.softDelete();
+        DiscoveryKeyword keyword = saveKeyword("BEAUTY", "뷰티", "메이크업");
+        for (CreatorPool creator : List.of(active, alreadyDeleted)) {
+            infoRepository.save(CreatorDiscoveryInfo.builder()
+                    .creatorPool(creator).brandScore(0).build());
+            sourceRepository.save(CreatorDiscoverySource.builder()
+                    .creatorPool(creator).keyword(keyword)
+                    .viewShare(BigDecimal.ONE).build());
+        }
+        em.flush();
+        em.clear();
+
+        assertThat(sourceRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(2);
+        assertThat(infoRepository.deleteAllByCreatorPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(2);
+        assertThat(creatorPoolRepository.softDeleteAllActiveByPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"))).isEqualTo(1);
+        em.clear();
+
+        assertThat(sourceRepository.count()).isZero();
+        assertThat(infoRepository.count()).isZero();
+        assertThat(creatorPoolRepository.findAll()).hasSize(2).allMatch(CreatorPool::isDeleted);
+    }
+
     @TestConfiguration
     static class CacheConfig {
 

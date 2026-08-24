@@ -7,6 +7,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
@@ -17,6 +18,7 @@ import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,18 +51,27 @@ public class StoredContentService {
         List<StoredContentFetch> results = fetchStoredContents();
         int savedEngagementCount = 0;
         int failedContentCount = 0;
+        Map<SnsPlatform, PlatformStoredContentStats> platformStats =
+                new EnumMap<>(SnsPlatform.class);
 
         for (StoredContentFetch result : results) {
+            SnsPlatform platform = result.content().getSnsCode();
             if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
                 failedContentCount++;
+                mergeStats(platformStats, platform, 0, 1);
                 continue;
             }
             try {
-                Integer savedCount = transactionTemplate.execute(
+                StoredContentSaveResult saved = transactionTemplate.execute(
                         status -> save(result, collectedAt));
-                savedEngagementCount += savedCount == null ? 0 : savedCount;
+                StoredContentSaveResult completed = saved == null
+                        ? new StoredContentSaveResult(0, 0)
+                        : saved;
+                savedEngagementCount += completed.savedEngagementCount();
+                mergeStats(platformStats, platform, completed.changedVersionCount(), 0);
             } catch (RuntimeException exception) {
                 failedContentCount++;
+                mergeStats(platformStats, platform, 0, 1);
                 log.error(
                         "기존 콘텐츠 저장에 실패했습니다. contentId={}",
                         result.content().getId(),
@@ -68,12 +79,14 @@ public class StoredContentService {
             }
         }
 
-        return new StoredContentResult(savedEngagementCount, failedContentCount);
+        return new StoredContentResult(
+                savedEngagementCount, failedContentCount, Map.copyOf(platformStats));
     }
 
-    private int save(StoredContentFetch result, LocalDateTime collectedAt) {
+    private StoredContentSaveResult save(
+            StoredContentFetch result, LocalDateTime collectedAt) {
         if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
-            return 0;
+            return new StoredContentSaveResult(0, 0);
         }
 
         int savedEngagementCount = saveEngagement(result, collectedAt);
@@ -82,7 +95,18 @@ public class StoredContentService {
         if (versionChanged || deletionStatusChanged) {
             contentRepository.saveAll(List.of(result.content()));
         }
-        return savedEngagementCount;
+        return new StoredContentSaveResult(savedEngagementCount, versionChanged ? 1 : 0);
+    }
+
+    private void mergeStats(
+            Map<SnsPlatform, PlatformStoredContentStats> stats,
+            SnsPlatform platform,
+            int changedVersionCount,
+            int failedContentCount) {
+        stats.merge(
+                platform,
+                new PlatformStoredContentStats(changedVersionCount, failedContentCount),
+                PlatformStoredContentStats::plus);
     }
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
@@ -238,7 +262,8 @@ public class StoredContentService {
                 contentId,
                 result.content().advanceVersion(),
                 fetchedContent,
-                collectedAt);
+                collectedAt,
+                ContentVersionCreationReason.SOURCE_CHANGE);
         newVersion = versionRepository.saveAll(List.of(newVersion)).getFirst();
         List<ContentMedia> media = snapshotFactory.createMedia(
                 newVersion.getId(), fetchedContent);
@@ -266,9 +291,30 @@ public class StoredContentService {
     record StoredContentFetch(Content content, FetchResult fetched) {
     }
 
+    private record StoredContentSaveResult(
+            int savedEngagementCount, int changedVersionCount) {
+    }
+
     private record AccountKey(Long selectorsId, SnsPlatform platform) {
     }
 
-    public record StoredContentResult(int savedEngagementCount, int failedContentCount) {
+    public record PlatformStoredContentStats(
+            int changedVersionCount, int failedContentCount) {
+
+        private PlatformStoredContentStats plus(PlatformStoredContentStats other) {
+            return new PlatformStoredContentStats(
+                    changedVersionCount + other.changedVersionCount,
+                    failedContentCount + other.failedContentCount);
+        }
+    }
+
+    public record StoredContentResult(
+            int savedEngagementCount,
+            int failedContentCount,
+            Map<SnsPlatform, PlatformStoredContentStats> platformStats) {
+
+        public StoredContentResult(int savedEngagementCount, int failedContentCount) {
+            this(savedEngagementCount, failedContentCount, Map.of());
+        }
     }
 }

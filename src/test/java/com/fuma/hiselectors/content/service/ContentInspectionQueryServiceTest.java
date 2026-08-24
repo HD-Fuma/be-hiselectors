@@ -49,14 +49,14 @@ class ContentInspectionQueryServiceTest {
         Generation generation = mock(Generation.class);
         when(generation.getId()).thenReturn(10L);
         when(generation.getGenerationName()).thenReturn("1기");
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
 
         LocalDateTime storedAt = LocalDateTime.of(2026, 8, 18, 9, 0);
         LocalDateTime versionStoredAt = LocalDateTime.of(2026, 8, 18, 9, 5);
         ContentInspectionQueryRow row = new ContentInspectionQueryRow(
                 1L, 11L, "셀렉터", SnsPlatform.INSTAGRAM, "post-1",
                 "https://instagram.com/p/post-1", ContentType.FEED, storedAt,
-                101L, 2L, null, null, versionStoredAt,
+                101L, 2L, null, null, null, versionStoredAt,
                 "selectors-account", "https://cdn.example.com/profile.jpg");
         PageRequest pageable = PageRequest.of(0, 20);
         when(contentRepository.findInspectionRowsByGenerationId(10L, pageable))
@@ -105,7 +105,7 @@ class ContentInspectionQueryServiceTest {
                                     "https://cdn.example.com/image.jpg", "image-1", 2),
                             tuple(MediaType.VIDEO, null, "video-1", 3));
         });
-        verify(generationService).getActive();
+        verify(generationService).getCurrentActivity();
         verify(contentRepository).findInspectionRowsByGenerationId(10L, pageable);
         verify(mediaRepository)
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
@@ -117,7 +117,7 @@ class ContentInspectionQueryServiceTest {
     void skipsMediaQueryForEmptyPage() {
         Generation generation = mock(Generation.class);
         when(generation.getId()).thenReturn(10L);
-        when(generationService.getActive()).thenReturn(generation);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
         PageRequest pageable = PageRequest.of(0, 20);
         when(contentRepository.findInspectionRowsByGenerationId(10L, pageable))
                 .thenReturn(Page.empty(pageable));
@@ -126,7 +126,7 @@ class ContentInspectionQueryServiceTest {
                 service.getCurrentGenerationContents(0, 20);
 
         assertThat(result).isEmpty();
-        verify(generationService).getActive();
+        verify(generationService).getCurrentActivity();
         verify(contentRepository).findInspectionRowsByGenerationId(10L, pageable);
         verify(mediaRepository, never())
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(

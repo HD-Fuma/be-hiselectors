@@ -10,8 +10,10 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.settlement.dto.SelectorSettlementDetailResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
+import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -32,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SettlementAdminService {
 
     private final SettlementHistoryRepository settlementHistoryRepository;
+    private final SettlementAccountRepository settlementAccountRepository;
     private final SelectorsRepository selectorsRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
     private final PurchaseHistoryRepository purchaseHistoryRepository;
@@ -40,8 +43,11 @@ public class SettlementAdminService {
 
     private static final List<PurchaseStatus> VALID_PURCHASE_CONVERSION_STATUSES = List.of(
             PurchaseStatus.PURCHASED, PurchaseStatus.PURCHASE_CONFIRMED);
-    private static final List<SettlementStatus> NEXT_PAYMENT_ELIGIBLE_STATUSES = List.of(
-            SettlementStatus.CALCULATING, SettlementStatus.PAYMENT_PENDING);
+    private static final List<SettlementStatus> ACTIVE_PAYMENT_STATUSES = List.of(
+            SettlementStatus.PAYMENT_HOLD_BLACK,
+            SettlementStatus.PAYMENT_HOLD_INFO,
+            SettlementStatus.PAYMENT_PENDING,
+            SettlementStatus.CALCULATING);
 
     public Page<SettlementEstimateResponse> search(
             YearMonth requestedMonth,
@@ -76,15 +82,19 @@ public class SettlementAdminService {
         SelectorsSnsAccount snsAccount = selectorsSnsAccountRepository
                 .findBySelectorsIdAndDeletedFalse(selectorsId)
                 .orElse(null);
+        SettlementAccount settlementAccount = settlementAccountRepository
+                .findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(selectorsId)
+                .orElse(null);
         YearMonth currentMonth = YearMonth.from(LocalDate.now(clock));
         YearMonth paymentMonth = currentMonth;
-        YearMonth payableActivityMonth = currentMonth.minusMonths(2);
-        SettlementHistory nextPaymentHistory = settlementHistoryRepository
-                .findBySelectorsIdAndActivityYearMonthAndStatusIn(
-                        selectorsId,
-                        toYearMonthKey(payableActivityMonth),
-                        NEXT_PAYMENT_ELIGIBLE_STATUSES)
-                .orElse(null);
+        List<SettlementHistory> pendingHistories = settlementHistoryRepository
+                .findAllBySelectorsIdAndStatus(selectorsId, SettlementStatus.PAYMENT_PENDING);
+        long scheduledCommission = pendingHistories.stream()
+                .mapToLong(SettlementHistory::getSettlementAmount)
+                .sum();
+        SettlementStatus paymentStatus = currentPaymentStatus(
+                settlementHistoryRepository.findAllBySelectorsIdAndStatusIn(
+                        selectorsId, ACTIVE_PAYMENT_STATUSES));
 
         long currentMonthPurchaseConversionCount = purchaseHistoryRepository
                 .countDistinctOrdersBySelectorsIdAndStatusInAndPurchasedAtBetween(
@@ -100,12 +110,25 @@ public class SettlementAdminService {
                                 selectorsId, SettlementStatus.SETTLED),
                         currentMonthPurchaseConversionCount,
                         currentMonth,
-                        nextPaymentHistory == null ? 0L : nextPaymentHistory.getSettlementAmount(),
+                        scheduledCommission,
                         paymentMonth,
-                        nextPaymentHistory == null ? null : nextPaymentHistory.getStatus());
+                        paymentStatus,
+                        settlementHistoryRepository.sumSalesBySelectorsId(selectorsId));
 
         return SelectorSettlementDetailResponse.of(
+                isAccountRegistered(settlementAccount),
                 selectors, snsAccount, summary, getHistories(selectorsId, selectors, pageable));
+    }
+
+    private boolean isAccountRegistered(SettlementAccount account) {
+        return account != null
+                && !isBlank(account.getBankName())
+                && !isBlank(account.getAccountNumber())
+                && !isBlank(account.getAccountHolder());
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private Page<SettlementEstimateResponse> getHistories(
@@ -129,6 +152,26 @@ public class SettlementAdminService {
                 history,
                 selectors,
                 provisionalEstimateService.calculate(history));
+    }
+
+    private SettlementStatus currentPaymentStatus(List<SettlementHistory> histories) {
+        if (hasStatus(histories, SettlementStatus.PAYMENT_HOLD_BLACK)) {
+            return SettlementStatus.PAYMENT_HOLD_BLACK;
+        }
+        if (hasStatus(histories, SettlementStatus.PAYMENT_HOLD_INFO)) {
+            return SettlementStatus.PAYMENT_HOLD_INFO;
+        }
+        if (hasStatus(histories, SettlementStatus.PAYMENT_PENDING)) {
+            return SettlementStatus.PAYMENT_PENDING;
+        }
+        if (hasStatus(histories, SettlementStatus.CALCULATING)) {
+            return SettlementStatus.CALCULATING;
+        }
+        return null;
+    }
+
+    private boolean hasStatus(List<SettlementHistory> histories, SettlementStatus status) {
+        return histories.stream().anyMatch(history -> history.getStatus() == status);
     }
 
     private int toYearMonthKey(YearMonth yearMonth) {

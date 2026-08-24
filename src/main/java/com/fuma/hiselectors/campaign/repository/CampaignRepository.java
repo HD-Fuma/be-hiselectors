@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.campaign.repository;
 
 import com.fuma.hiselectors.campaign.model.Campaign;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -8,11 +9,18 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CampaignRepository extends JpaRepository<Campaign, Long>, JpaSpecificationExecutor<Campaign> {
     Optional<Campaign> findByIdAndIsDeletedFalse(Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Campaign c where c.id = :id and c.isDeleted = false")
+    Optional<Campaign> findByIdAndIsDeletedFalseForUpdate(@Param("id") Long id);
+
+    boolean existsByThumbnailUrl(String thumbnailUrl);
 
     List<Campaign> findAllByIsDeletedFalseOrderByIdDesc();
 

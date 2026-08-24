@@ -8,6 +8,7 @@ public record ProductPerformanceResponse(
         String productName,
         String brandName,
         String thumbnailUrl,
+        String detailUrl,
         long clickCount,
         long conversionCount,
         long conversionAmount,
