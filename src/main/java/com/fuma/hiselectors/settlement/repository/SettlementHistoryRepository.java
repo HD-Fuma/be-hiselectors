@@ -82,6 +82,11 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             where h.activityYearMonth = :activityYearMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
+              and exists (
+                  select s.id
+                  from Selectors s
+                  where s.id = h.selectorsId
+              )
             """)
     Page<SettlementHistory> search(
             @Param("activityYearMonth") Integer activityYearMonth,
