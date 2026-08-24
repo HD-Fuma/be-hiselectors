@@ -20,6 +20,10 @@ import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.MediaType;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -59,6 +63,10 @@ class ApplicationMediaServiceTest {
     private ContentFetcher youtubeFetcher;
     @Mock
     private TransactionTemplate transactionTemplate;
+    @Mock
+    private SelectorsRepository selectorsRepository;
+    @Mock
+    private SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     private ApplicationMediaService service;
 
@@ -81,7 +89,8 @@ class ApplicationMediaServiceTest {
         }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
-                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK);
+                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK,
+                selectorsRepository, selectorsSnsAccountRepository);
     }
 
     @Test
@@ -267,6 +276,71 @@ class ApplicationMediaServiceTest {
     }
 
     @Test
+    void synchronizesProfileImageCollectedAfterApproval() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.changeStatus(ApplicationStatus.APPROVED);
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount("channel-id", COLLECTED_AT.minusDays(90)))
+                .thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/new-profile.jpg", 12_345L, 120L));
+        when(youtubeFetcher.addStatistics(any())).thenReturn(List.of());
+        when(mediaRepository.saveAll(any())).thenReturn(List.of());
+
+        Selectors selectors = Selectors.builder()
+                .applicationId(APPLICATION_ID)
+                .userId(application.getUserId())
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 30L);
+        SelectorsSnsAccount account = SelectorsSnsAccount.builder()
+                .selectorsId(30L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("channel-id")
+                .build();
+        when(selectorsRepository.findByUserIdForUpdate(application.getUserId()))
+                .thenReturn(Optional.of(selectors));
+        when(selectorsSnsAccountRepository.findBySelectorsIdAndDeletedFalse(30L))
+                .thenReturn(Optional.of(account));
+
+        service.collect(APPLICATION_ID);
+
+        assertThat(account.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/new-profile.jpg");
+        verify(applicationRepository).findByIdForUpdate(APPLICATION_ID);
+        verify(selectorsRepository).findByUserIdForUpdate(application.getUserId());
+    }
+
+    @Test
+    void doesNotSynchronizeProfileImageForSupersededApplication() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.changeStatus(ApplicationStatus.APPROVED);
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount("channel-id", COLLECTED_AT.minusDays(90)))
+                .thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/new-profile.jpg", 12_345L, 120L));
+        when(youtubeFetcher.addStatistics(any())).thenReturn(List.of());
+        when(mediaRepository.saveAll(any())).thenReturn(List.of());
+
+        Selectors selectors = Selectors.builder()
+                .applicationId(999L)
+                .userId(application.getUserId())
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 30L);
+        when(selectorsRepository.findByUserIdForUpdate(application.getUserId()))
+                .thenReturn(Optional.of(selectors));
+
+        service.collect(APPLICATION_ID);
+
+        verify(selectorsSnsAccountRepository, never())
+                .findBySelectorsIdAndDeletedFalse(any());
+    }
+
+    @Test
     void fillsOnlyMissingPublicMetrics() {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
 
@@ -340,6 +414,8 @@ class ApplicationMediaServiceTest {
                 .status(ApplicationStatus.PENDING)
                 .build();
         ReflectionTestUtils.setField(application, "id", APPLICATION_ID);
+        lenient().when(applicationRepository.findByIdForUpdate(APPLICATION_ID))
+                .thenReturn(Optional.of(application));
         return application;
     }
 
