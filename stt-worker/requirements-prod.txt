@@ -1,0 +1,13 @@
+# SageMaker STT 클라이언트 + EC2에서 수행하는 OCR/키워드 분석
+kiwipiepy==0.23.2
+sentence-transformers==5.7.0
+transformers==5.15.0
+rapidocr==3.9.2
+onnxruntime==1.29.0
+av==18.1.0
+
+# API 서버 + AWS
+fastapi==0.141.1
+uvicorn==0.52.3
+pydantic==2.13.4
+boto3==1.40.18
