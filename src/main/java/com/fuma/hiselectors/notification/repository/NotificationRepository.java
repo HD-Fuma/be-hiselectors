@@ -2,6 +2,7 @@ package com.fuma.hiselectors.notification.repository;
 
 import com.fuma.hiselectors.notification.dto.NotificationHistoryResponse;
 import com.fuma.hiselectors.notification.model.Notification;
+import com.fuma.hiselectors.notification.model.NotificationChannel;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import java.time.LocalDateTime;
 import org.springframework.data.domain.Page;
@@ -38,6 +39,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                         notification.receiver,
                         notification.body,
                         notification.referenceId,
+                        notification.initiatedByType,
+                        notification.initiatedById,
                         notification.requestAt,
                         notification.sentAt,
                         recipient.userId,
@@ -51,6 +54,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                     left join User user on recipient.userId = user.id
                     where (:purpose is null or notification.notificationPurposeCode = :purpose)
                       and (:status is null or notification.status = :status)
+                      and (:channel is null or notification.notificationChannel = :channel)
                       and (:fromAt is null or notification.requestAt >= :fromAt)
                       and (:toExclusive is null or notification.requestAt < :toExclusive)
                       and (
@@ -67,6 +71,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                     left join User user on recipient.userId = user.id
                     where (:purpose is null or notification.notificationPurposeCode = :purpose)
                       and (:status is null or notification.status = :status)
+                      and (:channel is null or notification.notificationChannel = :channel)
                       and (:fromAt is null or notification.requestAt >= :fromAt)
                       and (:toExclusive is null or notification.requestAt < :toExclusive)
                       and (
@@ -81,6 +86,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("fromAt") LocalDateTime fromAt,
             @Param("toExclusive") LocalDateTime toExclusive,
             @Param("recipientKeyword") String recipientKeyword,
+            @Param("channel") NotificationChannel channel,
             Pageable pageable);
 
 }

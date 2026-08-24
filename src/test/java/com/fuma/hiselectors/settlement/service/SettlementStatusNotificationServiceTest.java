@@ -62,7 +62,7 @@ class SettlementStatusNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(10L);
         org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo(
@@ -78,7 +78,7 @@ class SettlementStatusNotificationServiceTest {
 
         service.notifyUpcoming(10L, LocalDate.of(2026, 8, 20));
 
-        verify(notificationService, never()).sendToFriend(org.mockito.ArgumentMatchers.any(),
+        verify(notificationService, never()).sendToFriendAsSystem(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any());
     }
 
@@ -91,7 +91,7 @@ class SettlementStatusNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo(
                 "2026년 6월 정산금 84,000원의 정산 처리가 완료되었어요.");
@@ -108,7 +108,7 @@ class SettlementStatusNotificationServiceTest {
 
         service.notifyCompleted(10L);
 
-        verify(notificationService, never()).sendToFriend(org.mockito.ArgumentMatchers.any(),
+        verify(notificationService, never()).sendToFriendAsSystem(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any());
     }
 }
