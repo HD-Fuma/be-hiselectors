@@ -63,4 +63,18 @@ public interface GenerationRepository extends JpaRepository<Generation, Long> {
     Optional<Generation>
     findFirstByActivityStartDateGreaterThanOrderByActivityStartDateAscIdAsc(
             LocalDateTime currentActivityEndDate);
+
+    @Query("""
+            select g.id
+            from Generation g
+            where g.selectorExcellenceSelectedAt is null
+              and g.activityEndDate < :endedBefore
+            order by g.activityEndDate asc, g.id asc
+            """)
+    List<Long> findExcellenceSelectionCandidateIds(
+            @Param("endedBefore") LocalDateTime endedBefore);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select g from Generation g where g.id = :generationId")
+    Optional<Generation> findByIdForUpdate(@Param("generationId") Long generationId);
 }

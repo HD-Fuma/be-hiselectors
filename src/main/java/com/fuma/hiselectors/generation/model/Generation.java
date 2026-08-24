@@ -40,6 +40,9 @@ public class Generation {
     @Column(name = "activity_end_date", nullable = false)
     private LocalDateTime activityEndDate;
 
+    @Column(name = "selector_excellence_selected_at")
+    private LocalDateTime selectorExcellenceSelectedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20)
     private GenerationStatus status;
@@ -77,5 +80,9 @@ public class Generation {
 
     public void changeStatus(GenerationStatus status) {
         this.status = status;
+    }
+
+    public void markSelectorExcellenceSelected(LocalDateTime selectedAt) {
+        this.selectorExcellenceSelectedAt = selectedAt;
     }
 }

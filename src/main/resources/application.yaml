@@ -118,6 +118,11 @@ selectors:
     enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
     cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
     zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+  excellence:
+    enabled: ${SELECTORS_EXCELLENCE_ENABLED:true}
+    cron: ${SELECTORS_EXCELLENCE_CRON:0 20 0 * * *}
+    zone: ${SELECTORS_EXCELLENCE_ZONE:Asia/Seoul}
+    grace-days: ${SELECTORS_EXCELLENCE_GRACE_DAYS:7}
 
 content:
   batch:

@@ -194,4 +194,18 @@ class GenerationAdminServiceTest {
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.GENERATION_ACTIVITY_OVERLAPPED);
     }
+
+    @Test
+    void rejectsActivityPeriodChangeAfterExcellenceSelectionIsCompleted() {
+        generation.markSelectorExcellenceSelected(LocalDateTime.of(2027, 1, 8, 0, 20));
+        when(generationRepository.findById(1L)).thenReturn(Optional.of(generation));
+
+        assertThatThrownBy(() -> generationAdminService.update(
+                1L, new GenerationUpdateRequest(
+                        null, null, null, null, ACTIVITY_END.plusDays(1))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("우수 활동자 선정이 완료된 기수의 활동 기간은 변경할 수 없습니다.")
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+    }
 }
