@@ -2,11 +2,16 @@ package com.fuma.hiselectors.inspection.service;
 
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.content.model.ContentVersionStatus;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.inspection.dto.ReinspectStaleResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -26,7 +31,53 @@ public class StaleContentInspectionService {
     private final ContentInspectionExecutionService contentInspectionExecutionService;
 
     public ReinspectStaleResponse reinspectStale(Integer limit) {
-        int pageSize = normalizeLimit(limit);
+        return reinspectStale(
+                limit,
+                Set.of(),
+                contentInspectionExecutionService::inspect,
+                ignored -> {
+                });
+    }
+
+    public ReinspectStaleResponse reinspectStale(
+            Integer limit,
+            Set<Long> excludedVersionIds,
+            Consumer<Long> inspector,
+            Consumer<ReinspectStaleResponse> progressCallback) {
+        Objects.requireNonNull(excludedVersionIds, "배제 버전 ID 목록은 필수입니다.");
+        Objects.requireNonNull(inspector, "검수 실행 함수는 필수입니다.");
+        Objects.requireNonNull(progressCallback, "진행 callback은 필수입니다.");
+        Set<Long> exclusions = Set.copyOf(excludedVersionIds);
+        List<Long> versionIds = selectStaleLatestVersionIds(normalizeLimit(limit), exclusions);
+        List<Long> failedVersionIds = new ArrayList<>();
+        int successCount = 0;
+        ReinspectStaleResponse snapshot = snapshot(versionIds.size(), successCount, failedVersionIds);
+        progressCallback.accept(snapshot);
+        for (Long versionId : versionIds) {
+            try {
+                inspector.accept(versionId);
+                successCount++;
+            } catch (RuntimeException e) {
+                if (e instanceof BusinessException businessException
+                        && businessException.getErrorCode() == ErrorCode.TASK_RUN_LEASE_LOST) {
+                    throw businessException;
+                }
+                log.warn("최신 버전 재검수 실패: contentVersionId={}", versionId, e);
+                failedVersionIds.add(versionId);
+            }
+            snapshot = snapshot(versionIds.size(), successCount, failedVersionIds);
+            progressCallback.accept(snapshot);
+        }
+        return snapshot;
+    }
+
+    public boolean hasStaleLatestVersions(Set<Long> excludedVersionIds) {
+        Objects.requireNonNull(excludedVersionIds, "배제 버전 ID 목록은 필수입니다.");
+        Set<Long> exclusions = Set.copyOf(excludedVersionIds);
+        return !selectStaleLatestVersionIds(1, exclusions).isEmpty();
+    }
+
+    private List<Long> selectStaleLatestVersionIds(int pageSize, Set<Long> exclusions) {
         Long generationId = generationService.getActive().getId();
         List<Long> versionIds = new ArrayList<>();
         for (InspectionPolicy policy : inspectionPolicyService.requireAllActive()) {
@@ -34,23 +85,25 @@ public class StaleContentInspectionService {
             if (remaining <= 0) {
                 break;
             }
-            versionIds.addAll(contentVersionRepository.findStaleLatestVersionIds(
-                    generationId, policy.getPlatform(), policy.getId(),
-                    ContentVersionStatus.INSPECTING, PageRequest.of(0, remaining)));
+            contentVersionRepository.findStaleLatestVersionIds(
+                            generationId, policy.getPlatform(), policy.getId(),
+                            ContentVersionStatus.INSPECTING,
+                            PageRequest.of(0, remaining + exclusions.size()))
+                    .stream()
+                    .filter(versionId -> !exclusions.contains(versionId))
+                    .limit(remaining)
+                    .forEach(versionIds::add);
         }
-        List<Long> failedVersionIds = new ArrayList<>();
-        int successCount = 0;
-        for (Long versionId : versionIds) {
-            try {
-                contentInspectionExecutionService.inspect(versionId);
-                successCount++;
-            } catch (RuntimeException e) {
-                log.warn("최신 버전 재검수 실패: contentVersionId={}", versionId, e);
-                failedVersionIds.add(versionId);
-            }
-        }
+        return versionIds;
+    }
+
+    private ReinspectStaleResponse snapshot(
+            int targetCount, int successCount, List<Long> failedVersionIds) {
         return new ReinspectStaleResponse(
-                versionIds.size(), successCount, failedVersionIds.size(), failedVersionIds);
+                targetCount,
+                successCount,
+                failedVersionIds.size(),
+                List.copyOf(failedVersionIds));
     }
 
     private int normalizeLimit(Integer limit) {
