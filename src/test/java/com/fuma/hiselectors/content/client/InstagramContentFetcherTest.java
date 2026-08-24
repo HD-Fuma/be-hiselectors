@@ -53,7 +53,7 @@ class InstagramContentFetcherTest {
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(nike)")
-                            .contains("media.limit(25)")
+                            .contains("media.limit(10)")
                             .contains("media_product_type")
                             .contains("view_count,like_count,comments_count")
                             .contains("children{id,media_type,media_url,thumbnail_url}")
@@ -466,7 +466,7 @@ class InstagramContentFetcherTest {
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(selector.insta)")
-                            .contains("media.limit(25)");
+                            .contains("media.limit(10)");
                 })
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),

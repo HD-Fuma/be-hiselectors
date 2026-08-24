@@ -263,6 +263,19 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    @DisplayName("YouTube 채널 ID는 공개 핸들 재조회 없이 업로드 목록을 조회한다")
+    void collectByChannelIdWithoutHandleLookup() {
+        expectChannel("id=" + CHANNEL_ID, null, "uploads-by-id");
+        expectEmptyPlaylist();
+
+        List<RawContent> result = client.fetchByAccount(
+                CHANNEL_ID, LocalDateTime.now());
+
+        assertThat(result).isEmpty();
+        server.verify();
+    }
+
+    @Test
     @DisplayName("UC로 시작해도 채널 ID 형식이 아니면 핸들로 조회한다")
     void collectHandleStartingWithUc() {
         expectUploadsPlaylist("forHandle=UCcreator");
@@ -286,22 +299,6 @@ class YoutubeContentFetcherTest {
                 LocalDateTime.now());
 
         assertThat(result).isEmpty();
-        server.verify();
-    }
-
-    @Test
-    @DisplayName("핸들 조회가 실패하면 UC 채널 ID 결과로 대체하지 않는다")
-    void failWhenHandleLookupFails() {
-        expectChannel("id=" + CHANNEL_ID, "@test-handle", "uploads-by-id");
-        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
-                        .contains("forHandle=test-handle"))
-                .andRespond(withStatus(HttpStatus.BAD_REQUEST));
-
-        assertThatThrownBy(() -> client.fetchByAccount(
-                CHANNEL_ID, LocalDateTime.now()))
-                .isInstanceOf(BusinessException.class)
-                .extracting(exception -> ((BusinessException) exception).getErrorCode())
-                .isEqualTo(ErrorCode.YOUTUBE_API_CALL_FAILED);
         server.verify();
     }
 
@@ -427,8 +424,7 @@ class YoutubeContentFetcherTest {
     }
 
     private void expectUploadsPlaylist() {
-        expectChannel("id=" + CHANNEL_ID, "@test-handle", "uploads-by-id");
-        expectUploadsPlaylist("forHandle=test-handle");
+        expectChannel("id=" + CHANNEL_ID, null, "uploads-playlist");
     }
 
     private void expectUploadsPlaylist(String expectedAccountQuery) {

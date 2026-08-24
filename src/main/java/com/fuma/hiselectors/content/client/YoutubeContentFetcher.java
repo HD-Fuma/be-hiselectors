@@ -214,22 +214,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private String requestUploadsPlaylistId(String accountId) {
-        ChannelLookup lookup = resolveChannelLookup(accountId);
-        if (!"id".equals(lookup.parameter())) {
-            return uploadsPlaylistId(requestChannel(lookup));
-        }
-
-        // 기존 DB의 UC 채널 ID로 현재 공개 핸들을 찾는다.
-        YoutubeChannelResponse.Item channelById = requestChannel(lookup);
-        String handle = channelById.snippet() == null
-                ? null
-                : normalizeHandle(channelById.snippet().customUrl());
-        if (!StringUtils.hasText(handle)) {
-            throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
-        }
-        // 실제 콘텐츠 수집 기준은 공개 핸들이다.
-        return uploadsPlaylistId(requestChannel(
-                new ChannelLookup("forHandle", handle)));
+        return uploadsPlaylistId(requestChannel(resolveChannelLookup(accountId)));
     }
 
     private YoutubeChannelResponse.Item requestChannel(ChannelLookup lookup) {
@@ -259,13 +244,6 @@ public class YoutubeContentFetcher implements ContentFetcher {
             throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
         }
         return channel.contentDetails().relatedPlaylists().uploads();
-    }
-
-    private String normalizeHandle(String customUrl) {
-        if (!StringUtils.hasText(customUrl)) {
-            return null;
-        }
-        return removeHandlePrefix(customUrl.trim());
     }
 
     private ChannelLookup resolveChannelLookup(String accountId) {
