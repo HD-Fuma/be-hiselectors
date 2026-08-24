@@ -77,6 +77,26 @@ public class YoutubeContentFetcher implements ContentFetcher {
         return SnsPlatform.YOUTUBE;
     }
 
+    @Override
+    public Profile fetchProfile(String accountId) {
+        validateAccountRequest(accountId);
+        YoutubeChannelResponse.Item channel = requestChannel(resolveChannelLookup(accountId));
+        YoutubeChannelResponse.Snippet snippet = channel.snippet();
+        String imageUrl = snippet == null || snippet.thumbnails() == null
+                ? null
+                : snippet.thumbnails().values().stream()
+                        .filter(Objects::nonNull)
+                        .map(YoutubeChannelResponse.Thumbnail::url)
+                        .filter(StringUtils::hasText)
+                        .reduce((ignored, last) -> last)
+                        .orElse(null);
+        YoutubeChannelResponse.Statistics statistics = channel.statistics();
+        return new Profile(
+                imageUrl,
+                statistics == null ? null : parseCount(statistics.subscriberCount()),
+                statistics == null ? null : parseCount(statistics.videoCount()));
+    }
+
     /**
      * accountId에 해당하는 YouTube 영상 중 수집 기준 시각 이후 영상 조회
      *
@@ -238,13 +258,19 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private void validateRequest(String accountId, LocalDateTime since) {
+        validateAccountRequest(accountId);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountRequest(String accountId) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        // accountId, collectedAfter가 정상인지 확인
-        if (!StringUtils.hasText(accountId) || since == null) {
+        if (!StringUtils.hasText(accountId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
     }
@@ -254,9 +280,9 @@ public class YoutubeContentFetcher implements ContentFetcher {
     }
 
     private YoutubeChannelResponse.Item requestChannel(ChannelLookup lookup) {
-        // snippet에서 공개 핸들, contentDetails에서 업로드 영상 목록 ID 조회
+        // snippet에서 프로필, contentDetails에서 업로드 목록, statistics에서 공개 통계 조회
         URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
-                .queryParam("part", "snippet,contentDetails")
+                .queryParam("part", "snippet,contentDetails,statistics")
                 .queryParam(lookup.parameter(), lookup.value())
                 .queryParam("key", properties.apiKey())
                 .build()

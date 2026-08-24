@@ -37,6 +37,13 @@ public class Notification extends BaseTimeEntity {
     private Long referenceId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "initiated_by_type", nullable = false, length = 20)
+    private NotificationInitiatorType initiatedByType;
+
+    @Column(name = "initiated_by_id")
+    private Long initiatedById;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "notification_channel", nullable = false, length = 30)
     private NotificationChannel notificationChannel;
 
@@ -59,12 +66,17 @@ public class Notification extends BaseTimeEntity {
     @Builder
     private Notification(String notificationPurposeCode,
                          Long referenceId,
+                         NotificationInitiatorType initiatedByType,
+                         Long initiatedById,
                          NotificationChannel notificationChannel,
                          String receiver,
                          String body,
                          LocalDateTime requestAt) {
         this.notificationPurposeCode = Objects.requireNonNull(notificationPurposeCode);
         this.referenceId = referenceId;
+        this.initiatedByType = initiatedByType == null
+                ? NotificationInitiatorType.SYSTEM : initiatedByType;
+        this.initiatedById = initiatedById;
         this.notificationChannel = Objects.requireNonNull(notificationChannel);
         this.receiver = Objects.requireNonNull(receiver);
         this.body = validateBody(body);

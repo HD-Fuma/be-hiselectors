@@ -55,6 +55,20 @@ spring:
           starttls:
             enable: true
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+media:
+  s3:
+    region: ${AWS_REGION:ap-northeast-2}
+    bucket: ${MEDIA_S3_BUCKET:}
+    public-base-url: ${MEDIA_PUBLIC_BASE_URL:}
+  local:
+    directory: ${MEDIA_LOCAL_DIRECTORY:./.local-media}
+    public-base-url: ${MEDIA_LOCAL_PUBLIC_BASE_URL:http://127.0.0.1:${server.port}/media}
+
 # 액추에이터 헬스체크가 매번 SMTP 연결을 시도해 실패 로그를 남기지 않도록 끈다.
 # (실제 발송은 제안 API 호출 시에만 일어난다.)
 management:
@@ -100,6 +114,10 @@ youtube:
   # 발굴용. OAuth 와 달리 사용자 동의 없이 공개 채널을 검색하므로 API 키를 쓴다.
   discovery:
     api-key: ${youtube.collection.api-key}
+    daily-quota: ${youtube.collection.daily-quota}
+    max-results-per-keyword: ${youtube.collection.max-results-per-keyword}
+    batch:
+      max-keywords-per-run: ${youtube.collection.batch.max-keywords-per-run}
 
   collection:
     api-key: ${YOUTUBE_API_KEY:}
@@ -116,7 +134,9 @@ discovery:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+  model: ${GEMINI_MODEL:gemini-3.6-flash}
+  youtube-model: ${GEMINI_YOUTUBE_MODEL:gemini-3.5-flash-lite}
+  report-model: ${GEMINI_REPORT_MODEL:gemini-3.5-flash-lite}
 
 # Instagram STT/OCR 파이썬 워커 (faster-whisper + RapidOCR)
 stt:

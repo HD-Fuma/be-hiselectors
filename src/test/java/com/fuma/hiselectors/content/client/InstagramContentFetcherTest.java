@@ -44,6 +44,30 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    void fetchesPublicBusinessProfile() {
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query)
+                            .contains("business_discovery.username(nike)")
+                            .contains("profile_picture_url,followers_count,media_count");
+                })
+                .andRespond(withSuccess("""
+                        {
+                          "business_discovery": {
+                            "profile_picture_url": "https://cdn.example.com/profile.jpg",
+                            "followers_count": 12345,
+                            "media_count": 120
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.fetchProfile("nike")).isEqualTo(new ContentFetcher.Profile(
+                "https://cdn.example.com/profile.jpg", 12_345L, 120L));
+        server.verify();
+    }
+
+    @Test
     @DisplayName("Business Discovery로 현재 기수 Instagram 콘텐츠를 모두 조회한다")
     void collectGenerationMedia() {
         server.expect(request -> {
@@ -245,6 +269,33 @@ class InstagramContentFetcherTest {
 
         assertThat(result).extracting(RawContent::snsContentId)
                 .containsExactly("first", "second");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("지원자 수집은 캐러셀 내부 미디어를 모두 유지하고 게시물 10개에서 멈춘다")
+    void collectAtMostTenContents() {
+        String secondPageUrl = nextUrl("page-2");
+        expectFirstPage(List.of(
+                carouselJson("post-0", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-1", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-2", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-3", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-4", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-5", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-6", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-7", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-8", "2026-08-13T05:00:00+0000"),
+                carouselJson("post-9", "2026-08-13T05:00:00+0000")), secondPageUrl);
+
+        List<RawContent> result = client.fetchByAccount(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0), 10);
+
+        assertThat(result).extracting(RawContent::snsContentId)
+                .containsExactly(
+                        "post-0", "post-1", "post-2", "post-3", "post-4",
+                        "post-5", "post-6", "post-7", "post-8", "post-9");
+        assertThat(result).allSatisfy(content -> assertThat(content.media()).hasSize(2));
         server.verify();
     }
 
@@ -687,6 +738,30 @@ class InstagramContentFetcherTest {
                   "timestamp": "%s"
                 }
                 """.formatted(id, id, id, timestamp);
+    }
+
+    private String carouselJson(String id, String timestamp) {
+        return """
+                {
+                  "id": "%s",
+                  "media_type": "CAROUSEL_ALBUM",
+                  "media_product_type": "FEED",
+                  "permalink": "https://www.instagram.com/p/%s",
+                  "timestamp": "%s",
+                  "children": {"data": [
+                    {
+                      "id": "%s-image",
+                      "media_type": "IMAGE",
+                      "media_url": "https://cdn.example.com/%s-image.jpg"
+                    },
+                    {
+                      "id": "%s-video",
+                      "media_type": "VIDEO",
+                      "media_url": "https://cdn.example.com/%s-video.mp4"
+                    }
+                  ]}
+                }
+                """.formatted(id, id, timestamp, id, id, id, id);
     }
 
     private String nextUrl(String cursor) {

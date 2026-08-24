@@ -121,6 +121,15 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    void fetchesPublicChannelProfile() {
+        expectUploadsPlaylist();
+
+        assertThat(client.fetchProfile(CHANNEL_ID)).isEqualTo(new ContentFetcher.Profile(
+                "https://yt3.example.com/high.jpg", 12_345L, 120L));
+        server.verify();
+    }
+
+    @Test
     void fetchesChannelTitlesInOneBatch() {
         String secondChannelId = "UC1111111111111111111111";
         server.expect(request -> {
@@ -484,7 +493,7 @@ class YoutubeContentFetcherTest {
                     assertThat(request.getURI().getPath()).isEqualTo("/youtube/v3/channels");
                     String query = decodedQuery(request.getURI().getRawQuery());
                     assertThat(query)
-                            .contains("part=snippet,contentDetails")
+                            .contains("part=snippet,contentDetails,statistics")
                             .contains(expectedAccountQuery)
                             .contains("key=" + API_KEY);
                 })
@@ -493,12 +502,22 @@ class YoutubeContentFetcherTest {
                           "items": [{
                             "id": "%s",
                             "snippet": {
-                              "customUrl": "%s"
+                              "customUrl": "%s",
+                              "thumbnails": {
+                                "default": {"url": "https://yt3.example.com/default.jpg"},
+                                "high": {"url": "https://yt3.example.com/high.jpg"}
+                              }
                             },
                             "contentDetails": {
                               "relatedPlaylists": {
                                 "uploads": "%s"
                               }
+                            },
+                            "statistics": {
+                              "viewCount": "987654",
+                              "subscriberCount": "12345",
+                              "videoCount": "120",
+                              "hiddenSubscriberCount": false
                             }
                           }]
                         }

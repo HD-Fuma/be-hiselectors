@@ -68,6 +68,7 @@ class ApplicationAdminServiceTest {
                 .policyAgreedAt(COLLECTED_AT.minusDays(30))
                 .status(ApplicationStatus.PENDING)
                 .build();
+        application.updateProfileImageUrl("https://cdn.example.com/profile.jpg");
         ReflectionTestUtils.setField(application, "id", 1L);
         ReflectionTestUtils.setField(application, "createdAt", COLLECTED_AT.minusDays(30));
         ReflectionTestUtils.setField(application, "updatedAt", COLLECTED_AT);
@@ -97,7 +98,7 @@ class ApplicationAdminServiceTest {
                         ContentType.REELS, null, 20L, null));
         when(applicationRepository.searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable))
+                20L, null, true, pageable))
                 .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
         when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
         when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
@@ -108,7 +109,7 @@ class ApplicationAdminServiceTest {
 
         var result = service.search(
                 "  김지안  ", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable);
+                20L, null, true, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().getFirst()).satisfies(summary -> {
@@ -122,7 +123,7 @@ class ApplicationAdminServiceTest {
         });
         verify(applicationRepository).searchAdmin(
                 "김지안", SnsPlatform.INSTAGRAM, ApplicationStatus.PENDING,
-                20L, true, pageable);
+                20L, null, true, pageable);
     }
 
     @Test
@@ -132,7 +133,7 @@ class ApplicationAdminServiceTest {
         ReflectionTestUtils.setField(application, "snsAccountId", channelId);
         var pageable = PageRequest.of(0, 20);
         when(applicationRepository.searchAdmin(
-                null, SnsPlatform.YOUTUBE, null, null, null, pageable))
+                null, SnsPlatform.YOUTUBE, null, null, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(application), pageable, 1));
         when(userRepository.findAllById(List.of(10L))).thenReturn(List.of(user));
         when(generationRepository.findAllById(List.of(20L))).thenReturn(List.of(generation));
@@ -144,7 +145,7 @@ class ApplicationAdminServiceTest {
                 .thenReturn(Map.of(channelId, "지안의 생활연구소"));
 
         var summary = service.search(
-                null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+                null, SnsPlatform.YOUTUBE, null, null, null, null, pageable)
                 .getContent().getFirst();
 
         assertThat(summary.snsAccountId()).isEqualTo(channelId);
@@ -152,7 +153,7 @@ class ApplicationAdminServiceTest {
         assertThat(application.getSnsAccountId()).isEqualTo(channelId);
 
         when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId))).thenReturn(Map.of());
-        assertThat(service.search(null, SnsPlatform.YOUTUBE, null, null, null, pageable)
+        assertThat(service.search(null, SnsPlatform.YOUTUBE, null, null, null, null, pageable)
                 .getContent().getFirst().snsDisplayName()).isEqualTo(channelId);
     }
 
@@ -160,14 +161,14 @@ class ApplicationAdminServiceTest {
     void searchForwardsOmittedMinimumCriteriaAsNull() {
         var pageable = PageRequest.of(0, 20);
         when(applicationRepository.searchAdmin(
-                null, null, null, null, null, pageable))
+                null, null, null, null, null, null, pageable))
                 .thenReturn(new PageImpl<>(List.of(), pageable, 0));
 
-        var result = service.search(null, null, null, null, null, pageable);
+        var result = service.search(null, null, null, null, null, null, pageable);
 
         assertThat(result).isEmpty();
         verify(applicationRepository).searchAdmin(
-                null, null, null, null, null, pageable);
+                null, null, null, null, null, null, pageable);
     }
 
     @Test
@@ -215,6 +216,8 @@ class ApplicationAdminServiceTest {
                 .containsExactly("POST:1", "REELS:1", "UNKNOWN:1");
         assertThat(result.profileUrl())
                 .isEqualTo("https://www.instagram.com/creator.handle/");
+        assertThat(result.profileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
         assertThat(result.contents()).hasSize(5);
     }
 

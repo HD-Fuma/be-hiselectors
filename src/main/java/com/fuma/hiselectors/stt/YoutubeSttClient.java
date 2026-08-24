@@ -18,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class YoutubeSttClient {
 
+    private static final int MAX_OUTPUT_TOKENS = 1024;
+
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
@@ -56,13 +58,14 @@ public class YoutubeSttClient {
                         Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
-                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
+                        "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault());
+        String uri = ENDPOINT.formatted(properties.youtubeModelOrDefault());
         try {
             return restClient.post()
                     .uri(uri)
@@ -72,7 +75,7 @@ public class YoutubeSttClient {
                     .retrieve()
                     .body(GeminiResponse.class);
         } catch (RestClientException e) {
-            log.warn("Gemini STT 호출 실패. model={}", properties.modelOrDefault(), e);
+            log.warn("Gemini STT 호출 실패. model={}", properties.youtubeModelOrDefault(), e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
@@ -87,7 +90,7 @@ public class YoutubeSttClient {
         String finish = candidate.finishReason();
         if (finish != null && !"STOP".equals(finish)) {
             // MAX_TOKENS(출력 잘림), SAFETY, RECITATION 등 → 불완전/차단이므로 실패.
-            // 잘린 전사를 성공으로 반환하지 않는다. 잘리면 gemini.max-output-tokens 를 올린다.
+            // 압축 추출이 잘렸다면 불완전 결과이므로 실패 처리한다.
             log.warn("Gemini 정상 종료 아님. finishReason={}", finish);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }

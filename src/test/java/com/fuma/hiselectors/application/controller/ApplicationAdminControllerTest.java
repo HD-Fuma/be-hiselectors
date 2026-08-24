@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +22,7 @@ import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.service.ApplicationAdminService;
+import com.fuma.hiselectors.application.service.ApplicationService;
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import java.math.BigDecimal;
@@ -34,20 +36,38 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.http.MediaType;
 
 class ApplicationAdminControllerTest {
 
     private ApplicationAdminService applicationAdminService;
+    private ApplicationService applicationService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         applicationAdminService = mock(ApplicationAdminService.class);
+        applicationService = mock(ApplicationService.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new ApplicationAdminController(applicationAdminService))
+                .standaloneSetup(new ApplicationAdminController(
+                        applicationAdminService, applicationService))
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
                 .build();
+    }
+
+    @Test
+    void createsTestApplicationFromProfileUrl() throws Exception {
+        when(applicationService.createTest("https://www.instagram.com/creator/"))
+                .thenReturn(31L);
+
+        mockMvc.perform(post("/api/admin/applications/test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"profileUrl":"https://www.instagram.com/creator/"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.id").value(31));
     }
 
     @Test
@@ -62,7 +82,7 @@ class ApplicationAdminControllerTest {
                 MediaCollectionStatus.DONE, collectedAt.minusDays(30), collectedAt, collectedAt);
         when(applicationAdminService.search(
                 eq("김지안"), eq(SnsPlatform.INSTAGRAM), eq(ApplicationStatus.PENDING),
-                eq(2L), eq(true), any(Pageable.class)))
+                eq(2L), isNull(), eq(true), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(
                         List.of(response), PageRequest.of(0, 100), 1));
 
@@ -87,16 +107,16 @@ class ApplicationAdminControllerTest {
 
         verify(applicationAdminService).search(
                 eq("김지안"), eq(SnsPlatform.INSTAGRAM), eq(ApplicationStatus.PENDING),
-                eq(2L), eq(true), argThat(pageable -> pageable.getPageSize() == 100));
+                eq(2L), isNull(), eq(true), argThat(pageable -> pageable.getPageSize() == 100));
     }
 
     @Test
     void searchDistinguishesOmittedAndFalseMinimumCriteria() throws Exception {
         when(applicationAdminService.search(
-                isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
         when(applicationAdminService.search(
-                isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
+                isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
         mockMvc.perform(get("/api/admin/applications"))
@@ -106,9 +126,9 @@ class ApplicationAdminControllerTest {
                 .andExpect(status().isOk());
 
         verify(applicationAdminService).search(
-                isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class));
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class));
         verify(applicationAdminService).search(
-                isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
+                isNull(), isNull(), isNull(), isNull(), isNull(), eq(false), any(Pageable.class));
     }
 
     @Test
@@ -126,7 +146,8 @@ class ApplicationAdminControllerTest {
                 new AdminApplicationDetailResponse(
                         1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                         2L, "2기", SnsPlatform.YOUTUBE, "UC123",
-                        "지안의 생활연구소", "https://www.youtube.com/channel/UC123", null,
+                        "지안의 생활연구소", "https://www.youtube.com/channel/UC123",
+                        "https://yt3.example.com/profile.jpg", null,
                         ApplicationStatus.PENDING, MediaCollectionStatus.DONE,
                         ContentAnalysisStatus.DONE,
                         collectedAt.minusDays(30), collectedAt, collectedAt, metrics, List.of()));
@@ -138,6 +159,8 @@ class ApplicationAdminControllerTest {
                 .andExpect(jsonPath("$.data.metrics.analysisWindowDays").value(90))
                 .andExpect(jsonPath("$.data.profileUrl")
                         .value("https://www.youtube.com/channel/UC123"))
+                .andExpect(jsonPath("$.data.profileImageUrl")
+                        .value("https://yt3.example.com/profile.jpg"))
                 .andExpect(jsonPath("$.data.metrics.totalContentCount").isEmpty())
                 .andExpect(jsonPath("$.data.metrics.averageViewCount.value").isEmpty())
                 .andExpect(jsonPath("$.data.metrics.averageViewCount.sampleCount").value(0));

@@ -26,15 +26,18 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class ApplicationMediaService {
 
     private static final int COLLECTION_DAYS = 90;
+    private static final int INSTAGRAM_CONTENT_LIMIT = 10;
     private static final BigDecimal LIKE_WEIGHT = new BigDecimal("0.5");
     private static final BigDecimal COMMENT_WEIGHT = new BigDecimal("5");
     private static final BigDecimal PERCENT = new BigDecimal("100");
@@ -53,15 +56,21 @@ public class ApplicationMediaService {
                     ? LocalDateTime.MIN
                     : collectedAt.minusDays(COLLECTION_DAYS);
             ContentFetcher fetcher = findFetcher(application);
-            List<RawContent> contents = fetcher.fetchByAccount(
-                    application.getSnsAccountId(), collectedAfter);
+            List<RawContent> contents = application.getSnsCode() == SnsPlatform.INSTAGRAM
+                    ? fetcher.fetchByAccount(
+                            application.getSnsAccountId(), collectedAfter, INSTAGRAM_CONTENT_LIMIT)
+                    : fetcher.fetchByAccount(application.getSnsAccountId(), collectedAfter);
             Snapshot snapshot = createSnapshot(
                     application, fetcher, contents, collectedAfter, collectedAt);
+            ContentFetcher.Profile profile = profile(fetcher, application);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
                 mediaRepository.deleteByApplicationId(applicationId);
                 mediaRepository.flush();
                 List<ApplicationMedia> values = mediaRepository.saveAll(snapshot.media());
+                application.updateProfileImageUrl(profile.imageUrl());
+                application.fillMissingPublicMetrics(
+                        profile.followerCount(), profile.contentCount());
                 application.completeMediaCollection(collectedAt, snapshot.engagementRate());
                 applicationRepository.save(application);
                 return values;
@@ -103,6 +112,29 @@ public class ApplicationMediaService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.INVALID_INPUT, "지원하지 않는 SNS 플랫폼입니다."));
+    }
+
+    private ContentFetcher.Profile profile(ContentFetcher fetcher, Application application) {
+        if (hasText(application.getProfileImageUrl())
+                && application.getContentCount() != null) {
+            return new ContentFetcher.Profile(null, null, null);
+        }
+        try {
+            ContentFetcher.Profile profile = fetcher.fetchProfile(application.getSnsAccountId());
+            ContentFetcher.Profile value = profile == null
+                    ? new ContentFetcher.Profile(null, null, null) : profile;
+            if (application.getContentCount() == null && value.contentCount() == null) {
+                throw new IllegalStateException("공개 프로필 전체 콘텐츠 수가 없습니다.");
+            }
+            return value;
+        } catch (RuntimeException e) {
+            log.warn("지원자 공개 프로필 조회 실패: applicationId={}, platform={}, cause={}",
+                    application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
+            if (application.getContentCount() == null) {
+                throw e;
+            }
+            return new ContentFetcher.Profile(null, null, null);
+        }
     }
 
     private Snapshot createSnapshot(

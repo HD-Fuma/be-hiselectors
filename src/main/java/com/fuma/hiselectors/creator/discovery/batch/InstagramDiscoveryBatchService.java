@@ -64,7 +64,8 @@ public class InstagramDiscoveryBatchService {
                 log.info("Instagram 일괄 발굴 성공. youtubeCreatorId={}, handle={}, created={}",
                         candidate.getId(), candidate.getIgHandle(), result.created());
             } catch (BusinessException exception) {
-                if (exception.getErrorCode() == ErrorCode.META_GRAPH_CONFIG_MISSING) {
+                if (exception.getErrorCode() == ErrorCode.META_GRAPH_CONFIG_MISSING
+                        || exception.getErrorCode() == ErrorCode.META_GRAPH_API_CALL_FAILED) {
                     failed++;
                     progressCallback.accept(new InstagramDiscoveryBatchResult(
                             candidates.size(), attempted, succeeded, failed,

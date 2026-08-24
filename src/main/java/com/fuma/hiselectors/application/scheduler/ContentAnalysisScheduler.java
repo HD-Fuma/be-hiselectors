@@ -1,14 +1,18 @@
 package com.fuma.hiselectors.application.scheduler;
 
 import com.fuma.hiselectors.application.model.Application;
+import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
 import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.application.service.ApplicationAnalysisService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,10 +31,16 @@ public class ContentAnalysisScheduler {
 
     private static final int MAX_RETRY_COUNT = 3;
 
+    /** 일시적 인프라 장애. 재시도 카운트를 소진하지 않는다(복구 시 자동 재개). */
+    private static final Set<ErrorCode> TRANSIENT_ERRORS = EnumSet.of(
+            ErrorCode.ANALYZER_UNAVAILABLE,
+            ErrorCode.STT_WORKER_CALL_FAILED,
+            ErrorCode.GEMINI_API_CALL_FAILED);
+
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnalysisService analysisService;
 
-    @Value("${application.content-analysis.batch-size:5}")
+    @Value("${application.content-analysis.batch-size:1}")
     private int batchSize;
 
     /** IN_PROGRESS lease(분). 처리 중 크래시하면 이 시간 뒤 다른 워커가 회수. 최대 처리시간보다 넉넉히. */
@@ -44,6 +54,7 @@ public class ContentAnalysisScheduler {
         LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
         List<Application> targets = applicationRepository.findAnalysisTargets(
                 MediaCollectionStatus.DONE,
+                ApplicationStatus.PENDING,
                 EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                 ContentAnalysisStatus.IN_PROGRESS,
                 leaseBefore,
@@ -58,7 +69,7 @@ public class ContentAnalysisScheduler {
             // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
             // 0이면 다른 인스턴스가 이미 처리 중 → skip.
             int claimed = applicationRepository.claimForAnalysis(
-                    id, ContentAnalysisStatus.IN_PROGRESS,
+                    id, ApplicationStatus.PENDING, ContentAnalysisStatus.IN_PROGRESS,
                     EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                     LocalDateTime.now(), leaseBefore);
             if (claimed != 1) {
@@ -69,8 +80,10 @@ public class ContentAnalysisScheduler {
                 succeeded++;
             } catch (RuntimeException e) {
                 failed++;
-                analysisService.markFailed(id, e.getMessage());
-                log.warn("지원자 콘텐츠 분석 실패: applicationId={}", id, e);
+                boolean infraDown = e instanceof BusinessException be
+                        && TRANSIENT_ERRORS.contains(be.getErrorCode());
+                analysisService.markFailed(id, e.getMessage(), !infraDown);
+                log.warn("지원자 콘텐츠 분석 실패: applicationId={}, retryCounted={}", id, !infraDown, e);
             }
         }
         if (!targets.isEmpty()) {

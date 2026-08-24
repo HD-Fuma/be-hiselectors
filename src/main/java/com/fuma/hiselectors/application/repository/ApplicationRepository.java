@@ -41,6 +41,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
     @Query("""
             SELECT a FROM Application a
             WHERE a.mediaCollectionStatus = :collected
+              AND a.status = :applicationStatus
               AND a.snsCode IN :snsCodes
               AND a.analysisRetryCount < :maxRetryCount
               AND (a.analysisStatus IN :statuses
@@ -49,6 +50,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             """)
     List<Application> findAnalysisTargets(
             @Param("collected") MediaCollectionStatus collected,
+            @Param("applicationStatus") ApplicationStatus applicationStatus,
             @Param("statuses") Collection<ContentAnalysisStatus> statuses,
             @Param("inProgress") ContentAnalysisStatus inProgress,
             @Param("leaseBefore") LocalDateTime leaseBefore,
@@ -68,10 +70,12 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
     @Query("""
             UPDATE Application a SET a.analysisStatus = :inProgress, a.analyzedAt = :now
             WHERE a.id = :id
+              AND a.status = :applicationStatus
               AND (a.analysisStatus IN :claimable
                    OR (a.analysisStatus = :inProgress AND a.analyzedAt < :leaseBefore))
             """)
     int claimForAnalysis(@Param("id") Long id,
+                         @Param("applicationStatus") ApplicationStatus applicationStatus,
                          @Param("inProgress") ContentAnalysisStatus inProgress,
                          @Param("claimable") Collection<ContentAnalysisStatus> claimable,
                          @Param("now") LocalDateTime now,
@@ -96,6 +100,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
+              AND (:analysisStatus IS NULL OR a.analysisStatus = :analysisStatus)
               AND (:minimumCriteriaOnly IS NULL
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
@@ -131,6 +136,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
+              AND (:analysisStatus IS NULL OR a.analysisStatus = :analysisStatus)
               AND (:minimumCriteriaOnly IS NULL
                 OR (:minimumCriteriaOnly = true AND (
                   (a.followerCount IS NOT NULL AND a.followerCount <= 500)
@@ -152,6 +158,7 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
             @Param("snsCode") SnsPlatform snsCode,
             @Param("status") ApplicationStatus status,
             @Param("generationId") Long generationId,
+            @Param("analysisStatus") ContentAnalysisStatus analysisStatus,
             @Param("minimumCriteriaOnly") Boolean minimumCriteriaOnly,
             Pageable pageable);
 }

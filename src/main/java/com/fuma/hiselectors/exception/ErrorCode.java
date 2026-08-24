@@ -79,7 +79,10 @@ public enum ErrorCode {
 
     // --- 캠페인 ---
     CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "캠페인을 찾을 수 없습니다."),
-    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "종료된 캠페인만 삭제할 수 있습니다."),
+    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "시작 전 캠페인만 삭제할 수 있습니다."),
+    MEDIA_STORAGE_CONFIG_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "미디어 저장소 설정이 누락되었습니다."),
+    MEDIA_UPLOAD_FAILED(HttpStatus.BAD_GATEWAY, "미디어 파일 업로드에 실패했습니다."),
+    MEDIA_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "미디어 파일 삭제에 실패했습니다."),
 
     // --- 정산 ---
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),

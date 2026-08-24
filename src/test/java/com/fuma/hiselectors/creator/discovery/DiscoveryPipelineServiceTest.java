@@ -228,6 +228,8 @@ class DiscoveryPipelineServiceTest {
         when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
         when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
                 .thenReturn(List.of(channel));
+        when(publicEmailExtractor.extract("contact@example.com"))
+                .thenReturn(Optional.of("contact@example.com"));
         when(igHandleExtractor.extract("contact@example.com")).thenReturn(Optional.empty());
         when(brandScoreCalculator.calculate(
                 "기존 크리에이터", "contact@example.com", null))
@@ -246,6 +248,7 @@ class DiscoveryPipelineServiceTest {
         assertThat(result.created()).isZero();
         assertThat(result.updated()).isEqualTo(1);
         assertThat(result.creatorIds()).containsExactly(102L);
+        verify(existingCreator).updateEmail("contact@example.com");
         verify(existingCreator).updateMetrics(
                 50_000L, new BigDecimal("5.00"), uploadedAt);
         verify(existingCreator).restore();
@@ -253,7 +256,6 @@ class DiscoveryPipelineServiceTest {
         verify(existingInfo).updateRecent90DayContentCount(7);
         verify(existingSource).refresh(new BigDecimal("1.00000"));
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
-        verifyNoInteractions(publicEmailExtractor);
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);
     }
 
@@ -301,5 +303,31 @@ class DiscoveryPipelineServiceTest {
         assertThat(result.creatorIds()).containsExactly(101L);
         assertThatThrownBy(() -> result.creatorIds().add(103L))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    @DisplayName("공개 이메일 없는 기존 채널은 활성 풀에서 제외한다")
+    void skipExistingCreatorWithoutCurrentEmail() {
+        DiscoveredChannel channel = new DiscoveredChannel(
+                "UC_EXISTING", "기존 크리에이터", "Instagram @no_email",
+                50_000L, 1_000_000L, null,
+                7, 200L, 8L, 2L);
+        CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);
+
+        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
+        when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
+                .thenReturn(List.of(channel));
+        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                "YOUTUBE", "UC_EXISTING"))
+                .thenReturn(Optional.of(existingCreator));
+        when(publicEmailExtractor.extract(channel.description())).thenReturn(Optional.empty());
+
+        DiscoveryRunResult result = discoveryPipelineService.runByKeyword(1L, 25);
+
+        assertThat(result.created()).isZero();
+        assertThat(result.updated()).isZero();
+        verify(existingCreator).softDelete();
+        verifyNoInteractions(igHandleExtractor, brandScoreCalculator,
+                discoveryInfoRepository, discoverySourceRepository, creatorDiscoveryService);
     }
 }

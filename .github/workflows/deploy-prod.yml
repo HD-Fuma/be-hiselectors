@@ -77,6 +77,24 @@ jobs:
         test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
         echo "task-run-migration=verified"
 
+        profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
+        if [ "$profile_image_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE application ADD COLUMN profile_image_url VARCHAR(500) NULL AFTER profile_url"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        echo "application-profile-image=verified"
+
+        selectors_profile_url_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url'")"
+        if [ "$selectors_profile_url_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE selectors_sns_account ADD COLUMN profile_url VARCHAR(500) NULL AFTER account_id"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        selectors_profile_identity_mismatch_count="$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE NOT (account.sns_code <=> app.sns_code) OR NOT (BINARY account.account_id <=> BINARY app.sns_account_id)")"
+        assert_eq selectors-profile-identity-mismatch "$selectors_profile_identity_mismatch_count" 0
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_url = app.profile_url WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL")" = "0"
+        echo "selectors-sns-profile=verified"
+
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
         mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
@@ -194,7 +212,7 @@ jobs:
 
   deploy:
     needs: database-008-expand
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -216,8 +234,6 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
 
-      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build and push ARM64 image
@@ -228,13 +244,25 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
+      - name: Build and push ARM64 STT worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: ./stt-worker
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker
+          cache-from: type=gha,scope=stt-worker-arm64
+          cache-to: type=gha,mode=max,scope=stt-worker-arm64
+
       - name: Deploy through SSM
         env:
           REMOTE_SCRIPT: |
             set -eu
             IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
+            WORKER_IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker'
             aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
             docker pull "$IMAGE_URI"
+            docker pull "$WORKER_IMAGE_URI"
             cd /srv/hiselectors
             docker compose up -d --wait --wait-timeout 180 api
             OLD_API_CONTAINER="$(docker compose ps -q api)"
@@ -275,6 +303,7 @@ jobs:
             trap 'exit 130' 2
             trap 'exit 143' 15
 
+            docker rm -f hiselectors-stt-worker >/dev/null 2>&1 || true
             docker compose stop -t 30 api
             export MYSQL_PWD="$DB_PASSWORD"
             mysql_query() {
@@ -291,6 +320,23 @@ jobs:
 
             docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
+            API_CONTAINER="$(docker compose ps -q api)"
+            docker run -d \
+              --name hiselectors-stt-worker \
+              --restart always \
+              --network "container:$API_CONTAINER" \
+              -e STT_BACKEND=sagemaker \
+              -e STT_S3_BUCKET=hi-selectors-stt \
+              -e STT_ENDPOINT=whisper-large-v3-async \
+              -e AWS_REGION='${{ env.AWS_REGION }}' \
+              "$WORKER_IMAGE_URI"
+            for _ in $(seq 1 30); do
+              if docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"; then
+                break
+              fi
+              sleep 2
+            done
+            docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"
             DEPLOY_VERIFIED=true
             trap - 0 1 2 15
             docker image prune -f

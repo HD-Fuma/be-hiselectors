@@ -101,13 +101,15 @@ public class ApplicationApprovalService {
                 .ifPresentOrElse(account -> account.synchronize(
                                 application.getSnsCode(),
                                 application.getSnsAccountId(),
-                                application.getFollowerCount()),
+                                application.getFollowerCount(),
+                                application.getProfileUrl()),
                         () -> selectorsSnsAccountRepository.save(
                         SelectorsSnsAccount.builder()
                                 .selectorsId(selectorsId)
                                 .snsCode(application.getSnsCode())
                                 .accountId(application.getSnsAccountId())
                                 .followerCount(application.getFollowerCount())
+                                .profileUrl(application.getProfileUrl())
                                 .build()));
     }
 

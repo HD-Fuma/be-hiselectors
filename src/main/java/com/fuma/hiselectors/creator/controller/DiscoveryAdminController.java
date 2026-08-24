@@ -107,7 +107,7 @@ public class DiscoveryAdminController {
     @Operation(summary = "키워드로 발굴 실행",
             description = "등록된 키워드 하나로 YouTube 를 검색해 채널을 발굴하고 저장한다. "
                     + "약 102 units 를 소모하며 일일 한도는 10,000 units 다. "
-                    + "공개 이메일 없는 신규 채널만 제외하고, 브랜드 계정이나 구독자 미달 "
+                    + "현재 공개 이메일 없는 채널은 제외하고, 브랜드 계정이나 구독자 미달 "
                     + "계정의 제외는 조회 API 조건으로 한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "발굴 성공"),

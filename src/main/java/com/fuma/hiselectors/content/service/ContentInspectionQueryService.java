@@ -29,7 +29,7 @@ public class ContentInspectionQueryService {
 
     public Page<ContentInspectionListItemResponse> getCurrentGenerationContents(
             int page, int size) {
-        Generation generation = generationService.getActive();
+        Generation generation = generationService.getCurrentActivity();
         Page<ContentInspectionQueryRow> rows = contentRepository
                 .findInspectionRowsByGenerationId(
                         generation.getId(), PageRequest.of(page, size));

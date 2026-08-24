@@ -21,6 +21,7 @@ public record AdminApplicationDetailResponse(
         String snsAccountId,
         String snsDisplayName,
         String profileUrl,
+        String profileImageUrl,
         Long followerCount,
         ApplicationStatus status,
         MediaCollectionStatus mediaCollectionStatus,

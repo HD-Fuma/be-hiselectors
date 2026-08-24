@@ -100,7 +100,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.recipientUserId()).isEqualTo(20L);
         org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
@@ -118,7 +118,7 @@ class PerformanceNotificationServiceTest {
         service.handlePurchaseCreated(new PurchaseCreatedEvent(101L, 2L));
         service.handlePurchaseCreated(new PurchaseCreatedEvent(102L, 2L));
 
-        verify(notificationService).sendToFriend(any(), any());
+        verify(notificationService).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -128,12 +128,12 @@ class PerformanceNotificationServiceTest {
         service.handlePurchaseCreated(new PurchaseCreatedEvent(101L, 2L));
 
         verify(selectorsRepository, never()).findByIdForUpdate(any());
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
     void doesNotPropagateKakaoFailure() {
-        when(notificationService.sendToFriend(any(), any()))
+        when(notificationService.sendToFriendAsSystem(any(), any()))
                 .thenThrow(new IllegalStateException("kakao failed"));
 
         assertThatCode(() -> service.handlePurchaseCreated(new PurchaseCreatedEvent(101L, 2L)))
@@ -151,7 +151,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
         org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("3,000");
@@ -168,7 +168,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -191,7 +191,7 @@ class PerformanceNotificationServiceTest {
         service.notifyConfirmedPerformance(2L);
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService).sendToFriend(any(), any());
+        verify(notificationService).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -205,7 +205,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
         org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("1,000,000");
@@ -220,7 +220,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -244,7 +244,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         NotificationMessageCommand command = commandCaptor.getValue();
         org.assertj.core.api.Assertions.assertThat(command.referenceId()).isEqualTo(2L);
         org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo("50");
@@ -259,7 +259,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -271,7 +271,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -290,7 +290,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
                 .isEqualTo(NotificationType.LAST_MONTH_SALES);
     }
@@ -303,7 +303,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyConfirmedPerformance(2L);
 
-        verify(notificationService).sendToFriend(any(), any());
+        verify(notificationService).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -349,7 +349,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().detail())
                 .isEqualTo("32");
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
@@ -366,7 +366,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().detail()).isNull();
     }
 
@@ -378,7 +378,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyWeeklySalesGrowth(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -387,7 +387,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
                 .isEqualTo(NotificationType.MID_MONTH_ACTIVITY);
     }
@@ -401,7 +401,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyMidMonthActivity(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test
@@ -419,7 +419,7 @@ class PerformanceNotificationServiceTest {
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
-        verify(notificationService).sendToFriend(eq("sender-admin"), commandCaptor.capture());
+        verify(notificationService).sendToFriendAsSystem(eq("sender-admin"), commandCaptor.capture());
         org.assertj.core.api.Assertions.assertThat(commandCaptor.getValue().notificationType())
                 .isEqualTo(NotificationType.NO_PAGE_VIEWS);
     }
@@ -431,7 +431,7 @@ class PerformanceNotificationServiceTest {
 
         service.notifyNoPageViews(2L);
 
-        verify(notificationService, never()).sendToFriend(any(), any());
+        verify(notificationService, never()).sendToFriendAsSystem(any(), any());
     }
 
     @Test

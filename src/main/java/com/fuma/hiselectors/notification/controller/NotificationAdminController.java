@@ -5,6 +5,7 @@ import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.notification.dto.NotificationHistoryResponse;
+import com.fuma.hiselectors.notification.model.NotificationChannel;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.service.NotificationAdminService;
 import com.fuma.hiselectors.notification.task.KakaoMessageSendTask;
@@ -60,10 +61,11 @@ public class NotificationAdminController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate to,
             @RequestParam(required = false) String recipientKeyword,
+            @RequestParam(required = false) NotificationChannel channel,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return ResponseEntity.ok(notificationAdminService.getHistory(
-                purpose, status, from, to, recipientKeyword, page, size));
+                purpose, status, from, to, recipientKeyword, channel, page, size));
     }
 
     @Operation(summary = "실패한 발송 이력 재발송")

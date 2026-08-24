@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse;
+import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.BusinessDiscovery;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.Media;
 import com.fuma.hiselectors.content.client.dto.InstagramContentResponse.MediaPage;
 import com.fuma.hiselectors.content.client.dto.RawContent;
@@ -74,6 +75,28 @@ public class InstagramContentFetcher implements ContentFetcher {
         return SnsPlatform.INSTAGRAM;
     }
 
+    @Override
+    public Profile fetchProfile(String accountId) {
+        validateAccountRequest(accountId);
+        String fields = ("business_discovery.username(%s)"
+                + "{profile_picture_url,followers_count,media_count}")
+                .formatted(accountId);
+        URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), properties.businessAccountId())
+                .queryParam("fields", fields)
+                .build()
+                .encode()
+                .toUri();
+        InstagramContentResponse response = request(uri, InstagramContentResponse.class);
+        BusinessDiscovery discovery = response.businessDiscovery();
+        return discovery == null
+                ? new Profile(null, null, null)
+                : new Profile(
+                        discovery.profilePictureUrl(),
+                        discovery.followersCount(),
+                        discovery.mediaCount());
+    }
+
     /**
      * username의 Instagram 게시물 중 수집 기준 시각 이후 게시물 조회
      *
@@ -82,11 +105,26 @@ public class InstagramContentFetcher implements ContentFetcher {
      */
     @Override
     public List<RawContent> fetchByAccount(String accountId, LocalDateTime since) {
+        return fetchByAccount(accountId, since, null);
+    }
+
+    @Override
+    public List<RawContent> fetchByAccount(
+            String accountId, LocalDateTime since, int maxContents) {
+        if (maxContents <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return fetchByAccount(accountId, since, Integer.valueOf(maxContents));
+    }
+
+    private List<RawContent> fetchByAccount(
+            String accountId, LocalDateTime since, Integer maxContents) {
         validateRequest(accountId, since);
 
         int consecutiveOutOfPeriodCount = 0;
         List<RawContent> contents = new ArrayList<>();
         Set<String> requestedNextUrls = new HashSet<>();
+        Set<String> collectedContentIds = new HashSet<>();
 
         // Business Discovery로 username의 첫 게시글 페이지 요청
         MediaPage page = requestFirstPage(accountId);
@@ -97,9 +135,12 @@ public class InstagramContentFetcher implements ContentFetcher {
                 break;
             }
 
-            // 이미 받은 페이지는 끝까지 확인하고, 페이지 끝의 연속 횟수로 다음 요청 결정
             consecutiveOutOfPeriodCount = addCollectedContents(
-                    media, since, contents, consecutiveOutOfPeriodCount);
+                    media, since, contents, consecutiveOutOfPeriodCount,
+                    maxContents, collectedContentIds);
+            if (maxContents != null && collectedContentIds.size() >= maxContents) {
+                break;
+            }
             if (consecutiveOutOfPeriodCount >= OUT_OF_PERIOD_STOP_THRESHOLD) {
                 break;
             }
@@ -227,16 +268,19 @@ public class InstagramContentFetcher implements ContentFetcher {
     }
 
     private void validateRequest(String username, LocalDateTime since) {
+        validateAccountRequest(username);
+        if (since == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private void validateAccountRequest(String username) {
         // application-local.yaml 값 정상인지 확인
         if (!properties.isConfigured()) {
             throw new BusinessException(ErrorCode.INSTAGRAM_COLLECTION_CONFIG_MISSING);
         }
 
-        // username, collectedAfter가 정상인지 확인
         validateAccountId(username);
-        if (since == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
     }
 
     private void validateAccountId(String username) {
@@ -309,7 +353,9 @@ public class InstagramContentFetcher implements ContentFetcher {
             List<Media> media,
             LocalDateTime since,
             List<RawContent> contents,
-            int consecutiveOutOfPeriodCount) {
+            int consecutiveOutOfPeriodCount,
+            Integer maxContents,
+            Set<String> collectedContentIds) {
         for (Media item : media) {
             if (item == null || item.timestamp() == null) {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
@@ -320,8 +366,18 @@ public class InstagramContentFetcher implements ContentFetcher {
                 consecutiveOutOfPeriodCount++;
                 continue;
             }
-            contents.add(toRawContent(item, createdAt));
+            RawContent content = toRawContent(item, createdAt);
+            if (maxContents == null) {
+                contents.add(content);
+            } else if (content.media().stream().anyMatch(mediaItem ->
+                    mediaItem.mediaUrl() != null && !mediaItem.mediaUrl().isBlank())
+                    && collectedContentIds.add(content.snsContentId())) {
+                contents.add(content);
+            }
             consecutiveOutOfPeriodCount = 0;
+            if (maxContents != null && collectedContentIds.size() >= maxContents) {
+                break;
+            }
         }
         return consecutiveOutOfPeriodCount;
     }
