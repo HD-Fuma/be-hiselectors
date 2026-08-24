@@ -82,7 +82,7 @@ class ApplicationApprovalServiceTest {
         assertThat(response.status()).isEqualTo(ApplicationStatus.APPROVED);
         ArgumentCaptor<Selectors> selectorsCaptor = ArgumentCaptor.forClass(Selectors.class);
         verify(selectorsRepository).saveAndFlush(selectorsCaptor.capture());
-        assertThat(selectorsCaptor.getValue().getSelectorsCode()).isEqualTo("SEL-31");
+        assertThat(selectorsCaptor.getValue().getSelectorsCode()).isEqualTo("RC000061287T");
         assertThat(selectorsCaptor.getValue().getSelectorsNickname()).hasSize(20);
         ArgumentCaptor<SelectorsGeneration> membershipCaptor =
                 ArgumentCaptor.forClass(SelectorsGeneration.class);

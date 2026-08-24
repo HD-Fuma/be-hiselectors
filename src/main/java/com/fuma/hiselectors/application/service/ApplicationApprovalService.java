@@ -116,10 +116,7 @@ public class ApplicationApprovalService {
     }
 
     private Selectors createSelectors(Application application, User user) {
-        String code = "SEL-" + application.getId();
-        if (code.length() > 20) {
-            code = "SEL-" + Long.toString(application.getId(), 36);
-        }
+        String code = "RC%09dT".formatted(application.getId() * 2003L - 806L);
         String name = user.getName() == null ? "" : user.getName();
         try {
             return selectorsRepository.saveAndFlush(Selectors.builder()
