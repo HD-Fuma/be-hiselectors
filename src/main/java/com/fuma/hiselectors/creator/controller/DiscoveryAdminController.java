@@ -68,8 +68,13 @@ public class DiscoveryAdminController {
     })
     @PostMapping("/youtube/run")
     public ResponseEntity<TaskRunResponse> runYoutubeBatch(
-            @RequestHeader("Idempotency-Key") UUID idempotencyKey, Principal principal) {
-        return submitTask(idempotencyKey, principal, "youtube", creatorSyncTask);
+            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @RequestParam(defaultValue = "false") boolean test,
+            Principal principal) {
+        return test
+                ? submitTask(idempotencyKey, principal, "youtube-test",
+                        creatorSyncTask::executeTest)
+                : submitTask(idempotencyKey, principal, "youtube", creatorSyncTask);
     }
 
     @Operation(summary = "Instagram 크리에이터 일괄 발굴",

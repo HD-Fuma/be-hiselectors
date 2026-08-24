@@ -3,6 +3,7 @@ package com.fuma.hiselectors.creator.discovery.batch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramDiscoveryResult;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
+import com.fuma.hiselectors.creator.model.CreatorPool;
 import com.fuma.hiselectors.creator.repository.CreatorDiscoveryInfoRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -120,6 +122,29 @@ class InstagramDiscoveryBatchServiceTest {
     }
 
     @Test
+    void testModeRunsFirstInstagramCandidatePerCategory() {
+        CreatorDiscoveryInfo beautyFirst = candidate(1L, "beauty_first", "BEAUTY");
+        CreatorDiscoveryInfo beautySecond = candidate(2L, "beauty_second", "BEAUTY");
+        CreatorDiscoveryInfo fashionFirst = candidate(3L, "fashion_first", "FASHION");
+        when(discoveryInfoRepository
+                .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
+                        "YOUTUBE"))
+                .thenReturn(List.of(beautyFirst, beautySecond, fashionFirst));
+        when(instagramDiscoveryService.discoverFromYoutubeCreator(1L))
+                .thenReturn(discoveryResult(1L, true));
+        when(instagramDiscoveryService.discoverFromYoutubeCreator(3L))
+                .thenReturn(discoveryResult(3L, true));
+
+        InstagramDiscoveryBatchResult result = service.run(true, ignored -> { });
+
+        verify(instagramDiscoveryService).discoverFromYoutubeCreator(1L);
+        verify(instagramDiscoveryService, never()).discoverFromYoutubeCreator(2L);
+        verify(instagramDiscoveryService).discoverFromYoutubeCreator(3L);
+        assertThat(result.targetCreators()).isEqualTo(2);
+        assertThat(result.attemptedCreators()).isEqualTo(2);
+    }
+
+    @Test
     void propagatesMetaApiFailure() {
         CreatorDiscoveryInfo candidate = candidate(1L, "creator");
         when(discoveryInfoRepository
@@ -139,6 +164,14 @@ class InstagramDiscoveryBatchServiceTest {
         CreatorDiscoveryInfo candidate = mock(CreatorDiscoveryInfo.class);
         when(candidate.getId()).thenReturn(id);
         when(candidate.getIgHandle()).thenReturn(handle);
+        return candidate;
+    }
+
+    private CreatorDiscoveryInfo candidate(Long id, String handle, String category) {
+        CreatorDiscoveryInfo candidate = candidate(id, handle);
+        CreatorPool creator = mock(CreatorPool.class);
+        when(creator.getCategory()).thenReturn(category);
+        when(candidate.getCreatorPool()).thenReturn(creator);
         return candidate;
     }
 

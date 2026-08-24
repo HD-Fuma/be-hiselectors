@@ -18,8 +18,10 @@ import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskExecutionContext;
 import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
 import com.fuma.hiselectors.taskrun.service.TaskStartResult;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +32,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
@@ -90,6 +93,33 @@ class DiscoveryAdminControllerTest {
                                 && command.startedByAdminId().equals(7L)
                                 && command.businessPayload().get("source").asText().equals("youtube")),
                 org.mockito.Mockito.same(creatorSyncTask));
+    }
+
+    @Test
+    void runsQuickYoutubeDiscoveryBatch() throws Exception {
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new TaskStartResult.Created(run(TaskType.CREATOR_SYNC, key)));
+
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .param("test", "true")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        ArgumentCaptor<TrackedTask> task = ArgumentCaptor.forClass(TrackedTask.class);
+        verify(taskRunExecutionService).submit(org.mockito.ArgumentMatchers.argThat(command ->
+                        command.idempotencyKey().equals(key)
+                                && command.startedByAdminId().equals(7L)
+                                && command.businessPayload().get("source").asText()
+                                .equals("youtube-test")),
+                task.capture());
+        TaskExecutionContext context = mock(TaskExecutionContext.class);
+        task.getValue().execute(context);
+        verify(creatorSyncTask).executeTest(context);
     }
 
     @Test

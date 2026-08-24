@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.category.model.Category;
 import com.fuma.hiselectors.category.model.DiscoveryKeyword;
 import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
@@ -145,6 +146,30 @@ class YoutubeDiscoveryBatchServiceTest {
     }
 
     @Test
+    @DisplayName("테스트 모드는 카테고리마다 첫 키워드 하나만 실행한다")
+    void runOneKeywordPerCategoryInTestMode() {
+        DiscoveryKeyword beautyFirst = keyword(1L, "뷰티 첫 번째", 10L);
+        DiscoveryKeyword beautySecond = keyword(2L, "뷰티 두 번째", 10L);
+        DiscoveryKeyword fashionFirst = keyword(3L, "패션 첫 번째", 20L);
+        when(keywordRepository.findRunnable())
+                .thenReturn(List.of(beautyFirst, beautySecond, fashionFirst));
+        when(discoveryPipelineService.runByKeyword(1L, 25))
+                .thenReturn(result("뷰티 첫 번째", 1, 1, 0, 102));
+        when(discoveryPipelineService.runByKeyword(3L, 25))
+                .thenReturn(result("패션 첫 번째", 1, 1, 0, 102));
+
+        YoutubeDiscoveryBatchResult result = service(10_000, 25, 50)
+                .runYoutubeOnly(true, ignored -> { });
+
+        verify(discoveryPipelineService).runByKeyword(1L, 25);
+        verify(discoveryPipelineService, never()).runByKeyword(2L, 25);
+        verify(discoveryPipelineService).runByKeyword(3L, 25);
+        assertThat(result.runnableKeywords()).isEqualTo(3);
+        assertThat(result.targetKeywords()).isEqualTo(2);
+        assertThat(result.attemptedKeywords()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("API 키가 없으면 설정 오류를 반환한다")
     void failWithoutApiKey() {
         YoutubeDiscoveryProperties withoutApiKey =
@@ -207,6 +232,14 @@ class YoutubeDiscoveryBatchServiceTest {
         DiscoveryKeyword keyword = mock(DiscoveryKeyword.class);
         lenient().when(keyword.getId()).thenReturn(id);
         lenient().when(keyword.getKeyword()).thenReturn(value);
+        return keyword;
+    }
+
+    private DiscoveryKeyword keyword(Long id, String value, Long categoryId) {
+        DiscoveryKeyword keyword = keyword(id, value);
+        Category category = mock(Category.class);
+        when(category.getId()).thenReturn(categoryId);
+        when(keyword.getCategory()).thenReturn(category);
         return keyword;
     }
 

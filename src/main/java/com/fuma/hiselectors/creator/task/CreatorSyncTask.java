@@ -18,9 +18,17 @@ public class CreatorSyncTask implements TrackedTask {
 
     @Override
     public void execute(TaskExecutionContext context) {
+        execute(context, false);
+    }
+
+    public void executeTest(TaskExecutionContext context) {
+        execute(context, true);
+    }
+
+    private void execute(TaskExecutionContext context, boolean test) {
         context.progress().start("YOUTUBE_CREATOR_SYNC", null);
         int[] youtubeCounts = new int[2];
-        YoutubeDiscoveryBatchResult youtubeResult = youtube.runYoutubeOnly(snapshot -> {
+        YoutubeDiscoveryBatchResult youtubeResult = youtube.runYoutubeOnly(test, snapshot -> {
             context.progress().describe("%d개 키워드 중 %d개 처리 · 크리에이터 %d명 수집".formatted(
                     snapshot.targetKeywords(), snapshot.attemptedKeywords(),
                     snapshot.uniqueCollectedCreators()));
@@ -34,7 +42,7 @@ public class CreatorSyncTask implements TrackedTask {
         context.progress().describe("Instagram 크리에이터 수집 준비 중");
         context.progress().changeStep("INSTAGRAM_CREATOR_SYNC");
         int[] instagramCounts = new int[2];
-        InstagramDiscoveryBatchResult instagramResult = instagram.run(snapshot -> {
+        InstagramDiscoveryBatchResult instagramResult = instagram.run(test, snapshot -> {
             context.progress().describe("%d명 중 %d명 처리 · 크리에이터 %d명 수집".formatted(
                     snapshot.targetCreators(), snapshot.attemptedCreators(),
                     snapshot.uniqueCollectedCreators()));

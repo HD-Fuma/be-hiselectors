@@ -26,11 +26,16 @@ public class InstagramDiscoveryBatchService {
     private final InstagramDiscoveryService instagramDiscoveryService;
 
     public InstagramDiscoveryBatchResult run() {
-        return run(ignored -> { });
+        return run(false, ignored -> { });
     }
 
     public InstagramDiscoveryBatchResult run(
             Consumer<InstagramDiscoveryBatchResult> progressCallback) {
+        return run(false, progressCallback);
+    }
+
+    public InstagramDiscoveryBatchResult run(
+            boolean test, Consumer<InstagramDiscoveryBatchResult> progressCallback) {
         Objects.requireNonNull(progressCallback, "progressCallback");
         List<CreatorDiscoveryInfo> candidates = discoveryInfoRepository
                 .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
@@ -38,6 +43,12 @@ public class InstagramDiscoveryBatchService {
                 .stream()
                 .filter(candidate -> !candidate.getIgHandle().isBlank())
                 .toList();
+        if (test) {
+            Set<String> categories = new HashSet<>();
+            candidates = candidates.stream()
+                    .filter(candidate -> categories.add(candidate.getCreatorPool().getCategory()))
+                    .toList();
+        }
 
         int attempted = 0;
         int succeeded = 0;
