@@ -11,6 +11,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fuma.hiselectors.config.CacheConfig;
+import com.fuma.hiselectors.settlement.dto.SettlementRecalculationResponse;
+import com.fuma.hiselectors.settlement.service.SettlementRecalculationService;
+import com.fuma.hiselectors.settlement.task.SettlementRecalculationTask;
 import com.fuma.hiselectors.taskrun.config.TaskExecutorConfig;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
@@ -22,6 +25,7 @@ import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -30,6 +34,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +53,10 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-@DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+@DataJpaTest(properties = {
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "task-run.progress.flush-count=10"
+})
 @Import({
         CacheConfig.class,
         RequestFingerprint.class,
@@ -155,6 +163,37 @@ class TaskRunExecutionServiceTest {
         TaskRun run = find(runId(result));
         assertThat(run.getProgressMessage()).isEqualTo("YouTube 7명 · Instagram 4명 수집");
         assertThat(run.getStatus()).isEqualTo(TaskRunStatus.SUCCEEDED);
+    }
+
+    @Test
+    void settlementRecalculationPersistsDetailsWhenTheCountThresholdFlushesProgress() {
+        SettlementRecalculationResponse response = new SettlementRecalculationResponse(
+                null, YearMonth.of(2026, 7), YearMonth.of(2026, 2), YearMonth.of(2026, 7),
+                2, 6, 4, 3, 2, 2, 1);
+
+        TaskRun run = executeSettlementRecalculation(response, persisted ->
+                assertSettlementProgress(persisted, response, TaskRunStatus.RUNNING));
+
+        assertSettlementProgress(run, response, TaskRunStatus.PARTIAL_FAILED);
+    }
+
+    @Test
+    void settlementRecalculationPersistsDetailsDuringTheFinalFlush() {
+        SettlementRecalculationResponse response = new SettlementRecalculationResponse(
+                null, YearMonth.of(2026, 7), YearMonth.of(2026, 5), YearMonth.of(2026, 7),
+                2, 3, 1, 2, 1, 1, 1);
+
+        TaskRun run = executeSettlementRecalculation(response, persisted -> {
+            assertThat(persisted.getStatus()).isEqualTo(TaskRunStatus.RUNNING);
+            assertThat(persisted.getProgressMessage()).isNull();
+            assertThat(persisted.getTotalCount()).isEqualTo(6);
+            assertThat(persisted.getProcessedCount()).isZero();
+            assertThat(persisted.getSucceededCount()).isZero();
+            assertThat(persisted.getFailedCount()).isZero();
+            assertThat(persisted.getSkippedCount()).isZero();
+        });
+
+        assertSettlementProgress(run, response, TaskRunStatus.PARTIAL_FAILED);
     }
 
     @Test
@@ -323,6 +362,66 @@ class TaskRunExecutionServiceTest {
     private TaskRunExecutionService taskRunExecutionService(TaskExecutor executor) {
         return new TaskRunExecutionService(
                 service, leaseTransaction, properties, clock, executor, failureLogger);
+    }
+
+    private TaskRun executeSettlementRecalculation(
+            SettlementRecalculationResponse response, Consumer<TaskRun> afterExecuteProbe) {
+        SettlementRecalculationService recalculationService = mock(SettlementRecalculationService.class);
+        YearMonth activityMonth = response.requestedActivityMonth();
+        org.mockito.Mockito.when(recalculationService.recalculate(activityMonth, null, true))
+                .thenReturn(response);
+        SettlementRecalculationTask task = new SettlementRecalculationTask(
+                recalculationService, activityMonth, null, true) {
+            @Override
+            public void execute(TaskExecutionContext context) {
+                super.execute(context);
+                afterExecuteProbe.accept(find(context.lease().runId()));
+            }
+        };
+
+        TaskStartResult result = taskRunExecutionService(Runnable::run)
+                .submit(settlementCommand(UUID.randomUUID(), activityMonth), task);
+
+        return find(runId(result));
+    }
+
+    private void assertSettlementProgress(
+            TaskRun run,
+            SettlementRecalculationResponse response,
+            TaskRunStatus expectedStatus) {
+        assertThat(run.getStatus()).isEqualTo(expectedStatus);
+        assertThat(run.getProgressMessage()).isEqualTo(String.format(
+                "신규 %d건 · 수정 %d건 · 확정 %d건 · 실패 %d건 · 건너뜀 %d건",
+                response.createdCount(),
+                response.updatedCount(),
+                response.finalizedCount(),
+                response.failedCount(),
+                response.skippedCount()));
+        assertThat(run.getTotalCount())
+                .isEqualTo((long) response.selectorsCount() * response.activityMonthsCount());
+        assertThat(run.getProcessedCount()).isEqualTo(
+                response.createdCount()
+                        + response.updatedCount()
+                        + response.finalizedCount()
+                        + response.failedCount()
+                        + response.skippedCount());
+        assertThat(run.getSucceededCount()).isEqualTo(
+                response.createdCount() + response.updatedCount() + response.finalizedCount());
+        assertThat(run.getFailedCount()).isEqualTo(response.failedCount());
+        assertThat(run.getSkippedCount()).isEqualTo(response.skippedCount());
+    }
+
+    private TaskStartCommand settlementCommand(UUID key, YearMonth activityMonth) {
+        var payload = objectMapper.createObjectNode();
+        payload.put("activityMonth", activityMonth.toString());
+        payload.putNull("selectorsId");
+        payload.put("force", true);
+        return new TaskStartCommand(
+                TaskType.SETTLEMENT_CALCULATION,
+                TriggerType.ADMIN_TRIGGERED,
+                42L,
+                key,
+                payload);
     }
 
     private TaskStartCommand command(UUID key) {

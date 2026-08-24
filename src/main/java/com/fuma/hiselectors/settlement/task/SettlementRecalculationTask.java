@@ -34,6 +34,13 @@ public class SettlementRecalculationTask implements TrackedTask {
                 Math.addExact(result.createdCount(), result.updatedCount()),
                 result.finalizedCount());
         context.progress().start("RECALCULATE", total);
+        context.progress().describe(String.format(
+                "신규 %d건 · 수정 %d건 · 확정 %d건 · 실패 %d건 · 건너뜀 %d건",
+                result.createdCount(),
+                result.updatedCount(),
+                result.finalizedCount(),
+                result.failedCount(),
+                result.skippedCount()));
         context.progress().advance(succeeded, result.failedCount(), result.skippedCount());
     }
 }

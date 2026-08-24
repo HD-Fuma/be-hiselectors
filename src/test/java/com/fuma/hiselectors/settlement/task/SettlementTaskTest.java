@@ -68,6 +68,7 @@ class SettlementTaskTest {
         order.verify(progress).start("RECALCULATE", null);
         order.verify(service).recalculate(month, null, true);
         order.verify(progress).start("RECALCULATE", 6);
+        order.verify(progress).describe("신규 1건 · 수정 2건 · 확정 1건 · 실패 1건 · 건너뜀 1건");
         order.verify(progress).advance(4, 1, 1);
     }
 
