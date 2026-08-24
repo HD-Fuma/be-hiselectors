@@ -123,6 +123,26 @@ class ApplicationAdminRepositoryTest {
     }
 
     @Test
+    void excludesApplicantsWithoutMemberNumber() {
+        Application nullHiId = savePendingApplication(null, "null-hi-id");
+        Application blankHiId = savePendingApplication("   ", "blank-hi-id");
+        em.flush();
+        em.clear();
+
+        var firstPage = applicationRepository.searchAdmin(
+                null, null, ApplicationStatus.PENDING,
+                generation.getId(), null, PageRequest.of(0, 2));
+
+        assertThat(firstPage.getTotalElements()).isEqualTo(3);
+        assertThat(applicationRepository.searchAdmin(
+                null, null, ApplicationStatus.PENDING,
+                generation.getId(), null, PageRequest.of(0, 20)))
+                .extracting(Application::getId)
+                .containsExactlyInAnyOrder(regular.getId(), sparse.getId(), unknown.getId())
+                .doesNotContain(nullHiId.getId(), blankHiId.getId());
+    }
+
+    @Test
     void minimumCriteriaIsAppliedBeforePaging() {
         var result = applicationRepository.searchAdmin(
                 null, null, null, generation.getId(), true, PageRequest.of(0, 1));
@@ -162,6 +182,22 @@ class ApplicationAdminRepositoryTest {
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(sparse.getId());
+    }
+
+    private Application savePendingApplication(String hiId, String accountId) {
+        User user = em.persist(User.builder()
+                .hiId(hiId)
+                .name("일괄 테스트")
+                .build());
+        return applicationRepository.save(Application.builder()
+                .userId(user.getId())
+                .generationId(generation.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsAccountId(accountId)
+                .alarmYn(true)
+                .policyAgreedAt(COLLECTED_AT.minusDays(30))
+                .status(ApplicationStatus.PENDING)
+                .build());
     }
 
     private Application saveApplication(

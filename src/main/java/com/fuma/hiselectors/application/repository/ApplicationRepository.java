@@ -88,6 +88,11 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
                       AND (LOWER(u.hiId) LIKE LOWER(CONCAT('%', :keyword, '%'))
                         OR LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
                         OR LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%')))))
+              AND EXISTS (
+                  SELECT applicant.id FROM User applicant
+                  WHERE applicant.id = a.userId
+                    AND applicant.hiId IS NOT NULL
+                    AND TRIM(applicant.hiId) <> '')
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
@@ -118,6 +123,11 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
                       AND (LOWER(u.hiId) LIKE LOWER(CONCAT('%', :keyword, '%'))
                         OR LOWER(u.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
                         OR LOWER(u.email) LIKE LOWER(CONCAT('%', :keyword, '%')))))
+              AND EXISTS (
+                  SELECT applicant.id FROM User applicant
+                  WHERE applicant.id = a.userId
+                    AND applicant.hiId IS NOT NULL
+                    AND TRIM(applicant.hiId) <> '')
               AND (:snsCode IS NULL OR a.snsCode = :snsCode)
               AND (:status IS NULL OR a.status = :status)
               AND (:generationId IS NULL OR a.generationId = :generationId)
