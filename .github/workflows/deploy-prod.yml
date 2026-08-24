@@ -66,6 +66,17 @@ jobs:
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
         echo "application-profile-image=verified"
 
+        selectors_profile_url_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url'")"
+        if [ "$selectors_profile_url_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE selectors_sns_account ADD COLUMN profile_url VARCHAR(500) NULL AFTER account_id"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        selectors_profile_identity_mismatch_count="$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE NOT (account.sns_code <=> app.sns_code) OR NOT (BINARY account.account_id <=> BINARY app.sns_account_id)")"
+        assert_eq selectors-profile-identity-mismatch "$selectors_profile_identity_mismatch_count" 0
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_url = app.profile_url WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL")" = "0"
+        echo "selectors-sns-profile=verified"
+
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
         mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
