@@ -271,6 +271,41 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    @DisplayName("지원자 수집은 고유 media_url 10개에서 페이지 조회를 멈춘다")
+    void collectAtMostTenUniqueMediaUrls() {
+        String secondPageUrl = nextUrl("page-2");
+        expectFirstPage(List.of(
+                mediaJson("unique-0", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-1", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-2", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-3", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-4", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-5", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-6", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-7", "2026-08-13T05:00:00+0000"),
+                mediaJson("unique-8", "2026-08-13T05:00:00+0000"),
+                mediaJson("duplicate", "2026-08-13T05:00:00+0000",
+                        "https://cdn.example.com/unique-0.jpg")), secondPageUrl);
+        expectNextPage(secondPageUrl, List.of(
+                mediaJson("unique-9", "2026-08-13T04:59:00+0000"),
+                mediaJson("unused", "2026-08-13T04:58:00+0000")), nextUrl("unused"));
+
+        List<RawContent> result = client.fetchByAccount(
+                "nike", LocalDateTime.of(2026, 8, 13, 13, 0), 10);
+
+        List<String> mediaUrls = result.stream()
+                .flatMap(content -> content.media().stream())
+                .map(RawContentMedia::mediaUrl)
+                .toList();
+        assertThat(mediaUrls)
+                .hasSize(10)
+                .doesNotHaveDuplicates()
+                .contains("https://cdn.example.com/unique-9.jpg")
+                .doesNotContain("https://cdn.example.com/unused.jpg");
+        server.verify();
+    }
+
+    @Test
     @DisplayName("기간 외 게시물이 3개 연속이면 다음 페이지를 계속 조회한다")
     void continueAfterThreeConsecutiveOutOfPeriodContents() {
         String nextUrl = nextUrl("page-2");
@@ -699,16 +734,20 @@ class InstagramContentFetcherTest {
     }
 
     private String mediaJson(String id, String timestamp) {
+        return mediaJson(id, timestamp, "https://cdn.example.com/" + id + ".jpg");
+    }
+
+    private String mediaJson(String id, String timestamp, String mediaUrl) {
         return """
                 {
                   "id": "%s",
                   "media_type": "IMAGE",
                   "media_product_type": "FEED",
-                  "media_url": "https://cdn.example.com/%s.jpg",
+                  "media_url": "%s",
                   "permalink": "https://www.instagram.com/p/%s",
                   "timestamp": "%s"
                 }
-                """.formatted(id, id, id, timestamp);
+                """.formatted(id, mediaUrl, id, timestamp);
     }
 
     private String nextUrl(String cursor) {

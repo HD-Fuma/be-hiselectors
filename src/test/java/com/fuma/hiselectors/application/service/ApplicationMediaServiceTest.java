@@ -204,7 +204,7 @@ class ApplicationMediaServiceTest {
                 COLLECTED_AT.minusDays(2),
                 List.of(new RawContentMedia(
                         "unavailable-media", RawContentMedia.MediaType.VIDEO, null)));
-        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN))
+        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN, 10))
                 .thenReturn(List.of(reel, post, unavailable));
         when(instagramFetcher.fetchProfileImageUrl("username"))
                 .thenThrow(new IllegalStateException("profile API failed"));
