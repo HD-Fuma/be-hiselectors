@@ -23,7 +23,7 @@ public interface ContentFetcher {
 
     /** 지원자 리포트처럼 수집량 상한이 필요한 호출. 기본 구현은 기존 전체 조회를 유지한다. */
     default List<RawContent> fetchByAccount(
-            String accountId, LocalDateTime since, int maxUniqueMediaUrls) {
+            String accountId, LocalDateTime since, int maxContents) {
         return fetchByAccount(accountId, since);
     }
 

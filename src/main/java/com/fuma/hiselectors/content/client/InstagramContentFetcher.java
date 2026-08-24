@@ -108,21 +108,21 @@ public class InstagramContentFetcher implements ContentFetcher {
 
     @Override
     public List<RawContent> fetchByAccount(
-            String accountId, LocalDateTime since, int maxUniqueMediaUrls) {
-        if (maxUniqueMediaUrls <= 0) {
+            String accountId, LocalDateTime since, int maxContents) {
+        if (maxContents <= 0) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
-        return fetchByAccount(accountId, since, Integer.valueOf(maxUniqueMediaUrls));
+        return fetchByAccount(accountId, since, Integer.valueOf(maxContents));
     }
 
     private List<RawContent> fetchByAccount(
-            String accountId, LocalDateTime since, Integer maxUniqueMediaUrls) {
+            String accountId, LocalDateTime since, Integer maxContents) {
         validateRequest(accountId, since);
 
         int consecutiveOutOfPeriodCount = 0;
         List<RawContent> contents = new ArrayList<>();
         Set<String> requestedNextUrls = new HashSet<>();
-        Set<String> uniqueMediaUrls = new HashSet<>();
+        Set<String> collectedContentIds = new HashSet<>();
 
         // Business Discovery로 username의 첫 게시글 페이지 요청
         MediaPage page = requestFirstPage(accountId);
@@ -133,11 +133,10 @@ public class InstagramContentFetcher implements ContentFetcher {
                 break;
             }
 
-            // 이미 받은 페이지는 끝까지 확인하고, 페이지 끝의 연속 횟수로 다음 요청 결정
             consecutiveOutOfPeriodCount = addCollectedContents(
                     media, since, contents, consecutiveOutOfPeriodCount,
-                    maxUniqueMediaUrls, uniqueMediaUrls);
-            if (maxUniqueMediaUrls != null && uniqueMediaUrls.size() >= maxUniqueMediaUrls) {
+                    maxContents, collectedContentIds);
+            if (maxContents != null && collectedContentIds.size() >= maxContents) {
                 break;
             }
             if (consecutiveOutOfPeriodCount >= OUT_OF_PERIOD_STOP_THRESHOLD) {
@@ -353,8 +352,8 @@ public class InstagramContentFetcher implements ContentFetcher {
             LocalDateTime since,
             List<RawContent> contents,
             int consecutiveOutOfPeriodCount,
-            Integer maxUniqueMediaUrls,
-            Set<String> uniqueMediaUrls) {
+            Integer maxContents,
+            Set<String> collectedContentIds) {
         for (Media item : media) {
             if (item == null || item.timestamp() == null) {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
@@ -366,43 +365,19 @@ public class InstagramContentFetcher implements ContentFetcher {
                 continue;
             }
             RawContent content = toRawContent(item, createdAt);
-            if (maxUniqueMediaUrls == null) {
+            if (maxContents == null) {
                 contents.add(content);
-            } else {
-                RawContent limited = limitToUniqueMediaUrls(
-                        content, uniqueMediaUrls, maxUniqueMediaUrls);
-                if (limited != null) {
-                    contents.add(limited);
-                }
+            } else if (content.media().stream().anyMatch(mediaItem ->
+                    mediaItem.mediaUrl() != null && !mediaItem.mediaUrl().isBlank())
+                    && collectedContentIds.add(content.snsContentId())) {
+                contents.add(content);
             }
             consecutiveOutOfPeriodCount = 0;
-            if (maxUniqueMediaUrls != null && uniqueMediaUrls.size() >= maxUniqueMediaUrls) {
+            if (maxContents != null && collectedContentIds.size() >= maxContents) {
                 break;
             }
         }
         return consecutiveOutOfPeriodCount;
-    }
-
-    private RawContent limitToUniqueMediaUrls(
-            RawContent content, Set<String> uniqueMediaUrls, int maxUniqueMediaUrls) {
-        List<RawContentMedia> selected = new ArrayList<>();
-        for (RawContentMedia media : content.media()) {
-            String mediaUrl = media.mediaUrl();
-            if (mediaUrl == null || mediaUrl.isBlank() || !uniqueMediaUrls.add(mediaUrl)) {
-                continue;
-            }
-            selected.add(media);
-            if (uniqueMediaUrls.size() >= maxUniqueMediaUrls) {
-                break;
-            }
-        }
-        if (selected.isEmpty()) {
-            return null;
-        }
-        return new RawContent(
-                content.snsCode(), content.snsContentId(), content.contentUrl(),
-                content.contentType(), content.texts(), content.createdAt(), selected,
-                content.viewCount(), content.likeCount(), content.commentCount());
     }
 
     private RawContent toRawContent(Media media, LocalDateTime createdAt) {

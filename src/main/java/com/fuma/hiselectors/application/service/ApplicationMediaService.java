@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ApplicationMediaService {
 
     private static final int COLLECTION_DAYS = 90;
-    private static final int INSTAGRAM_MEDIA_LIMIT = 10;
+    private static final int INSTAGRAM_CONTENT_LIMIT = 10;
     private static final BigDecimal LIKE_WEIGHT = new BigDecimal("0.5");
     private static final BigDecimal COMMENT_WEIGHT = new BigDecimal("5");
     private static final BigDecimal PERCENT = new BigDecimal("100");
@@ -58,7 +58,7 @@ public class ApplicationMediaService {
             ContentFetcher fetcher = findFetcher(application);
             List<RawContent> contents = application.getSnsCode() == SnsPlatform.INSTAGRAM
                     ? fetcher.fetchByAccount(
-                            application.getSnsAccountId(), collectedAfter, INSTAGRAM_MEDIA_LIMIT)
+                            application.getSnsAccountId(), collectedAfter, INSTAGRAM_CONTENT_LIMIT)
                     : fetcher.fetchByAccount(application.getSnsAccountId(), collectedAfter);
             Snapshot snapshot = createSnapshot(
                     application, fetcher, contents, collectedAfter, collectedAt);
