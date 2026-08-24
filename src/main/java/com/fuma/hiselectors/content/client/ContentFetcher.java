@@ -4,7 +4,6 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 /** SNS 콘텐츠 조회 공통 규칙 (Instagram, YouTube 등) */
 public interface ContentFetcher {
@@ -27,9 +26,9 @@ public interface ContentFetcher {
         return fetchByAccount(accountId, since);
     }
 
-    /** SNS 계정의 공개 프로필 이미지. 플랫폼이 제공하지 않으면 빈 값. */
-    default Optional<String> fetchProfileImageUrl(String accountId) {
-        return Optional.empty();
+    /** SNS 계정의 공개 프로필 정보. 플랫폼이 제공하지 않는 값은 null. */
+    default Profile fetchProfile(String accountId) {
+        return new Profile(null, null, null);
     }
 
     /** 저장 대상으로 선택된 콘텐츠의 수집 시점 성과 조회 */
@@ -46,6 +45,9 @@ public interface ContentFetcher {
     default List<FetchResult> fetchByAccountContentIds(
             String accountId, List<String> snsContentIds) {
         return fetchByContentIds(snsContentIds);
+    }
+
+    record Profile(String imageUrl, Long followerCount, Long contentCount) {
     }
 
     record FetchResult(

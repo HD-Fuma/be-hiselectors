@@ -6,6 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
+import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskType;
+import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskRunTerminalSnapshot;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -134,6 +139,87 @@ class BatchEventLoggerTest {
     }
 
     @Test
+    void taskRunTerminalUsesTheActualRunIdAndTerminalSnapshotTime() throws Exception {
+        UUID runId = UUID.fromString("2284fbed-2d99-422f-a18e-e875055fcb38");
+        Instant startedAt = Instant.parse("2026-08-22T02:59:58Z");
+        Instant finishedAt = Instant.parse("2026-08-22T03:00:00Z");
+
+        batchEventLogger.taskRunTerminal(
+                runId,
+                "PARTIAL_FAILED",
+                startedAt,
+                finishedAt,
+                Map.of(
+                        "total", 5L,
+                        "processed", 4L,
+                        "succeeded", 2L,
+                        "failed", 1L,
+                        "skipped", 1L),
+                Map.of("taskType", "CONTENT_SYNC", "triggerType", "SCHEDULED"),
+                "TASK_RUN_PARTIAL_FAILED",
+                "일부 처리 항목이 실패했습니다.");
+
+        JsonNode event = events().getFirst();
+        assertThat(event.get("batch").asText()).isEqualTo("task-run");
+        assertThat(event.get("runId").asText()).isEqualTo(runId.toString());
+        assertThat(event.get("status").asText()).isEqualTo("PARTIAL_FAILED");
+        assertThat(OffsetDateTime.parse(event.get("timestamp").asText()).toInstant())
+                .isEqualTo(finishedAt);
+        assertThat(event.get("durationMs").asLong()).isEqualTo(2_000L);
+        assertThat(event.get("counts").get("total").asLong()).isEqualTo(5L);
+        assertThat(event.get("counts").get("processed").asLong()).isEqualTo(4L);
+        assertThat(event.get("details").get("taskType").asText()).isEqualTo("CONTENT_SYNC");
+        assertThat(event.get("details").get("triggerType").asText()).isEqualTo("SCHEDULED");
+        assertThat(event.get("error").get("type").asText()).isEqualTo("TASK_RUN_PARTIAL_FAILED");
+        assertThat(event.get("error").get("message").asText())
+                .isEqualTo("일부 처리 항목이 실패했습니다.");
+    }
+
+    @Test
+    void taskRunTerminalOmitsNullTotalBoundsErrorAndPreventsNegativeDuration() throws Exception {
+        batchEventLogger.taskRunTerminal(
+                UUID.fromString("e44282da-2300-49f8-a281-d107f7344f11"),
+                "STALE",
+                Instant.parse("2026-08-22T03:00:01Z"),
+                Instant.parse("2026-08-22T03:00:00Z"),
+                Map.of("processed", 0L, "succeeded", 0L, "failed", 0L, "skipped", 0L),
+                Map.of("taskType", "CREATOR_SYNC", "triggerType", "SCHEDULED"),
+                "TASK_RUN_STALE",
+                "가".repeat(600));
+
+        JsonNode event = events().getFirst();
+        assertThat(event.get("durationMs").asLong()).isZero();
+        assertThat(event.get("counts").has("total")).isFalse();
+        assertThat(event.get("error").get("message").asText()).hasSize(500);
+    }
+
+    @Test
+    void taskRunFailureLoggerSuppliesStatusSpecificNonblankFallbackErrors() {
+        TaskRunFailureLogger failureLogger = new TaskRunFailureLogger(batchEventLogger);
+
+        failureLogger.log(snapshot(TaskRunStatus.FAILED, " ", null));
+        failureLogger.log(snapshot(TaskRunStatus.PARTIAL_FAILED, null, ""));
+        failureLogger.log(snapshot(TaskRunStatus.STALE, "", " "));
+
+        assertThat(events()).extracting(event -> event.get("error").get("type").asText())
+                .containsExactly("TASK_RUN_FAILED", "TASK_RUN_PARTIAL_FAILED", "TASK_RUN_STALE");
+        assertThat(events()).extracting(event -> event.get("error").get("message").asText())
+                .containsExactly(
+                        "처리 결과에 실패 건수가 포함되어 있습니다.",
+                        "일부 처리 항목이 실패했습니다.",
+                        "제한 시간 동안 heartbeat가 없어 비정상 종료로 판정했습니다.");
+    }
+
+    @Test
+    void taskRunFailureLoggerRejectsSucceededSnapshots() {
+        TaskRunFailureLogger failureLogger = new TaskRunFailureLogger(batchEventLogger);
+
+        assertThatThrownBy(() -> failureLogger.log(snapshot(TaskRunStatus.SUCCEEDED, null, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(appender.list).isEmpty();
+    }
+
+    @Test
     void rejectsInvalidBatchNamesAndDuplicateTerminalEvents() {
         assertThatThrownBy(() -> batchEventLogger.start("Content Sync"))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -191,6 +277,24 @@ class BatchEventLoggerTest {
 
     private static void assertThatCodeIsUuid(String value) {
         assertThat(UUID.fromString(value).toString()).isEqualTo(value);
+    }
+
+    private static TaskRunTerminalSnapshot snapshot(
+            TaskRunStatus status, String errorType, String errorMessage) {
+        return new TaskRunTerminalSnapshot(
+                UUID.randomUUID(),
+                TaskType.CONTENT_SYNC,
+                TriggerType.SCHEDULED,
+                status,
+                Instant.parse("2026-08-22T02:59:58Z"),
+                Instant.parse("2026-08-22T03:00:00Z"),
+                null,
+                4,
+                2,
+                1,
+                1,
+                errorType,
+                errorMessage);
     }
 
     private static final class MutableClock extends Clock {

@@ -23,7 +23,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
@@ -77,9 +76,10 @@ public class InstagramContentFetcher implements ContentFetcher {
     }
 
     @Override
-    public Optional<String> fetchProfileImageUrl(String accountId) {
+    public Profile fetchProfile(String accountId) {
         validateAccountRequest(accountId);
-        String fields = "business_discovery.username(%s){profile_picture_url}"
+        String fields = ("business_discovery.username(%s)"
+                + "{profile_picture_url,followers_count,media_count}")
                 .formatted(accountId);
         URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
                 .pathSegment(properties.apiVersion(), properties.businessAccountId())
@@ -90,9 +90,11 @@ public class InstagramContentFetcher implements ContentFetcher {
         InstagramContentResponse response = request(uri, InstagramContentResponse.class);
         BusinessDiscovery discovery = response.businessDiscovery();
         return discovery == null
-                ? Optional.empty()
-                : Optional.ofNullable(discovery.profilePictureUrl())
-                        .filter(url -> !url.isBlank());
+                ? new Profile(null, null, null)
+                : new Profile(
+                        discovery.profilePictureUrl(),
+                        discovery.followersCount(),
+                        discovery.mediaCount());
     }
 
     /**

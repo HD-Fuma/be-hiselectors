@@ -15,6 +15,11 @@ public class BusinessException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
+    public BusinessException(ErrorCode errorCode, Throwable cause) {
+        super(errorCode.getMessage(), cause);
+        this.errorCode = errorCode;
+    }
+
     // 메시지를 본인이 적고 싶을 경우, message 부분에 넣어서 전달
     public BusinessException(ErrorCode errorCode, String message) {
         super(message);

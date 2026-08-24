@@ -135,6 +135,15 @@ public class Application extends BaseTimeEntity {
         }
     }
 
+    public void fillMissingPublicMetrics(Long followerCount, Long contentCount) {
+        if (this.followerCount == null && followerCount != null && followerCount >= 0) {
+            this.followerCount = followerCount;
+        }
+        if (this.contentCount == null && contentCount != null && contentCount >= 0) {
+            this.contentCount = contentCount;
+        }
+    }
+
     public void failMediaCollection(String error) {
         this.mediaCollectionStatus = MediaCollectionStatus.FAILED;
         this.mediaCollectionRetryCount++;

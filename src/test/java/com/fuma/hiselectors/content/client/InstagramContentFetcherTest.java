@@ -44,24 +44,26 @@ class InstagramContentFetcherTest {
     }
 
     @Test
-    void fetchesBusinessProfileImage() {
+    void fetchesPublicBusinessProfile() {
         server.expect(request -> {
                     String query = URLDecoder.decode(
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(nike)")
-                            .contains("profile_picture_url");
+                            .contains("profile_picture_url,followers_count,media_count");
                 })
                 .andRespond(withSuccess("""
                         {
                           "business_discovery": {
-                            "profile_picture_url": "https://cdn.example.com/profile.jpg"
+                            "profile_picture_url": "https://cdn.example.com/profile.jpg",
+                            "followers_count": 12345,
+                            "media_count": 120
                           }
                         }
                         """, MediaType.APPLICATION_JSON));
 
-        assertThat(client.fetchProfileImageUrl("nike"))
-                .contains("https://cdn.example.com/profile.jpg");
+        assertThat(client.fetchProfile("nike")).isEqualTo(new ContentFetcher.Profile(
+                "https://cdn.example.com/profile.jpg", 12_345L, 120L));
         server.verify();
     }
 

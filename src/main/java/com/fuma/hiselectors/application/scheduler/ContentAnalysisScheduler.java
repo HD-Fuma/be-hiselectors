@@ -40,8 +40,11 @@ public class ContentAnalysisScheduler {
     private final ApplicationRepository applicationRepository;
     private final ApplicationAnalysisService analysisService;
 
-    @Value("${application.content-analysis.batch-size:5}")
+    @Value("${application.content-analysis.batch-size:1}")
     private int batchSize;
+
+    @Value("${application.content-analysis.scheduler-enabled:true}")
+    private boolean schedulerEnabled;
 
     /** IN_PROGRESS lease(분). 처리 중 크래시하면 이 시간 뒤 다른 워커가 회수. 최대 처리시간보다 넉넉히. */
     @Value("${application.content-analysis.lease-minutes:30}")
@@ -51,6 +54,12 @@ public class ContentAnalysisScheduler {
             fixedDelayString = "${application.content-analysis.fixed-delay-ms:60000}",
             initialDelayString = "${application.content-analysis.initial-delay-ms:20000}")
     public void analyzeCollectedApplications() {
+        if (schedulerEnabled) {
+            analyzeOne();
+        }
+    }
+
+    public void analyzeOne() {
         LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
         List<Application> targets = applicationRepository.findAnalysisTargets(
                 MediaCollectionStatus.DONE,

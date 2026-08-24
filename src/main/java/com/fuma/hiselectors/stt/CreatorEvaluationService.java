@@ -36,6 +36,13 @@ public class CreatorEvaluationService {
 
     private static final int TEXT_MAX = 500;
     private static final int STYLE_MAX = 19;
+    private static final int STT_INPUT_MAX = 1_000;
+    private static final int OCR_INPUT_MAX = 500;
+    private static final int POST_TEXT_INPUT_MAX = 500;
+    private static final int REPORT_INPUT_MAX = 10_000;
+    private static final Set<String> CATEGORY_CODES = Set.of(
+            "BEAUTY", "FASHION", "FOOD", "LIVING_LIFE", "KIDS_FAMILY",
+            "CULTURE_SERVICE", "SPORTS_LEISURE", "TRAVEL", "PET_LIFE");
 
     // summary(json 컬럼)용 인코더. 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감.
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -163,9 +170,12 @@ public class CreatorEvaluationService {
         // 분석 입력 = 콘텐츠별 전사·자막(stt/ocr) + 게시물 텍스트(인스타 caption / 유튜브 title·description).
         // 텍스트만 있고 전사·OCR 안 걸린 게시물도 이제 리포트에 반영된다.
         String merged = Stream.concat(
-                        rows.stream().map(c -> (safe(c.getStt()) + " " + safe(c.getOcr())).strip()),
-                        media.stream().map(m -> (safe(m.getCaption()) + " "
-                                + safe(m.getTitle()) + " " + safe(m.getDescription())).strip()))
+                        rows.stream().map(c -> (safe(clip(c.getStt(), STT_INPUT_MAX)) + " "
+                                + safe(clip(c.getOcr(), OCR_INPUT_MAX))).strip()),
+                        media.stream().map(m -> clip((safe(m.getCaption()) + " "
+                                + safe(m.getTitle()) + " " + safe(m.getDescription())).strip(),
+                                POST_TEXT_INPUT_MAX)))
+                .filter(Objects::nonNull)
                 .filter(s -> !s.isEmpty())
                 .distinct()   // 캐러셀은 per-media 행이라 같은 caption 이 반복됨 → 중복 텍스트 제거
                 .collect(Collectors.joining("\n\n"));
@@ -173,12 +183,14 @@ public class CreatorEvaluationService {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
 
-        ApplicantInsight insight = evalClient.insight(merged);
+        ApplicantInsight insight = evalClient.insight(clip(merged, REPORT_INPUT_MAX));
+        String localCategory = mode(rows, ApplicationContentAnalysis::getCategory);
+        String localKeywords = union(rows, ApplicationContentAnalysis::getKeywords);
         ApplicationReport.ApplicationReportBuilder builder = ApplicationReport.builder()
                 .applicationId(applicationId)
                 .summary(toJson(insight.summary()))
-                .category(mode(rows, ApplicationContentAnalysis::getCategory))
-                .keywords(clip(union(rows, ApplicationContentAnalysis::getKeywords), TEXT_MAX))
+                .category(firstNonBlank(localCategory, validCategory(insight.category())))
+                .keywords(clip(firstNonBlank(localKeywords, join(insight.keywords())), TEXT_MAX))
                 .contentStyle(clip(insight.contentStyle(), STYLE_MAX))
                 .tone(clip(insight.tone(), TEXT_MAX))
                 .strength(clip(join(insight.strengths()), TEXT_MAX))
@@ -285,6 +297,18 @@ public class CreatorEvaluationService {
 
     private String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? blankToNull(fallback) : primary;
+    }
+
+    private String validCategory(String category) {
+        if (category == null) {
+            return null;
+        }
+        String normalized = category.trim().toUpperCase(Locale.ROOT);
+        return CATEGORY_CODES.contains(normalized) ? normalized : null;
     }
 
     /** 전사·자막 둘 다 비었으면 분석할 내용 없음. */

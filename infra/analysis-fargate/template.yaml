@@ -1,0 +1,315 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: HiSelectors one-shot applicant analysis on ECS Fargate
+
+Parameters:
+  ApiImageUri:
+    Type: String
+  WorkerImageUri:
+    Type: String
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  RuntimeSecretArn:
+    Type: String
+    Description: Secrets Manager JSON with DB, JWT, Gemini, and Meta values
+  AssignPublicIp:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+  ScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+  ScheduleExpression:
+    Type: String
+    Default: rate(15 minutes)
+  SttBucket:
+    Type: String
+    Default: hi-selectors-stt
+  SttEndpoint:
+    Type: String
+    Default: whisper-large-v3-async
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: hiselectors-analysis
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /hiselectors/analysis-job
+      RetentionInDays: 14
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadRuntimeSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeSecretArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeStt
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:InvokeEndpointAsync
+                Resource: !Sub "arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SttEndpoint}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*"
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: hiselectors-analysis-job
+      Cpu: "2048"
+      Memory: "4096"
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: stt-worker
+          Image: !Ref WorkerImageUri
+          Essential: true
+          Environment:
+            - Name: STT_BACKEND
+              Value: sagemaker
+            - Name: STT_S3_BUCKET
+              Value: !Ref SttBucket
+            - Name: STT_ENDPOINT
+              Value: !Ref SttEndpoint
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          HealthCheck:
+            Command:
+              - CMD
+              - python
+              - -c
+              - import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/health',timeout=3)
+            Interval: 10
+            Timeout: 5
+            Retries: 10
+            StartPeriod: 20
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: worker
+        - Name: analysis
+          Image: !Ref ApiImageUri
+          Essential: true
+          DependsOn:
+            - ContainerName: stt-worker
+              Condition: HEALTHY
+          Command:
+            - --spring.main.web-application-type=none
+            - --application.content-analysis.run-once=true
+            - --application.content-analysis.scheduler-enabled=false
+            - --discovery.defaults.enabled=false
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: analysis
+            - Name: STT_WORKER_BASE_URL
+              Value: http://127.0.0.1:8900
+            - Name: DDL_AUTO
+              Value: validate
+            - Name: SHOW_SQL
+              Value: "false"
+            - Name: FORMAT_SQL
+              Value: "false"
+            - Name: DB_POOL_MAX
+              Value: "2"
+            - Name: DB_POOL_MIN_IDLE
+              Value: "0"
+            - Name: GEMINI_MODEL
+              Value: gemini-3.5-flash-lite
+            - Name: GEMINI_YOUTUBE_MODEL
+              Value: gemini-3.5-flash-lite
+            - Name: GEMINI_REPORT_MODEL
+              Value: gemini-3.5-flash-lite
+            - Name: INSTAGRAM_REDIRECT_URI
+              Value: https://hiselectors.shop/instagram/callback
+          Secrets:
+            - Name: DB_HOST
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_HOST::"
+            - Name: DB_PORT
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_PORT::"
+            - Name: DB_NAME
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_NAME::"
+            - Name: DB_USERNAME
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_USERNAME::"
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub "${RuntimeSecretArn}:DB_PASSWORD::"
+            - Name: JWT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:JWT_SECRET::"
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEY::"
+            - Name: META_API_VERSION
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_API_VERSION::"
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::"
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub "${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: analysis
+
+  DispatcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DispatchAnalysisTask
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:ListTasks
+                Resource: "*"
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref TaskDefinition
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt TaskRole.Arn
+
+  Dispatcher:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: hiselectors-analysis-dispatcher
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt DispatcherRole.Arn
+      Environment:
+        Variables:
+          CLUSTER_ARN: !GetAtt Cluster.Arn
+          TASK_DEFINITION_ARN: !Ref TaskDefinition
+          TASK_FAMILY: hiselectors-analysis-job
+          SUBNET_IDS: !Join [",", !Ref SubnetIds]
+          SECURITY_GROUP_IDS: !Join [",", !Ref SecurityGroupIds]
+          ASSIGN_PUBLIC_IP: !Ref AssignPublicIp
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+
+          ecs = boto3.client("ecs")
+
+          def handler(event, context):
+              cluster = os.environ["CLUSTER_ARN"]
+              family = os.environ["TASK_FAMILY"]
+              active = []
+              for status in ("RUNNING", "PENDING"):
+                  active += ecs.list_tasks(
+                      cluster=cluster, family=family, desiredStatus=status
+                  )["taskArns"]
+              if active:
+                  return {"started": False, "reason": "already-running", "taskArn": active[0]}
+
+              response = ecs.run_task(
+                  cluster=cluster,
+                  taskDefinition=os.environ["TASK_DEFINITION_ARN"],
+                  launchType="FARGATE",
+                  platformVersion="LATEST",
+                  count=1,
+                  networkConfiguration={"awsvpcConfiguration": {
+                      "subnets": os.environ["SUBNET_IDS"].split(","),
+                      "securityGroups": os.environ["SECURITY_GROUP_IDS"].split(","),
+                      "assignPublicIp": os.environ["ASSIGN_PUBLIC_IP"],
+                  }},
+              )
+              if response.get("failures"):
+                  raise RuntimeError(str(response["failures"]))
+              return {"started": True, "taskArn": response["tasks"][0]["taskArn"]}
+
+  SchedulerInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeDispatcher
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Dispatcher.Arn
+
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: hiselectors-analysis-schedule
+      State: !Ref ScheduleState
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      ScheduleExpression: !Ref ScheduleExpression
+      Target:
+        Arn: !GetAtt Dispatcher.Arn
+        RoleArn: !GetAtt SchedulerInvokeRole.Arn
+
+Outputs:
+  ClusterArn:
+    Value: !GetAtt Cluster.Arn
+  TaskDefinitionArn:
+    Value: !Ref TaskDefinition
+  DispatcherName:
+    Value: !Ref Dispatcher
+  LogGroupName:
+    Value: !Ref LogGroup

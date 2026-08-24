@@ -1,29 +1,35 @@
 package com.fuma.hiselectors.settlement.scheduler;
 
-import com.fuma.hiselectors.settlement.service.SettlementBatchService;
+import com.fuma.hiselectors.settlement.task.SettlementFinalizationTask;
+import com.fuma.hiselectors.taskrun.model.TaskType;
+import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
+import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SettlementFinalizationScheduler {
 
-    private final SettlementBatchService settlementBatchService;
+    private final TaskRunExecutionService taskRunExecutionService;
+    private final SettlementFinalizationTask task;
+    private final ObjectMapper objectMapper;
 
     @Scheduled(
             cron = "${settlement.finalization.cron:0 0 0 * * *}",
             zone = "${settlement.zone:Asia/Seoul}")
     public void finalizeOpenActivityMonth() {
-        SettlementBatchService.SettlementBatchResult result =
-                settlementBatchService.finalizeOpenActivityMonth();
-        if (!result.finalized()) {
-            return;
-        }
-        log.info("활동월 정산 확정 배치 완료: activityMonth={}, processed={}, skipped={}, failed={}",
-                result.activityMonth(), result.processedCount(), result.skippedCount(),
-                result.failedCount());
+        taskRunExecutionService.submit(
+                new TaskStartCommand(
+                        TaskType.SETTLEMENT_CALCULATION,
+                        TriggerType.SCHEDULED,
+                        null,
+                        UUID.randomUUID(),
+                        objectMapper.createObjectNode().put("mode", "FINALIZE")),
+                task);
     }
 }

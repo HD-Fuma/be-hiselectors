@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaCollectionResponse;
 import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
+import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
@@ -13,6 +14,8 @@ import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -47,6 +50,8 @@ public class ApplicationMediaService {
     private final List<ContentFetcher> contentFetchers;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final SelectorsRepository selectorsRepository;
+    private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
         Application application = findApplication(applicationId);
@@ -62,15 +67,23 @@ public class ApplicationMediaService {
                     : fetcher.fetchByAccount(application.getSnsAccountId(), collectedAfter);
             Snapshot snapshot = createSnapshot(
                     application, fetcher, contents, collectedAfter, collectedAt);
-            String profileImageUrl = profileImageUrl(fetcher, application);
+            ContentFetcher.Profile profile = profile(fetcher, application);
 
             List<ApplicationMedia> saved = Objects.requireNonNull(transactionTemplate.execute(status -> {
+                Application lockedApplication = applicationRepository
+                        .findByIdForUpdate(applicationId)
+                        .orElseThrow(() -> new BusinessException(
+                                ErrorCode.APPLICATION_USER_NOT_FOUND));
                 mediaRepository.deleteByApplicationId(applicationId);
                 mediaRepository.flush();
                 List<ApplicationMedia> values = mediaRepository.saveAll(snapshot.media());
-                application.updateProfileImageUrl(profileImageUrl);
-                application.completeMediaCollection(collectedAt, snapshot.engagementRate());
-                applicationRepository.save(application);
+                lockedApplication.updateProfileImageUrl(profile.imageUrl());
+                lockedApplication.fillMissingPublicMetrics(
+                        profile.followerCount(), profile.contentCount());
+                lockedApplication.completeMediaCollection(
+                        collectedAt, snapshot.engagementRate());
+                applicationRepository.save(lockedApplication);
+                synchronizeProfileImageUrl(lockedApplication);
                 return values;
             }));
 
@@ -82,8 +95,11 @@ public class ApplicationMediaService {
                     saved.stream().map(ApplicationMediaResponse::from).toList());
         } catch (RuntimeException e) {
             transactionTemplate.executeWithoutResult(status -> {
-                application.failMediaCollection(e.getMessage());
-                applicationRepository.save(application);
+                applicationRepository.findByIdForUpdate(applicationId)
+                        .ifPresent(lockedApplication -> {
+                            lockedApplication.failMediaCollection(e.getMessage());
+                            applicationRepository.save(lockedApplication);
+                        });
             });
             throw e;
         }
@@ -112,14 +128,44 @@ public class ApplicationMediaService {
                         ErrorCode.INVALID_INPUT, "지원하지 않는 SNS 플랫폼입니다."));
     }
 
-    private String profileImageUrl(ContentFetcher fetcher, Application application) {
-        try {
-            return fetcher.fetchProfileImageUrl(application.getSnsAccountId()).orElse(null);
-        } catch (RuntimeException e) {
-            log.warn("지원자 프로필 이미지 조회 실패: applicationId={}, platform={}, cause={}",
-                    application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
-            return null;
+    private ContentFetcher.Profile profile(ContentFetcher fetcher, Application application) {
+        if (hasText(application.getProfileImageUrl())
+                && application.getContentCount() != null) {
+            return new ContentFetcher.Profile(null, null, null);
         }
+        try {
+            ContentFetcher.Profile profile = fetcher.fetchProfile(application.getSnsAccountId());
+            ContentFetcher.Profile value = profile == null
+                    ? new ContentFetcher.Profile(null, null, null) : profile;
+            if (application.getContentCount() == null && value.contentCount() == null) {
+                throw new IllegalStateException("공개 프로필 전체 콘텐츠 수가 없습니다.");
+            }
+            return value;
+        } catch (RuntimeException e) {
+            log.warn("지원자 공개 프로필 조회 실패: applicationId={}, platform={}, cause={}",
+                    application.getId(), application.getSnsCode(), e.getClass().getSimpleName());
+            if (application.getContentCount() == null) {
+                throw e;
+            }
+            return new ContentFetcher.Profile(null, null, null);
+        }
+    }
+
+    private void synchronizeProfileImageUrl(Application application) {
+        if (application.getStatus() != ApplicationStatus.APPROVED
+                || !hasText(application.getProfileImageUrl())) {
+            return;
+        }
+        selectorsRepository.findByUserIdForUpdate(application.getUserId())
+                .filter(selectors -> !selectors.isDeleted())
+                .filter(selectors -> Objects.equals(
+                        selectors.getApplicationId(), application.getId()))
+                .flatMap(selectors -> selectorsSnsAccountRepository
+                        .findBySelectorsIdAndDeletedFalse(selectors.getId()))
+                .ifPresent(account -> account.synchronizeProfileImageUrl(
+                        application.getSnsCode(),
+                        application.getSnsAccountId(),
+                        application.getProfileImageUrl()));
     }
 
     private Snapshot createSnapshot(

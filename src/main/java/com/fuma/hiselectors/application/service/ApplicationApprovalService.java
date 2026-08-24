@@ -101,21 +101,22 @@ public class ApplicationApprovalService {
                 .ifPresentOrElse(account -> account.synchronize(
                                 application.getSnsCode(),
                                 application.getSnsAccountId(),
-                                application.getFollowerCount()),
+                                application.getFollowerCount(),
+                                application.getProfileUrl(),
+                                application.getProfileImageUrl()),
                         () -> selectorsSnsAccountRepository.save(
                         SelectorsSnsAccount.builder()
                                 .selectorsId(selectorsId)
                                 .snsCode(application.getSnsCode())
                                 .accountId(application.getSnsAccountId())
                                 .followerCount(application.getFollowerCount())
+                                .profileUrl(application.getProfileUrl())
+                                .profileImageUrl(application.getProfileImageUrl())
                                 .build()));
     }
 
     private Selectors createSelectors(Application application, User user) {
-        String code = "SEL-" + application.getId();
-        if (code.length() > 20) {
-            code = "SEL-" + Long.toString(application.getId(), 36);
-        }
+        String code = "RC%09dT".formatted(application.getId() * 2003L - 806L);
         String name = user.getName() == null ? "" : user.getName();
         try {
             return selectorsRepository.saveAndFlush(Selectors.builder()

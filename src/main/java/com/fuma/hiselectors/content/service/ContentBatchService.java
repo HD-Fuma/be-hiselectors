@@ -1,13 +1,12 @@
 package com.fuma.hiselectors.content.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
-import com.fuma.hiselectors.inspection.service.StaleContentInspectionService;
 import com.fuma.hiselectors.logging.BatchEventLogger;
 import com.fuma.hiselectors.logging.BatchLogContext;
+import com.fuma.hiselectors.taskrun.service.TaskProgressReporter;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -19,18 +18,11 @@ public class ContentBatchService {
 
     private final NewContentService newContentService;
     private final StoredContentService storedContentService;
-    private final StaleContentInspectionService staleContentInspectionService;
     private final BatchEventLogger batchEventLogger;
-    private final AtomicBoolean running = new AtomicBoolean(false);
 
     /** 신규 콘텐츠를 수집하고 기존 콘텐츠 변경을 확인합니다. */
-    public ContentBatchResult run() {
+    public ContentBatchResult run(TaskProgressReporter progress) {
         BatchLogContext logContext = batchEventLogger.start("content-sync");
-        if (!running.compareAndSet(false, true)) {
-            batchEventLogger.skipped(logContext, "ALREADY_RUNNING", Map.of(), Map.of());
-            return new ContentBatchResult(0, 0, false, false);
-        }
-
         try {
             int newContentCount = 0;
             int engagementCount = 0;
@@ -42,6 +34,7 @@ public class ContentBatchService {
             StoredContentService.StoredContentResult storedContentResult =
                     new StoredContentService.StoredContentResult(0, 0);
 
+            progress.start("NEW_CONTENT_SYNC", 2);
             try {
                 NewContentService.NewContentResult result = newContentService.collect();
                 newContentResult = result;
@@ -52,7 +45,9 @@ public class ContentBatchService {
                 newContentSucceeded = false;
                 log.error("신규 콘텐츠 수집 배치에 실패했습니다.", exception);
             }
+            advance(progress, newContentSucceeded);
 
+            progress.changeStep("STORED_CONTENT_SYNC");
             try {
                 StoredContentService.StoredContentResult result = storedContentService.check();
                 storedContentResult = result;
@@ -63,13 +58,7 @@ public class ContentBatchService {
                 storedContentSucceeded = false;
                 log.error("기존 콘텐츠 변경 확인 배치에 실패했습니다.", exception);
             }
-
-            // 수집·버전 저장 트랜잭션이 끝난 뒤 미검수 최신 버전을 별도로 처리한다.
-            try {
-                staleContentInspectionService.reinspectStale(null);
-            } catch (RuntimeException exception) {
-                log.error("콘텐츠 AI 검수 실행에 실패했습니다.", exception);
-            }
+            advance(progress, storedContentSucceeded);
 
             ContentBatchResult batchResult = new ContentBatchResult(
                     newContentCount,
@@ -90,9 +79,11 @@ public class ContentBatchService {
         } catch (Error error) {
             batchEventLogger.failed(logContext, error);
             throw error;
-        } finally {
-            running.set(false);
         }
+    }
+
+    private void advance(TaskProgressReporter progress, boolean succeeded) {
+        progress.advance(succeeded ? 1 : 0, succeeded ? 0 : 1, 0);
     }
 
     private Map<String, Long> batchCounts(

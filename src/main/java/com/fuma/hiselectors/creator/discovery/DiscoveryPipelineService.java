@@ -18,8 +18,10 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -50,6 +52,9 @@ public class DiscoveryPipelineService {
 
     private enum SaveResult {
         CREATED, UPDATED, SKIPPED
+    }
+
+    private record SaveOutcome(SaveResult result, Long creatorId) {
     }
 
     private final YoutubeDiscoveryClient youtubeClient;
@@ -95,11 +100,16 @@ public class DiscoveryPipelineService {
 
         int created = 0;
         int updated = 0;
+        Set<Long> creatorIds = new LinkedHashSet<>();
         for (DiscoveredChannel channel : channels) {
-            switch (save(channel, keyword, totalViews)) {
+            SaveOutcome outcome = save(channel, keyword, totalViews);
+            switch (outcome.result()) {
                 case CREATED -> created++;
                 case UPDATED -> updated++;
                 case SKIPPED -> { }
+            }
+            if (outcome.creatorId() != null) {
+                creatorIds.add(outcome.creatorId());
             }
         }
 
@@ -109,7 +119,7 @@ public class DiscoveryPipelineService {
                 keyword.getKeyword(),
                 keyword.getCategory().getCode(),
                 channels.size(), created, updated,
-                consumedQuota);
+                consumedQuota, creatorIds);
 
         log.info("발굴 완료. {}", result);
         return result;
@@ -120,7 +130,8 @@ public class DiscoveryPipelineService {
      *
      * @return 신규 저장, 기존 갱신 또는 이메일 누락으로 건너뜀
      */
-    private SaveResult save(DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
+    private SaveOutcome save(
+            DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
         // 소프트 삭제된 계정도 찾아야 중복 행이 생기지 않는다
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
@@ -131,7 +142,7 @@ public class DiscoveryPipelineService {
             if (creator != null) {
                 creator.softDelete();
             }
-            return SaveResult.SKIPPED;
+            return new SaveOutcome(SaveResult.SKIPPED, null);
         }
         boolean isNew = creator == null;
 
@@ -169,7 +180,9 @@ public class DiscoveryPipelineService {
         // 여러 카테고리에 걸린 채널은 조회수 비중이 큰 쪽으로 잡힌다.
         creatorDiscoveryService.refreshRepresentativeCategory(creator.getId());
 
-        return isNew ? SaveResult.CREATED : SaveResult.UPDATED;
+        return new SaveOutcome(
+                isNew ? SaveResult.CREATED : SaveResult.UPDATED,
+                creator.getId());
     }
 
     private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore,

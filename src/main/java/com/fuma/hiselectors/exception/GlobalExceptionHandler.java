@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -70,9 +71,10 @@ public class GlobalExceptionHandler {
         return build(ErrorCode.INVALID_INPUT, ErrorCode.INVALID_INPUT.getMessage());
     }
 
-    // 쿼리 파라미터 누락 또는 숫자/Enum 타입 변환 실패 -> 400
+    // 요청 파라미터/헤더 누락 또는 숫자/Enum/UUID 타입 변환 실패 -> 400
     @ExceptionHandler({
             MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class,
             MissingServletRequestPartException.class,
             MethodArgumentTypeMismatchException.class
     })
