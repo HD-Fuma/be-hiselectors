@@ -2,6 +2,7 @@ package com.fuma.hiselectors.taskrun.service;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
+import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import java.time.Clock;
 import java.util.Objects;
@@ -24,18 +25,21 @@ public class TaskRunExecutionService {
     private final TaskRunProperties properties;
     private final Clock clock;
     private final TaskExecutor executor;
+    private final TaskRunFailureLogger failureLogger;
 
     public TaskRunExecutionService(
             TaskRunService taskRunService,
             TaskLeaseTransaction leaseTransaction,
             TaskRunProperties properties,
             Clock clock,
-            @Qualifier("taskRunExecutor") TaskExecutor executor) {
+            @Qualifier("taskRunExecutor") TaskExecutor executor,
+            TaskRunFailureLogger failureLogger) {
         this.taskRunService = taskRunService;
         this.leaseTransaction = leaseTransaction;
         this.properties = properties;
         this.clock = clock;
         this.executor = executor;
+        this.failureLogger = failureLogger;
     }
 
     public TaskStartResult submit(TaskStartCommand command, TrackedTask task) {
@@ -46,7 +50,9 @@ public class TaskRunExecutionService {
             try {
                 executor.execute(() -> execute(runId, task));
             } catch (RejectedExecutionException exception) {
-                taskRunService.failQueued(runId, EXECUTOR_REJECTED, exception.getMessage());
+                TaskRunTerminalSnapshot snapshot = taskRunService.failQueued(
+                        runId, EXECUTOR_REJECTED, exception.getMessage());
+                logFailure(snapshot);
             }
         }
         return result;
@@ -63,11 +69,11 @@ public class TaskRunExecutionService {
 
         ThrottledTaskProgressReporter reporter = new ThrottledTaskProgressReporter(
                 lease, leaseTransaction, properties.progress(), clock);
-        TaskRunStatus terminalStatus;
+        TaskRunTerminalSnapshot terminalSnapshot;
         try {
             task.execute(new TaskExecutionContext(lease, reporter));
             reporter.flush();
-            terminalStatus = taskRunService.complete(runId, lease.token());
+            terminalSnapshot = taskRunService.complete(runId, lease.token());
         } catch (Exception exception) {
             try {
                 reporter.flush();
@@ -76,15 +82,16 @@ public class TaskRunExecutionService {
                         runId, transitionFailure.getErrorCode());
                 return;
             }
-            terminalStatus = failRunning(lease, exception);
+            terminalSnapshot = failRunning(lease, exception);
         }
 
-        if (terminalStatus != null) {
-            notifyTerminal(task, new TaskTerminalContext(runId, terminalStatus));
+        if (terminalSnapshot != null) {
+            logFailure(terminalSnapshot);
+            notifyTerminal(task, new TaskTerminalContext(runId, terminalSnapshot.status()));
         }
     }
 
-    private TaskRunStatus failRunning(TaskLease lease, Exception failure) {
+    private TaskRunTerminalSnapshot failRunning(TaskLease lease, Exception failure) {
         try {
             return taskRunService.fail(
                     lease.runId(),
@@ -95,6 +102,17 @@ public class TaskRunExecutionService {
             log.info("Task run {} no longer owns its terminal transition: {}",
                     lease.runId(), transitionFailure.getErrorCode());
             return null;
+        }
+    }
+
+    private void logFailure(TaskRunTerminalSnapshot snapshot) {
+        if (snapshot.status() == TaskRunStatus.SUCCEEDED) {
+            return;
+        }
+        try {
+            failureLogger.log(snapshot);
+        } catch (Exception exception) {
+            log.error("Task run {} failure event logging failed", snapshot.runId(), exception);
         }
     }
 

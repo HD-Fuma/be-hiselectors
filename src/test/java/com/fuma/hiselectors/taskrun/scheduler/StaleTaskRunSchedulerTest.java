@@ -3,11 +3,21 @@ package com.fuma.hiselectors.taskrun.scheduler;
 import static com.fuma.hiselectors.exception.ErrorCode.TASK_RUN_LEASE_LOST;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
+import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
@@ -19,6 +29,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -35,8 +47,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
@@ -62,10 +76,12 @@ class StaleTaskRunSchedulerTest {
     private TransactionTemplate transactions;
     private TaskTypePolicy policy;
     private StaleTaskRunScheduler scheduler;
+    private final TaskRunFailureLogger failureLogger = mock(TaskRunFailureLogger.class);
 
     @BeforeEach
     void setUp() {
         repository.deleteAll();
+        reset(failureLogger);
         transactions = new TransactionTemplate(transactionManager);
         TaskRunProperties properties = properties();
         policy = new TaskTypePolicy(properties);
@@ -73,7 +89,8 @@ class StaleTaskRunSchedulerTest {
                 repository,
                 policy,
                 transactions,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                failureLogger);
     }
 
     @Test
@@ -128,9 +145,60 @@ class StaleTaskRunSchedulerTest {
         assertThat(staleRunning.getStatus()).isEqualTo(TaskRunStatus.STALE);
         assertThat(staleRunning.getLeaseToken()).isNotEqualTo(oldToken);
         assertThat(find(fresh).getStatus()).isEqualTo(TaskRunStatus.RUNNING);
+        verify(failureLogger, times(2)).log(any());
 
         TaskRun replacement = queued(TaskType.CREATOR_SYNC, NOW);
         assertThat(replacement.getStatus()).isEqualTo(TaskRunStatus.QUEUED);
+    }
+
+    @Test
+    void staleEventIsAttemptedAfterCommitOnlyOnceAndLoggerFailureDoesNotRollBack() {
+        TaskRun run = running(TaskType.CONTENT_SYNC, NOW.minus(Duration.ofMinutes(31)));
+        doAnswer(invocation -> {
+            assertThat(find(run).getStatus()).isEqualTo(TaskRunStatus.STALE);
+            throw new IllegalStateException("logging unavailable");
+        }).when(failureLogger).log(any());
+
+        scheduler.markStaleRuns();
+        scheduler.markStaleRuns();
+
+        assertThat(find(run).getStatus()).isEqualTo(TaskRunStatus.STALE);
+        verify(failureLogger, times(1)).log(any());
+    }
+
+    @Test
+    void disappearedFreshAndTerminalCandidatesDoNotLog() {
+        TaskRunRepository candidateRepository = mock(TaskRunRepository.class);
+        TransactionTemplate candidateTransactions = mock(TransactionTemplate.class);
+        UUID disappearedId = UUID.randomUUID();
+        TaskRun fresh = detachedRunning(TaskType.CONTENT_SYNC, NOW);
+        TaskRun terminal = detachedRunning(
+                TaskType.CONTENT_SYNC, NOW.minus(Duration.ofMinutes(31)));
+        terminal.fail("FAILED", "already terminal", NOW.minusSeconds(1));
+        List<UUID> candidates = List.of(disappearedId, fresh.getRunId(), terminal.getRunId());
+        when(candidateRepository.findStaleCandidateRunIds(
+                        eq(TaskType.CONTENT_SYNC), any(), any()))
+                .thenReturn(candidates);
+        when(candidateRepository.findByRunIdForUpdate(disappearedId)).thenReturn(Optional.empty());
+        when(candidateRepository.findByRunIdForUpdate(fresh.getRunId()))
+                .thenReturn(Optional.of(fresh));
+        when(candidateRepository.findByRunIdForUpdate(terminal.getRunId()))
+                .thenReturn(Optional.of(terminal));
+        when(candidateTransactions.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(mock(TransactionStatus.class));
+        });
+        StaleTaskRunScheduler candidateScheduler = new StaleTaskRunScheduler(
+                candidateRepository,
+                policy,
+                candidateTransactions,
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                failureLogger);
+
+        candidateScheduler.markStaleRuns();
+
+        verify(failureLogger, never()).log(any());
+        verify(candidateRepository, never()).flush();
     }
 
     @Test
@@ -161,6 +229,7 @@ class StaleTaskRunSchedulerTest {
 
         assertThat(find(run).getStatus()).isEqualTo(TaskRunStatus.RUNNING);
         assertThat(find(run).getHeartbeatAt()).isEqualTo(NOW);
+        verify(failureLogger, never()).log(any());
     }
 
     @Test
@@ -244,6 +313,10 @@ class StaleTaskRunSchedulerTest {
     }
 
     private TaskRun running(TaskType type, Instant heartbeatAt) {
+        return repository.saveAndFlush(detachedRunning(type, heartbeatAt));
+    }
+
+    private TaskRun detachedRunning(TaskType type, Instant heartbeatAt) {
         TaskRun run = TaskRun.queued(
                 type,
                 TriggerType.SCHEDULED,
@@ -253,7 +326,7 @@ class StaleTaskRunSchedulerTest {
                 policy.forType(type).singleton() ? type.name() : null,
                 heartbeatAt);
         run.markRunning(UUID.randomUUID(), heartbeatAt);
-        return repository.saveAndFlush(run);
+        return run;
     }
 
     private TaskRun find(TaskRun run) {

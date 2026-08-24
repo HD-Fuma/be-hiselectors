@@ -1,14 +1,20 @@
 package com.fuma.hiselectors.taskrun.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.taskrun.config.TaskExecutorConfig;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
+import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
@@ -77,10 +83,12 @@ class TaskRunExecutionServiceTest {
     private ObjectMapper objectMapper;
 
     private ThreadPoolTaskExecutor configuredExecutor;
+    private final TaskRunFailureLogger failureLogger = mock(TaskRunFailureLogger.class);
 
     @BeforeEach
     void clearRuns() {
         repository.deleteAll();
+        reset(failureLogger);
     }
 
     @AfterEach
@@ -119,6 +127,7 @@ class TaskRunExecutionServiceTest {
         assertThat(run.getSucceededCount()).isEqualTo(2);
         assertThat(run.getSkippedCount()).isEqualTo(1);
         assertThat(terminal.get()).isEqualTo(new TaskTerminalContext(runId, TaskRunStatus.SUCCEEDED));
+        verify(failureLogger, never()).log(any());
     }
 
     @Test
@@ -134,6 +143,7 @@ class TaskRunExecutionServiceTest {
         assertThat(find(runId(partial)).getProcessedCount()).isEqualTo(2);
         assertThat(find(runId(failed)).getStatus()).isEqualTo(TaskRunStatus.FAILED);
         assertThat(find(runId(failed)).getFailedCount()).isEqualTo(2);
+        verify(failureLogger, times(2)).log(any());
     }
 
     @Test
@@ -171,6 +181,11 @@ class TaskRunExecutionServiceTest {
         assertThat(run.getErrorType()).isEqualTo("IllegalStateException");
         assertThat(run.getErrorMessage()).isEqualTo("broken");
         assertThat(terminal.get().status()).isEqualTo(TaskRunStatus.FAILED);
+        verify(failureLogger).log(org.mockito.ArgumentMatchers.argThat(snapshot ->
+                snapshot.runId().equals(run.getRunId())
+                        && snapshot.status() == TaskRunStatus.FAILED
+                        && "IllegalStateException".equals(snapshot.errorType())
+                        && "broken".equals(snapshot.errorMessage())));
     }
 
     @Test
@@ -207,6 +222,9 @@ class TaskRunExecutionServiceTest {
         TaskRun run = find(runId(result));
         assertThat(run.getStatus()).isEqualTo(TaskRunStatus.FAILED);
         assertThat(run.getErrorType()).isEqualTo("EXECUTOR_REJECTED");
+        verify(failureLogger).log(org.mockito.ArgumentMatchers.argThat(snapshot ->
+                snapshot.runId().equals(run.getRunId())
+                        && snapshot.status() == TaskRunStatus.FAILED));
     }
 
     @Test
@@ -249,6 +267,37 @@ class TaskRunExecutionServiceTest {
 
         assertThat(find(runId(result)).getStatus()).isEqualTo(TaskRunStatus.STALE);
         assertThat(callback).isFalse();
+        verify(failureLogger, never()).log(any());
+    }
+
+    @Test
+    void failureLoggingRunsAfterCommitAndLoggerExceptionsCannotChangeTerminalState() {
+        AtomicBoolean observedCommitted = new AtomicBoolean();
+        doAnswer(invocation -> {
+            TaskRunTerminalSnapshot snapshot = invocation.getArgument(0);
+            observedCommitted.set(find(snapshot.runId()).getStatus() == TaskRunStatus.PARTIAL_FAILED);
+            throw new IllegalStateException("logging unavailable");
+        }).when(failureLogger).log(any());
+
+        TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
+                command(UUID.randomUUID()),
+                context -> context.progress().advance(1, 1, 0));
+
+        assertThat(observedCommitted).isTrue();
+        assertThat(find(runId(result)).getStatus()).isEqualTo(TaskRunStatus.PARTIAL_FAILED);
+    }
+
+    @Test
+    void executorRejectionLoggingFailureCannotRollBackQueuedFailure() {
+        doThrow(new IllegalStateException("logging unavailable")).when(failureLogger).log(any());
+        TaskExecutor rejecting = task -> {
+            throw new TaskRejectedException("queue full");
+        };
+
+        TaskStartResult result = taskRunExecutionService(rejecting).submit(
+                command(UUID.randomUUID()), context -> { });
+
+        assertThat(find(runId(result)).getStatus()).isEqualTo(TaskRunStatus.FAILED);
     }
 
     @Test
@@ -272,7 +321,8 @@ class TaskRunExecutionServiceTest {
     }
 
     private TaskRunExecutionService taskRunExecutionService(TaskExecutor executor) {
-        return new TaskRunExecutionService(service, leaseTransaction, properties, clock, executor);
+        return new TaskRunExecutionService(
+                service, leaseTransaction, properties, clock, executor, failureLogger);
     }
 
     private TaskStartCommand command(UUID key) {

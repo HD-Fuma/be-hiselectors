@@ -197,6 +197,33 @@ class TaskRunServiceTest {
     }
 
     @Test
+    void completeReturnsAnImmutableTerminalSnapshotAfterFlush() {
+        TaskRun created = createdRun(TaskType.CONTENT_SYNC);
+        UUID leaseToken = service.markRunning(created.getRunId());
+        TaskRun running = repository.findByRunId(created.getRunId()).orElseThrow();
+        running.setTotal(4, NOW);
+        running.addCounts(2, 1, 1, NOW);
+        repository.saveAndFlush(running);
+
+        TaskRunTerminalSnapshot snapshot = service.complete(created.getRunId(), leaseToken);
+
+        assertThat(snapshot).isEqualTo(new TaskRunTerminalSnapshot(
+                created.getRunId(),
+                TaskType.CONTENT_SYNC,
+                TriggerType.SCHEDULED,
+                TaskRunStatus.PARTIAL_FAILED,
+                NOW,
+                NOW,
+                4L,
+                4,
+                2,
+                1,
+                1,
+                null,
+                null));
+    }
+
+    @Test
     void terminalTransitionRequiresTheCurrentLease() {
         TaskRun run = createdRun(TaskType.CONTENT_SYNC);
         service.markRunning(run.getRunId());
@@ -222,10 +249,17 @@ class TaskRunServiceTest {
     void queuedExecutorRejectionUsesAnExplicitPath() {
         TaskRun run = createdRun(TaskType.KAKAO_MESSAGE_SEND);
 
-        service.failQueued(run.getRunId(), "EXECUTOR_REJECTED", "queue is full");
+        TaskRunTerminalSnapshot snapshot =
+                service.failQueued(run.getRunId(), "EXECUTOR_REJECTED", "queue is full");
 
         assertThat(repository.findByRunId(run.getRunId())).get()
                 .extracting(TaskRun::getStatus).isEqualTo(TaskRunStatus.FAILED);
+        assertThat(snapshot.runId()).isEqualTo(run.getRunId());
+        assertThat(snapshot.status()).isEqualTo(TaskRunStatus.FAILED);
+        assertThat(snapshot.startedAt()).isNull();
+        assertThat(snapshot.finishedAt()).isEqualTo(NOW);
+        assertThat(snapshot.errorType()).isEqualTo("EXECUTOR_REJECTED");
+        assertThat(snapshot.errorMessage()).isEqualTo("queue is full");
     }
 
     @Test
