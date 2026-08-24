@@ -7,6 +7,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
@@ -261,7 +262,8 @@ public class StoredContentService {
                 contentId,
                 result.content().advanceVersion(),
                 fetchedContent,
-                collectedAt);
+                collectedAt,
+                ContentVersionCreationReason.SOURCE_CHANGE);
         newVersion = versionRepository.saveAll(List.of(newVersion)).getFirst();
         List<ContentMedia> media = snapshotFactory.createMedia(
                 newVersion.getId(), fetchedContent);

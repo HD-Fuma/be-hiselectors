@@ -8,6 +8,10 @@ BRAND_REPUTATION_DAMAGE.
 report에는 콘텐츠 요약, 목적, 흐름, 전체 판단을 작성하세요.
 violations에는 위반 유형, 판단 근거, 0~1 신뢰도, 근거 위치를 작성하세요.
 locations는 문자열 배열이 아니라 객체 배열로 반환하세요.
+locations의 각 객체에는 입력에 있는 contentMediaId, mediaType, 비어 있지 않은 excerpt를 반드시 넣으세요.
+텍스트 인덱스는 해당 미디어 body.text의 UTF-16 [startIndex, endIndex) 기준입니다.
+영상 시간은 초 단위 [startTime, endTime), 이미지 bbox는 원본 픽셀 좌표입니다.
+시작/끝 좌표는 반드시 쌍으로 넣으세요.
 정확한 위치를 판단할 수 없으면 locations를 빈 배열로 반환하세요.
 
 검수 대상:

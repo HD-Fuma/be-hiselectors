@@ -8,6 +8,7 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,13 @@ class AffiliateLinkDetectorTest {
         var result = detector.detect(context);
 
         assertThat(result).singleElement()
-                .satisfies(violation ->
-                        assertThat(violation.evidence().locations()).hasSize(1));
+                .satisfies(violation -> {
+                    assertThat(violation.evidence().source()).isEqualTo(EvidenceSource.RULE);
+                    assertThat(violation.evidence().locations()).singleElement()
+                            .satisfies(location -> {
+                                assertThat(location.startIndex()).isEqualTo(6);
+                                assertThat(location.endIndex()).isEqualTo(38);
+                            });
+                });
     }
 }

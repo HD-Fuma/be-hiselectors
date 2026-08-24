@@ -7,6 +7,7 @@ import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -179,7 +180,8 @@ public class NewContentService {
                         contents.get(index).getId(),
                         1L,
                         rawContents.get(index),
-                        collectedAt));
+                        collectedAt,
+                        ContentVersionCreationReason.INITIAL));
             }
             versions = versionRepository.saveAll(versions);
 
