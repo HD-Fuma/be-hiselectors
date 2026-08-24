@@ -102,7 +102,8 @@ public class ApplicationApprovalService {
                                 application.getSnsCode(),
                                 application.getSnsAccountId(),
                                 application.getFollowerCount(),
-                                application.getProfileUrl()),
+                                application.getProfileUrl(),
+                                application.getProfileImageUrl()),
                         () -> selectorsSnsAccountRepository.save(
                         SelectorsSnsAccount.builder()
                                 .selectorsId(selectorsId)
@@ -110,6 +111,7 @@ public class ApplicationApprovalService {
                                 .accountId(application.getSnsAccountId())
                                 .followerCount(application.getFollowerCount())
                                 .profileUrl(application.getProfileUrl())
+                                .profileImageUrl(application.getProfileImageUrl())
                                 .build()));
     }
 

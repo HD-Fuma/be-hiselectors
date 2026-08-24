@@ -76,8 +76,10 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
     }
 
     public void synchronize(SnsPlatform snsCode, String accountId, Long followerCount,
-                            String profileUrl) {
-        if (this.snsCode != snsCode || !Objects.equals(this.accountId, accountId)) {
+                            String profileUrl, String profileImageUrl) {
+        boolean accountChanged = this.snsCode != snsCode
+                || !Objects.equals(this.accountId, accountId);
+        if (accountChanged) {
             this.lastCollectedAt = null;
             this.profileUrl = null;
             this.profileImageUrl = null;
@@ -88,6 +90,27 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
         if (profileUrl != null && !profileUrl.isBlank()) {
             this.profileUrl = profileUrl;
         }
+        if (!hasText(this.profileImageUrl) && validProfileImageUrl(profileImageUrl)) {
+            this.profileImageUrl = profileImageUrl;
+        }
         this.deleted = false;
+    }
+
+    public void synchronizeProfileImageUrl(
+            SnsPlatform snsCode, String accountId, String profileImageUrl) {
+        if (this.snsCode == snsCode
+                && Objects.equals(this.accountId, accountId)
+                && !hasText(this.profileImageUrl)
+                && validProfileImageUrl(profileImageUrl)) {
+            this.profileImageUrl = profileImageUrl;
+        }
+    }
+
+    private boolean validProfileImageUrl(String value) {
+        return hasText(value) && value.length() <= 500;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

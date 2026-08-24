@@ -106,16 +106,49 @@ class SelectorsSnsAccountRepositoryTest {
                         .snsCode(SnsPlatform.YOUTUBE)
                         .accountId("youtube-channel")
                         .profileUrl("https://www.youtube.com/channel/youtube-channel")
+                        .profileImageUrl("https://cdn.example.com/profile.jpg")
                         .build());
 
-        account.synchronize(SnsPlatform.YOUTUBE, "youtube-channel", 2_000L, null);
+        account.synchronize(SnsPlatform.YOUTUBE, "youtube-channel", 2_000L, null, null);
         entityManager.flush();
         entityManager.clear();
 
         SelectorsSnsAccount found = accountRepository.findById(account.getId()).orElseThrow();
         assertThat(found.getProfileUrl())
                 .isEqualTo("https://www.youtube.com/channel/youtube-channel");
+        assertThat(found.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
         assertThat(found.getFollowerCount()).isEqualTo(2_000L);
+    }
+
+    @Test
+    @DisplayName("같은 SNS 계정의 프로필 이미지는 비어 있을 때만 채운다")
+    void fillOnlyMissingProfileImageForSameAccount() {
+        SelectorsSnsAccount missingImage = accountRepository.saveAndFlush(
+                SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.YOUTUBE)
+                        .accountId("youtube-channel")
+                        .build());
+
+        missingImage.synchronize(
+                SnsPlatform.YOUTUBE, "youtube-channel", 2_000L,
+                null, "https://cdn.example.com/profile.jpg");
+        entityManager.flush();
+        entityManager.clear();
+
+        SelectorsSnsAccount found = accountRepository.findById(missingImage.getId()).orElseThrow();
+        assertThat(found.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/profile.jpg");
+
+        found.synchronize(
+                SnsPlatform.YOUTUBE, "youtube-channel", 3_000L,
+                null, "https://cdn.example.com/replacement.jpg");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(accountRepository.findById(missingImage.getId()).orElseThrow()
+                .getProfileImageUrl()).isEqualTo("https://cdn.example.com/profile.jpg");
     }
 
     @Test
@@ -155,7 +188,7 @@ class SelectorsSnsAccountRepositoryTest {
                 .getLastCollectedAt()).isEqualTo(collectedAt);
 
         SelectorsSnsAccount changed = accountRepository.findById(account.getId()).orElseThrow();
-        changed.synchronize(SnsPlatform.INSTAGRAM, "instagram-account", 100L, null);
+        changed.synchronize(SnsPlatform.INSTAGRAM, "instagram-account", 100L, null, null);
         entityManager.flush();
         entityManager.clear();
 
@@ -241,7 +274,7 @@ class SelectorsSnsAccountRepositoryTest {
                         .profileImageUrl("https://old.example/profile.jpg")
                         .build());
 
-        account.synchronize(SnsPlatform.YOUTUBE, "UC-approved", 12_345L, null);
+        account.synchronize(SnsPlatform.YOUTUBE, "UC-approved", 12_345L, null, null);
         entityManager.flush();
         entityManager.clear();
 
