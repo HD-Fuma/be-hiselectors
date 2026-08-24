@@ -230,7 +230,6 @@ Resources:
       Runtime: python3.13
       Handler: index.handler
       Timeout: 30
-      ReservedConcurrentExecutions: 1
       Role: !GetAtt DispatcherRole.Arn
       Environment:
         Variables:
