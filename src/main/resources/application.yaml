@@ -192,6 +192,9 @@ application:
     fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:60000}
     initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:20000}
     batch-size: ${APPLICATION_MEDIA_COLLECTION_BATCH_SIZE:20}
+  content-analysis:
+    scheduler-enabled: ${APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED:true}
+    run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
 
 settlement:
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
