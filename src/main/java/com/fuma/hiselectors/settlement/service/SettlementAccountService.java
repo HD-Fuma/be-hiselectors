@@ -52,64 +52,19 @@ public class SettlementAccountService {
     }
 
     private void updateIdentity(SettlementAccount account, SettlementAccountUpsertRequest request) {
-        String storedType = account.getSettlementType();
-        boolean legacyAccount = storedType == null || storedType.isBlank();
-        SettlementType currentType = SettlementType.fromStorage(storedType).orElse(null);
-        SettlementType requestedType = request.settlementType();
+        SettlementType storedType = SettlementType.fromStorage(account.getSettlementType())
+                .orElse(null);
+        SettlementType targetType = request.settlementType() != null
+                ? request.settlementType()
+                : storedType;
+        String storedNumber = accountCrypto.decrypt(account.getBusinessNumberEncrypted());
         String requestedNumber = trimToNull(request.businessNumber());
-        if (!legacyAccount && currentType == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-        if (legacyAccount) {
-            registerLegacyIdentity(account, requestedType, requestedNumber);
-            return;
-        }
-        if (requestedType != null && currentType != requestedType) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "정산 유형은 변경할 수 없습니다.");
-        }
-        updateRegisteredIdentifier(
-                account, currentType, requestedNumber, request.businessNumber() != null);
-    }
-
-    private void registerLegacyIdentity(
-            SettlementAccount account, SettlementType requestedType, String requestedNumber) {
-        requireValidIdentifier(requestedType, requestedNumber);
-        String storedNumber = accountCrypto.decrypt(account.getBusinessNumberEncrypted());
-        if (requestedType == SettlementType.INDIVIDUAL
-                && storedNumber != null && !storedNumber.isBlank()) {
-            if (!requestedType.isSameIdentifier(storedNumber, requestedNumber)) {
-                throw new BusinessException(
-                        ErrorCode.INVALID_INPUT, "기존 주민등록번호와 일치하지 않습니다.");
-            }
-            account.registerIdentity(requestedType, account.getBusinessNumberEncrypted());
-            return;
-        }
-        account.registerIdentity(requestedType, accountCrypto.encrypt(requestedNumber));
-    }
-
-    private void updateRegisteredIdentifier(
-            SettlementAccount account, SettlementType currentType, String requestedNumber,
-            boolean requestedNumberProvided) {
-        String storedNumber = accountCrypto.decrypt(account.getBusinessNumberEncrypted());
-        if (!currentType.isValidIdentifier(storedNumber)) {
-            if (currentType != SettlementType.INDIVIDUAL
-                    && currentType.isValidIdentifier(requestedNumber)) {
-                account.updateBusinessNumber(accountCrypto.encrypt(requestedNumber));
-                return;
-            }
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "저장된 식별번호가 올바르지 않습니다.");
-        }
-        if (!requestedNumberProvided) {
-            return;
-        }
-        requireValidIdentifier(currentType, requestedNumber);
-        if (currentType == SettlementType.INDIVIDUAL
-                && !currentType.isSameIdentifier(storedNumber, requestedNumber)) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "주민등록번호는 변경할 수 없습니다.");
-        }
-        if (currentType != SettlementType.INDIVIDUAL) {
-            account.updateBusinessNumber(accountCrypto.encrypt(requestedNumber));
-        }
+        String targetNumber = request.businessNumber() != null ? requestedNumber : storedNumber;
+        requireValidIdentifier(targetType, targetNumber);
+        String encryptedNumber = request.businessNumber() != null
+                ? accountCrypto.encrypt(targetNumber)
+                : account.getBusinessNumberEncrypted();
+        account.registerIdentity(targetType, encryptedNumber);
     }
 
     private SettlementAccountResponse response(SettlementAccount account) {

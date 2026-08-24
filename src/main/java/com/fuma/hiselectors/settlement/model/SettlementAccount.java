@@ -70,8 +70,4 @@ public class SettlementAccount extends BaseTimeEntity {
         this.settlementType = settlementType.name();
         this.businessNumberEncrypted = businessNumberEncrypted;
     }
-
-    public void updateBusinessNumber(String businessNumberEncrypted) {
-        this.businessNumberEncrypted = businessNumberEncrypted;
-    }
 }

@@ -129,7 +129,7 @@ class SettlementAccountServiceTest {
     }
 
     @Test
-    void individualTypeAndNumberArePreservedWhenOmittedAndNumberChangeIsRejected() {
+    void individualTypeAndNumberArePreservedWhenOmittedAndNumberCanChange() {
         SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
         SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
@@ -152,15 +152,15 @@ class SettlementAccountServiceTest {
         assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
         assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("900101-1234567");
         assertThat(response.businessNumber()).isEqualTo("******-*******");
-        assertThatThrownBy(() -> service.upsert("selector-user",
-                request(SettlementType.INDIVIDUAL, "900101-7654321")))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_INPUT));
+        service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-7654321"));
+
+        assertThat(decrypt(account.getBusinessNumberEncrypted()))
+                .isEqualTo("900101-7654321");
     }
 
     @Test
-    void registeredSettlementTypeCannotChange() {
+    void registeredSettlementTypeCanChange() {
         SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
         SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
         SelectorAccessService selectorAccessService = mock(SelectorAccessService.class);
@@ -173,12 +173,15 @@ class SettlementAccountServiceTest {
                 .thenReturn(selectors);
         when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
                 .thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+        when(historyRepository.findAllBySelectorsIdAndStatus(9L, SettlementStatus.PAYMENT_HOLD_INFO))
+                .thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.upsert("selector-user",
-                request(SettlementType.CORPORATION, "123-45-67890")))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_INPUT));
+        service.upsert("selector-user",
+                request(SettlementType.CORPORATION, "123-45-67890"));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.CORPORATION.name());
+        assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("123-45-67890");
     }
 
     @ParameterizedTest
@@ -260,7 +263,7 @@ class SettlementAccountServiceTest {
     }
 
     @Test
-    void legacyIndividualRegistrationAcceptsSameNumberIgnoringHyphensAndPreservesStorage() {
+    void legacyIndividualRegistrationStoresRequestedNumber() {
         SettlementAccount account = SettlementAccount.builder()
                 .selectorsId(9L)
                 .businessNumberEncrypted(encrypt("9001011234567"))
@@ -271,29 +274,27 @@ class SettlementAccountServiceTest {
                 request(SettlementType.INDIVIDUAL, "900101-1234567"));
 
         assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
-        assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("9001011234567");
+        assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("900101-1234567");
         assertThat(response.businessNumber()).isEqualTo("******-*******");
     }
 
     @Test
-    void legacyIndividualRegistrationRejectsDifferentNumber() {
+    void legacyIndividualRegistrationAcceptsDifferentNumber() {
         SettlementAccount account = SettlementAccount.builder()
                 .selectorsId(9L)
                 .businessNumberEncrypted(encrypt("9001011234567"))
                 .build();
         SettlementAccountService service = serviceFor(account);
 
-        assertThatThrownBy(() -> service.upsert("selector-user",
-                request(SettlementType.INDIVIDUAL, "900101-7654321")))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_INPUT));
-        assertThat(account.getSettlementType()).isNull();
-        assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("9001011234567");
+        service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-7654321"));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
+        assertThat(decrypt(account.getBusinessNumberEncrypted())).isEqualTo("900101-7654321");
     }
 
     @Test
-    void unknownStoredTypeIsHiddenAndCannotBeUpdated() {
+    void unknownStoredTypeIsHiddenAndCanBeRepaired() {
         SettlementAccount account = SettlementAccount.builder()
                 .selectorsId(9L)
                 .settlementType("UNKNOWN")
@@ -305,11 +306,10 @@ class SettlementAccountServiceTest {
 
         assertThat(response.settlementType()).isNull();
         assertThat(response.businessNumber()).isNull();
-        assertThatThrownBy(() -> service.upsert("selector-user",
-                request(SettlementType.INDIVIDUAL, "900101-1234567")))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        exception -> assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.INVALID_INPUT));
+        service.upsert("selector-user",
+                request(SettlementType.INDIVIDUAL, "900101-1234567"));
+
+        assertThat(account.getSettlementType()).isEqualTo(SettlementType.INDIVIDUAL.name());
     }
 
     @Test

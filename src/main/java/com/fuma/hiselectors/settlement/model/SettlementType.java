@@ -18,12 +18,6 @@ public enum SettlementType {
         return identifier != null && identifierPattern.matcher(identifier).matches();
     }
 
-    public boolean isSameIdentifier(String left, String right) {
-        return isValidIdentifier(left)
-                && isValidIdentifier(right)
-                && left.replace("-", "").equals(right.replace("-", ""));
-    }
-
     public static Optional<SettlementType> fromStorage(String value) {
         if (value == null || value.isBlank()) {
             return Optional.empty();
