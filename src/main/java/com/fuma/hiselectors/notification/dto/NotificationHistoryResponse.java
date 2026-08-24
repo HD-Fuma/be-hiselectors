@@ -2,6 +2,7 @@ package com.fuma.hiselectors.notification.dto;
 
 import com.fuma.hiselectors.kakao.model.KakaoRecipientStatus;
 import com.fuma.hiselectors.notification.model.NotificationChannel;
+import com.fuma.hiselectors.notification.model.NotificationInitiatorType;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import java.time.LocalDateTime;
 
@@ -13,6 +14,8 @@ public record NotificationHistoryResponse(
         String receiver,
         String body,
         Long referenceId,
+        NotificationInitiatorType initiatedByType,
+        Long initiatedById,
         LocalDateTime requestAt,
         LocalDateTime sentAt,
         Long recipientUserId,

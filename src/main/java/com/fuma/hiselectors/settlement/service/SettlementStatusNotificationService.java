@@ -93,7 +93,7 @@ public class SettlementStatusNotificationService {
         if (selectors == null || selectors.getUserId() == null) {
             return;
         }
-        notificationService.sendToFriend(senderAdminLoginId,
+        notificationService.sendToFriendAsSystem(senderAdminLoginId,
                 new NotificationMessageCommand(
                         null,
                         selectors.getUserId(),

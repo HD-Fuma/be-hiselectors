@@ -27,8 +27,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 현재 활성 기수의 콘텐츠 검수 목록을 조회하는 관리자 API. */
-@Tag(name = "콘텐츠 검수", description = "활성 기수 콘텐츠 검수 조회 (관리자 전용)")
+/** 현재 활동 기수의 콘텐츠 검수 목록을 조회하는 관리자 API. */
+@Tag(name = "콘텐츠 검수", description = "현재 활동 기수 콘텐츠 검수 조회 (관리자 전용)")
 @RestController
 @RequestMapping("/api/admin/contents")
 @RequiredArgsConstructor
@@ -39,13 +39,13 @@ public class ContentInspectionAdminController {
     private final ContentDetailQueryService contentDetailQueryService;
     private final ContentInspectionConfirmationService contentInspectionConfirmationService;
 
-    @Operation(summary = "활성 기수 콘텐츠 검수 목록 조회",
-            description = "현재 활성 기수의 삭제되지 않은 콘텐츠와 최신 버전을 "
+    @Operation(summary = "현재 활동 기수 콘텐츠 검수 목록 조회",
+            description = "현재 활동 중인 기수의 삭제되지 않은 콘텐츠와 최신 버전을 "
                     + "최초 저장 시각 내림차순으로 반환한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "400", description = "페이지 요청 값 오류", content = @Content),
-            @ApiResponse(responseCode = "409", description = "현재 활성 기수 없음", content = @Content)
+            @ApiResponse(responseCode = "409", description = "현재 활동 기수 없음", content = @Content)
     })
     @GetMapping
     public ResponseEntity<Page<ContentInspectionListItemResponse>> getContents(
