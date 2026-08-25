@@ -35,13 +35,19 @@ public class ContentBatchService {
                     new StoredContentService.StoredContentResult(0, 0);
             int[] collectedContentCount = {0};
             int[] checkedContentCount = {0};
+            int[] failedContentCount = {0};
+            boolean[] storedProgressStarted = {false};
 
+            progress.reportStep("NEW_CONTENT_SYNC", null, 0);
+            progress.reportStep("STORED_CONTENT_SYNC", null, 0);
             progress.describe("신규 콘텐츠 수집 중: 0건 처리");
             progress.start("NEW_CONTENT_SYNC", null);
             try {
                 NewContentService.NewContentResult result = newContentService.collect(update ->
                         reportProgress(() -> {
                             collectedContentCount[0] += update.savedContentDelta();
+                            progress.reportStep(
+                                    "NEW_CONTENT_SYNC", null, collectedContentCount[0]);
                             progress.describe("신규 콘텐츠 수집 중: "
                                     + collectedContentCount[0] + "건 처리");
                             progress.advance(
@@ -59,18 +65,37 @@ public class ContentBatchService {
                 log.error("신규 콘텐츠 수집 배치에 실패했습니다.", exception);
                 progress.advance(0, 1, 0);
             }
+            progress.reportStep(
+                    "NEW_CONTENT_SYNC",
+                    (long) collectedContentCount[0],
+                    collectedContentCount[0]);
 
-            progress.describe("기존 콘텐츠 확인 중: 0건 처리");
-            progress.changeStep("STORED_CONTENT_SYNC");
             try {
                 StoredContentService.StoredContentResult result = storedContentService.check(update ->
                         reportProgress(() -> {
-                            checkedContentCount[0] += update.checkedContentDelta();
-                            progress.describe("기존 콘텐츠 확인 중: "
+                            if (!storedProgressStarted[0]) {
+                                progress.reportStep(
+                                        "STORED_CONTENT_SYNC", (long) update.totalContentCount(), 0);
+                                progress.describe("기존 콘텐츠 수집 중: 0건 처리");
+                                progress.changeStep("STORED_CONTENT_SYNC");
+                                storedProgressStarted[0] = true;
+                                return;
+                            }
+                            int checkedDelta = update.checkedContentCount()
+                                    - checkedContentCount[0];
+                            int failedDelta = update.failedContentCount()
+                                    - failedContentCount[0];
+                            checkedContentCount[0] = update.checkedContentCount();
+                            failedContentCount[0] = update.failedContentCount();
+                            progress.reportStep(
+                                    "STORED_CONTENT_SYNC",
+                                    (long) update.totalContentCount(),
+                                    checkedContentCount[0]);
+                            progress.describe("기존 콘텐츠 수집 중: "
                                     + checkedContentCount[0] + "건 처리");
                             progress.advance(
-                                    update.checkedContentDelta() - update.failedContentDelta(),
-                                    update.failedContentDelta(),
+                                    checkedDelta - failedDelta,
+                                    failedDelta,
                                     0);
                         }));
                 storedContentResult = result;
@@ -83,11 +108,16 @@ public class ContentBatchService {
                 failedStageCount++;
                 storedContentSucceeded = false;
                 log.error("기존 콘텐츠 변경 확인 배치에 실패했습니다.", exception);
+                if (!storedProgressStarted[0]) {
+                    progress.reportStep("STORED_CONTENT_SYNC", null, 0);
+                    progress.describe("기존 콘텐츠 수집 중: 0건 처리");
+                    progress.changeStep("STORED_CONTENT_SYNC");
+                }
                 progress.advance(0, 1, 0);
             }
 
             progress.describe("신규 콘텐츠 " + collectedContentCount[0]
-                    + "건 수집, 기존 콘텐츠 " + checkedContentCount[0] + "건 확인");
+                    + "건 수집, 기존 콘텐츠 " + checkedContentCount[0] + "건 수집");
 
             ContentBatchResult batchResult = new ContentBatchResult(
                     newContentCount,

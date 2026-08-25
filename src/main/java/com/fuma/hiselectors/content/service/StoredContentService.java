@@ -55,7 +55,8 @@ public class StoredContentService {
     public StoredContentResult check(Consumer<StoredContentProgress> progress) {
         Objects.requireNonNull(progress, "진행 콜백은 필수입니다.");
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
-        List<StoredContentFetch> results = fetchStoredContents();
+        List<StoredContentFetch> results = fetchStoredContents(totalContentCount ->
+                progress.accept(new StoredContentProgress(totalContentCount, 0, 0)));
         int savedEngagementCount = 0;
         int failedContentCount = 0;
         int checkedContentCount = 0;
@@ -64,9 +65,7 @@ public class StoredContentService {
 
         for (StoredContentFetch result : results) {
             SnsPlatform platform = result.content().getSnsCode();
-            int failedContentDelta = 0;
             if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
-                failedContentDelta = 1;
                 failedContentCount++;
                 mergeStats(platformStats, platform, 0, 1);
             } else {
@@ -79,7 +78,6 @@ public class StoredContentService {
                     savedEngagementCount += completed.savedEngagementCount();
                     mergeStats(platformStats, platform, completed.changedVersionCount(), 0);
                 } catch (RuntimeException exception) {
-                    failedContentDelta = 1;
                     failedContentCount++;
                     mergeStats(platformStats, platform, 0, 1);
                     log.error(
@@ -89,7 +87,8 @@ public class StoredContentService {
                 }
             }
             checkedContentCount++;
-            progress.accept(new StoredContentProgress(1, failedContentDelta));
+            progress.accept(new StoredContentProgress(
+                    results.size(), checkedContentCount, failedContentCount));
         }
 
         return new StoredContentResult(
@@ -127,10 +126,16 @@ public class StoredContentService {
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
     List<StoredContentFetch> fetchStoredContents() {
+        return fetchStoredContents(ignored -> {
+        });
+    }
+
+    private List<StoredContentFetch> fetchStoredContents(Consumer<Integer> totalProgress) {
         Generation generation = generationService.getCurrentActivity();
 
         // 현재 기수에 저장된 콘텐츠 조회
         List<Content> contents = contentRepository.findAllByGenerationId(generation.getId());
+        totalProgress.accept(contents.size());
         Map<AccountKey, String> accountIds = new HashMap<>();
         for (SelectorsSnsAccount account : accountRepository
                 .findAllByGenerationId(generation.getId())) {
@@ -342,6 +347,7 @@ public class StoredContentService {
         }
     }
 
-    public record StoredContentProgress(int checkedContentDelta, int failedContentDelta) {
+    public record StoredContentProgress(
+            int totalContentCount, int checkedContentCount, int failedContentCount) {
     }
 }
