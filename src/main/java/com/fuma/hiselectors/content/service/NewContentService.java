@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,12 @@ public class NewContentService {
 
     /** 신규 셀렉터스 콘텐츠와 최초 버전을 저장합니다. */
     public NewContentResult collect() {
+        return collect(progress -> {
+        });
+    }
+
+    public NewContentResult collect(Consumer<NewContentProgress> progress) {
+        Objects.requireNonNull(progress, "진행 콜백은 필수입니다.");
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
         int savedCount = 0;
         int failedAccountCount = 0;
@@ -55,21 +62,26 @@ public class NewContentService {
 
         for (CollectionTarget target : collectionTargets()) {
             NewContentSelection selection = null;
+            int savedContentDelta = 0;
+            int failedAccountDelta = 0;
             try {
                 NewContentSelection selected = newCandidates(target);
                 selection = selected;
                 Integer saved = transactionTemplate.execute(status ->
                         save(target.account(), selected.selectorsContents(), collectedAt));
                 int savedVersions = saved == null ? 0 : saved;
+                savedContentDelta = savedVersions;
                 savedCount += savedVersions;
                 mergeStats(platformStats, target.account().getSnsCode(),
                         selection, savedVersions, 0);
             } catch (RuntimeException exception) {
+                failedAccountDelta = 1;
                 failedAccountCount++;
                 mergeStats(platformStats, target.account().getSnsCode(), selection, 0, 1);
                 log.error("신규 콘텐츠 수집에 실패했습니다. accountId={}",
                         target.account().getAccountId(), exception);
             }
+            progress.accept(new NewContentProgress(savedContentDelta, failedAccountDelta));
         }
         return new NewContentResult(savedCount, failedAccountCount, Map.copyOf(platformStats));
     }
@@ -225,5 +237,8 @@ public class NewContentService {
         public NewContentResult(int savedContentCount, int failedAccountCount) {
             this(savedContentCount, failedAccountCount, Map.of());
         }
+    }
+
+    public record NewContentProgress(int savedContentDelta, int failedAccountDelta) {
     }
 }
