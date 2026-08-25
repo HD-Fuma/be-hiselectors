@@ -171,6 +171,32 @@ class LambdaHandlerTest(unittest.TestCase):
         )
         self.assertNotIn(raw_error, description)
 
+    def test_formats_multiline_content_failures_as_safe_slack_details(self):
+        raw_error = (
+            "NEW_CONTENT_SYNC | item=<@U123> & first\r\n"
+            "\r\n"
+            "STORED_CONTENT_SYNC | item=<https://example.com|링크>\r"
+            "   \r"
+            "NEW_CONTENT_SYNC | reason=> third\n"
+            "+2건의 추가 실패"
+        )
+
+        self.publish(
+            batch_event(error={"type": "CONTENT_SYNC_PARTIAL_FAILURE", "message": raw_error})
+        )
+
+        self.assertIn(
+            (
+                "실패 원인: NEW_CONTENT_SYNC | item=&lt;@U123&gt; &amp; first\n"
+                "실패 상세:\n"
+                "  • STORED_CONTENT_SYNC | item=&lt;https://example.com|링크&gt;\n"
+                "  • NEW_CONTENT_SYNC | reason=&gt; third\n"
+                "  • +2건의 추가 실패\n"
+                "실행 시간: 1분 24초"
+            ),
+            notification(self.sns)["description"],
+        )
+
     def test_formats_total_counts_when_total_is_present(self):
         self.publish(
             batch_event(
@@ -432,6 +458,32 @@ class LambdaHandlerTest(unittest.TestCase):
             batch_event(reason=123),
             batch_event(error={"type": "RuntimeError"}),
             batch_event(error={"type": "", "message": "failed"}),
+        ]
+
+        result = lambda_function.lambda_handler(
+            cloudwatch_event(
+                *(line(event) for event in invalid_events),
+                line(batch_event()),
+            ),
+            None,
+            self.sns,
+        )
+
+        self.assertEqual({"published": 1}, result)
+        self.sns.publish.assert_called_once()
+
+    def test_rejects_blank_task_run_error_messages(self):
+        for message in (" ", "\t", "\n", "\r\n\t"):
+            with self.subTest(message=repr(message)):
+                event = batch_event(
+                    error={"type": "TASK_RUN_FAILED", "message": message}
+                )
+                self.assertIsNone(lambda_function._parse(line(event)))
+
+    def test_isolates_blank_error_messages_before_valid_event(self):
+        invalid_events = [
+            batch_event(error={"type": "TASK_RUN_FAILED", "message": message})
+            for message in (" ", "\t", "\n", "\r\n\t")
         ]
 
         result = lambda_function.lambda_handler(

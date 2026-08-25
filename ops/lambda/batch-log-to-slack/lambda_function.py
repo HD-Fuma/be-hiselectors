@@ -155,11 +155,14 @@ def _valid_optional_fields(event):
         return False
     if "error" in event:
         error = event["error"]
+        message_validator = (
+            _nonblank_string if event["batch"] == "task-run" else _bounded_string
+        )
         if (
             not isinstance(error, dict)
             or set(error) != {"type", "message"}
             or not _bounded_string(error["type"])
-            or not _bounded_string(error["message"])
+            or not message_validator(error["message"])
         ):
             return False
     return True
@@ -222,9 +225,9 @@ def _task_run_notification(event):
     counts = _format_counts(event.get("counts"))
     if counts:
         description.append("처리 결과: " + counts)
+    description.extend(_format_error_message(event["error"]["message"]))
     description.extend(
         [
-            "실패 원인: " + html.escape(event["error"]["message"], quote=False),
             "실행 시간: " + _format_duration(event["durationMs"]),
             "실행 ID: " + event["runId"],
         ]
@@ -238,6 +241,20 @@ def _task_run_notification(event):
             "description": "\n".join(description),
         },
     }
+
+
+def _format_error_message(message):
+    normalized = message.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [
+        html.escape(line, quote=False)
+        for line in normalized.split("\n")
+        if line.strip()
+    ]
+    formatted = ["실패 원인: " + lines[0]]
+    if len(lines) > 1:
+        formatted.append("실패 상세:")
+        formatted.extend("  • " + line for line in lines[1:])
+    return formatted
 
 
 def _format_counts(counts):
