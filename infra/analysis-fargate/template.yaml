@@ -73,6 +73,7 @@ Resources:
   AnalysisDeadLetterAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmName: hiselectors-analysis-dlq
       AlarmDescription: Applicant analysis jobs exhausted their retries
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
