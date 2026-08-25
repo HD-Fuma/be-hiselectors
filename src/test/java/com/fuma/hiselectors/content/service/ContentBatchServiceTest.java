@@ -10,6 +10,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -319,6 +321,131 @@ class ContentBatchServiceTest {
         assertThatThrownBy(() -> service.run(progress)).isSameAs(failure);
 
         verify(progress, org.mockito.Mockito.never()).advance(0, 1, 0);
+    }
+
+    @Test
+    void recordsAtMostThreeOrderedFailuresAndAdditionalCountOnce() {
+        when(newContentService.collect(any())).thenAnswer(invocation -> {
+            Consumer<NewContentService.NewContentProgress> callback = progress(invocation);
+            for (int index = 1; index <= 4; index++) {
+                callback.accept(new NewContentService.NewContentProgress(
+                        0,
+                        1,
+                        new ContentSyncFailure(
+                                "NEW_CONTENT_SYNC",
+                                SnsPlatform.INSTAGRAM,
+                                "accountId",
+                                "account-" + index + "\n" + "x".repeat(200),
+                                "IllegalStateException",
+                                "신규 콘텐츠 처리 중 오류가 발생했습니다.")));
+            }
+            return new NewContentService.NewContentResult(0, 4);
+        });
+        when(storedContentService.check(any()))
+                .thenThrow(new IllegalStateException("https://secret.example/token"));
+
+        service.run(progress);
+
+        ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
+        verify(progress, times(1)).recordFailure(eq("CONTENT_SYNC_PARTIAL_FAILURE"), message.capture());
+        assertThat(message.getValue()).hasSizeLessThanOrEqualTo(500);
+        assertThat(message.getValue().lines()).hasSize(4);
+        assertThat(message.getValue()).contains("account-1", "account-2", "account-3", "+2건의 추가 실패");
+        assertThat(message.getValue()).doesNotContain("account-4", "secret.example", "\r");
+    }
+
+    @Test
+    void includesDirectCollectAndCheckStageExceptionsInFailureSummary() {
+        when(newContentService.collect(any())).thenThrow(new IllegalStateException("new secret"));
+        when(storedContentService.check(any())).thenThrow(new IllegalArgumentException("stored secret"));
+
+        service.run(progress);
+
+        ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
+        verify(progress).recordFailure(eq("CONTENT_SYNC_PARTIAL_FAILURE"), message.capture());
+        assertThat(message.getValue().lines()).containsExactly(
+                "NEW_CONTENT_SYNC | platform=UNKNOWN | stage=batch | IllegalStateException | 신규 콘텐츠 수집 단계에서 오류가 발생했습니다.",
+                "STORED_CONTENT_SYNC | platform=UNKNOWN | stage=batch | IllegalArgumentException | 기존 콘텐츠 확인 단계에서 오류가 발생했습니다.");
+        assertThat(message.getValue()).doesNotContain("secret");
+    }
+
+    @Test
+    void formatterKeepsThreeRepresentativeLinesWhileReservingAdditionalLine() {
+        ContentSyncFailure longFailure = new ContentSyncFailure(
+                "S".repeat(100),
+                SnsPlatform.INSTAGRAM,
+                "I".repeat(100),
+                "D".repeat(200),
+                "E".repeat(200),
+                "M".repeat(300));
+
+        String summary = ContentSyncFailureFormatter.format(
+                java.util.List.of(longFailure, longFailure, longFailure), 97);
+
+        assertThat(summary).hasSizeLessThanOrEqualTo(500);
+        assertThat(summary.lines()).hasSize(4);
+        assertThat(summary.lines().toList().getLast()).isEqualTo("+97건의 추가 실패");
+        assertThat(summary.lines().limit(3)).allMatch(line -> !line.isBlank());
+    }
+
+    @Test
+    void normalizesUnicodeSeparatorsAndControlCharactersInIdentifiers() {
+        ContentSyncFailure failure = new ContentSyncFailure(
+                "NEW_CONTENT_SYNC",
+                SnsPlatform.INSTAGRAM,
+                "accountId",
+                "one\u0085two\u2028three\u2029four\u001B\u0000five",
+                "IllegalStateException",
+                "신규 콘텐츠 처리 중 오류가 발생했습니다.");
+
+        assertThat(failure.itemId()).isEqualTo("one two three four five");
+    }
+
+    @Test
+    void keepsIdentifierUtf16WellFormedWhenEmojiCrossesEightyCharacterBoundary() {
+        ContentSyncFailure failure = new ContentSyncFailure(
+                "NEW_CONTENT_SYNC",
+                SnsPlatform.INSTAGRAM,
+                "accountId",
+                "x".repeat(79) + "😀tail",
+                "IllegalStateException",
+                "신규 콘텐츠 처리 중 오류가 발생했습니다.");
+
+        assertThat(failure.itemId()).isEqualTo("x".repeat(79));
+        assertThat(hasWellFormedSurrogates(failure.itemId())).isTrue();
+    }
+
+    @Test
+    void keepsFormatterUtf16WellFormedWhenEmojiCrossesFiveHundredCharacterBudget() {
+        ContentSyncFailure boundaryFailure = new ContentSyncFailure(
+                "S".repeat(40),
+                SnsPlatform.INSTAGRAM,
+                "I".repeat(40),
+                "D".repeat(60) + "😀tail",
+                "E",
+                "M");
+
+        String summary = ContentSyncFailureFormatter.format(
+                java.util.List.of(boundaryFailure, boundaryFailure, boundaryFailure), 0);
+
+        assertThat(summary).hasSizeLessThanOrEqualTo(500);
+        assertThat(hasWellFormedSurrogates(summary)).isTrue();
+    }
+
+    private boolean hasWellFormedSurrogates(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (Character.isHighSurrogate(character)) {
+                if (index + 1 >= value.length()
+                        || !Character.isLowSurrogate(value.charAt(index + 1))) {
+                    return false;
+                }
+                index++;
+            } else if (Character.isLowSurrogate(character)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @SuppressWarnings("unchecked")

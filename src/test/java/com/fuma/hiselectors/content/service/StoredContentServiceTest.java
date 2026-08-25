@@ -593,12 +593,15 @@ class StoredContentServiceTest {
 
         List<StoredContentService.StoredContentFetch> result = service.fetchStoredContents();
 
-        assertThat(result).containsExactly(
-                new StoredContentService.StoredContentFetch(
-                        instagram,
+        assertThat(result).extracting(StoredContentService.StoredContentFetch::content)
+                .containsExactly(instagram, youtube);
+        assertThat(result).extracting(StoredContentService.StoredContentFetch::fetched)
+                .containsExactly(
                         new ContentFetcher.FetchResult(
-                                "fetch-fails", ContentFetcher.FetchStatus.FAILED, null, null)),
-                new StoredContentService.StoredContentFetch(youtube, youtubeResult));
+                                "fetch-fails", ContentFetcher.FetchStatus.FAILED, null, null),
+                        youtubeResult);
+        assertThat(result.getFirst().failure()).isInstanceOf(IllegalStateException.class);
+        assertThat(result.getLast().failure()).isNull();
         verify(youtubeFetcher).fetchByContentIds(List.of("youtube-found"));
     }
 
@@ -664,7 +667,12 @@ class StoredContentServiceTest {
 
         StoredContentService.StoredContentResult result = service.check(progress::add);
 
-        assertThat(progress).containsExactly(
+        assertThat(progress.stream()
+                .map(update -> new StoredContentService.StoredContentProgress(
+                        update.totalContentCount(),
+                        update.checkedContentCount(),
+                        update.failedContentCount()))
+                .toList()).containsExactly(
                 new StoredContentService.StoredContentProgress(2, 0, 0),
                 new StoredContentService.StoredContentProgress(2, 1, 1),
                 new StoredContentService.StoredContentProgress(2, 2, 2));
@@ -717,7 +725,12 @@ class StoredContentServiceTest {
 
         service.check(progress::add);
 
-        assertThat(progress).containsExactly(
+        assertThat(progress.stream()
+                .map(update -> new StoredContentService.StoredContentProgress(
+                        update.totalContentCount(),
+                        update.checkedContentCount(),
+                        update.failedContentCount()))
+                .toList()).containsExactly(
                 new StoredContentService.StoredContentProgress(2, 0, 0),
                 new StoredContentService.StoredContentProgress(2, 1, 0),
                 new StoredContentService.StoredContentProgress(2, 2, 1));
@@ -815,6 +828,84 @@ class StoredContentServiceTest {
                 .hasMessage("진행 콜백은 필수입니다.");
 
         verifyNoInteractions(generationService);
+    }
+
+    @Test
+    void reportsFetcherExceptionAsSafeFailureForEveryAffectedContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.YOUTUBE, "first\nsecret");
+        Content second = content(SnsPlatform.YOUTUBE, "second");
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(youtubeFetcher.fetchByContentIds(List.of("first\nsecret", "second")))
+                .thenThrow(new IllegalStateException("Authorization: Bearer token-secret"));
+
+        service.check(progress::add);
+
+        assertThat(progress).hasSize(3);
+        assertThat(progress.get(1).failure().itemId()).isEqualTo("first secret");
+        assertThat(progress.get(2).failure().itemId()).isEqualTo("second");
+        assertThat(progress.get(1).failure().errorType()).isEqualTo("IllegalStateException");
+        assertThat(progress.get(1).failure().errorMessage())
+                .isEqualTo("기존 콘텐츠 조회 중 오류가 발생했습니다.")
+                .doesNotContain("token-secret");
+    }
+
+    @Test
+    void reportsExplicitFailedFetchResultAsSyntheticFailure() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.YOUTUBE, "failed-id");
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(youtubeFetcher.fetchByContentIds(List.of("failed-id"))).thenReturn(List.of(
+                new ContentFetcher.FetchResult(
+                        "failed-id", ContentFetcher.FetchStatus.FAILED, null, null)));
+
+        service.check(progress::add);
+
+        ContentSyncFailure failure = progress.getLast().failure();
+        assertThat(failure.stage()).isEqualTo("STORED_CONTENT_SYNC");
+        assertThat(failure.platform()).isEqualTo(SnsPlatform.YOUTUBE);
+        assertThat(failure.itemType()).isEqualTo("contentId");
+        assertThat(failure.itemId()).isEqualTo("failed-id");
+        assertThat(failure.errorType()).isEqualTo("FETCH_FAILED");
+        assertThat(failure.errorMessage()).isEqualTo("기존 콘텐츠 조회에 실패했습니다.");
+    }
+
+    @Test
+    void reportsSaveExceptionWithFixedStageMessage() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.YOUTUBE, "save-id");
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(youtubeFetcher.fetchByContentIds(List.of("save-id"))).thenReturn(List.of(
+                new ContentFetcher.FetchResult(
+                        "save-id", ContentFetcher.FetchStatus.NOT_FOUND, null, null)));
+        when(transactionTemplate.execute(any()))
+                .thenThrow(new IllegalArgumentException("jdbc:password=secret"));
+
+        service.check(progress::add);
+
+        ContentSyncFailure failure = progress.getLast().failure();
+        assertThat(failure.errorType()).isEqualTo("IllegalArgumentException");
+        assertThat(failure.errorMessage())
+                .isEqualTo("기존 콘텐츠 저장 중 오류가 발생했습니다.")
+                .doesNotContain("secret");
+    }
+
+    @Test
+    void preservesThreeArgumentProgressConstructor() {
+        assertThat(new StoredContentService.StoredContentProgress(3, 2, 1))
+                .isEqualTo(new StoredContentService.StoredContentProgress(3, 2, 1, null));
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {

@@ -80,9 +80,18 @@ public class NewContentService {
                 mergeStats(platformStats, target.account().getSnsCode(), selection, 0, 1);
                 log.error("신규 콘텐츠 수집에 실패했습니다. accountId={}",
                         target.account().getAccountId(), exception);
+                progress.accept(new NewContentProgress(
+                        0,
+                        1,
+                        ContentSyncFailure.fromException(
+                                "NEW_CONTENT_SYNC",
+                                target.account().getSnsCode(),
+                                "accountId",
+                                target.account().getAccountId(),
+                                exception,
+                                "신규 콘텐츠 처리 중 오류가 발생했습니다.")));
             }
             if (accountFailed) {
-                progress.accept(new NewContentProgress(0, 1));
                 continue;
             }
             for (int savedIndex = 0; savedIndex < savedContentDelta; savedIndex++) {
@@ -245,6 +254,13 @@ public class NewContentService {
         }
     }
 
-    public record NewContentProgress(int savedContentDelta, int failedAccountDelta) {
+    public record NewContentProgress(
+            int savedContentDelta,
+            int failedAccountDelta,
+            ContentSyncFailure failure) {
+
+        public NewContentProgress(int savedContentDelta, int failedAccountDelta) {
+            this(savedContentDelta, failedAccountDelta, null);
+        }
     }
 }
