@@ -42,9 +42,18 @@ GitHub 배포 역할에는 기존 권한과 함께 아래 작업이 필요하다
   "lambda:GetEventSourceMapping",
   "lambda:UpdateEventSourceMapping",
   "lambda:DeleteEventSourceMapping",
-  "lambda:ListEventSourceMappings"
+  "lambda:ListEventSourceMappings",
+  "cloudwatch:PutMetricAlarm",
+  "cloudwatch:DeleteAlarms",
+  "cloudwatch:DescribeAlarms",
+  "cloudwatch:TagResource",
+  "cloudwatch:UntagResource",
+  "cloudwatch:ListTagsForResource"
 ]
 ```
+
+CloudWatch 권한의 리소스는
+`arn:aws:cloudwatch:ap-northeast-2:167595589232:alarm:hiselectors-analysis-dlq`로 제한한다.
 
 큐 정책이 `hiselectors-ec2-role`에 `sqs:SendMessage`를 허용하므로 EC2 역할에 별도 인라인
 정책은 필요 없다. 역할 이름이 다르면 CloudFormation의 `ApiInstanceRoleName` 값을 바꾼다.
