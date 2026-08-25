@@ -180,6 +180,9 @@ public enum ErrorCode {
             HttpStatus.CONFLICT, "이미 확정된 콘텐츠 검수입니다."),
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
+    AI_CONTENT_INSPECTION_QUOTA_EXCEEDED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "AI 콘텐츠 검수 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다."),
     INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다."),
 
