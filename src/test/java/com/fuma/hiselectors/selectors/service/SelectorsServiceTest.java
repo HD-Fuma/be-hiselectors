@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
@@ -53,6 +54,7 @@ class SelectorsServiceTest {
     private ContentVersionRepository contentVersionRepository;
     private ContentMediaRepository contentMediaRepository;
     private SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private YoutubeContentFetcher youtubeContentFetcher;
     private SelectorsService selectorsService;
 
     @BeforeEach
@@ -66,11 +68,13 @@ class SelectorsServiceTest {
         contentVersionRepository = mock(ContentVersionRepository.class);
         contentMediaRepository = mock(ContentMediaRepository.class);
         selectorsSnsAccountRepository = mock(SelectorsSnsAccountRepository.class);
+        youtubeContentFetcher = mock(YoutubeContentFetcher.class);
         selectorsService = new SelectorsService(
                 selectorsRepository,
                 mock(SelectorsRoleRepository.class),
                 mock(SelectorsGenerationRepository.class),
                 selectorsSnsAccountRepository,
+                youtubeContentFetcher,
                 penaltyHistoryRepository,
                 applicationRepository,
                 userRepository,
@@ -78,6 +82,34 @@ class SelectorsServiceTest {
                 contentEngagementRepository,
                 contentVersionRepository,
                 contentMediaRepository);
+    }
+
+    @Test
+    void returnsYoutubeChannelTitleAsSnsDisplayName() {
+        String channelId = "UC1111111111111111111111";
+        Pageable pageable = PageRequest.of(0, 20);
+        Selectors selectors = mock(Selectors.class);
+        when(selectors.getId()).thenReturn(1L);
+        when(selectors.getSelectorsCode()).thenReturn("SEL001");
+        when(selectors.getSelectorsNickname()).thenReturn("정하린");
+        when(selectorsRepository.search(null, null, null, null, pageable))
+                .thenReturn(new PageImpl<>(List.of(selectors), pageable, 1));
+
+        SelectorsSnsAccount account = mock(SelectorsSnsAccount.class);
+        when(account.getSelectorsId()).thenReturn(1L);
+        when(account.getSnsCode()).thenReturn(SnsPlatform.YOUTUBE);
+        when(account.getAccountId()).thenReturn(channelId);
+        when(selectorsSnsAccountRepository.findAllBySelectorsIdInAndDeletedFalse(List.of(1L)))
+                .thenReturn(List.of(account));
+        when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId)))
+                .thenReturn(Map.of(channelId, "하린의 생활연구소"));
+
+        var result = selectorsService.search(null, null, null, null, pageable)
+                .getContent().getFirst();
+
+        assertThat(result.snsAccountId()).isEqualTo(channelId);
+        assertThat(result.snsDisplayName()).isEqualTo("하린의 생활연구소");
+        verify(youtubeContentFetcher).fetchChannelTitles(List.of(channelId));
     }
 
     @Test

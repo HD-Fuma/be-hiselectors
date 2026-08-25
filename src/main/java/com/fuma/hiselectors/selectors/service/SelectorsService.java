@@ -3,6 +3,7 @@ package com.fuma.hiselectors.selectors.service;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
@@ -58,6 +59,7 @@ public class SelectorsService {
     private final SelectorsRoleRepository selectorsRoleRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private final YoutubeContentFetcher youtubeContentFetcher;
     private final PenaltyHistoryRepository penaltyHistoryRepository;
     private final ApplicationRepository applicationRepository;
     private final UserRepository userRepository;
@@ -78,16 +80,17 @@ public class SelectorsService {
         Page<Selectors> page = selectorsRepository.search(
                 blankToNull(roleId), generationId, blankToNull(nickname), snsCode, pageable);
         if (page.isEmpty()) {
-            return page.map(selectors -> toSummary(selectors, null, Map.of()));
+            return page.map(selectors -> toSummary(selectors, null, Map.of(), Map.of()));
         }
 
         Map<String, String> roleNames = roleNames();
         Map<Long, SelectorsSnsAccount> representatives = representativeAccounts(
                 page.getContent().stream().map(Selectors::getId).toList());
+        Map<String, String> youtubeTitles = youtubeChannelTitles(representatives);
 
         return page.map(selectors ->
                 toSummary(selectors, roleNames.get(selectors.getSelectorsRoleId()),
-                        representatives));
+                        representatives, youtubeTitles));
     }
 
     /** 기본 정보와 참여 기수 이력, SNS 계정을 함께 조회한다. */
@@ -179,7 +182,8 @@ public class SelectorsService {
     }
 
     private SelectorsSummary toSummary(Selectors selectors, String roleName,
-                                       Map<Long, SelectorsSnsAccount> representatives) {
+                                       Map<Long, SelectorsSnsAccount> representatives,
+                                       Map<String, String> youtubeTitles) {
         SelectorsSnsAccount account = representatives.get(selectors.getId());
         return new SelectorsSummary(
                 selectors.getId(),
@@ -190,10 +194,31 @@ public class SelectorsService {
                 account == null || account.getSnsCode() == null
                         ? null : account.getSnsCode().name(),
                 account == null ? null : account.getAccountId(),
+                snsDisplayName(account, youtubeTitles),
                 account == null ? null : account.getFollowerCount(),
                 account == null ? null : account.getProfileImageUrl(),
                 selectors.getCreatedAt()
         );
+    }
+
+    private Map<String, String> youtubeChannelTitles(
+            Map<Long, SelectorsSnsAccount> representatives) {
+        List<String> channelIds = representatives.values().stream()
+                .filter(account -> account.getSnsCode() == SnsPlatform.YOUTUBE)
+                .map(SelectorsSnsAccount::getAccountId)
+                .toList();
+        return channelIds.isEmpty()
+                ? Map.of() : youtubeContentFetcher.fetchChannelTitles(channelIds);
+    }
+
+    private String snsDisplayName(
+            SelectorsSnsAccount account, Map<String, String> youtubeTitles) {
+        if (account == null || account.getAccountId() == null) {
+            return null;
+        }
+        return account.getSnsCode() == SnsPlatform.YOUTUBE
+                ? youtubeTitles.getOrDefault(account.getAccountId(), account.getAccountId())
+                : account.getAccountId();
     }
 
     private Map<String, String> roleNames() {
