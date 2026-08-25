@@ -47,16 +47,11 @@ public class ContentSnapshotFactory {
                     versionId,
                     MediaType.valueOf(rawMedia.mediaType().name()),
                     rawMedia.mediaUrl(),
-                    thumbnailUrl(rawMedia),
                     rawMedia.snsMediaId(),
                     sequenceNo++,
                     Map.of()));
         }
         return media;
-    }
-
-    String thumbnailUrl(RawContentMedia media) {
-        return media.thumbnailUrls().isEmpty() ? null : media.thumbnailUrls().getLast();
     }
 
     String contentHash(RawContent rawContent) {

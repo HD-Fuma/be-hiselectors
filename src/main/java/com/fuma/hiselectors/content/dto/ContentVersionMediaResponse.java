@@ -7,7 +7,6 @@ public record ContentVersionMediaResponse(
         Long contentMediaId,
         MediaType mediaType,
         String mediaUrl,
-        String thumbnailUrl,
         String snsMediaId,
         Integer sequenceNo,
         String text
@@ -18,7 +17,6 @@ public record ContentVersionMediaResponse(
                 media.getId(),
                 media.getMediaType(),
                 media.getMediaUrl(),
-                media.getThumbnailUrl(),
                 media.getSnsMediaId(),
                 media.getSequenceNo(),
                 bodyText instanceof String value ? value : null);

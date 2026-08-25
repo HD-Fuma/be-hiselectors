@@ -3,8 +3,6 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.ContentFetcher.FetchResult;
-import com.fuma.hiselectors.content.client.dto.RawContent;
-import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
@@ -274,13 +272,10 @@ public class StoredContentService {
                 .findFirst()
                 .orElseThrow(() -> new NullPointerException(
                         "현재 콘텐츠 버전이 없습니다. contentId=" + contentId));
-        RawContent fetchedContent = result.fetched().content();
-        if (fetchedContent == null) {
-            refreshCurrentMedia(current.getId(), result.fetched().refreshedMedia());
-            return false;
-        }
+        var fetchedContent = Objects.requireNonNull(
+                result.fetched().content(),
+                "조회된 콘텐츠 정보가 없습니다. contentId=" + contentId);
         if (current.getContentHash().equals(snapshotFactory.contentHash(fetchedContent))) {
-            refreshCurrentMedia(current.getId(), fetchedContent.media());
             return false;
         }
 
@@ -297,26 +292,6 @@ public class StoredContentService {
             mediaRepository.saveAll(media);
         }
         return true;
-    }
-
-    private void refreshCurrentMedia(
-            Long contentVersionId, List<RawContentMedia> fetchedMedia) {
-        Map<String, RawContentMedia> fetchedById = fetchedMedia.stream()
-                .collect(Collectors.toMap(RawContentMedia::snsMediaId, media -> media));
-        List<ContentMedia> changed = mediaRepository
-                .findByContentVersionIdOrderBySequenceNoAsc(contentVersionId)
-                .stream()
-                .filter(media -> media.getSnsMediaId() != null)
-                .filter(media -> fetchedById.containsKey(media.getSnsMediaId()))
-                .filter(media -> {
-                    RawContentMedia fetched = fetchedById.get(media.getSnsMediaId());
-                    return media.refreshExternalUrls(
-                            fetched.mediaUrl(), snapshotFactory.thumbnailUrl(fetched));
-                })
-                .toList();
-        if (!changed.isEmpty()) {
-            mediaRepository.saveAll(changed);
-        }
     }
 
     private boolean updateDeletionStatus(StoredContentFetch result) {

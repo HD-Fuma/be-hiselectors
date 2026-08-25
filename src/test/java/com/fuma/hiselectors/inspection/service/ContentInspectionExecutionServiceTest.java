@@ -226,8 +226,7 @@ class ContentInspectionExecutionServiceTest {
         Content content = content(1L);
         ContentVersion requested = version(1L, 1L, ContentVersionCreationReason.INITIAL);
         ContentMedia legacyVideo = ContentMedia.create(
-                1L, MediaType.VIDEO, null,
-                "https://cdn.example.com/video-thumbnail.jpg", "abc123", 0,
+                1L, MediaType.VIDEO, null, "abc123", 0,
                 Map.of("stt", List.of(), "ocr", List.of()));
         ReflectionTestUtils.setField(legacyVideo, "id", 11L);
         InspectionPolicy policy = mock(InspectionPolicy.class);
@@ -242,13 +241,7 @@ class ContentInspectionExecutionServiceTest {
                 .thenReturn(List.of(legacyVideo));
         when(fixture.preprocessing.requiresNewVersion(
                 content, List.of(legacyVideo), policy)).thenReturn(true);
-        when(fixture.media.saveAll(any())).thenAnswer(invocation -> {
-            List<ContentMedia> cloned = invocation.getArgument(0);
-            assertThat(cloned).singleElement().satisfies(media ->
-                    assertThat(media.getThumbnailUrl())
-                            .isEqualTo("https://cdn.example.com/video-thumbnail.jpg"));
-            return cloned;
-        });
+        when(fixture.media.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(fixture.preprocessing.preprocess(any(), any(), any())).thenReturn(
                 successfulPreprocessing());
         when(fixture.merger.mergeRuleFirst(any(), any())).thenReturn(List.of());

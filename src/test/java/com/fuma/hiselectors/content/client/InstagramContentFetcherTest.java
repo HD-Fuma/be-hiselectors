@@ -507,10 +507,9 @@ class InstagramContentFetcherTest {
     }
 
     @Test
-    @DisplayName("첫 페이지 밖의 기존 콘텐츠는 상세 페이지네이션 없이 가벼운 조회로 찾는다")
+    @DisplayName("기존 Instagram 콘텐츠를 계정별 Business Discovery 응답에서 찾는다")
     void fetchStoredContentsByAccount() {
-        String fullNextUrl = nextUrl("full-next");
-        String storedNextUrl = nextUrl("stored-next");
+        String nextUrl = nextUrl("stored-next");
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
                             .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
@@ -522,19 +521,9 @@ class InstagramContentFetcherTest {
                 })
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
-                        fullNextUrl), MediaType.APPLICATION_JSON));
-        server.expect(request -> {
-                    String query = URLDecoder.decode(
-                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
-                    assertThat(query)
-                            .contains("media.limit(100)")
-                            .contains("id,media_type,media_url,thumbnail_url")
-                            .doesNotContain("caption");
-                })
-                .andRespond(withSuccess(firstPageJson(List.of(), storedNextUrl),
-                        MediaType.APPLICATION_JSON));
+                        nextUrl), MediaType.APPLICATION_JSON));
         expectNextPage(
-                storedNextUrl,
+                nextUrl,
                 List.of(mediaJson("stored", "2026-08-12T05:00:00+0000")),
                 null);
 
@@ -547,50 +536,6 @@ class InstagramContentFetcherTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("stored", FetchStatus.FOUND),
                         org.assertj.core.groups.Tuple.tuple("missing", FetchStatus.NOT_FOUND));
-        server.verify();
-    }
-
-    @Test
-    @DisplayName("첫 페이지 밖의 기존 영상은 가벼운 100건 조회로 URL을 갱신한다")
-    void fetchStoredMediaFromWidePage() {
-        server.expect(request -> assertThat(URLDecoder.decode(
-                        request.getURI().getRawQuery(), StandardCharsets.UTF_8))
-                        .contains("media.limit(10)"))
-                .andRespond(withSuccess(firstPageJson(
-                        List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
-                        null), MediaType.APPLICATION_JSON));
-        server.expect(request -> assertThat(URLDecoder.decode(
-                        request.getURI().getRawQuery(), StandardCharsets.UTF_8))
-                        .contains("media.limit(100)")
-                        .contains("id,media_type,media_url,thumbnail_url")
-                        .doesNotContain("caption"))
-                .andRespond(withSuccess("""
-                        {
-                          "business_discovery": {
-                            "media": {
-                              "data": [{
-                                "id": "stored-video",
-                                "media_type": "VIDEO",
-                                "media_url": "https://cdn.example.com/stored.mp4",
-                                "thumbnail_url": "https://cdn.example.com/stored.jpg"
-                              }]
-                            }
-                          }
-                        }
-                        """, MediaType.APPLICATION_JSON));
-
-        List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
-                "selector.insta", List.of("stored-video"));
-
-        assertThat(result).singleElement().satisfies(found -> {
-            assertThat(found.status()).isEqualTo(FetchStatus.FOUND);
-            assertThat(found.content()).isNull();
-            assertThat(found.refreshedMedia()).containsExactly(new RawContentMedia(
-                    "stored-video",
-                    RawContentMedia.MediaType.VIDEO,
-                    "https://cdn.example.com/stored.mp4",
-                    List.of("https://cdn.example.com/stored.jpg")));
-        });
         server.verify();
     }
 
