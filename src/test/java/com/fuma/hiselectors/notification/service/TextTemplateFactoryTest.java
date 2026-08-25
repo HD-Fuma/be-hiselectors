@@ -13,7 +13,7 @@ class TextTemplateFactoryTest {
 
     private final TextTemplateFactory factory = new TextTemplateFactory(
             new KakaoMessageProperties("https://example.com", "https://m.example.com",
-                    "https://example.com/image.png"),
+                    "https://example.com/image.png", ""),
             new NotificationMessageFactory());
 
     @Test
