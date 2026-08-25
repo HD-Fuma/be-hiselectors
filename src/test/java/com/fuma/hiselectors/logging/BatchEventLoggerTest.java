@@ -211,6 +211,20 @@ class BatchEventLoggerTest {
     }
 
     @Test
+    void taskRunFailureLoggerForwardsTheRecordedSafeFailureSummary() {
+        TaskRunFailureLogger failureLogger = new TaskRunFailureLogger(batchEventLogger);
+
+        failureLogger.log(snapshot(
+                TaskRunStatus.PARTIAL_FAILED,
+                "REMOTE_ITEM_REJECTED",
+                "원격 항목 17 처리 실패"));
+
+        JsonNode error = events().getFirst().get("error");
+        assertThat(error.get("type").asText()).isEqualTo("REMOTE_ITEM_REJECTED");
+        assertThat(error.get("message").asText()).isEqualTo("원격 항목 17 처리 실패");
+    }
+
+    @Test
     void taskRunFailureLoggerRejectsSucceededSnapshots() {
         TaskRunFailureLogger failureLogger = new TaskRunFailureLogger(batchEventLogger);
 

@@ -204,6 +204,29 @@ public class TaskRun {
         touch(now);
     }
 
+    /** 작업을 계속할 수 있는 항목 단위 실패의 최신 안전 요약을 기록한다. */
+    public void recordFailure(String type, String message, Instant now) {
+        requireRunning();
+        Objects.requireNonNull(type, "오류 유형은 필수입니다.");
+        Objects.requireNonNull(message, "오류 메시지는 필수입니다.");
+        Objects.requireNonNull(now, "기준 시각은 필수입니다.");
+        if (type.isBlank()) {
+            throw new IllegalArgumentException("오류 유형은 비어 있을 수 없습니다.");
+        }
+        if (message.isBlank()) {
+            throw new IllegalArgumentException("오류 메시지는 비어 있을 수 없습니다.");
+        }
+        if (type.length() > 100) {
+            throw new IllegalArgumentException("오류 유형은 100자를 초과할 수 없습니다.");
+        }
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("오류 메시지는 500자를 초과할 수 없습니다.");
+        }
+        this.errorType = type;
+        this.errorMessage = message;
+        touch(now);
+    }
+
     public void mergeStepProgress(Map<String, TaskStepProgress> patch, Instant now) {
         requireRunning();
         Objects.requireNonNull(patch, "단계 진행률 변경값은 필수입니다.");

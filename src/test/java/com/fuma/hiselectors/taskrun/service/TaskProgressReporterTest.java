@@ -127,6 +127,80 @@ class TaskProgressReporterTest {
     }
 
     @Test
+    void failureOnlyFinalFlushPersistsTheLatestSafeSummary() {
+        reporter.recordFailure("REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패");
+
+        reporter.flush();
+
+        verify(transaction).apply(
+                lease, null, null, false, null,
+                "REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패",
+                0, 0, 0, Map.of(), NOW);
+    }
+
+    @Test
+    void failedFailureFlushKeepsTheSummaryAndSuccessfulRetryClearsIt() {
+        reporter.recordFailure("REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패");
+        doThrow(new IllegalStateException("temporary"))
+                .doNothing()
+                .when(transaction)
+                .apply(lease, null, null, false, null,
+                        "REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패",
+                        0, 0, 0, Map.of(), NOW);
+
+        assertThatThrownBy(reporter::flush).isInstanceOf(IllegalStateException.class);
+        reporter.flush();
+        verify(transaction, times(2)).apply(
+                lease, null, null, false, null,
+                "REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패",
+                0, 0, 0, Map.of(), NOW);
+        clearInvocations(transaction);
+
+        reporter.advance(1, 0, 0);
+        reporter.flush();
+
+        verify(transaction).apply(lease, null, null, false, null, 1, 0, 0, Map.of(), NOW);
+    }
+
+    @Test
+    void failureSummaryRejectsValuesBeyondDomainLimitsBeforeBuffering() {
+        assertThatThrownBy(() -> reporter.recordFailure(null, "message"))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("오류 유형은 필수입니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("ERROR", null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("오류 메시지는 필수입니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("가".repeat(101), "message"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 100자를 초과할 수 없습니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("ERROR", "가".repeat(501)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 500자를 초과할 수 없습니다.");
+
+        reporter.flush();
+        verifyNoInteractions(transaction);
+    }
+
+    @Test
+    void failureSummaryRejectsBlankTypeAndMessageBeforeBuffering() {
+        assertThatThrownBy(() -> reporter.recordFailure("", "message"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("   ", "message"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("ERROR", ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> reporter.recordFailure("ERROR", "   "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 비어 있을 수 없습니다.");
+
+        reporter.flush();
+        verifyNoInteractions(transaction);
+    }
+
+    @Test
     void rejectsAnOversizedMessageBeforeItBecomesPending() {
         assertThatThrownBy(() -> reporter.describe("가".repeat(501)))
                 .isInstanceOf(IllegalArgumentException.class)

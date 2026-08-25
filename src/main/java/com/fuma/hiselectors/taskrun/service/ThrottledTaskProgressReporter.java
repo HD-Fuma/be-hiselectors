@@ -29,6 +29,8 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     private long pendingFailed;
     private long pendingSkipped;
     private String pendingMessage;
+    private String pendingErrorType;
+    private String pendingErrorMessage;
     private final LinkedHashMap<String, TaskStepProgress> pendingStepProgress =
             new LinkedHashMap<>();
     private Instant lastFlushAt;
@@ -73,6 +75,26 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     }
 
     @Override
+    public void recordFailure(String type, String message) {
+        Objects.requireNonNull(type, "오류 유형은 필수입니다.");
+        Objects.requireNonNull(message, "오류 메시지는 필수입니다.");
+        if (type.isBlank()) {
+            throw new IllegalArgumentException("오류 유형은 비어 있을 수 없습니다.");
+        }
+        if (message.isBlank()) {
+            throw new IllegalArgumentException("오류 메시지는 비어 있을 수 없습니다.");
+        }
+        if (type.length() > 100) {
+            throw new IllegalArgumentException("오류 유형은 100자를 초과할 수 없습니다.");
+        }
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("오류 메시지는 500자를 초과할 수 없습니다.");
+        }
+        pendingErrorType = type;
+        pendingErrorMessage = message;
+    }
+
+    @Override
     public void reportStep(String stepKey, Long totalCount, long processedCount) {
         requireValidStepKey(stepKey);
         pendingStepProgress.put(stepKey, new TaskStepProgress(totalCount, processedCount));
@@ -100,7 +122,10 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     }
 
     void flush() {
-        if (pendingItems() > 0 || pendingMessage != null || !pendingStepProgress.isEmpty()) {
+        if (pendingItems() > 0
+                || pendingMessage != null
+                || pendingErrorType != null
+                || !pendingStepProgress.isEmpty()) {
             persist(null, null, false);
         }
     }
@@ -110,21 +135,39 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
         Map<String, TaskStepProgress> stepProgressPatch = pendingStepProgress.isEmpty()
                 ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(pendingStepProgress));
-        transaction.apply(
-                lease,
-                stepCode,
-                totalCount,
-                updateTotal,
-                pendingMessage,
-                pendingSucceeded,
-                pendingFailed,
-                pendingSkipped,
-                stepProgressPatch,
-                now);
+        if (pendingErrorType == null) {
+            transaction.apply(
+                    lease,
+                    stepCode,
+                    totalCount,
+                    updateTotal,
+                    pendingMessage,
+                    pendingSucceeded,
+                    pendingFailed,
+                    pendingSkipped,
+                    stepProgressPatch,
+                    now);
+        } else {
+            transaction.apply(
+                    lease,
+                    stepCode,
+                    totalCount,
+                    updateTotal,
+                    pendingMessage,
+                    pendingErrorType,
+                    pendingErrorMessage,
+                    pendingSucceeded,
+                    pendingFailed,
+                    pendingSkipped,
+                    stepProgressPatch,
+                    now);
+        }
         pendingSucceeded = 0;
         pendingFailed = 0;
         pendingSkipped = 0;
         pendingMessage = null;
+        pendingErrorType = null;
+        pendingErrorMessage = null;
         pendingStepProgress.clear();
         lastFlushAt = now;
     }

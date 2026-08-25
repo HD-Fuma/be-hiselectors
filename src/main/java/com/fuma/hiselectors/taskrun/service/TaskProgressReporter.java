@@ -8,6 +8,8 @@ public interface TaskProgressReporter {
 
     void describe(String message);
 
+    void recordFailure(String type, String message);
+
     void reportStep(String stepKey, Long totalCount, long processedCount);
 
     void advance(int succeededDelta, int failedDelta, int skippedDelta);

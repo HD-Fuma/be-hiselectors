@@ -96,6 +96,67 @@ class TaskLeaseTransactionTest {
     }
 
     @Test
+    void appliesFailureSummaryCountsStepMessageAndHeartbeatAtomically() {
+        TaskLease lease = runningRun();
+
+        transaction.apply(
+                lease,
+                "STORE",
+                4,
+                true,
+                "크리에이터 4명 수집",
+                "REMOTE_ITEM_REJECTED",
+                "원격 항목 17 처리 실패",
+                2,
+                1,
+                1,
+                Map.of("youtube", new TaskStepProgress(4L, 3L)),
+                UPDATED_AT);
+
+        assertThat(repository.findByRunId(lease.runId())).get().satisfies(updated -> {
+            assertThat(updated.getCurrentStep()).isEqualTo("STORE");
+            assertThat(updated.getProgressMessage()).isEqualTo("크리에이터 4명 수집");
+            assertThat(updated.getErrorType()).isEqualTo("REMOTE_ITEM_REJECTED");
+            assertThat(updated.getErrorMessage()).isEqualTo("원격 항목 17 처리 실패");
+            assertThat(updated.getProcessedCount()).isEqualTo(4);
+            assertThat(updated.getStepProgress())
+                    .containsEntry("youtube", new TaskStepProgress(4L, 3L));
+            assertThat(updated.getHeartbeatAt()).isEqualTo(UPDATED_AT);
+        });
+    }
+
+    @Test
+    void invalidFailureSummaryRollsBackTheWholeProgressPatch() {
+        TaskLease lease = runningRun();
+
+        assertThatThrownBy(() -> transaction.apply(
+                lease,
+                "STORE",
+                4,
+                true,
+                "크리에이터 4명 수집",
+                "가".repeat(101),
+                "원격 항목 17 처리 실패",
+                2,
+                1,
+                1,
+                Map.of("youtube", new TaskStepProgress(4L, 3L)),
+                UPDATED_AT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 100자를 초과할 수 없습니다.");
+
+        assertThat(repository.findByRunId(lease.runId())).get().satisfies(run -> {
+            assertThat(run.getCurrentStep()).isNull();
+            assertThat(run.getProgressMessage()).isNull();
+            assertThat(run.getErrorType()).isNull();
+            assertThat(run.getTotalCount()).isNull();
+            assertThat(run.getProcessedCount()).isZero();
+            assertThat(run.getStepProgress()).isNull();
+            assertThat(run.getHeartbeatAt()).isEqualTo(STARTED_AT);
+        });
+    }
+
+    @Test
     void rejectsAWorkerThatDoesNotHoldTheCurrentLease() {
         TaskLease lease = runningRun();
 
