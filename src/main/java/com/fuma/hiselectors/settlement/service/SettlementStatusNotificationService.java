@@ -83,6 +83,32 @@ public class SettlementStatusNotificationService {
         }
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void notifyCarryover(
+            Long settlementId, long accumulatedAmount, long minimumPaymentAmount) {
+        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
+            return;
+        }
+        try {
+            SettlementHistory history = settlementHistoryRepository.findByIdForUpdate(settlementId)
+                    .orElse(null);
+            if (history == null || history.getStatus() != SettlementStatus.PAYMENT_CARRYOVER
+                    || alreadySent(NotificationType.SETTLEMENT_CARRYOVER, settlementId)) {
+                return;
+            }
+            String detail = "현재 누적 수수료가 "
+                    + String.format(Locale.KOREA, "%,d", accumulatedAmount)
+                    + "원으로 "
+                    + String.format(Locale.KOREA, "%,d", minimumPaymentAmount)
+                    + "원 미만입니다. "
+                    + String.format(Locale.KOREA, "%,d", minimumPaymentAmount)
+                    + "원 미만의 수수료는 다음 달 정산 이력에 이월됩니다.";
+            send(history, NotificationType.SETTLEMENT_CARRYOVER, detail);
+        } catch (RuntimeException exception) {
+            log.warn("정산 이월 알림 처리 실패: settlementId={}", settlementId, exception);
+        }
+    }
+
     private boolean alreadySent(NotificationType type, Long settlementId) {
         return notificationRepository.countByNotificationPurposeCodeAndReferenceId(
                 type.getPurposeCode(), settlementId) > 0;

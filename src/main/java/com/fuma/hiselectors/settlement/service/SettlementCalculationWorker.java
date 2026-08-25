@@ -11,6 +11,7 @@ import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.event.SettlementCarryoverConfirmedEvent;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,6 +21,8 @@ import java.time.YearMonth;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +37,12 @@ public class SettlementCalculationWorker {
     private final PurchaseHistoryRepository purchaseHistoryRepository;
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final CommissionRateCalculator commissionRateCalculator;
+    private final SettlementCompletionRecorder completionRecorder;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+
+    @Value("${settlement.payment.minimum-amount:1000}")
+    private long minimumPaymentAmount = 1000L;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SettlementCalculationResult calculate(
@@ -65,11 +73,17 @@ public class SettlementCalculationWorker {
                     "selectorsId=" + selectorsId + ", activityMonth=" + activityMonth);
         }
         SettlementHistory history = monthlyHistories.isEmpty() ? null : monthlyHistories.getFirst();
+        boolean preserveExistingPayment = false;
         if (history != null && !history.isCalculating()) {
             if (forcePaymentPendingRecalculation
                     && finalizeSettlement
                     && history.getStatus() == SettlementStatus.PAYMENT_PENDING) {
+                preserveExistingPayment = true;
                 history.reopenPaymentPendingForRecalculation();
+            } else if (forcePaymentPendingRecalculation
+                    && finalizeSettlement
+                    && history.getStatus() == SettlementStatus.PAYMENT_CARRYOVER) {
+                history.reopenCarryoverForRecalculation();
             } else {
                 return new SettlementCalculationResult(history, SettlementCalculationOutcome.SKIPPED);
             }
@@ -97,11 +111,51 @@ public class SettlementCalculationWorker {
         SettlementCalculationOutcome outcome = created
                 ? SettlementCalculationOutcome.CREATED
                 : SettlementCalculationOutcome.UPDATED;
+        Long carryoverAccumulatedAmount = null;
         if (finalizeSettlement) {
-            history.transitionTo(SettlementStatus.PAYMENT_PENDING, now);
+            if (settlementAmount == 0L) {
+                history.transitionTo(SettlementStatus.SETTLED, now);
+                completionRecorder.record(history);
+            } else if (preserveExistingPayment) {
+                history.transitionTo(SettlementStatus.PAYMENT_PENDING, now);
+            } else {
+                List<SettlementHistory> carryovers = settlementHistoryRepository
+                        .findAllBySelectorsIdAndStatusForUpdate(
+                                selectorsId, SettlementStatus.PAYMENT_CARRYOVER);
+                long accumulatedAmount = accumulatedAmount(carryovers, settlementAmount);
+                if (accumulatedAmount < minimumPaymentAmount) {
+                    history.transitionTo(SettlementStatus.PAYMENT_CARRYOVER, now);
+                    carryoverAccumulatedAmount = accumulatedAmount;
+                } else {
+                    YearMonth paymentMonth = activityMonth.plusMonths(2);
+                    for (SettlementHistory carryover : carryovers) {
+                        carryover.transitionTo(SettlementStatus.PAYMENT_PENDING, now);
+                        carryover.schedulePayment(paymentMonth);
+                    }
+                    history.transitionTo(SettlementStatus.PAYMENT_PENDING, now);
+                    history.schedulePayment(paymentMonth);
+                }
+            }
             outcome = SettlementCalculationOutcome.FINALIZED;
         }
-        return new SettlementCalculationResult(settlementHistoryRepository.save(history), outcome);
+        SettlementHistory saved = settlementHistoryRepository.save(history);
+        if (carryoverAccumulatedAmount != null) {
+            eventPublisher.publishEvent(new SettlementCarryoverConfirmedEvent(
+                    saved.getId(), carryoverAccumulatedAmount, minimumPaymentAmount));
+        }
+        return new SettlementCalculationResult(saved, outcome);
+    }
+
+    private long accumulatedAmount(List<SettlementHistory> histories, long currentAmount) {
+        try {
+            long accumulated = currentAmount;
+            for (SettlementHistory history : histories) {
+                accumulated = Math.addExact(accumulated, history.getSettlementAmount());
+            }
+            return accumulated;
+        } catch (ArithmeticException exception) {
+            throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_AMOUNT);
+        }
     }
 
     private Application requireRateSource(Selectors selectors) {

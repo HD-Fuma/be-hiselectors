@@ -23,6 +23,7 @@ public class NotificationMessageFactory {
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
             case SETTLEMENT_COMPLETED -> settlementCompleted(name, detail);
+            case SETTLEMENT_CARRYOVER -> settlementCarryover(name, detail);
             case SETTLEMENT_MISSING -> settlementMissing(name);
             case SETTLEMENT_UPCOMING -> settlementUpcoming(name, detail);
             case WEEKLY_SALES_GROWTH -> weeklySalesGrowth(name, detail);
@@ -115,6 +116,14 @@ public class NotificationMessageFactory {
     private MessageText settlementCompleted(String name, String detail) {
         return new MessageText(
                 "[셀렉터스 정산 완료 안내]",
+                name + "님, " + detail + " 자세한 내용은 정산 내역에서 확인해 주세요.",
+                "정산 내역 확인하기"
+        );
+    }
+
+    private MessageText settlementCarryover(String name, String detail) {
+        return new MessageText(
+                "[셀렉터스 정산 이월 안내]",
                 name + "님, " + detail + " 자세한 내용은 정산 내역에서 확인해 주세요.",
                 "정산 내역 확인하기"
         );

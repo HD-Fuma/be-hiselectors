@@ -17,6 +17,11 @@ public interface PenaltyHistoryRepository extends JpaRepository<PenaltyHistory, 
     Optional<PenaltyHistory> findFirstBySelectorsIdAndStatusOrderByIdDesc(
             Long selectorsId, PenaltyStatus status);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from PenaltyHistory p where p.id = :id and p.selectorsId = :selectorsId")
+    Optional<PenaltyHistory> findByIdAndSelectorsIdForUpdate(
+            @Param("id") Long id, @Param("selectorsId") Long selectorsId);
+
     @Query("""
             select p from PenaltyHistory p
             where p.selectorsId in :selectorsIds

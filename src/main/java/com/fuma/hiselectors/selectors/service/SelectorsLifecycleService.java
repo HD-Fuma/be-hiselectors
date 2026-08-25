@@ -3,6 +3,7 @@ package com.fuma.hiselectors.selectors.service;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.penalty.model.PenaltyStatus;
+import com.fuma.hiselectors.penalty.model.PenaltySource;
 import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.purchase.repository.PurchaseHistoryRepository;
@@ -52,6 +53,8 @@ public class SelectorsLifecycleService {
                 }
                 penaltyHistoryRepository.findAllBySelectorsIdAndGenerationIdAndStatus(
                                 selectors.getId(), generation.getId(), PenaltyStatus.ACTIVE)
+                        .stream()
+                        .filter(penalty -> penalty.getSource() != PenaltySource.MANUAL)
                         .forEach(penalty -> penalty.release(now));
                 if (selectors.isBlacklisted()) {
                     continue;

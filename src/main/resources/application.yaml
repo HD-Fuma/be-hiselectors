@@ -231,6 +231,7 @@ settlement:
     cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
   payment:
     cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+    minimum-amount: ${SETTLEMENT_PAYMENT_MINIMUM_AMOUNT:1000}
   expiry:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:

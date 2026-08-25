@@ -111,4 +111,34 @@ class SettlementStatusNotificationServiceTest {
         verify(notificationService, never()).sendToFriendAsSystem(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    void sendsCarryoverSettlementOnceWithAccumulatedAmount() {
+        ReflectionTestUtils.setField(history, "status", SettlementStatus.PAYMENT_CARRYOVER);
+
+        service.notifyCarryover(10L, 900L, 1_000L);
+
+        ArgumentCaptor<NotificationMessageCommand> commandCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriendAsSystem(
+                eq("sender-admin"), commandCaptor.capture());
+        NotificationMessageCommand command = commandCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(command.detail()).isEqualTo(
+                "현재 누적 수수료가 900원으로 1,000원 미만입니다. "
+                        + "1,000원 미만의 수수료는 다음 달 정산 이력에 이월됩니다.");
+        org.assertj.core.api.Assertions.assertThat(command.notificationType())
+                .isEqualTo(NotificationType.SETTLEMENT_CARRYOVER);
+    }
+
+    @Test
+    void skipsCarryoverSettlementWhenAlreadySent() {
+        ReflectionTestUtils.setField(history, "status", SettlementStatus.PAYMENT_CARRYOVER);
+        when(notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                NotificationType.SETTLEMENT_CARRYOVER.getPurposeCode(), 10L)).thenReturn(1L);
+
+        service.notifyCarryover(10L, 900L, 1_000L);
+
+        verify(notificationService, never()).sendToFriendAsSystem(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
 }

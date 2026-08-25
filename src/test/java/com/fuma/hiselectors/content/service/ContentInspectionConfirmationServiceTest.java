@@ -28,6 +28,7 @@ import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.repository.ViolationEvidenceHistoryRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
+import com.fuma.hiselectors.penalty.service.PenaltyService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -66,6 +67,12 @@ class ContentInspectionConfirmationServiceTest {
         assertThat(response.updatedCount()).isEqualTo(2);
         assertThat(first.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
         assertThat(second.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
+        verify(fixture.penaltyService, never()).activateIfAbsent(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
     }
 
     @Test
@@ -82,10 +89,30 @@ class ContentInspectionConfirmationServiceTest {
         assertThat(response.updatedCount()).isEqualTo(2);
         assertThat(first.getStatus()).isEqualTo(ViolationStatus.VIOLATION_CONFIRMED);
         assertThat(second.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
+        verify(fixture.penaltyService).activateIfAbsent(
+                5L, 100L, 121L, "근거", "admin");
         ArgumentCaptor<ContentViolationConfirmedEvent> eventCaptor =
                 ArgumentCaptor.forClass(ContentViolationConfirmedEvent.class);
         verify(fixture.eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue()).isEqualTo(
+                new ContentViolationConfirmedEvent("admin", 10L, 5L));
+    }
+
+    @Test
+    void stillPublishesNotificationWhenActivePenaltyAlreadyExists() {
+        ViolationItem item = item(21L);
+        Fixture fixture = fixture(List.of(item));
+        when(fixture.penaltyService.activateIfAbsent(
+                5L, 100L, 121L, "근거", "admin"))
+                .thenReturn(false);
+
+        fixture.service.confirm(10L, 100L,
+                request(ContentInspectionDecision.REJECTED, List.of(
+                        target(21L, ViolationStatus.VIOLATION_CONFIRMED))), "admin");
+
+        verify(fixture.penaltyService).activateIfAbsent(
+                5L, 100L, 121L, "근거", "admin");
+        verify(fixture.eventPublisher).publishEvent(
                 new ContentViolationConfirmedEvent("admin", 10L, 5L));
     }
 
@@ -167,6 +194,7 @@ class ContentInspectionConfirmationServiceTest {
         ViolationEvidenceHistoryRepository histories =
                 mock(ViolationEvidenceHistoryRepository.class);
         ViolationItemRepository violations = mock(ViolationItemRepository.class);
+        PenaltyService penaltyService = mock(PenaltyService.class);
         ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
         Content content = Content.builder()
@@ -201,8 +229,9 @@ class ContentInspectionConfirmationServiceTest {
                     .thenReturn(items);
         }
         return new Fixture(new ContentInspectionConfirmationService(
-                contents, versions, reports, histories, violations, eventPublisher),
-                version, eventPublisher);
+                contents, versions, reports, histories, violations, penaltyService,
+                eventPublisher),
+                version, penaltyService, eventPublisher);
     }
 
     private ViolationItem item(Long id) {
@@ -237,6 +266,7 @@ class ContentInspectionConfirmationServiceTest {
     private record Fixture(
             ContentInspectionConfirmationService service,
             ContentVersion version,
+            PenaltyService penaltyService,
             ApplicationEventPublisher eventPublisher) {
     }
 }

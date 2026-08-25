@@ -149,6 +149,28 @@ jobs:
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id'")" = "0" ]; then
           mysql_query "ALTER TABLE penalty_history ADD COLUMN generation_id BIGINT NULL AFTER selectors_id"
         fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'content_version_id' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE penalty_history MODIFY COLUMN content_version_id BIGINT NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN source VARCHAR(20) NULL AFTER reason"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'granted_by_admin_id'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN granted_by_admin_id BIGINT NULL AFTER source"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'released_by_admin_id'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN released_by_admin_id BIGINT NULL AFTER granted_by_admin_id"
+        fi
+        mysql_query "UPDATE penalty_history SET source = 'LEGACY' WHERE source IS NULL"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source' AND is_nullable = 'YES'")" = "1" ]; then
+          mysql_query "ALTER TABLE penalty_history MODIFY COLUMN source VARCHAR(20) NOT NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_granted_admin'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_granted_admin FOREIGN KEY (granted_by_admin_id) REFERENCES admin (admin_id)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_released_admin'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_released_admin FOREIGN KEY (released_by_admin_id) REFERENCES admin (admin_id)"
+        fi
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'")" = "0" ]; then
           mysql_query "ALTER TABLE penalty_history ADD INDEX idx_penalty_selectors_generation (selectors_id, generation_id)"
         fi
@@ -157,13 +179,18 @@ jobs:
           mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_generation FOREIGN KEY (generation_id) REFERENCES generation (generation_id)"
         fi
         mysql_query "INSERT IGNORE INTO selectors_role (selectors_role_id, role_name) VALUES ('BLACKLIST', '블랙리스트')"
+        mysql_query "INSERT INTO blacklist_history (selectors_id, reason, status, created_at, updated_at) SELECT accumulated.selectors_id, '패널티 누적 3회로 인한 자동 블랙리스트 전환', 'ACTIVE', CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6) FROM (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated WHERE NOT EXISTS (SELECT 1 FROM blacklist_history history WHERE history.selectors_id = accumulated.selectors_id AND history.status = 'ACTIVE')"
         mysql_query "UPDATE selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id SET s.selectors_role_id = 'BLACKLIST' WHERE s.selectors_role_id <> 'BLACKLIST'"
 
         test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id WHERE s.selectors_role_id <> 'BLACKLIST'")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated WHERE NOT EXISTS (SELECT 1 FROM blacklist_history history WHERE history.selectors_id = accumulated.selectors_id AND history.status = 'ACTIVE')")" = "0"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name IN ('activity_start_date', 'activity_end_date') AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES'")" = "2"
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id' AND data_type = 'bigint' AND is_nullable = 'YES'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'content_version_id' AND is_nullable = 'NO'")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source' AND data_type = 'varchar' AND is_nullable = 'NO'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name IN ('granted_by_admin_id', 'released_by_admin_id') AND data_type = 'bigint' AND is_nullable = 'YES'")" = "2"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "activity_start_date,activity_end_date"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors_generation' AND index_name = 'uq_selectors_generation' AND non_unique = 0")" = "selectors_id,generation_id"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors' AND index_name = 'uq_selectors_user' AND non_unique = 0")" = "user_id"
