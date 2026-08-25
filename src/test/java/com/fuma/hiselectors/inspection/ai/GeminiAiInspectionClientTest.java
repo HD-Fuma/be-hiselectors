@@ -65,7 +65,6 @@ class GeminiAiInspectionClientTest {
 
     private GeminiProperties properties() {
         return new GeminiProperties(
-                "test-key", null, null,
-                "test-model", "test-model", "test-model", null, null);
+                "test-key", null, null, "test-model", null, null);
     }
 }

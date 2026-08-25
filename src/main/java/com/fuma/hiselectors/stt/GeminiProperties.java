@@ -11,14 +11,10 @@ public record GeminiProperties(
         String apiKeys,
         String fallbackModels,
         String model,
-        String youtubeModel,
-        String reportModel,
         MediaResolution mediaResolution,
         Integer maxOutputTokens) {
 
-    private static final String DEFAULT_MODEL = "gemini-3.6-flash";
-    private static final String DEFAULT_YOUTUBE_MODEL = "gemini-3.5-flash-lite";
-    private static final String DEFAULT_REPORT_MODEL = "gemini-3.5-flash-lite";
+    private static final String DEFAULT_MODEL = "gemini-3.1-flash-lite";
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
     public boolean hasApiKey() {
@@ -27,16 +23,6 @@ public record GeminiProperties(
 
     public String modelOrDefault() {
         return model == null || model.isBlank() ? DEFAULT_MODEL : model;
-    }
-
-    public String youtubeModelOrDefault() {
-        return youtubeModel == null || youtubeModel.isBlank()
-                ? DEFAULT_YOUTUBE_MODEL : youtubeModel;
-    }
-
-    public String reportModelOrDefault() {
-        return reportModel == null || reportModel.isBlank()
-                ? DEFAULT_REPORT_MODEL : reportModel;
     }
 
     public String mediaResolutionApiValue() {
@@ -52,8 +38,6 @@ public record GeminiProperties(
         LinkedHashSet<String> models = new LinkedHashSet<>();
         models.addAll(values(primaryModel, fallbackModels));
         models.add(modelOrDefault());
-        models.add(youtubeModelOrDefault());
-        models.add(reportModelOrDefault());
 
         return values(apiKey, apiKeys).stream()
                 .flatMap(key -> models.stream().map(candidate -> new Attempt(candidate, key)))

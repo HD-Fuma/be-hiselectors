@@ -14,7 +14,7 @@ class GeminiRequestExecutorTest {
     @Test
     void 실패하면_다음_모델과_키로_전환한다() {
         GeminiProperties properties = new GeminiProperties(
-                "key-1", "key-2", "fallback", "main", "youtube", "report", null, null);
+                "key-1", "key-2", "fallback", "main", null, null);
         GeminiRequestExecutor executor = new GeminiRequestExecutor(properties);
         List<GeminiProperties.Attempt> tried = new ArrayList<>();
 
@@ -33,7 +33,7 @@ class GeminiRequestExecutorTest {
     @Test
     void 인증_실패는_현재_키의_나머지_모델을_건너뛴다() {
         GeminiProperties properties = new GeminiProperties(
-                "bad-key", "good-key", "fallback", "main", "youtube", "report", null, null);
+                "bad-key", "good-key", "fallback", "main", null, null);
         GeminiRequestExecutor executor = new GeminiRequestExecutor(properties);
         List<GeminiProperties.Attempt> tried = new ArrayList<>();
 
@@ -54,7 +54,7 @@ class GeminiRequestExecutorTest {
     @Test
     void 잘못된_요청은_다른_후보로_재시도하지_않는다() {
         GeminiProperties properties = new GeminiProperties(
-                "key-1", "key-2", "fallback", "main", "youtube", "report", null, null);
+                "key-1", "key-2", "fallback", "main", null, null);
         GeminiRequestExecutor executor = new GeminiRequestExecutor(properties);
         List<GeminiProperties.Attempt> tried = new ArrayList<>();
 

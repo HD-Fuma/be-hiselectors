@@ -82,7 +82,7 @@ public class GeminiEvalClient {
 
     private GeminiResponse call(Map<String, Object> body) {
         try {
-            return requestExecutor.execute(properties.reportModelOrDefault(), attempt ->
+            return requestExecutor.execute(properties.modelOrDefault(), attempt ->
                     restClient.post()
                             .uri(ENDPOINT.formatted(attempt.model()))
                             .header("x-goog-api-key", attempt.apiKey())

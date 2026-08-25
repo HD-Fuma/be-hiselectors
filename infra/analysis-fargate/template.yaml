@@ -218,10 +218,6 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: "0"
             - Name: GEMINI_MODEL
-              Value: gemini-3.6-flash
-            - Name: GEMINI_YOUTUBE_MODEL
-              Value: gemini-3.1-flash-lite
-            - Name: GEMINI_REPORT_MODEL
               Value: gemini-3.1-flash-lite
             - Name: GEMINI_FALLBACK_MODELS
               Value: !Ref GeminiFallbackModels
