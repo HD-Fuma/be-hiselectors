@@ -1,11 +1,13 @@
 package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -28,6 +30,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -530,6 +533,54 @@ class StoredContentServiceTest {
         assertThat(result.platformStats()).containsEntry(
                 SnsPlatform.INSTAGRAM,
                 new StoredContentService.PlatformStoredContentStats(0, 1));
+    }
+
+    @Test
+    void reportsEveryCheckedContentIncludingContentsWithoutSavedEngagement() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.INSTAGRAM, "first");
+        Content second = content(SnsPlatform.INSTAGRAM, "second");
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("first", "second"))).thenReturn(List.of());
+
+        StoredContentService.StoredContentResult result = service.check(progress::add);
+
+        assertThat(progress).containsExactly(
+                new StoredContentService.StoredContentProgress(1, 1),
+                new StoredContentService.StoredContentProgress(1, 1));
+        assertThat(result.checkedContentCount()).isEqualTo(2);
+        assertThat(result.savedEngagementCount()).isZero();
+    }
+
+    @Test
+    void propagatesProgressCallbackFailure() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "missing");
+        IllegalStateException failure = new IllegalStateException("progress failed");
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("missing"))).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.check(update -> {
+            throw failure;
+        })).isSameAs(failure);
+    }
+
+    @Test
+    void rejectsNullProgressCallbackBeforeFetchingContents() {
+        assertThatThrownBy(() -> service.check(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("진행 콜백은 필수입니다.");
+
+        verifyNoInteractions(generationService);
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {

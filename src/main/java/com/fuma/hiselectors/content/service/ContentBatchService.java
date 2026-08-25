@@ -33,32 +33,61 @@ public class ContentBatchService {
                     new NewContentService.NewContentResult(0, 0);
             StoredContentService.StoredContentResult storedContentResult =
                     new StoredContentService.StoredContentResult(0, 0);
+            int[] collectedContentCount = {0};
+            int[] checkedContentCount = {0};
 
-            progress.start("NEW_CONTENT_SYNC", 2);
+            progress.describe("신규 콘텐츠 수집 중: 0건 처리");
+            progress.start("NEW_CONTENT_SYNC", null);
             try {
-                NewContentService.NewContentResult result = newContentService.collect();
+                NewContentService.NewContentResult result = newContentService.collect(update ->
+                        reportProgress(() -> {
+                            collectedContentCount[0] += update.savedContentDelta();
+                            progress.describe("신규 콘텐츠 수집 중: "
+                                    + collectedContentCount[0] + "건 처리");
+                            progress.advance(
+                                    update.savedContentDelta(), update.failedAccountDelta(), 0);
+                        }));
                 newContentResult = result;
                 newContentCount = result.savedContentCount();
+                collectedContentCount[0] = newContentCount;
                 newContentSucceeded = result.failedAccountCount() == 0;
+            } catch (ProgressUpdateException exception) {
+                throw exception.failure();
             } catch (RuntimeException exception) {
                 failedStageCount++;
                 newContentSucceeded = false;
                 log.error("신규 콘텐츠 수집 배치에 실패했습니다.", exception);
+                progress.advance(0, 1, 0);
             }
-            advance(progress, newContentSucceeded);
 
+            progress.describe("기존 콘텐츠 확인 중: 0건 처리");
             progress.changeStep("STORED_CONTENT_SYNC");
             try {
-                StoredContentService.StoredContentResult result = storedContentService.check();
+                StoredContentService.StoredContentResult result = storedContentService.check(update ->
+                        reportProgress(() -> {
+                            checkedContentCount[0] += update.checkedContentDelta();
+                            progress.describe("기존 콘텐츠 확인 중: "
+                                    + checkedContentCount[0] + "건 처리");
+                            progress.advance(
+                                    update.checkedContentDelta() - update.failedContentDelta(),
+                                    update.failedContentDelta(),
+                                    0);
+                        }));
                 storedContentResult = result;
                 engagementCount = result.savedEngagementCount();
+                checkedContentCount[0] = result.checkedContentCount();
                 storedContentSucceeded = result.failedContentCount() == 0;
+            } catch (ProgressUpdateException exception) {
+                throw exception.failure();
             } catch (RuntimeException exception) {
                 failedStageCount++;
                 storedContentSucceeded = false;
                 log.error("기존 콘텐츠 변경 확인 배치에 실패했습니다.", exception);
+                progress.advance(0, 1, 0);
             }
-            advance(progress, storedContentSucceeded);
+
+            progress.describe("신규 콘텐츠 " + collectedContentCount[0]
+                    + "건 수집, 기존 콘텐츠 " + checkedContentCount[0] + "건 확인");
 
             ContentBatchResult batchResult = new ContentBatchResult(
                     newContentCount,
@@ -82,8 +111,12 @@ public class ContentBatchService {
         }
     }
 
-    private void advance(TaskProgressReporter progress, boolean succeeded) {
-        progress.advance(succeeded ? 1 : 0, succeeded ? 0 : 1, 0);
+    private void reportProgress(Runnable update) {
+        try {
+            update.run();
+        } catch (RuntimeException exception) {
+            throw new ProgressUpdateException(exception);
+        }
     }
 
     private Map<String, Long> batchCounts(
@@ -124,5 +157,18 @@ public class ContentBatchService {
             int engagementCount,
             boolean newContentSucceeded,
             boolean storedContentSucceeded) {
+    }
+
+    private static final class ProgressUpdateException extends RuntimeException {
+
+        private final RuntimeException failure;
+
+        private ProgressUpdateException(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        private RuntimeException failure() {
+            return failure;
+        }
     }
 }
