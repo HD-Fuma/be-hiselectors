@@ -509,7 +509,8 @@ class InstagramContentFetcherTest {
     @Test
     @DisplayName("첫 페이지 밖의 기존 콘텐츠는 상세 페이지네이션 없이 가벼운 조회로 찾는다")
     void fetchStoredContentsByAccount() {
-        String nextUrl = nextUrl("stored-next");
+        String fullNextUrl = nextUrl("full-next");
+        String storedNextUrl = nextUrl("stored-next");
         server.expect(request -> {
                     assertThat(request.getURI().getPath())
                             .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
@@ -521,7 +522,7 @@ class InstagramContentFetcherTest {
                 })
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
-                        nextUrl), MediaType.APPLICATION_JSON));
+                        fullNextUrl), MediaType.APPLICATION_JSON));
         server.expect(request -> {
                     String query = URLDecoder.decode(
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
@@ -530,19 +531,12 @@ class InstagramContentFetcherTest {
                             .contains("id,media_type,media_url,thumbnail_url")
                             .doesNotContain("caption");
                 })
-                .andRespond(withSuccess("""
-                        {
-                          "business_discovery": {
-                            "media": {
-                              "data": [{
-                                "id": "stored",
-                                "media_type": "IMAGE",
-                                "media_url": "https://cdn.example.com/stored.jpg"
-                              }]
-                            }
-                          }
-                        }
-                        """, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(firstPageJson(List.of(), storedNextUrl),
+                        MediaType.APPLICATION_JSON));
+        expectNextPage(
+                storedNextUrl,
+                List.of(mediaJson("stored", "2026-08-12T05:00:00+0000")),
+                null);
 
         List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
                 "selector.insta", List.of("stored", "missing"));

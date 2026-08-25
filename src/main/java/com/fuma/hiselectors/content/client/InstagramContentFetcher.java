@@ -203,25 +203,40 @@ public class InstagramContentFetcher implements ContentFetcher {
             Set<String> requestedIds,
             Map<String, FetchResult> foundById) {
         MediaPage page = requestStoredMediaPage(accountId);
-        if (page.data() == null) {
-            return;
-        }
-        for (Media item : page.data()) {
-            if (item == null
-                    || !requestedIds.contains(item.id())
-                    || foundById.containsKey(item.id())) {
-                continue;
+        Set<String> requestedNextUrls = new HashSet<>();
+        while (true) {
+            if (page.data() != null) {
+                for (Media item : page.data()) {
+                    if (item == null
+                            || !requestedIds.contains(item.id())
+                            || foundById.containsKey(item.id())) {
+                        continue;
+                    }
+                    if (!"IMAGE".equals(item.mediaType()) && !"VIDEO".equals(item.mediaType())) {
+                        foundById.put(item.id(), failed(item.id()));
+                        continue;
+                    }
+                    foundById.put(item.id(), new FetchResult(
+                            item.id(),
+                            FetchStatus.FOUND,
+                            null,
+                            null,
+                            List.of(toRawContentMedia(item))));
+                }
             }
-            if (!"IMAGE".equals(item.mediaType()) && !"VIDEO".equals(item.mediaType())) {
-                foundById.put(item.id(), failed(item.id()));
-                continue;
+            if (foundById.keySet().containsAll(requestedIds)) {
+                return;
             }
-            foundById.put(item.id(), new FetchResult(
-                    item.id(),
-                    FetchStatus.FOUND,
-                    null,
-                    null,
-                    List.of(toRawContentMedia(item))));
+
+            String nextUrl = page.paging() == null ? null : page.paging().next();
+            if (nextUrl == null) {
+                return;
+            }
+            if (!requestedNextUrls.add(nextUrl)) {
+                log.warn("Instagram 저장 콘텐츠 페이지 URL 반복 감지");
+                throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
+            }
+            page = requestNextPage(nextUrl);
         }
     }
 
