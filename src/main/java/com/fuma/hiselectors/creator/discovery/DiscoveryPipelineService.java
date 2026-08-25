@@ -173,7 +173,7 @@ public class DiscoveryPipelineService {
         }
 
         saveDiscoveryInfo(creator, igHandle, brandScore,
-                channel.recent90DayContentCount());
+                channel.recent90DayContentCount(), channel.profileImageUrl());
         saveDiscoverySource(creator, keyword, channel, totalViews);
 
         // 발굴 출처가 쌓인 뒤에 대표 카테고리를 다시 정한다.
@@ -186,7 +186,7 @@ public class DiscoveryPipelineService {
     }
 
     private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore,
-                                   Integer recent90DayContentCount) {
+                                   Integer recent90DayContentCount, String profileImageUrl) {
         BigDecimal confidence = igHandle == null ? null : igHandle.confidence();
         String handle = igHandle == null ? null : igHandle.handle();
 
@@ -194,6 +194,7 @@ public class DiscoveryPipelineService {
                 info -> {
                     info.refresh(brandScore.score(), brandScore.hitsAsText(), handle, confidence);
                     info.updateRecent90DayContentCount(recent90DayContentCount);
+                    info.updateProfileImageUrl(profileImageUrl);
                 },
                 () -> discoveryInfoRepository.save(CreatorDiscoveryInfo.builder()
                         .creatorPool(creator)
@@ -202,6 +203,7 @@ public class DiscoveryPipelineService {
                         .igHandle(handle)
                         .igConfidence(confidence)
                         .recent90DayContentCount(recent90DayContentCount)
+                        .profileImageUrl(profileImageUrl)
                         .build()));
     }
 

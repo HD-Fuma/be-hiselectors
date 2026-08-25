@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -169,11 +170,24 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                 item.id(),
                 snippet == null ? null : snippet.title(),
                 snippet == null ? null : snippet.description(),
+                profileImageUrl(snippet),
                 stats == null ? null : parseLongOrNull(stats.subscriberCount()),
                 stats == null ? null : parseLongOrNull(stats.viewCount()),
                 acc.lastUploadAt,
                 fetchRecent90DayContentCount(item),
                 acc.views, acc.likes, acc.comments);
+    }
+
+    private String profileImageUrl(YoutubeChannelListResponse.Snippet snippet) {
+        if (snippet == null || snippet.thumbnails() == null) {
+            return null;
+        }
+        return snippet.thumbnails().values().stream()
+                .filter(Objects::nonNull)
+                .map(YoutubeChannelListResponse.Thumbnail::url)
+                .filter(url -> url != null && !url.isBlank())
+                .reduce((ignored, last) -> last)
+                .orElse(null);
     }
 
     private Integer fetchRecent90DayContentCount(YoutubeChannelListResponse.Item channel) {
