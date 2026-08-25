@@ -93,6 +93,11 @@ jobs:
             fi
             test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress' AND data_type = 'json' AND is_nullable = 'YES'")" = "1"
             echo "task-run-step-progress=verified"
+            if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'creator_discovery_info' AND column_name = 'profile_image_url'")" = "0" ]; then
+              mysql_query "ALTER TABLE creator_discovery_info ADD COLUMN profile_image_url VARCHAR(500) NULL AFTER recent_90_day_content_count"
+            fi
+            test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'creator_discovery_info' AND column_name = 'profile_image_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+            echo "creator-discovery-profile-image=verified"
             if [ -n "${ANALYSIS_QUEUE_URL:-}" ]; then
               sed -i '/^APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=/d' .env
               printf 'APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=%s\n' "$ANALYSIS_QUEUE_URL" >> .env

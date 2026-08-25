@@ -74,6 +74,7 @@ class CreatorDiscoveryServiceTest {
                 .brandHits("공식(설명)")
                 .igHandle("imdayeda")
                 .igConfidence(new BigDecimal("0.95"))
+                .profileImageUrl("https://yt.example/profile.jpg")
                 .build();
         List<CategoryShare> shares = List.of(
                 new CategoryShare("BEAUTY", new BigDecimal("0.75")),
@@ -90,6 +91,7 @@ class CreatorDiscoveryServiceTest {
         assertThat(response.snsCode()).isEqualTo("YOUTUBE");
         assertThat(response.accountId()).isEqualTo("UC113");
         assertThat(response.creatorName()).isEqualTo("다예다");
+        assertThat(response.profileImageUrl()).isEqualTo("https://yt.example/profile.jpg");
         assertThat(response.followerCount()).isEqualTo(100_000L);
         assertThat(response.engagementRate()).isEqualByComparingTo("4.25");
         assertThat(response.category()).isEqualTo("BEAUTY");

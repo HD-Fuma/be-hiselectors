@@ -72,22 +72,35 @@ public class CreatorDiscoveryInfo extends BaseTimeEntity {
     @Column(name = "recent_90_day_content_count")
     private Integer recent90DayContentCount;
 
+    /** 공개 프로필 이미지 URL. 실패한 재수집이 기존 이미지를 지우지 않게 보존한다. */
+    @Column(name = "profile_image_url", length = 500)
+    private String profileImageUrl;
+
     @Builder
     private CreatorDiscoveryInfo(CreatorPool creatorPool, Integer brandScore, String brandHits,
                                  String igHandle, BigDecimal igConfidence,
-                                 Integer recent90DayContentCount) {
+                                 Integer recent90DayContentCount, String profileImageUrl) {
         this.creatorPool = creatorPool;
         this.brandScore = brandScore == null ? 0 : brandScore;
         this.brandHits = brandHits;
         this.igHandle = igHandle;
         this.igConfidence = igConfidence;
         this.recent90DayContentCount = recent90DayContentCount;
+        updateProfileImageUrl(profileImageUrl);
         this.discoveredAt = LocalDateTime.now();
     }
 
     public void updateRecent90DayContentCount(Integer count) {
         if (count != null) {
             this.recent90DayContentCount = count;
+        }
+    }
+
+    public void updateProfileImageUrl(String profileImageUrl) {
+        if (profileImageUrl != null
+                && !profileImageUrl.isBlank()
+                && profileImageUrl.length() <= 500) {
+            this.profileImageUrl = profileImageUrl;
         }
     }
 
