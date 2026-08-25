@@ -168,6 +168,31 @@ class TaskRunExecutionServiceTest {
     }
 
     @Test
+    void safeFailureSummaryFlowsThroughCompletionIntoTheTerminalFailureLog() {
+        TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
+                command(UUID.randomUUID()),
+                context -> {
+                    context.progress().recordFailure(
+                            "REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패");
+                    context.progress().advance(2, 1, 0);
+                });
+
+        TaskRun run = find(runId(result));
+        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.PARTIAL_FAILED);
+        assertThat(run.getSucceededCount()).isEqualTo(2);
+        assertThat(run.getFailedCount()).isEqualTo(1);
+        assertThat(run.getErrorType()).isEqualTo("REMOTE_ITEM_REJECTED");
+        assertThat(run.getErrorMessage()).isEqualTo("원격 항목 17 처리 실패");
+        verify(failureLogger).log(org.mockito.ArgumentMatchers.argThat(snapshot ->
+                snapshot.runId().equals(run.getRunId())
+                        && snapshot.status() == TaskRunStatus.PARTIAL_FAILED
+                        && snapshot.succeededCount() == 2
+                        && snapshot.failedCount() == 1
+                        && "REMOTE_ITEM_REJECTED".equals(snapshot.errorType())
+                        && "원격 항목 17 처리 실패".equals(snapshot.errorMessage())));
+    }
+
+    @Test
     void flushesAMessageOnlyReportBeforeCompleting() {
         TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
                 command(UUID.randomUUID()),
@@ -215,6 +240,7 @@ class TaskRunExecutionServiceTest {
         TrackedTask task = new TrackedTask() {
             @Override
             public void execute(TaskExecutionContext context) {
+                context.progress().recordFailure("SAFE_ITEM_FAILURE", "계속 가능한 항목 실패");
                 context.progress().advance(1, 0, 0);
                 throw new IllegalStateException("broken");
             }

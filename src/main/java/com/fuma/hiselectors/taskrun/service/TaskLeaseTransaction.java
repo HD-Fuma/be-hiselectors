@@ -37,6 +37,35 @@ public class TaskLeaseTransaction {
             long skippedDelta,
             Map<String, TaskStepProgress> stepProgressPatch,
             Instant now) {
+        apply(
+                lease,
+                stepCode,
+                totalCount,
+                updateTotal,
+                progressMessage,
+                null,
+                null,
+                succeededDelta,
+                failedDelta,
+                skippedDelta,
+                stepProgressPatch,
+                now);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void apply(
+            TaskLease lease,
+            String stepCode,
+            Integer totalCount,
+            boolean updateTotal,
+            String progressMessage,
+            String errorType,
+            String errorMessage,
+            long succeededDelta,
+            long failedDelta,
+            long skippedDelta,
+            Map<String, TaskStepProgress> stepProgressPatch,
+            Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(stepProgressPatch, "stepProgressPatch must not be null");
         TaskRun run = lockRunningLease(lease);
@@ -48,6 +77,9 @@ public class TaskLeaseTransaction {
         }
         if (progressMessage != null) {
             run.changeProgressMessage(progressMessage, now);
+        }
+        if (errorType != null || errorMessage != null) {
+            run.recordFailure(errorType, errorMessage, now);
         }
         if (!stepProgressPatch.isEmpty()) {
             run.mergeStepProgress(stepProgressPatch, now);

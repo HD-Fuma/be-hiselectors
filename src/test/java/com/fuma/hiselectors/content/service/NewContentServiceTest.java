@@ -23,6 +23,8 @@ import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
@@ -326,7 +328,10 @@ class NewContentServiceTest {
 
         NewContentService.NewContentResult result = service.collect(progress::add);
 
-        assertThat(progress).containsExactly(
+        assertThat(progress.stream()
+                .map(update -> new NewContentService.NewContentProgress(
+                        update.savedContentDelta(), update.failedAccountDelta()))
+                .toList()).containsExactly(
                 new NewContentService.NewContentProgress(0, 1));
         assertThat(result.savedContentCount()).isZero();
         assertThat(result.failedAccountCount()).isEqualTo(1);
@@ -478,7 +483,10 @@ class NewContentServiceTest {
             progress.add(update);
         });
 
-        assertThat(progress).containsExactly(
+        assertThat(progress.stream()
+                .map(update -> new NewContentService.NewContentProgress(
+                        update.savedContentDelta(), update.failedAccountDelta()))
+                .toList()).containsExactly(
                 new NewContentService.NewContentProgress(1, 0),
                 new NewContentService.NewContentProgress(1, 0),
                 new NewContentService.NewContentProgress(0, 1));
@@ -544,6 +552,41 @@ class NewContentServiceTest {
                 .hasMessage("진행 콜백은 필수입니다.");
 
         verifyNoInteractions(generationService);
+    }
+
+    @Test
+    void reportsSafeBusinessFailureWithStagePlatformAndNormalizedAccountId() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        String accountId = "account\n" + "x".repeat(120);
+        List<NewContentService.NewContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(instagramAccount(accountId, null)));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(fetcher.fetchByAccount(accountId, generationStart)).thenThrow(
+                new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED, "token=secret"));
+
+        service.collect(progress::add);
+
+        ContentSyncFailure failure = progress.getFirst().failure();
+        assertThat(progress.getFirst().failedAccountDelta()).isEqualTo(1);
+        assertThat(failure.stage()).isEqualTo("NEW_CONTENT_SYNC");
+        assertThat(failure.platform()).isEqualTo(SnsPlatform.INSTAGRAM);
+        assertThat(failure.itemType()).isEqualTo("accountId");
+        assertThat(failure.itemId()).doesNotContain("\n", "\r").hasSizeLessThanOrEqualTo(80);
+        assertThat(failure.errorType()).isEqualTo("INSTAGRAM_API_CALL_FAILED");
+        assertThat(failure.errorMessage())
+                .isEqualTo(ErrorCode.INSTAGRAM_API_CALL_FAILED.getMessage())
+                .doesNotContain("secret");
+    }
+
+    @Test
+    void preservesTwoArgumentProgressConstructor() {
+        assertThat(new NewContentService.NewContentProgress(2, 1))
+                .isEqualTo(new NewContentService.NewContentProgress(2, 1, null));
     }
 
     private SelectorsSnsAccount account(LocalDateTime lastCollectedAt) {

@@ -150,6 +150,62 @@ class TaskRunTest {
     }
 
     @Test
+    void runningRunRecordsABoundedFailureSummaryAndCompletionPreservesIt() {
+        TaskRun run = running();
+        run.addCounts(2, 1, 0, NOW.plusSeconds(2));
+
+        run.recordFailure("REMOTE_ITEM_REJECTED", "원격 항목 17 처리 실패", NOW.plusSeconds(3));
+        run.complete(NOW.plusSeconds(4));
+
+        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.PARTIAL_FAILED);
+        assertThat(run.getErrorType()).isEqualTo("REMOTE_ITEM_REJECTED");
+        assertThat(run.getErrorMessage()).isEqualTo("원격 항목 17 처리 실패");
+        assertThat(run.getSucceededCount()).isEqualTo(2);
+        assertThat(run.getFailedCount()).isEqualTo(1);
+        assertThat(run.getHeartbeatAt()).isEqualTo(NOW.plusSeconds(4));
+    }
+
+    @Test
+    void failureSummaryRequiresValuesWithinDomainLimits() {
+        TaskRun run = running();
+
+        assertThatThrownBy(() -> run.recordFailure(null, "message", NOW.plusSeconds(2)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("오류 유형은 필수입니다.");
+        assertThatThrownBy(() -> run.recordFailure("ERROR", null, NOW.plusSeconds(2)))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("오류 메시지는 필수입니다.");
+        assertThatThrownBy(() -> run.recordFailure("가".repeat(101), "message", NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 100자를 초과할 수 없습니다.");
+        assertThatThrownBy(() -> run.recordFailure("ERROR", "가".repeat(501), NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 500자를 초과할 수 없습니다.");
+        assertThat(run.getErrorType()).isNull();
+        assertThat(run.getErrorMessage()).isNull();
+    }
+
+    @Test
+    void failureSummaryRejectsBlankTypeAndMessage() {
+        TaskRun run = running();
+
+        assertThatThrownBy(() -> run.recordFailure("", "message", NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> run.recordFailure("   ", "message", NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 유형은 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> run.recordFailure("ERROR", "", NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> run.recordFailure("ERROR", "   ", NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("오류 메시지는 비어 있을 수 없습니다.");
+        assertThat(run.getErrorType()).isNull();
+        assertThat(run.getErrorMessage()).isNull();
+    }
+
+    @Test
     void stepProgressMergeRetainsExistingKeysAndReplacesPatchedKeys() {
         TaskRun run = running();
         LinkedHashMap<String, TaskStepProgress> firstPatch = new LinkedHashMap<>();
@@ -210,13 +266,18 @@ class TaskRunTest {
     @Test
     void failRecordsErrorAndFinishesTheRun() {
         TaskRun run = running();
+        run.addCounts(1, 1, 1, NOW.plusSeconds(2));
+        run.recordFailure("SAFE_ITEM_FAILURE", "항목 요약", NOW.plusSeconds(3));
 
-        run.fail("REMOTE_TIMEOUT", "upstream did not respond", NOW.plusSeconds(2));
+        run.fail("REMOTE_TIMEOUT", "upstream did not respond", NOW.plusSeconds(4));
 
         assertThat(run.getStatus()).isEqualTo(TaskRunStatus.FAILED);
         assertThat(run.getErrorType()).isEqualTo("REMOTE_TIMEOUT");
         assertThat(run.getErrorMessage()).isEqualTo("upstream did not respond");
-        assertThat(run.getFinishedAt()).isEqualTo(NOW.plusSeconds(2));
+        assertThat(run.getSucceededCount()).isEqualTo(1);
+        assertThat(run.getFailedCount()).isEqualTo(1);
+        assertThat(run.getSkippedCount()).isEqualTo(1);
+        assertThat(run.getFinishedAt()).isEqualTo(NOW.plusSeconds(4));
         assertThat(run.isTerminal()).isTrue();
     }
 
@@ -252,6 +313,8 @@ class TaskRunTest {
         assertThatThrownBy(() -> run.changeStep("next", NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.changeProgressMessage("message", NOW.plusSeconds(3)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> run.recordFailure("ERROR", "message", NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.mergeStepProgress(
                 Map.of("step", new TaskStepProgress(1L, 1L)), NOW.plusSeconds(3)))

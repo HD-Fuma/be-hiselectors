@@ -65,9 +65,25 @@ public class StoredContentService {
 
         for (StoredContentFetch result : results) {
             SnsPlatform platform = result.content().getSnsCode();
+            ContentSyncFailure failure = null;
             if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
                 failedContentCount++;
                 mergeStats(platformStats, platform, 0, 1);
+                failure = result.failure() == null
+                        ? new ContentSyncFailure(
+                                "STORED_CONTENT_SYNC",
+                                platform,
+                                "contentId",
+                                result.content().getSnsContentId(),
+                                "FETCH_FAILED",
+                                "기존 콘텐츠 조회에 실패했습니다.")
+                        : ContentSyncFailure.fromException(
+                                "STORED_CONTENT_SYNC",
+                                platform,
+                                "contentId",
+                                result.content().getSnsContentId(),
+                                result.failure(),
+                                "기존 콘텐츠 조회 중 오류가 발생했습니다.");
             } else {
                 try {
                     StoredContentSaveResult saved = transactionTemplate.execute(
@@ -84,11 +100,18 @@ public class StoredContentService {
                             "기존 콘텐츠 저장에 실패했습니다. contentId={}",
                             result.content().getId(),
                             exception);
+                    failure = ContentSyncFailure.fromException(
+                            "STORED_CONTENT_SYNC",
+                            platform,
+                            "contentId",
+                            result.content().getSnsContentId(),
+                            exception,
+                            "기존 콘텐츠 저장 중 오류가 발생했습니다.");
                 }
             }
             checkedContentCount++;
             progress.accept(new StoredContentProgress(
-                    results.size(), checkedContentCount, failedContentCount));
+                    results.size(), checkedContentCount, failedContentCount, failure));
         }
 
         return new StoredContentResult(
@@ -144,6 +167,7 @@ public class StoredContentService {
                     account.getAccountId());
         }
         Map<Content, FetchResult> fetchedByContent = new HashMap<>();
+        Map<Content, RuntimeException> failuresByContent = new HashMap<>();
 
         // 플랫폼별 SNS ID를 묶어서 정보와 성과 조회
         for (SnsPlatform platform : SnsPlatform.values()) {
@@ -176,6 +200,7 @@ public class StoredContentService {
                                     entry.getKey(),
                                     exception);
                             attachFailedResults(entry.getValue(), fetchedByContent);
+                            attachFailures(entry.getValue(), exception, failuresByContent);
                         }
                     }
                 } else {
@@ -188,12 +213,14 @@ public class StoredContentService {
                 log.error("플랫폼의 기존 콘텐츠 조회에 실패했습니다. platform={}",
                         platform, exception);
                 attachFailedResults(platformContents, fetchedByContent);
+                attachFailures(platformContents, exception, failuresByContent);
             }
         }
 
         // DB 콘텐츠와 SNS 조회 결과 연결
         return contents.stream()
-                .map(content -> new StoredContentFetch(content, fetchedByContent.get(content)))
+                .map(content -> new StoredContentFetch(
+                        content, fetchedByContent.get(content), failuresByContent.get(content)))
                 .toList();
     }
 
@@ -219,6 +246,15 @@ public class StoredContentService {
             List<Content> contents, Map<Content, FetchResult> fetchedByContent) {
         for (Content content : contents) {
             fetchedByContent.put(content, failed(content));
+        }
+    }
+
+    private void attachFailures(
+            List<Content> contents,
+            RuntimeException failure,
+            Map<Content, RuntimeException> failuresByContent) {
+        for (Content content : contents) {
+            failuresByContent.put(content, failure);
         }
     }
 
@@ -309,7 +345,11 @@ public class StoredContentService {
         return false;
     }
 
-    record StoredContentFetch(Content content, FetchResult fetched) {
+    record StoredContentFetch(Content content, FetchResult fetched, RuntimeException failure) {
+
+        StoredContentFetch(Content content, FetchResult fetched) {
+            this(content, fetched, null);
+        }
     }
 
     private record StoredContentSaveResult(
@@ -348,6 +388,14 @@ public class StoredContentService {
     }
 
     public record StoredContentProgress(
-            int totalContentCount, int checkedContentCount, int failedContentCount) {
+            int totalContentCount,
+            int checkedContentCount,
+            int failedContentCount,
+            ContentSyncFailure failure) {
+
+        public StoredContentProgress(
+                int totalContentCount, int checkedContentCount, int failedContentCount) {
+            this(totalContentCount, checkedContentCount, failedContentCount, null);
+        }
     }
 }

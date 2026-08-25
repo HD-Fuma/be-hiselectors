@@ -4,7 +4,9 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.logging.BatchEventLogger;
 import com.fuma.hiselectors.logging.BatchLogContext;
 import com.fuma.hiselectors.taskrun.service.TaskProgressReporter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,8 @@ public class ContentBatchService {
             int[] checkedContentCount = {0};
             int[] failedContentCount = {0};
             boolean[] storedProgressStarted = {false};
+            List<ContentSyncFailure> representativeFailures = new ArrayList<>(3);
+            int[] totalFailureCount = {0};
 
             progress.reportStep("NEW_CONTENT_SYNC", null, 0);
             progress.reportStep("STORED_CONTENT_SYNC", null, 0);
@@ -45,6 +49,8 @@ public class ContentBatchService {
             try {
                 NewContentService.NewContentResult result = newContentService.collect(update ->
                         reportProgress(() -> {
+                            collectFailure(
+                                    update.failure(), representativeFailures, totalFailureCount);
                             collectedContentCount[0] += update.savedContentDelta();
                             progress.reportStep(
                                     "NEW_CONTENT_SYNC", null, collectedContentCount[0]);
@@ -60,6 +66,13 @@ public class ContentBatchService {
             } catch (ProgressUpdateException exception) {
                 throw exception.failure();
             } catch (RuntimeException exception) {
+                collectFailure(
+                        ContentSyncFailure.stageFailure(
+                                "NEW_CONTENT_SYNC",
+                                exception,
+                                "신규 콘텐츠 수집 단계에서 오류가 발생했습니다."),
+                        representativeFailures,
+                        totalFailureCount);
                 failedStageCount++;
                 newContentSucceeded = false;
                 log.error("신규 콘텐츠 수집 배치에 실패했습니다.", exception);
@@ -73,6 +86,8 @@ public class ContentBatchService {
             try {
                 StoredContentService.StoredContentResult result = storedContentService.check(update ->
                         reportProgress(() -> {
+                            collectFailure(
+                                    update.failure(), representativeFailures, totalFailureCount);
                             if (!storedProgressStarted[0]) {
                                 progress.reportStep(
                                         "STORED_CONTENT_SYNC", (long) update.totalContentCount(), 0);
@@ -105,6 +120,13 @@ public class ContentBatchService {
             } catch (ProgressUpdateException exception) {
                 throw exception.failure();
             } catch (RuntimeException exception) {
+                collectFailure(
+                        ContentSyncFailure.stageFailure(
+                                "STORED_CONTENT_SYNC",
+                                exception,
+                                "기존 콘텐츠 확인 단계에서 오류가 발생했습니다."),
+                        representativeFailures,
+                        totalFailureCount);
                 failedStageCount++;
                 storedContentSucceeded = false;
                 log.error("기존 콘텐츠 변경 확인 배치에 실패했습니다.", exception);
@@ -118,6 +140,13 @@ public class ContentBatchService {
 
             progress.describe("신규 콘텐츠 " + collectedContentCount[0]
                     + "건 수집, 기존 콘텐츠 " + checkedContentCount[0] + "건 수집");
+            if (totalFailureCount[0] > 0) {
+                progress.recordFailure(
+                        "CONTENT_SYNC_PARTIAL_FAILURE",
+                        ContentSyncFailureFormatter.format(
+                                representativeFailures,
+                                totalFailureCount[0] - representativeFailures.size()));
+            }
 
             ContentBatchResult batchResult = new ContentBatchResult(
                     newContentCount,
@@ -146,6 +175,19 @@ public class ContentBatchService {
             update.run();
         } catch (RuntimeException exception) {
             throw new ProgressUpdateException(exception);
+        }
+    }
+
+    private void collectFailure(
+            ContentSyncFailure failure,
+            List<ContentSyncFailure> representativeFailures,
+            int[] totalFailureCount) {
+        if (failure == null) {
+            return;
+        }
+        totalFailureCount[0]++;
+        if (representativeFailures.size() < 3) {
+            representativeFailures.add(failure);
         }
     }
 
