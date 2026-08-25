@@ -55,6 +55,9 @@ def stt(media_path: str, timeout: int = 580, poll: float = 3.0) -> str:
         ContentType="audio/mp4",
     )
     out_key = resp["OutputLocation"].split(f"{BUCKET}/", 1)[1]
+    # 추론 실패는 OutputLocation 에 안 써지고 FailureLocation 에 써진다(deploy 의 S3FailurePath).
+    # 둘 다 폴링해 실패면 즉시 예외 — 콜드스타트를 성공으로 오인해 580초 태우지 않는다.
+    fail_key = resp.get("FailureLocation", "").split(f"{BUCKET}/", 1)[-1] or None
 
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -62,5 +65,12 @@ def stt(media_path: str, timeout: int = 580, poll: float = 3.0) -> str:
             body = _s3.get_object(Bucket=BUCKET, Key=out_key)["Body"].read()
             return json.loads(body).get("stt", "")
         except _s3.exceptions.NoSuchKey:
-            time.sleep(poll)  # 아직 처리 중(콜드스타트 포함)
+            pass  # 아직 처리 중(콜드스타트 포함)
+        if fail_key:
+            try:
+                err = _s3.get_object(Bucket=BUCKET, Key=fail_key)["Body"].read()
+                raise RuntimeError(f"SageMaker STT 추론 실패: {err[:500]!r}")
+            except _s3.exceptions.NoSuchKey:
+                pass
+        time.sleep(poll)
     raise TimeoutError(f"STT 결과 대기 초과: {out_key}")

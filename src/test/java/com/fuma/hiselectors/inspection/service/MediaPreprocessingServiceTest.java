@@ -11,8 +11,8 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.ai.YoutubeIntegratedInspectionClient;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
-import com.fuma.hiselectors.inspection.model.ContentReportData;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
+import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
@@ -37,7 +37,7 @@ class MediaPreprocessingServiceTest {
         InspectionPolicyRepository policies = mock(InspectionPolicyRepository.class);
         InspectionPolicy previous = policy(1L, "same-extraction");
         InspectionPolicy active = policy(2L, "same-extraction");
-        ContentMedia video = video(Map.of("stt", List.of(), "ocr", List.of()));
+        ContentMedia video = video(Map.of("text", "기존 음성\n\n기존 화면"));
         video.markExtracted(1L, sha256("abc123"), CLOCK.instant().atOffset(ZoneOffset.UTC)
                 .toLocalDateTime());
         when(policies.findById(1L)).thenReturn(Optional.of(previous));
@@ -53,6 +53,7 @@ class MediaPreprocessingServiceTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.any());
         assertThat(video.getExtractedWithPolicyId()).isEqualTo(1L);
+        assertThat(video.getBody()).containsEntry("text", "기존 음성\n\n기존 화면");
     }
 
     @Test
@@ -62,7 +63,7 @@ class MediaPreprocessingServiceTest {
         InspectionPolicy active = policy(2L, "new-extraction");
         Content content = content();
         ContentMedia video = video(Map.of());
-        AiInspectionResult aiResult = new AiInspectionResult(
+        AiInspectionResponse aiResult = new AiInspectionResponse(
                 ContentReportData.empty(), List.of());
         when(youtube.inspect("abc123", content, video, List.of(video), active))
                 .thenReturn(new IntegratedInspectionResult(
@@ -74,9 +75,32 @@ class MediaPreprocessingServiceTest {
                 content, List.of(video), active);
 
         assertThat(result.integratedAiResult()).contains(aiResult);
-        assertThat(video.getBody()).containsKeys("summary", "stt", "ocr");
+        assertThat(video.getBody()).containsOnlyKeys("text");
+        assertThat(video.getBody()).containsEntry("text", "음성\n\n화면");
         assertThat(video.getExtractedWithPolicyId()).isEqualTo(2L);
         verify(youtube).inspect("abc123", content, video, List.of(video), active);
+    }
+
+    @Test
+    void legacyYoutubeBodyRequiresExtractionChangeVersion() {
+        MediaPreprocessingService service = new MediaPreprocessingService(
+                mock(YoutubeIntegratedInspectionClient.class),
+                mock(InspectionPolicyRepository.class), CLOCK);
+
+        assertThat(service.requiresNewVersion(
+                content(),
+                List.of(video(Map.of("stt", List.of(), "ocr", List.of()))),
+                policy(2L, "new-extraction")))
+                .isTrue();
+    }
+
+    @Test
+    void combinesSttAndOcrDeterministicallyWithoutLabels() {
+        assertThat(MediaPreprocessingService.combineText("  음성  ", "\n화면\n"))
+                .isEqualTo("음성\n\n화면");
+        assertThat(MediaPreprocessingService.combineText(" ", " 화면 "))
+                .isEqualTo("화면");
+        assertThat(MediaPreprocessingService.combineText(null, " ")).isEmpty();
     }
 
     private Content content() {
@@ -88,7 +112,7 @@ class MediaPreprocessingServiceTest {
 
     private ContentMedia video(Map<String, Object> body) {
         ContentMedia media = ContentMedia.create(
-                20L, "https://youtu.be/abc123", MediaType.VIDEO, body);
+                20L, MediaType.VIDEO, null, "abc123", 0, body);
         ReflectionTestUtils.setField(media, "id", 30L);
         return media;
     }

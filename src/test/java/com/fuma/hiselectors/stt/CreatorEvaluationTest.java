@@ -2,6 +2,7 @@ package com.fuma.hiselectors.stt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.application.model.ApplicationContentAnalysis;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,8 @@ class CreatorEvaluationTest {
         String json = """
                 {
                   "summary": "생활용품 청소 꿀팁과 맛집 리뷰를 친근하게 소개하는 크리에이터입니다.",
+                  "category": "LIVING_LIFE",
+                  "keywords": ["청소", "생활용품"],
                   "contentStyle": "리뷰언박싱",
                   "tone": "친근수다",
                   "strengths": ["실사용 리뷰", "정보 전달력"],
@@ -46,6 +49,8 @@ class CreatorEvaluationTest {
         ApplicantInsight i = new ObjectMapper().readValue(json, ApplicantInsight.class);
 
         assertThat(i.summary()).contains("청소");
+        assertThat(i.category()).isEqualTo("LIVING_LIFE");
+        assertThat(i.keywords()).containsExactly("청소", "생활용품");
         assertThat(i.contentStyle()).isEqualTo("리뷰언박싱");
         assertThat(i.tone()).isEqualTo("친근수다");
         assertThat(i.strengths()).containsExactly("실사용 리뷰", "정보 전달력");

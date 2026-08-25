@@ -26,6 +26,12 @@ class ReelRequest(BaseModel):
     thumbnail_url: str | None = None   # media_url 없을 때(저작권 릴스) 폴백
 
 
+@app.get("/health")
+def health() -> dict:
+    """가벼운 헬스체크. Java 스케줄러가 인스타 분석 전 워커 생존 확인용."""
+    return {"status": "ok"}
+
+
 @app.post("/analyze")
 def do_analyze(req: AnalyzeRequest) -> dict:
     return engine.analyze(req.text)

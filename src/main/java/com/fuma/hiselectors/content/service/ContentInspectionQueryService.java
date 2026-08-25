@@ -29,7 +29,7 @@ public class ContentInspectionQueryService {
 
     public Page<ContentInspectionListItemResponse> getCurrentGenerationContents(
             int page, int size) {
-        Generation generation = generationService.getActive();
+        Generation generation = generationService.getCurrentActivity();
         Page<ContentInspectionQueryRow> rows = contentRepository
                 .findInspectionRowsByGenerationId(
                         generation.getId(), PageRequest.of(page, size));
@@ -79,7 +79,9 @@ public class ContentInspectionQueryService {
                 row.storedAt(),
                 row.latestVersionId(),
                 row.latestVersionNo(),
-                row.inspectionStatus() == null ? null : row.inspectionStatus().name(),
+                row.inspectionDecision() != null
+                        ? row.inspectionDecision().name()
+                        : row.inspectionStatus() == null ? null : row.inspectionStatus().name(),
                 row.inspectedAt(),
                 row.latestVersionStoredAt(),
                 row.accountId(),

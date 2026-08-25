@@ -71,9 +71,33 @@ public class ApplicationReport {
     @Column(length = 500)
     private String strength;
 
-    /** 유의점 + 넓은 위험 + 욕설 확정을 합친 주의사항. LLM insight. */
+    /** 유의점(브랜드 협업 시 조언). LLM insight. 자유서술 명사구. */
     @Column(length = 500)
-    private String warning;
+    private String cautions;
+
+    /** 위험요소(정치종교/광고/건강/선정성/저작권/사행성 + 욕설확정). LLM insight. 고정 taxonomy. */
+    @Column(length = 500)
+    private String risks;
+
+    /** 대표 콘텐츠(정량=engagement 최고) 링크. 만료되는 media_url 대신 안정적인 퍼머링크/watch URL. */
+    @Column(name = "representative_content_url", columnDefinition = "TEXT")
+    private String representativeContentUrl;
+
+    /** 대표 콘텐츠 타입(REELS/VIDEO 등). FE 렌더링용. */
+    @Column(name = "representative_content_type", length = 20)
+    private String representativeContentType;
+
+    /** 대표 선정 근거(조회수). null 가능. */
+    @Column(name = "representative_view_count")
+    private Long representativeViewCount;
+
+    /** 대표 콘텐츠 1건의 카테고리(전체 취합 category 와 별개, 콘텐츠별 값). */
+    @Column(name = "representative_category", length = 20)
+    private String representativeCategory;
+
+    /** 대표 콘텐츠 1건의 키워드. */
+    @Column(name = "representative_keywords", length = 500)
+    private String representativeKeywords;
 
     /** 처리 상태. */
     @Column(length = 20)

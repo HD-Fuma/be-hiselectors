@@ -1,25 +1,35 @@
 package com.fuma.hiselectors.content.controller;
 
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
+import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest;
+import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationResponse;
+import com.fuma.hiselectors.content.dto.ContentDetailResponse;
+import com.fuma.hiselectors.content.service.ContentDetailQueryService;
 import com.fuma.hiselectors.content.service.ContentInspectionQueryService;
+import com.fuma.hiselectors.content.service.ContentInspectionConfirmationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 현재 활성 기수의 콘텐츠 검수 목록을 조회하는 관리자 API. */
-@Tag(name = "콘텐츠 검수", description = "활성 기수 콘텐츠 검수 조회 (관리자 전용)")
+/** 현재 활동 기수의 콘텐츠 검수 목록을 조회하는 관리자 API. */
+@Tag(name = "콘텐츠 검수", description = "현재 활동 기수 콘텐츠 검수 조회 (관리자 전용)")
 @RestController
 @RequestMapping("/api/admin/contents")
 @RequiredArgsConstructor
@@ -27,14 +37,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContentInspectionAdminController {
 
     private final ContentInspectionQueryService contentInspectionQueryService;
+    private final ContentDetailQueryService contentDetailQueryService;
+    private final ContentInspectionConfirmationService contentInspectionConfirmationService;
 
-    @Operation(summary = "활성 기수 콘텐츠 검수 목록 조회",
-            description = "현재 활성 기수의 삭제되지 않은 콘텐츠와 최신 버전을 "
+    @Operation(summary = "현재 활동 기수 콘텐츠 검수 목록 조회",
+            description = "현재 활동 중인 기수의 삭제되지 않은 콘텐츠와 최신 버전을 "
                     + "최초 저장 시각 내림차순으로 반환한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "400", description = "페이지 요청 값 오류", content = @Content),
-            @ApiResponse(responseCode = "409", description = "현재 활성 기수 없음", content = @Content)
+            @ApiResponse(responseCode = "409", description = "현재 활동 기수 없음", content = @Content)
     })
     @GetMapping
     public ResponseEntity<Page<ContentInspectionListItemResponse>> getContents(
@@ -45,5 +57,35 @@ public class ContentInspectionAdminController {
             @Max(value = 100, message = "size는 100 이하여야 합니다.") int size) {
         return ResponseEntity.ok(
                 contentInspectionQueryService.getCurrentGenerationContents(page, size));
+    }
+
+    @Operation(summary = "콘텐츠 최신 버전 상세 조회",
+            description = "콘텐츠의 전체 버전 목록과 최신 버전의 본문, 리포트, 위반 사항을 조회합니다.")
+    @GetMapping("/{contentId}")
+    public ResponseEntity<ContentDetailResponse> getContentDetail(
+            @PathVariable Long contentId) {
+        return ResponseEntity.ok(contentDetailQueryService.getLatest(contentId));
+    }
+
+    @Operation(summary = "콘텐츠 특정 버전 상세 조회",
+            description = "콘텐츠의 전체 버전 목록과 선택한 버전의 본문, 리포트, 위반 사항을 조회합니다.")
+    @GetMapping("/{contentId}/versions/{contentVersionId}")
+    public ResponseEntity<ContentDetailResponse> getContentVersionDetail(
+            @PathVariable Long contentId,
+            @PathVariable Long contentVersionId) {
+        return ResponseEntity.ok(
+                contentDetailQueryService.getVersion(contentId, contentVersionId));
+    }
+
+    @Operation(summary = "콘텐츠 버전 관리자 검수 확정",
+            description = "현재 PENDING 위반 후보 전체를 승인 또는 반려 판정으로 확정합니다.")
+    @PatchMapping("/{contentId}/versions/{contentVersionId}/inspection")
+    public ResponseEntity<ContentInspectionConfirmationResponse> confirmInspection(
+            @PathVariable Long contentId,
+            @PathVariable Long contentVersionId,
+            @Valid @RequestBody ContentInspectionConfirmationRequest request,
+            Principal principal) {
+        return ResponseEntity.ok(contentInspectionConfirmationService.confirm(
+                contentId, contentVersionId, request, principal.getName()));
     }
 }

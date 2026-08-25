@@ -87,6 +87,8 @@ class PerformanceControllerTest {
                 .andExpect(jsonPath("$.data.activityMonth").value("2026-08"))
                 .andExpect(jsonPath("$.data.conversionCount").value(92L))
                 .andExpect(jsonPath("$.data.totalProductCount").value(1))
+                .andExpect(jsonPath("$.data.products[0].detailUrl")
+                        .value("https://example.com/product"))
                 .andExpect(jsonPath("$.data.products[0].clickCount").value(2_840L))
                 .andExpect(jsonPath("$.data.products[0].estimatedSettlementAmount")
                         .value(324_800L));
@@ -101,6 +103,7 @@ class PerformanceControllerTest {
                 "상품 1",
                 "브랜드",
                 "https://example.com/product.jpg",
+                "https://example.com/product",
                 2_840L,
                 92L,
                 10_826_667L,

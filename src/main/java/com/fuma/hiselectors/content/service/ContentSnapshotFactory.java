@@ -4,6 +4,7 @@ import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.model.MediaType;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -23,9 +24,10 @@ public class ContentSnapshotFactory {
             Long contentId,
             Long versionNo,
             RawContent rawContent,
-            LocalDateTime createdAt) {
+            LocalDateTime createdAt,
+            ContentVersionCreationReason creationReason) {
         return ContentVersion.create(
-                contentId, versionNo, contentHash(rawContent), createdAt);
+                contentId, versionNo, contentHash(rawContent), creationReason, createdAt);
     }
 
     List<ContentMedia> createMedia(Long versionId, RawContent rawContent) {
@@ -45,11 +47,16 @@ public class ContentSnapshotFactory {
                     versionId,
                     MediaType.valueOf(rawMedia.mediaType().name()),
                     rawMedia.mediaUrl(),
+                    thumbnailUrl(rawMedia),
                     rawMedia.snsMediaId(),
                     sequenceNo++,
                     Map.of()));
         }
         return media;
+    }
+
+    String thumbnailUrl(RawContentMedia media) {
+        return media.thumbnailUrls().isEmpty() ? null : media.thumbnailUrls().getLast();
     }
 
     String contentHash(RawContent rawContent) {

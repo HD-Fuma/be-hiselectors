@@ -1,0 +1,11 @@
+package com.fuma.hiselectors.taskrun.model;
+
+public enum TaskType {
+    CREATOR_SYNC,
+    CONTENT_SYNC,
+    APPLICATION_REPORT_GENERATION,
+    CONTENT_REPORT_GENERATION,
+    SETTLEMENT_CALCULATION,
+    KAKAO_MESSAGE_SEND,
+    PROPOSAL_EMAIL_SEND
+}

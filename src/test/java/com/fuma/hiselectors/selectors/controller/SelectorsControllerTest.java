@@ -46,12 +46,13 @@ class SelectorsControllerTest {
         LocalDateTime now = LocalDateTime.of(2026, 8, 20, 12, 0);
         when(selectorsService.findDetail(7L)).thenReturn(new SelectorsDetailResponse(
                 7L, "SEL-2601-007", "지안글로우", "INACTIVE", "비활성",
-                1L, 1L, now, now, List.of(),
+                1L, 1L, now.minusDays(10), now.minusDays(9), true,
+                now, now, List.of(),
                 new SelectorsSnsAccountResponse(
                         10L, "YOUTUBE", "jianglow", 40_900L, null, now),
                 3, 2, true,
                 List.of(new SelectorsDetailResponse.ContentResponse(
-                        20L, "YOUTUBE", "https://youtube.com/shorts/20", "SHORTS",
+                        20L, "YOUTUBE", "https://youtube.com/shorts/20", "실제 제목", "SHORTS",
                         now, 1_000L, 100L, 10L)),
                 new SelectorsDetailResponse.PerformanceResponse(6L, 9_000L, null, 0L)));
 
@@ -59,10 +60,14 @@ class SelectorsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.snsAccount.accountId").value("jianglow"))
                 .andExpect(jsonPath("$.data.snsAccounts").doesNotExist())
+                .andExpect(jsonPath("$.data.snsVerifiedAt").value("2026-08-10T12:00:00"))
+                .andExpect(jsonPath("$.data.privacyAgreedAt").value("2026-08-11T12:00:00"))
+                .andExpect(jsonPath("$.data.alimtalkAgreed").value(true))
                 .andExpect(jsonPath("$.data.totalPenaltyCount").value(3))
                 .andExpect(jsonPath("$.data.activePenaltyCount").value(2))
                 .andExpect(jsonPath("$.data.blacklistTarget").value(true))
                 .andExpect(jsonPath("$.data.contents[0].snsCode").value("YOUTUBE"))
+                .andExpect(jsonPath("$.data.contents[0].title").value("실제 제목"))
                 .andExpect(jsonPath("$.data.contents[0].viewCount").value(1000))
                 .andExpect(jsonPath("$.data.performance.contentCount").value(6))
                 .andExpect(jsonPath("$.data.performance.totalViewCount").value(9000))

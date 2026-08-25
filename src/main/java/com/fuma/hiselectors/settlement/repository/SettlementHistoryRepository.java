@@ -28,11 +28,17 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
 
     List<SettlementHistory> findAllByStatusIn(Collection<SettlementStatus> statuses);
 
+    List<SettlementHistory> findAllByStatusAndActivityYearMonthAndSettlementAmountGreaterThan(
+            SettlementStatus status, Integer activityYearMonth, Long settlementAmount);
+
     List<SettlementHistory> findAllByStatusInAndUpdatedAtLessThanEqual(
             Collection<SettlementStatus> statuses, LocalDateTime updatedAt);
 
     List<SettlementHistory> findAllBySelectorsIdAndStatus(
             Long selectorsId, SettlementStatus status);
+
+    List<SettlementHistory> findAllBySelectorsIdAndStatusIn(
+            Long selectorsId, Collection<SettlementStatus> statuses);
 
     Page<SettlementHistory> findAllBySelectorsIdOrderByActivityMonthDesc(
             Long selectorsId, Pageable pageable);
@@ -59,6 +65,13 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             @Param("status") SettlementStatus status);
 
     @Query("""
+            select coalesce(sum(h.totalSales), 0)
+            from SettlementHistory h
+            where h.selectorsId = :selectorsId
+            """)
+    long sumSalesBySelectorsId(@Param("selectorsId") Long selectorsId);
+
+    @Query("""
             select h
             from SettlementHistory h
             where h.selectorsId = :selectorsId
@@ -79,6 +92,11 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             where h.activityYearMonth = :activityYearMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
+              and exists (
+                  select s.id
+                  from Selectors s
+                  where s.id = h.selectorsId
+              )
             """)
     Page<SettlementHistory> search(
             @Param("activityYearMonth") Integer activityYearMonth,

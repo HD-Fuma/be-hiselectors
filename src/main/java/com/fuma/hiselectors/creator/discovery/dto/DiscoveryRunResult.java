@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.creator.discovery.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.Set;
 
 /**
  * 발굴 1회 실행 결과.
@@ -16,6 +18,17 @@ public record DiscoveryRunResult(
         @Schema(description = "발굴된 채널 수") int discovered,
         @Schema(description = "신규 등록된 계정 수") int created,
         @Schema(description = "기존 계정 갱신 수") int updated,
-        @Schema(description = "이번 실행에 사용한 API 쿼터 (일일 한도 10,000)") int consumedQuota
+        @Schema(description = "이번 실행에 사용한 API 쿼터 (일일 한도 10,000)") int consumedQuota,
+        @JsonIgnore Set<Long> creatorIds
 ) {
+
+    public DiscoveryRunResult {
+        creatorIds = creatorIds == null ? Set.of() : Set.copyOf(creatorIds);
+    }
+
+    public DiscoveryRunResult(
+            String keyword, String categoryCode, int discovered,
+            int created, int updated, int consumedQuota) {
+        this(keyword, categoryCode, discovered, created, updated, consumedQuota, Set.of());
+    }
 }

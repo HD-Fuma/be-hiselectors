@@ -18,8 +18,10 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,9 +40,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장
  * </pre>
  *
- * <p><b>여기서 후보를 걸러내지 않는다.</b> 브랜드 계정도 구독자 미달 계정도 전부 저장하고,
- * 실제로 빼는 일은 조회 API 조건이 한다. 판정 기준은 반드시 한 번은 틀리는데
- * 수집 시점에 버리면 기준을 고쳐도 재수집이 필요하고 그게 쿼터를 또 쓰기 때문이다.
+ * <p><b>현재 공개 이메일이 없는 채널은 활성 풀에 유지하지 않는다.</b> 브랜드 계정이나 구독자 미달
+ * 계정은 전부 저장하고 실제로 빼는 일은 조회 API 조건이 한다.
  */
 @Slf4j
 @Service
@@ -49,8 +50,16 @@ public class DiscoveryPipelineService {
 
     private static final String SNS_CODE_YOUTUBE = "YOUTUBE";
 
+    private enum SaveResult {
+        CREATED, UPDATED, SKIPPED
+    }
+
+    private record SaveOutcome(SaveResult result, Long creatorId) {
+    }
+
     private final YoutubeDiscoveryClient youtubeClient;
     private final IgHandleExtractor igHandleExtractor;
+    private final PublicEmailExtractor publicEmailExtractor;
     private final BrandScoreCalculator brandScoreCalculator;
 
     private final DiscoveryKeywordRepository keywordRepository;
@@ -91,12 +100,16 @@ public class DiscoveryPipelineService {
 
         int created = 0;
         int updated = 0;
+        Set<Long> creatorIds = new LinkedHashSet<>();
         for (DiscoveredChannel channel : channels) {
-            boolean isNew = save(channel, keyword, totalViews);
-            if (isNew) {
-                created++;
-            } else {
-                updated++;
+            SaveOutcome outcome = save(channel, keyword, totalViews);
+            switch (outcome.result()) {
+                case CREATED -> created++;
+                case UPDATED -> updated++;
+                case SKIPPED -> { }
+            }
+            if (outcome.creatorId() != null) {
+                creatorIds.add(outcome.creatorId());
             }
         }
 
@@ -106,7 +119,7 @@ public class DiscoveryPipelineService {
                 keyword.getKeyword(),
                 keyword.getCategory().getCode(),
                 channels.size(), created, updated,
-                consumedQuota);
+                consumedQuota, creatorIds);
 
         log.info("발굴 완료. {}", result);
         return result;
@@ -115,31 +128,42 @@ public class DiscoveryPipelineService {
     /**
      * 채널 하나를 저장한다.
      *
-     * @return 새로 만들었으면 true, 기존 계정을 갱신했으면 false
+     * @return 신규 저장, 기존 갱신 또는 이메일 누락으로 건너뜀
      */
-    private boolean save(DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
-        IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
-        BrandScore brandScore = brandScoreCalculator.calculate(
-                channel.title(), channel.description(),
-                igHandle == null ? null : igHandle.handle());
-
+    private SaveOutcome save(
+            DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
         // 소프트 삭제된 계정도 찾아야 중복 행이 생기지 않는다
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
                 .orElse(null);
 
+        String email = publicEmailExtractor.extract(channel.description()).orElse(null);
+        if (email == null) {
+            if (creator != null) {
+                creator.softDelete();
+            }
+            return new SaveOutcome(SaveResult.SKIPPED, null);
+        }
         boolean isNew = creator == null;
+
+        IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
+        BrandScore brandScore = brandScoreCalculator.calculate(
+                channel.title(), channel.description(),
+                igHandle == null ? null : igHandle.handle());
+
         if (isNew) {
             creator = creatorPoolRepository.save(CreatorPool.builder()
                     .snsCode(SNS_CODE_YOUTUBE)
                     .accountId(channel.channelId())
                     .creatorName(channel.title())
+                    .email(email)
                     .followerCount(channel.subscriberCount())
                     .lastContentAt(channel.lastUploadAt())
                     .engagementRate(engagementRate(channel))
                     .category(keyword.getCategory().getCode())
                     .build());
         } else {
+            creator.updateEmail(email);
             creator.updateMetrics(channel.subscriberCount(),
                     engagementRate(channel), channel.lastUploadAt());
             // 지웠던 계정이 다시 발굴되면 되살린다
@@ -156,7 +180,9 @@ public class DiscoveryPipelineService {
         // 여러 카테고리에 걸린 채널은 조회수 비중이 큰 쪽으로 잡힌다.
         creatorDiscoveryService.refreshRepresentativeCategory(creator.getId());
 
-        return isNew;
+        return new SaveOutcome(
+                isNew ? SaveResult.CREATED : SaveResult.UPDATED,
+                creator.getId());
     }
 
     private void saveDiscoveryInfo(CreatorPool creator, IgHandle igHandle, BrandScore brandScore,

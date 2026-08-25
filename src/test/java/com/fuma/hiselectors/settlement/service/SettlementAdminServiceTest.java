@@ -18,7 +18,9 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -77,9 +79,11 @@ class SettlementAdminServiceTest {
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-15T01:00:00Z"), TimeConfig.SEOUL_ZONE);
         SettlementAdminService service = new SettlementAdminService(
-                historyRepository, selectorsRepository, snsAccountRepository,
+                historyRepository, mock(SettlementAccountRepository.class), selectorsRepository,
+                snsAccountRepository,
                 purchaseHistoryRepository, clock,
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
         Selectors selectors = selectors(15L);
         SelectorsSnsAccount snsAccount = SelectorsSnsAccount.builder()
                 .selectorsId(15L)
@@ -90,6 +94,8 @@ class SettlementAdminServiceTest {
                 .lastCollectedAt(LocalDateTime.of(2026, 8, 15, 9, 0))
                 .build();
         SettlementHistory nextPaymentHistory = settlementHistory(15L);
+        nextPaymentHistory.transitionTo(
+                SettlementStatus.PAYMENT_PENDING, LocalDateTime.of(2026, 8, 2, 0, 0));
         Pageable pageable = PageRequest.of(0, 12);
 
         when(selectorsRepository.findById(15L)).thenReturn(Optional.of(selectors));
@@ -106,24 +112,33 @@ class SettlementAdminServiceTest {
                 LocalDateTime.of(2026, 9, 1, 0, 0))).thenReturn(2L);
         when(historyRepository.sumCommissionBySelectorsIdAndStatus(15L, SettlementStatus.SETTLED))
                 .thenReturn(1_500L);
-        when(historyRepository.findBySelectorsIdAndActivityYearMonthAndStatusIn(
-                15L,
-                202606,
-                List.of(SettlementStatus.CALCULATING, SettlementStatus.PAYMENT_PENDING)))
-                .thenReturn(Optional.of(nextPaymentHistory));
+        when(historyRepository.findAllBySelectorsIdAndStatus(15L, SettlementStatus.PAYMENT_PENDING))
+                .thenReturn(List.of(nextPaymentHistory));
+        when(historyRepository.findAllBySelectorsIdAndStatusIn(
+                15L, List.of(
+                        SettlementStatus.PAYMENT_HOLD_BLACK,
+                        SettlementStatus.PAYMENT_HOLD_INFO,
+                        SettlementStatus.PAYMENT_PENDING,
+                        SettlementStatus.CALCULATING)))
+                .thenReturn(List.of(nextPaymentHistory));
+        when(historyRepository.sumSalesBySelectorsId(15L)).thenReturn(10_000L);
         when(historyRepository.findAllBySelectorsIdOrderByActivityMonthDesc(15L, pageable))
                 .thenReturn(new PageImpl<>(List.of(nextPaymentHistory), pageable, 1));
 
         var result = service.getDetail(15L, pageable);
 
         assertThat(result.profile().selectorsCode()).isEqualTo("SEL-0015");
+        assertThat(result.accountRegistered()).isFalse();
         assertThat(result.profile().followerCount()).isEqualTo(76_200L);
         assertThat(result.settlementSummary().cumulativePurchaseConversionCount()).isEqualTo(11L);
         assertThat(result.settlementSummary().cumulativePaidCommission()).isEqualTo(1_500L);
         assertThat(result.settlementSummary().currentMonthPurchaseConversionCount()).isEqualTo(2L);
         assertThat(result.settlementSummary().nextMonthScheduledCommission()).isEqualTo(300L);
+        assertThat(result.settlementSummary().cumulativeSalesAmount()).isEqualTo(10_000L);
         assertThat(result.settlementSummary().nextPaymentMonth())
                 .isEqualTo(java.time.YearMonth.of(2026, 8));
+        assertThat(result.settlementSummary().nextPaymentSettlementStatus())
+                .isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(result.histories()).hasSize(1);
     }
 
@@ -131,11 +146,13 @@ class SettlementAdminServiceTest {
             SettlementHistoryRepository historyRepository, SelectorsRepository selectorsRepository) {
         return new SettlementAdminService(
                 historyRepository,
+                mock(SettlementAccountRepository.class),
                 selectorsRepository,
                 mock(SelectorsSnsAccountRepository.class),
                 mock(PurchaseHistoryRepository.class),
                 Clock.systemUTC(),
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
     }
 
     private Selectors selectors(Long selectorsId) {

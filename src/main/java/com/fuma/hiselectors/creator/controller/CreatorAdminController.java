@@ -4,11 +4,14 @@ import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
 import com.fuma.hiselectors.creator.dto.TopPercentInfluenceResponse;
 import com.fuma.hiselectors.creator.service.CreatorDiscoveryService;
 import com.fuma.hiselectors.creator.service.CreatorInfluenceService;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -19,6 +22,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +33,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -68,7 +73,10 @@ public class CreatorAdminController {
             @RequestParam(required = false) String snsCode,
 
             @Parameter(description = "최소 팔로워/구독자 수", example = "5000")
-            @RequestParam(required = false) Long minFollower,
+            @RequestParam(required = false) @Min(0) Long minFollower,
+
+            @Parameter(description = "최대 팔로워/구독자 수", example = "100000")
+            @RequestParam(required = false) @Min(0) Long maxFollower,
 
             @Parameter(description = "최소 ER", example = "2.5")
             @RequestParam(required = false) @DecimalMin("0") BigDecimal minEngagementRate,
@@ -92,10 +100,31 @@ public class CreatorAdminController {
             @PageableDefault(size = 20, sort = "followerCount", direction = Sort.Direction.DESC)
             Pageable pageable) {
 
+        if (minFollower != null && maxFollower != null && minFollower > maxFollower) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT, "최소 팔로워/구독자 수는 최대값보다 클 수 없습니다.");
+        }
         return ResponseEntity.ok(creatorDiscoveryService.search(
-                keyword, categoryCode, snsCode, minFollower,
+                keyword, categoryCode, snsCode, minFollower, maxFollower,
                 minEngagementRate, minRecent90DayContentCount, maxBrandScore,
                 minIgConfidence, activeWithinDays, pageable));
+    }
+
+    @Operation(summary = "기존 YouTube·Instagram 크리에이터 풀 초기화",
+            description = "현재 풀을 목록과 후보에서 숨기고 재생성 가능한 발굴 정보만 삭제한다. "
+                    + "제안·리포트 이력과 이를 참조하는 크리에이터 ID는 보존하며, "
+                    + "재발굴 조건을 통과한 계정은 다음 풀 구축 때 같은 ID로 복원된다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "초기화 성공"),
+            @ApiResponse(responseCode = "400", description = "확인 문구 불일치", content = @Content)
+    })
+    @DeleteMapping
+    public ResponseEntity<CreatorPoolResetResponse> resetPool(
+            @Parameter(description = "오조작 방지 확인 문구", example = "DELETE_CREATOR_POOL")
+            @RequestParam String confirmation,
+            Principal principal) {
+        return ResponseEntity.ok(
+                creatorDiscoveryService.resetPool(confirmation, principal.getName()));
     }
 
     @Operation(summary = "발굴 크리에이터 기본 상세 조회",

@@ -5,6 +5,8 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
+import com.fuma.hiselectors.inspection.model.EvidenceLocation;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
@@ -35,11 +37,22 @@ public class AdvertisementDisclosureDetector implements RuleViolationDetector {
                 .anyMatch(source -> containsDisclosure(source.text()));
 
         List<String> missing = new ArrayList<>();
+        List<EvidenceLocation> locations = new ArrayList<>();
         if (!textDisclosure) {
-            missing.add("제목 또는 본문 첫 줄의 광고·수수료 안내 문구");
+            String label = "제목 또는 본문 첫 줄의 광고·수수료 안내 문구";
+            missing.add(label);
+            context.media().stream()
+                    .filter(media -> media.getMediaType() == MediaType.TEXT)
+                    .map(media -> marker(media, label))
+                    .forEach(locations::add);
         }
         if (context.content().getSnsCode() == SnsPlatform.YOUTUBE && !youtubeVideoDisclosure) {
-            missing.add("영상 내부 광고 안내 문구");
+            String label = "영상 내부 광고 안내 문구";
+            missing.add(label);
+            context.media().stream()
+                    .filter(media -> media.getMediaType() == MediaType.VIDEO)
+                    .map(media -> marker(media, label))
+                    .forEach(locations::add);
         }
         if (missing.isEmpty()) {
             return List.of();
@@ -48,7 +61,13 @@ public class AdvertisementDisclosureDetector implements RuleViolationDetector {
         return List.of(new DetectedViolation(
                 ViolationTypeCode.AD_DISCLOSURE_INVALID,
                 new ViolationEvidence(String.join(" 및 ", missing) + "를 확인할 수 없습니다.",
-                        1.0, List.of())));
+                        1.0, locations, EvidenceSource.RULE)));
+    }
+
+    private EvidenceLocation marker(ContentMedia media, String excerpt) {
+        return new EvidenceLocation(
+                media.getId(), media.getMediaType(),
+                null, null, null, null, null, excerpt);
     }
 
     private boolean hasDisclosureAtStart(ContentMedia media) {

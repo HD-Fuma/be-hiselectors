@@ -1,10 +1,18 @@
 package com.fuma.hiselectors.selectors.service;
 
+import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.model.ContentMedia;
+import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
+import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
+import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
@@ -22,6 +30,9 @@ import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRoleRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
+import com.fuma.hiselectors.user.model.User;
+import com.fuma.hiselectors.user.repository.UserRepository;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -48,9 +59,14 @@ public class SelectorsService {
     private final SelectorsRoleRepository selectorsRoleRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
+    private final YoutubeContentFetcher youtubeContentFetcher;
     private final PenaltyHistoryRepository penaltyHistoryRepository;
+    private final ApplicationRepository applicationRepository;
+    private final UserRepository userRepository;
     private final ContentRepository contentRepository;
     private final ContentEngagementRepository contentEngagementRepository;
+    private final ContentVersionRepository contentVersionRepository;
+    private final ContentMediaRepository contentMediaRepository;
 
     /**
      * 조건에 맞는 셀렉터스 목록. null 인 조건은 적용하지 않는다.
@@ -64,16 +80,17 @@ public class SelectorsService {
         Page<Selectors> page = selectorsRepository.search(
                 blankToNull(roleId), generationId, blankToNull(nickname), snsCode, pageable);
         if (page.isEmpty()) {
-            return page.map(selectors -> toSummary(selectors, null, Map.of()));
+            return page.map(selectors -> toSummary(selectors, null, Map.of(), Map.of()));
         }
 
         Map<String, String> roleNames = roleNames();
         Map<Long, SelectorsSnsAccount> representatives = representativeAccounts(
                 page.getContent().stream().map(Selectors::getId).toList());
+        Map<String, String> youtubeTitles = youtubeChannelTitles(representatives);
 
         return page.map(selectors ->
                 toSummary(selectors, roleNames.get(selectors.getSelectorsRoleId()),
-                        representatives));
+                        representatives, youtubeTitles));
     }
 
     /** 기본 정보와 참여 기수 이력, SNS 계정을 함께 조회한다. */
@@ -89,10 +106,15 @@ public class SelectorsService {
                 .orElse(null);
         List<PenaltyHistory> penalties = penaltyHistoryRepository
                 .findAllBySelectorsIds(List.of(selectorsId));
+        Application application = selectors.getApplicationId() == null
+                ? null : applicationRepository.findById(selectors.getApplicationId()).orElse(null);
+        User user = selectors.getUserId() == null
+                ? null : userRepository.findById(selectors.getUserId()).orElse(null);
 
         // ponytail: 상세 조회에서 전체 콘텐츠를 합산한다. 건수가 커져 병목이면 DB 집계로 교체한다.
         List<Content> contents = contentRepository
                 .findAllBySelectorsIdAndDeletedFalseOrderByCreatedAtDescIdDesc(selectorsId);
+        Map<Long, String> contentTitles = contentTitles(contents.stream().limit(5).toList());
         Map<Long, ContentEngagement> latestEngagements = contents.isEmpty()
                 ? Map.of()
                 : contentEngagementRepository.findLatestByContentIds(
@@ -102,8 +124,38 @@ public class SelectorsService {
 
         return SelectorsDetailResponse.of(
                 selectors, roleNames().get(selectors.getSelectorsRoleId()),
-                generations, account, penalties, contents, latestEngagements,
+                generations, account, application, user, penalties, contents,
+                latestEngagements, contentTitles,
                 BLACKLIST_THRESHOLD);
+    }
+
+    private Map<Long, String> contentTitles(List<Content> contents) {
+        if (contents.isEmpty()) {
+            return Map.of();
+        }
+        List<ContentVersion> versions = contentVersionRepository.findCurrentByContentIdIn(
+                contents.stream().map(Content::getId).toList());
+        Map<Long, Long> contentIdsByVersionId = versions.stream().collect(Collectors.toMap(
+                ContentVersion::getId, ContentVersion::getContentId));
+        if (contentIdsByVersionId.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, String> titles = new HashMap<>();
+        List<ContentMedia> media = contentMediaRepository
+                .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
+                        contentIdsByVersionId.keySet());
+        for (ContentMedia item : media) {
+            Object text = item.bodyOrEmpty().get("text");
+            Long contentId = contentIdsByVersionId.get(item.getContentVersionId());
+            if (item.getMediaType() == MediaType.TEXT
+                    && text instanceof String title
+                    && !title.isBlank()
+                    && contentId != null) {
+                titles.putIfAbsent(contentId, title.trim());
+            }
+        }
+        return titles;
     }
 
     public Page<SelectorsPenaltyResponse> findPenalties(
@@ -130,7 +182,8 @@ public class SelectorsService {
     }
 
     private SelectorsSummary toSummary(Selectors selectors, String roleName,
-                                       Map<Long, SelectorsSnsAccount> representatives) {
+                                       Map<Long, SelectorsSnsAccount> representatives,
+                                       Map<String, String> youtubeTitles) {
         SelectorsSnsAccount account = representatives.get(selectors.getId());
         return new SelectorsSummary(
                 selectors.getId(),
@@ -141,10 +194,31 @@ public class SelectorsService {
                 account == null || account.getSnsCode() == null
                         ? null : account.getSnsCode().name(),
                 account == null ? null : account.getAccountId(),
+                snsDisplayName(account, youtubeTitles),
                 account == null ? null : account.getFollowerCount(),
                 account == null ? null : account.getProfileImageUrl(),
                 selectors.getCreatedAt()
         );
+    }
+
+    private Map<String, String> youtubeChannelTitles(
+            Map<Long, SelectorsSnsAccount> representatives) {
+        List<String> channelIds = representatives.values().stream()
+                .filter(account -> account.getSnsCode() == SnsPlatform.YOUTUBE)
+                .map(SelectorsSnsAccount::getAccountId)
+                .toList();
+        return channelIds.isEmpty()
+                ? Map.of() : youtubeContentFetcher.fetchChannelTitles(channelIds);
+    }
+
+    private String snsDisplayName(
+            SelectorsSnsAccount account, Map<String, String> youtubeTitles) {
+        if (account == null || account.getAccountId() == null) {
+            return null;
+        }
+        return account.getSnsCode() == SnsPlatform.YOUTUBE
+                ? youtubeTitles.getOrDefault(account.getAccountId(), account.getAccountId())
+                : account.getAccountId();
     }
 
     private Map<String, String> roleNames() {

@@ -11,10 +11,13 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 
 @Slf4j
@@ -68,13 +71,20 @@ public class GlobalExceptionHandler {
         return build(ErrorCode.INVALID_INPUT, ErrorCode.INVALID_INPUT.getMessage());
     }
 
-    // 쿼리 파라미터 누락 또는 숫자/Enum 타입 변환 실패 -> 400
+    // 요청 파라미터/헤더 누락 또는 숫자/Enum/UUID 타입 변환 실패 -> 400
     @ExceptionHandler({
             MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class,
+            MissingServletRequestPartException.class,
             MethodArgumentTypeMismatchException.class
     })
     public ResponseEntity<ApiResult<Void>> handleRequestParameter(Exception e) {
         return build(ErrorCode.INVALID_INPUT, ErrorCode.INVALID_INPUT.getMessage());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResult<Void>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        return build(ErrorCode.INVALID_INPUT, "업로드 파일은 5MB 이하여야 합니다.");
     }
 
     // 잘못된 HTTP 메서드 -> 405 (허용 메서드 안내 + Allow 헤더)

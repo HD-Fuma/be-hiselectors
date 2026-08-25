@@ -1,6 +1,9 @@
 HELP.md
 .gradle
+.gradle-user/
 build/
+/graphify-out/
+.local-media/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
@@ -80,3 +83,4 @@ stt-worker/.venv/
 stt-worker/**/__pycache__/
 stt-worker/sagemaker/build/
 stt-worker/sagemaker/model.tar.gz
+/.codex-runtime/

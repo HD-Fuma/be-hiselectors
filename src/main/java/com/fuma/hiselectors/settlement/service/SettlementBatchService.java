@@ -4,6 +4,7 @@ import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.taskrun.service.TaskProgressReporter;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -25,7 +26,7 @@ public class SettlementBatchService {
     private final SettlementSchedulePolicy schedulePolicy;
     private final Clock clock;
 
-    public SettlementBatchResult calculateOpenActivityMonth() {
+    public SettlementBatchResult calculateOpenActivityMonth(TaskProgressReporter progress) {
         LocalDate today = LocalDate.now(clock);
         YearMonth currentActivityMonth = YearMonth.from(today);
         Set<SettlementTarget> targets = new LinkedHashSet<>();
@@ -33,10 +34,11 @@ public class SettlementBatchService {
             targets.add(new SettlementTarget(selectorsId, currentActivityMonth.minusMonths(1)));
             targets.add(new SettlementTarget(selectorsId, currentActivityMonth));
         }
-        return calculate(targets, currentActivityMonth, false);
+        progress.start("ESTIMATE", targets.size());
+        return calculate(targets, currentActivityMonth, false, progress);
     }
 
-    public SettlementBatchResult finalizeOpenActivityMonth() {
+    public SettlementBatchResult finalizeOpenActivityMonth(TaskProgressReporter progress) {
         LocalDate today = LocalDate.now(clock);
         YearMonth openActivityMonth = YearMonth.from(today).minusMonths(1);
         Set<SettlementTarget> targets = overdueCalculatingTargets(today, openActivityMonth);
@@ -44,10 +46,11 @@ public class SettlementBatchService {
         if (!today.isBefore(schedulePolicy.finalizationDate(openActivityMonth))) {
             targets.addAll(allSelectorsFor(openActivityMonth));
         }
+        progress.start("FINALIZE", targets.size());
         if (targets.isEmpty()) {
             return SettlementBatchResult.notExecuted(openActivityMonth);
         }
-        return calculate(targets, openActivityMonth, true);
+        return calculate(targets, openActivityMonth, true, progress);
     }
 
     private Set<SettlementTarget> allSelectorsFor(YearMonth activityMonth) {
@@ -77,26 +80,34 @@ public class SettlementBatchService {
     }
 
     private SettlementBatchResult calculate(
-            Set<SettlementTarget> targets, YearMonth resultActivityMonth, boolean finalizeSettlement) {
+            Set<SettlementTarget> targets,
+            YearMonth resultActivityMonth,
+            boolean finalizeSettlement,
+            TaskProgressReporter progress) {
         int processed = 0;
         int skipped = 0;
         int failed = 0;
 
         for (SettlementTarget target : targets) {
+            SettlementCalculationResult result;
             try {
-                SettlementCalculationResult result = calculationWorker.calculate(
+                result = calculationWorker.calculate(
                         target.selectorsId(),
                         target.activityMonth(),
                         finalizeSettlement);
-                if (result.outcome() == SettlementCalculationOutcome.SKIPPED) {
-                    skipped++;
-                } else {
-                    processed++;
-                }
             } catch (RuntimeException e) {
                 failed++;
                 log.error("셀렉터스 활동월 정산 계산 실패: selectorsId={}, activityMonth={}",
                         target.selectorsId(), target.activityMonth(), e);
+                progress.advance(0, 1, 0);
+                continue;
+            }
+            if (result.outcome() == SettlementCalculationOutcome.SKIPPED) {
+                skipped++;
+                progress.advance(0, 0, 1);
+            } else {
+                processed++;
+                progress.advance(1, 0, 0);
             }
         }
 

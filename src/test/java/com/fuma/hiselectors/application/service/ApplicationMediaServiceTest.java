@@ -19,6 +19,11 @@ import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.MediaType;
+import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -35,8 +40,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -58,6 +63,12 @@ class ApplicationMediaServiceTest {
     private ContentFetcher youtubeFetcher;
     @Mock
     private TransactionTemplate transactionTemplate;
+    @Mock
+    private AnalysisQueuePublisher analysisQueuePublisher;
+    @Mock
+    private SelectorsRepository selectorsRepository;
+    @Mock
+    private SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     private ApplicationMediaService service;
 
@@ -65,6 +76,10 @@ class ApplicationMediaServiceTest {
     void setUp() {
         lenient().when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         lenient().when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        lenient().when(instagramFetcher.fetchProfile(any()))
+                .thenReturn(new ContentFetcher.Profile(null, null, null));
+        lenient().when(youtubeFetcher.fetchProfile(any()))
+                .thenReturn(new ContentFetcher.Profile(null, null, null));
         lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
@@ -76,33 +91,41 @@ class ApplicationMediaServiceTest {
         }).when(transactionTemplate).executeWithoutResult(any());
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
-                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK);
+                List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK,
+                Optional.of(analysisQueuePublisher),
+                selectorsRepository, selectorsSnsAccountRepository);
     }
 
     @Test
-    void collectRequestsStatisticsOnlyForLatestTenDistinctContents() {
+    void collectsStatisticsForEveryRecentDistinctPostAndPersistsWeightedRate() {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
 
-        LocalDateTime now = COLLECTED_AT;
         List<RawContent> contents = new ArrayList<>();
-        for (int i = 0; i < 52; i++) {
-            contents.add(raw(SnsPlatform.YOUTUBE, "video-" + i, now.minusHours(i)));
+        for (int index = 0; index < 52; index++) {
+            contents.add(raw(
+                    SnsPlatform.YOUTUBE, "video-" + index, COLLECTED_AT.minusHours(index)));
         }
-        contents.add(raw(SnsPlatform.YOUTUBE, "video-0", now.minusDays(10)));
-        contents.add(raw(SnsPlatform.YOUTUBE, "old", now.minusDays(91)));
-        contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", now));
+        contents.add(raw(SnsPlatform.YOUTUBE, "video-0", COLLECTED_AT.minusDays(10)));
+        contents.add(raw(SnsPlatform.YOUTUBE, "old", COLLECTED_AT.minusDays(91)));
+        contents.add(raw(SnsPlatform.INSTAGRAM, "wrong-platform", COLLECTED_AT));
         when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(contents);
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/channel-profile.jpg", 12_345L, 120L));
         when(youtubeFetcher.addStatistics(any())).thenAnswer(invocation -> {
             List<RawContent> selected = invocation.getArgument(0);
-            assertThat(selected).extracting(RawContent::snsContentId)
-                    .containsExactly(
-                            "video-0", "video-1", "video-2", "video-3", "video-4",
-                            "video-5", "video-6", "video-7", "video-8", "video-9");
+            assertThat(selected)
+                    .extracting(RawContent::snsContentId)
+                    .containsExactlyElementsOf(IntStream.range(0, 52)
+                            .mapToObj(index -> "video-" + index)
+                            .toList());
             return selected.stream()
-                    .map(content -> "video-0".equals(content.snsContentId())
-                            ? content.withMetrics(100L, 20L, 3L)
-                            : content)
+                    .map(content -> switch (content.snsContentId()) {
+                        case "video-0" -> content.withMetrics(100L, 20L, 3L);
+                        case "video-1" -> content.withMetrics(200L, 10L, 1L);
+                        default -> content;
+                    })
                     .toList();
         });
 
@@ -115,6 +138,8 @@ class ApplicationMediaServiceTest {
 
         var result = service.collect(APPLICATION_ID);
 
+        verify(analysisQueuePublisher).publish(APPLICATION_ID);
+
         assertThat(result.fetchedCount()).isEqualTo(contents.size());
         assertThat(result.storedCount()).isEqualTo(52);
         assertThat(saved.get())
@@ -126,152 +151,213 @@ class ApplicationMediaServiceTest {
                 .extracting(ApplicationMedia::getSequenceNo)
                 .containsExactlyElementsOf(IntStream.range(0, 52).boxed().toList());
         assertThat(saved.get().getFirst()).satisfies(media -> {
+            assertThat(media.getSnsMediaId()).isEqualTo("video-0-media");
+            assertThat(media.getMediaSequenceNo()).isZero();
+            assertThat(media.getMediaType()).isEqualTo(MediaType.VIDEO);
+            assertThat(media.getMediaUrl()).isNull();
+            assertThat(media.getThumbnailUrl())
+                    .isEqualTo("https://cdn.example.com/video-0.jpg");
+            assertThat(media.getTitle()).isEqualTo("title video-0");
+            assertThat(media.getDescription()).isEqualTo("description video-0");
+            assertThat(media.getContentType()).isEqualTo(ContentType.LONG_FORM);
             assertThat(media.getViewCount()).isEqualTo(100L);
-            assertThat(media.getLikeCount()).isEqualTo(20L);
-            assertThat(media.getCommentCount()).isEqualTo(3L);
-            assertThat(media.getContentType()).isNull();
         });
-        assertThat(saved.get().get(10).getViewCount()).isNull();
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
         verify(mediaRepository).flush();
+        verify(youtubeFetcher).fetchByAccount("channel-id", COLLECTED_AT.minusDays(90));
         assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
         assertThat(application.getMediaCollectedAt()).isEqualTo(COLLECTED_AT);
+        assertThat(application.getEngagementRate()).isEqualByComparingTo("15.00");
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/channel-profile.jpg");
+        assertThat(application.getFollowerCount()).isEqualTo(12_345L);
+        assertThat(application.getContentCount()).isEqualTo(120L);
         assertThat(saved.get())
                 .extracting(ApplicationMedia::getCollectedAt)
                 .containsOnly(COLLECTED_AT);
-        verify(youtubeFetcher).fetchByAccount(
-                "channel-id", COLLECTED_AT.minusDays(90));
     }
 
     @Test
-    void collectRequestsAllInstagramContentsAndSkipsMissingMediaUrls() {
+    void storesOneRowPerInstagramAssetAndDropsOnlyInvalidChildren() {
         Application application = application(SnsPlatform.INSTAGRAM, "username");
+        application.updateProfileImageUrl("https://cdn.example.com/existing-profile.jpg");
+        application.fillMissingPublicMetrics(999L, 88L);
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
-        RawContent available = new RawContent(
+        RawContent reel = new RawContent(
                 SnsPlatform.INSTAGRAM,
-                "available",
-                "https://www.instagram.com/p/available",
+                "reel-1",
+                "https://www.instagram.com/reel/reel-1",
+                ContentType.SHORT_FORM,
+                List.of("reel caption"),
+                COLLECTED_AT,
+                List.of(
+                        new RawContentMedia(
+                                "media-1", RawContentMedia.MediaType.VIDEO,
+                                "https://cdn.example.com/reel.mp4",
+                                List.of("https://cdn.example.com/reel.jpg")),
+                        new RawContentMedia(
+                                "media-2", RawContentMedia.MediaType.IMAGE,
+                                "https://cdn.example.com/image.jpg"),
+                        new RawContentMedia(
+                                "missing-url", RawContentMedia.MediaType.IMAGE, null),
+                        new RawContentMedia(
+                                "text", RawContentMedia.MediaType.TEXT,
+                                "https://cdn.example.com/text")));
+        RawContent post = new RawContent(
+                SnsPlatform.INSTAGRAM,
+                "post-1",
+                "https://www.instagram.com/p/post-1",
                 ContentType.FEED,
-                List.of(),
-                LocalDateTime.of(2010, 1, 1, 0, 0),
+                List.of("post caption"),
+                COLLECTED_AT.minusDays(1),
                 List.of(new RawContentMedia(
-                        "available-media",
-                        RawContentMedia.MediaType.IMAGE,
-                        "https://cdn.example.com/available.jpg")));
+                        "media-3", RawContentMedia.MediaType.IMAGE,
+                        "https://cdn.example.com/post.jpg")));
         RawContent unavailable = new RawContent(
                 SnsPlatform.INSTAGRAM,
                 "unavailable",
                 "https://www.instagram.com/p/unavailable",
                 ContentType.FEED,
-                List.of(),
-                LocalDateTime.of(2009, 1, 1, 0, 0),
+                List.of("unavailable"),
+                COLLECTED_AT.minusDays(2),
                 List.of(new RawContentMedia(
-                        "unavailable-media",
-                        RawContentMedia.MediaType.VIDEO,
-                        null)));
-        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN))
-                .thenReturn(List.of(available, unavailable));
-        when(instagramFetcher.addStatistics(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                        "unavailable-media", RawContentMedia.MediaType.VIDEO, null)));
+        when(instagramFetcher.fetchByAccount("username", LocalDateTime.MIN, 10))
+                .thenReturn(List.of(reel, post, unavailable));
+        when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> {
+            List<RawContent> selected = invocation.getArgument(0);
+            assertThat(selected).extracting(RawContent::snsContentId)
+                    .containsExactly("reel-1", "post-1");
+            return selected;
+        });
         when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var result = service.collect(APPLICATION_ID);
 
-        assertThat(result.fetchedCount()).isEqualTo(2);
-        assertThat(result.storedCount()).isEqualTo(1);
-        assertThat(result.media()).singleElement().satisfies(media -> {
-            assertThat(media.snsContentId()).isEqualTo("available");
-            assertThat(media.mediaUrls())
-                    .containsExactly("https://cdn.example.com/available.jpg");
+        assertThat(result.fetchedCount()).isEqualTo(3);
+        assertThat(result.storedCount()).isEqualTo(3);
+        assertThat(result.media())
+                .extracting(media -> media.snsContentId() + ":" + media.snsMediaId())
+                .containsExactly("reel-1:media-1", "reel-1:media-2", "post-1:media-3");
+        assertThat(result.media().getFirst()).satisfies(media -> {
+            assertThat(media.sequenceNo()).isZero();
+            assertThat(media.mediaSequenceNo()).isZero();
+            assertThat(media.contentType()).isEqualTo(ContentType.SHORT_FORM);
+            assertThat(media.mediaType()).isEqualTo(MediaType.VIDEO);
+            assertThat(media.caption()).isEqualTo("reel caption");
+            assertThat(media.mediaUrl()).isEqualTo("https://cdn.example.com/reel.mp4");
+            assertThat(media.thumbnailUrl()).isEqualTo("https://cdn.example.com/reel.jpg");
         });
-        verify(instagramFetcher).fetchByAccount("username", LocalDateTime.MIN);
+        assertThat(result.media().get(1)).satisfies(media -> {
+            assertThat(media.sequenceNo()).isZero();
+            assertThat(media.mediaSequenceNo()).isEqualTo(1);
+            assertThat(media.mediaType()).isEqualTo(MediaType.IMAGE);
+            assertThat(media.thumbnailUrl()).isNull();
+        });
+        assertThat(result.media().get(2)).satisfies(media -> {
+            assertThat(media.sequenceNo()).isEqualTo(1);
+            assertThat(media.mediaSequenceNo()).isZero();
+            assertThat(media.contentType()).isEqualTo(ContentType.FEED);
+            assertThat(media.caption()).isEqualTo("post caption");
+        });
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.DONE);
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/existing-profile.jpg");
+        assertThat(application.getFollowerCount()).isEqualTo(999L);
+        assertThat(application.getContentCount()).isEqualTo(88L);
+        verify(instagramFetcher, never()).fetchProfile(any());
     }
 
     @Test
-    void collectDropsInstagramMetricsOutsideLatestTenSamples() {
-        Application application = application(SnsPlatform.INSTAGRAM, "username");
-        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
-        List<RawContent> contents = IntStream.range(0, 11)
-                .mapToObj(index -> raw(
-                        SnsPlatform.INSTAGRAM,
-                        "post-" + index,
-                        COLLECTED_AT.minusDays(index),
-                        1_000L + index,
-                        100L + index,
-                        10L + index))
-                .toList();
-        when(instagramFetcher.fetchByAccount(any(), any())).thenReturn(contents);
-        when(instagramFetcher.addStatistics(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    void ignoresBlankAndOverlongProfileImageUrls() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.updateProfileImageUrl("https://cdn.example.com/existing-profile.jpg");
 
-        AtomicReference<List<ApplicationMedia>> saved = new AtomicReference<>();
-        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<ApplicationMedia> values = invocation.getArgument(0);
-            saved.set(values);
-            return values;
-        });
+        application.updateProfileImageUrl("   ");
+        application.updateProfileImageUrl("x".repeat(501));
+
+        assertThat(application.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/existing-profile.jpg");
+    }
+
+    @Test
+    void synchronizesProfileImageCollectedAfterApproval() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.changeStatus(ApplicationStatus.APPROVED);
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount("channel-id", COLLECTED_AT.minusDays(90)))
+                .thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/new-profile.jpg", 12_345L, 120L));
+        when(youtubeFetcher.addStatistics(any())).thenReturn(List.of());
+        when(mediaRepository.saveAll(any())).thenReturn(List.of());
+
+        Selectors selectors = Selectors.builder()
+                .applicationId(APPLICATION_ID)
+                .userId(application.getUserId())
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 30L);
+        SelectorsSnsAccount account = SelectorsSnsAccount.builder()
+                .selectorsId(30L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("channel-id")
+                .build();
+        when(selectorsRepository.findByUserIdForUpdate(application.getUserId()))
+                .thenReturn(Optional.of(selectors));
+        when(selectorsSnsAccountRepository.findBySelectorsIdAndDeletedFalse(30L))
+                .thenReturn(Optional.of(account));
 
         service.collect(APPLICATION_ID);
 
-        assertThat(saved.get()).hasSize(11);
-        assertThat(saved.get().get(9)).satisfies(media -> {
-            assertThat(media.getViewCount()).isEqualTo(1_009L);
-            assertThat(media.getLikeCount()).isEqualTo(109L);
-            assertThat(media.getCommentCount()).isEqualTo(19L);
-        });
-        assertThat(saved.get().get(10)).satisfies(media -> {
-            assertThat(media.getViewCount()).isNull();
-            assertThat(media.getLikeCount()).isNull();
-            assertThat(media.getCommentCount()).isNull();
-        });
+        assertThat(account.getProfileImageUrl())
+                .isEqualTo("https://cdn.example.com/new-profile.jpg");
+        verify(applicationRepository).findByIdForUpdate(APPLICATION_ID);
+        verify(selectorsRepository).findByUserIdForUpdate(application.getUserId());
     }
 
     @Test
-    void collectStoresEveryMediaAndThumbnailUrl() {
-        Application application = application(SnsPlatform.INSTAGRAM, "username");
+    void doesNotSynchronizeProfileImageForSupersededApplication() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        application.changeStatus(ApplicationStatus.APPROVED);
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
-        RawContent content = new RawContent(
-                SnsPlatform.INSTAGRAM,
-                "post-1",
-                "https://www.instagram.com/reel/post-1",
-                ContentType.SHORT_FORM,
-                List.of(),
-                COLLECTED_AT,
-                List.of(
-                        new RawContentMedia(
-                                "media-1",
-                                RawContentMedia.MediaType.VIDEO,
-                                "https://cdn.example.com/post-1.mp4",
-                                List.of("https://cdn.example.com/post-1.jpg")),
-                        new RawContentMedia(
-                                "media-2",
-                                RawContentMedia.MediaType.IMAGE,
-                                "https://cdn.example.com/post-2.jpg"),
-                        new RawContentMedia(
-                                "media-3",
-                                RawContentMedia.MediaType.IMAGE,
-                                null)));
-        when(instagramFetcher.fetchByAccount(any(), any())).thenReturn(List.of(content));
-        when(instagramFetcher.addStatistics(any())).thenReturn(List.of(content));
-        when(mediaRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(youtubeFetcher.fetchByAccount("channel-id", COLLECTED_AT.minusDays(90)))
+                .thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/new-profile.jpg", 12_345L, 120L));
+        when(youtubeFetcher.addStatistics(any())).thenReturn(List.of());
+        when(mediaRepository.saveAll(any())).thenReturn(List.of());
 
-        var result = service.collect(APPLICATION_ID);
+        Selectors selectors = Selectors.builder()
+                .applicationId(999L)
+                .userId(application.getUserId())
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 30L);
+        when(selectorsRepository.findByUserIdForUpdate(application.getUserId()))
+                .thenReturn(Optional.of(selectors));
 
-        assertThat(result.media()).singleElement().satisfies(media -> {
-            assertThat(media.contentUrl())
-                    .isEqualTo("https://www.instagram.com/reel/post-1");
-            assertThat(media.mediaUrl())
-                    .isEqualTo("https://cdn.example.com/post-1.mp4");
-            assertThat(media.mediaUrls()).containsExactly(
-                    "https://cdn.example.com/post-1.mp4",
-                    "https://cdn.example.com/post-2.jpg");
-            assertThat(media.thumbnailUrls())
-                    .containsExactly("https://cdn.example.com/post-1.jpg");
-            assertThat(media.contentType()).isEqualTo(ContentType.SHORT_FORM);
-        });
+        service.collect(APPLICATION_ID);
+
+        verify(selectorsSnsAccountRepository, never())
+                .findBySelectorsIdAndDeletedFalse(any());
     }
 
     @Test
-    void collectKeepsExistingSnapshotWhenClientFails() {
+    void fillsOnlyMissingPublicMetrics() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+
+        application.fillMissingPublicMetrics(999L, 88L);
+        application.fillMissingPublicMetrics(1L, 2L);
+
+        assertThat(application.getFollowerCount()).isEqualTo(999L);
+        assertThat(application.getContentCount()).isEqualTo(88L);
+    }
+
+    @Test
+    void keepsExistingSnapshotWhenClientFails() {
         Application application = application(SnsPlatform.YOUTUBE, "channel-id");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
         when(youtubeFetcher.fetchByAccount(any(), any()))
@@ -288,17 +374,38 @@ class ApplicationMediaServiceTest {
     }
 
     @Test
-    void findLatestReturnsStoredContents() {
+    void retriesWhenRequiredPublicProfileCountIsMissing() {
+        Application application = application(SnsPlatform.YOUTUBE, "channel-id");
+        when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
+        when(youtubeFetcher.fetchByAccount(any(), any())).thenReturn(List.of());
+        when(youtubeFetcher.fetchProfile("channel-id"))
+                .thenReturn(new ContentFetcher.Profile(
+                        "https://cdn.example.com/profile.jpg", 12_345L, null));
+
+        assertThatThrownBy(() -> service.collect(APPLICATION_ID))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(mediaRepository, never()).deleteByApplicationId(any());
+        assertThat(application.getMediaCollectionStatus()).isEqualTo(MediaCollectionStatus.FAILED);
+        assertThat(application.getMediaCollectionRetryCount()).isEqualTo(1);
+    }
+
+    @Test
+    void findLatestReturnsStoredAssetsInPostAndAssetOrder() {
         Application application = application(SnsPlatform.INSTAGRAM, "username");
         when(applicationRepository.findById(APPLICATION_ID)).thenReturn(Optional.of(application));
-        when(mediaRepository.findTop3ByApplicationIdOrderBySequenceNoAsc(APPLICATION_ID))
-                .thenReturn(List.of(media("post-1", 0), media("post-2", 1), media("post-3", 2)));
+        when(mediaRepository.findTop3ByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(
+                APPLICATION_ID))
+                .thenReturn(List.of(
+                        media("post-1", "media-1", 0, 0),
+                        media("post-1", "media-2", 0, 1),
+                        media("post-2", "media-3", 1, 0)));
 
         var result = service.findLatest(APPLICATION_ID);
 
         assertThat(result)
-                .extracting(response -> response.snsContentId())
-                .containsExactly("post-1", "post-2", "post-3");
+                .extracting(response -> response.snsContentId() + ":" + response.snsMediaId())
+                .containsExactly("post-1:media-1", "post-1:media-2", "post-2:media-3");
     }
 
     private Application application(SnsPlatform platform, String accountId) {
@@ -312,40 +419,44 @@ class ApplicationMediaServiceTest {
                 .status(ApplicationStatus.PENDING)
                 .build();
         ReflectionTestUtils.setField(application, "id", APPLICATION_ID);
+        lenient().when(applicationRepository.findByIdForUpdate(APPLICATION_ID))
+                .thenReturn(Optional.of(application));
         return application;
     }
 
     private RawContent raw(SnsPlatform platform, String contentId, LocalDateTime createdAt) {
-        return raw(platform, contentId, createdAt, null, null, null);
-    }
-
-    private RawContent raw(SnsPlatform platform, String contentId, LocalDateTime createdAt,
-                           Long viewCount, Long likeCount, Long commentCount) {
         List<RawContentMedia> media = platform == SnsPlatform.INSTAGRAM
                 ? List.of(new RawContentMedia(
-                        contentId, RawContentMedia.MediaType.IMAGE,
+                        contentId + "-media", RawContentMedia.MediaType.IMAGE,
                         "https://cdn.example.com/" + contentId + ".jpg"))
-                : List.of();
+                : List.of(new RawContentMedia(
+                        contentId + "-media", RawContentMedia.MediaType.VIDEO, null,
+                        List.of("https://cdn.example.com/" + contentId + ".jpg")));
+        List<String> texts = platform == SnsPlatform.YOUTUBE
+                ? List.of("title " + contentId, "description " + contentId)
+                : List.of("caption " + contentId);
         return new RawContent(
                 platform,
                 contentId,
                 "https://example.com/" + contentId,
-                ContentType.FEED,
-                List.of(),
+                platform == SnsPlatform.YOUTUBE ? ContentType.LONG_FORM : ContentType.FEED,
+                texts,
                 createdAt,
-                media,
-                viewCount,
-                likeCount,
-                commentCount);
+                media);
     }
 
-    private ApplicationMedia media(String contentId, int sequenceNo) {
+    private ApplicationMedia media(
+            String contentId, String mediaId, int sequenceNo, int mediaSequenceNo) {
         return ApplicationMedia.builder()
                 .applicationId(APPLICATION_ID)
                 .snsCode(SnsPlatform.INSTAGRAM)
                 .snsContentId(contentId)
-                .mediaUrl("https://example.com/" + contentId)
+                .snsMediaId(mediaId)
+                .mediaUrl("https://example.com/" + mediaId)
+                .contentType(ContentType.POST)
+                .mediaType(MediaType.IMAGE)
                 .sequenceNo(sequenceNo)
+                .mediaSequenceNo(mediaSequenceNo)
                 .publishedAt(COLLECTED_AT.minusDays(sequenceNo))
                 .collectedAt(COLLECTED_AT)
                 .build();

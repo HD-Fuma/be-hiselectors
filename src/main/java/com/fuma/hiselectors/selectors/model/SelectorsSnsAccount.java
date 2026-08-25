@@ -42,6 +42,9 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
     @Column(name = "account_id", length = 100)
     private String accountId;
 
+    @Column(name = "profile_url", length = 500)
+    private String profileUrl;
+
     @Column(name = "follower_count")
     private Long followerCount;
 
@@ -56,11 +59,12 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
 
     @Builder
     private SelectorsSnsAccount(Long selectorsId, SnsPlatform snsCode, String accountId,
-                                Long followerCount, boolean deleted,
+                                String profileUrl, Long followerCount, boolean deleted,
                                 LocalDateTime lastCollectedAt, String profileImageUrl) {
         this.selectorsId = selectorsId;
         this.snsCode = snsCode;
         this.accountId = accountId;
+        this.profileUrl = profileUrl;
         this.followerCount = followerCount;
         this.deleted = deleted;
         this.lastCollectedAt = lastCollectedAt;
@@ -71,14 +75,42 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
         this.lastCollectedAt = collectedAt;
     }
 
-    public void synchronize(SnsPlatform snsCode, String accountId, Long followerCount) {
-        if (this.snsCode != snsCode || !Objects.equals(this.accountId, accountId)) {
+    public void synchronize(SnsPlatform snsCode, String accountId, Long followerCount,
+                            String profileUrl, String profileImageUrl) {
+        boolean accountChanged = this.snsCode != snsCode
+                || !Objects.equals(this.accountId, accountId);
+        if (accountChanged) {
             this.lastCollectedAt = null;
+            this.profileUrl = null;
             this.profileImageUrl = null;
         }
         this.snsCode = snsCode;
         this.accountId = accountId;
         this.followerCount = followerCount;
+        if (profileUrl != null && !profileUrl.isBlank()) {
+            this.profileUrl = profileUrl;
+        }
+        if (!hasText(this.profileImageUrl) && validProfileImageUrl(profileImageUrl)) {
+            this.profileImageUrl = profileImageUrl;
+        }
         this.deleted = false;
+    }
+
+    public void synchronizeProfileImageUrl(
+            SnsPlatform snsCode, String accountId, String profileImageUrl) {
+        if (this.snsCode == snsCode
+                && Objects.equals(this.accountId, accountId)
+                && !hasText(this.profileImageUrl)
+                && validProfileImageUrl(profileImageUrl)) {
+            this.profileImageUrl = profileImageUrl;
+        }
+    }
+
+    private boolean validProfileImageUrl(String value) {
+        return hasText(value) && value.length() <= 500;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

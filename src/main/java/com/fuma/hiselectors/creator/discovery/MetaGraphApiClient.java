@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.discovery;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fuma.hiselectors.content.config.InstagramCollectionProperties;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse;
 import com.fuma.hiselectors.creator.discovery.dto.InstagramBusinessDiscoveryResponse.BusinessDiscovery;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -21,6 +22,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Component
 public class MetaGraphApiClient {
 
+    private static final String GRAPH_API_HOST = "https://graph.facebook.com";
     private static final int DEFAULT_MEDIA_LIMIT = 5;
     private static final int MAX_MEDIA_LIMIT = 25;
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9._]{1,30}");
@@ -31,10 +33,11 @@ public class MetaGraphApiClient {
     private static final Pattern ERROR_MESSAGE_PATTERN =
             Pattern.compile("\\\"message\\\"\\s*:\\s*\\\"([^\\\"]*)");
 
-    private final MetaGraphProperties properties;
+    private final InstagramCollectionProperties properties;
     private final RestClient restClient;
 
-    public MetaGraphApiClient(MetaGraphProperties properties, RestClient oauthRestClient) {
+    public MetaGraphApiClient(
+            InstagramCollectionProperties properties, RestClient oauthRestClient) {
         this.properties = properties;
         this.restClient = oauthRestClient;
     }
@@ -52,8 +55,8 @@ public class MetaGraphApiClient {
         int safeMediaLimit = Math.max(1, Math.min(mediaLimit, MAX_MEDIA_LIMIT));
         String fields = fields(username, safeMediaLimit);
         URI uri = UriComponentsBuilder
-                .fromUriString(properties.baseUrlOrDefault())
-                .pathSegment(properties.apiVersionOrDefault(), properties.igUserId())
+                .fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), properties.businessAccountId())
                 .queryParam("fields", fields)
                 .build()
                 .encode()
@@ -95,8 +98,8 @@ public class MetaGraphApiClient {
             throw new BusinessException(ErrorCode.META_GRAPH_CONFIG_MISSING);
         }
         URI uri = UriComponentsBuilder
-                .fromUriString(properties.baseUrlOrDefault())
-                .pathSegment(properties.apiVersionOrDefault(), mediaId)
+                .fromUriString(GRAPH_API_HOST)
+                .pathSegment(properties.apiVersion(), mediaId)
                 .queryParam("fields", "media_url,thumbnail_url")
                 .build()
                 .encode()

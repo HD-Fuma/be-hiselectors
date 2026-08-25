@@ -19,6 +19,7 @@ public interface ContentBatchAccountRepository
               and sg.selectorsId = selectors.id
               and sg.generationId = :generationId
               and selectors.deleted = false
+              and selectors.selectorsRoleId = 'ACTIVE'
               and account.deleted = false
             order by account.id
             """)

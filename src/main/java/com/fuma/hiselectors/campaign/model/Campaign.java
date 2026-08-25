@@ -61,6 +61,10 @@ public class Campaign extends BaseTimeEntity {
         if (thumbnailUrl != null) this.thumbnailUrl = thumbnailUrl;
     }
 
+    public void clearThumbnail() {
+        this.thumbnailUrl = null;
+    }
+
     public void softDelete() {
         this.isDeleted = true;
     }

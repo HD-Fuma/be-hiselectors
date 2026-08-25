@@ -18,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class YoutubeSttClient {
 
+    private static final int MAX_OUTPUT_TOKENS = 1024;
+
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
@@ -27,14 +29,16 @@ public class YoutubeSttClient {
     private static final String ANALYSIS_MARKER = "===분석===";
 
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final InspectionPromptProvider promptProvider;
     // 작은 분석 JSON 파싱용. 상태 없는 파서라 빈 주입 없이 직접 만든다.
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public YoutubeSttClient(GeminiProperties properties,
+    public YoutubeSttClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor,
                             InspectionPromptProvider promptProvider) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.promptProvider = promptProvider;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
@@ -56,23 +60,24 @@ public class YoutubeSttClient {
                         Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
-                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+                        "thinkingConfig", Map.of("thinkingLevel", "minimal"),
+                        "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
         return parse(rawText(call(body)));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.modelOrDefault());
         try {
-            return restClient.post()
-                    .uri(uri)
-                    .header("x-goog-api-key", properties.apiKey())  // 키를 URL 대신 헤더로(로그 유출 방지)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            return requestExecutor.execute(properties.modelOrDefault(), attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
         } catch (RestClientException e) {
-            log.warn("Gemini STT 호출 실패. model={}", properties.modelOrDefault(), e);
+            log.warn("Gemini STT 후보를 모두 소진했습니다.", e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
@@ -87,7 +92,7 @@ public class YoutubeSttClient {
         String finish = candidate.finishReason();
         if (finish != null && !"STOP".equals(finish)) {
             // MAX_TOKENS(출력 잘림), SAFETY, RECITATION 등 → 불완전/차단이므로 실패.
-            // 잘린 전사를 성공으로 반환하지 않는다. 잘리면 gemini.max-output-tokens 를 올린다.
+            // 압축 추출이 잘렸다면 불완전 결과이므로 실패 처리한다.
             log.warn("Gemini 정상 종료 아님. finishReason={}", finish);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }

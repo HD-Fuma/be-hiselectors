@@ -4,22 +4,25 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.stt.ContentInsight;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import com.fuma.hiselectors.stt.SttResult;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,21 +35,38 @@ public class YoutubeIntegratedInspectionClient {
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final GeminiAiInspectionClient inspectionMapper;
     private final RestClient restClient;
 
+    @Autowired
     public YoutubeIntegratedInspectionClient(
             GeminiProperties properties,
+            GeminiRequestExecutor requestExecutor,
             ObjectMapper objectMapper,
             GeminiAiInspectionClient inspectionMapper) {
+        this(properties, requestExecutor, objectMapper, inspectionMapper, createRestClient());
+    }
+
+    YoutubeIntegratedInspectionClient(
+            GeminiProperties properties,
+            GeminiRequestExecutor requestExecutor,
+            ObjectMapper objectMapper,
+            GeminiAiInspectionClient inspectionMapper,
+            RestClient restClient) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.objectMapper = objectMapper;
         this.inspectionMapper = inspectionMapper;
+        this.restClient = restClient;
+    }
+
+    private static RestClient createRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         factory.setReadTimeout(Duration.ofMinutes(5));
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        return RestClient.builder().requestFactory(factory).build();
     }
 
     public IntegratedInspectionResult inspect(
@@ -80,14 +100,22 @@ public class YoutubeIntegratedInspectionClient {
                             "responseMimeType", "application/json",
                             "responseJsonSchema", integratedResponseSchema(),
                             "maxOutputTokens", properties.maxOutputTokensOrDefault()));
-            GeminiResponse response = restClient.post()
-                    .uri(ENDPOINT.formatted(policy.getAiModelName()))
-                    .header("x-goog-api-key", properties.apiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            GeminiResponse response = requestExecutor.execute(policy.getAiModelName(), attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
             return map(extractText(response));
+        } catch (RestClientResponseException e) {
+            log.warn("Gemini YouTube 통합 검수 오류 응답. videoId={}, status={}",
+                    videoId, e.getStatusCode());
+            if (e.getStatusCode().value() == 429) {
+                throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED);
+            }
+            throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);
         } catch (RestClientException | JacksonException | IllegalArgumentException e) {
             log.warn("Gemini YouTube 통합 검수 실패. videoId={}", videoId, e);
             throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);
@@ -115,7 +143,7 @@ public class YoutubeIntegratedInspectionClient {
         Map<String, Object> policyJson = new LinkedHashMap<>();
         policyJson.put("report", raw.report());
         policyJson.put("violations", raw.violations() == null ? List.of() : raw.violations());
-        AiInspectionResult inspection = inspectionMapper.mapResponse(
+        AiInspectionResponse inspection = inspectionMapper.mapResponse(
                 objectMapper.writeValueAsString(policyJson));
         return new IntegratedInspectionResult(sttResult, inspection);
     }

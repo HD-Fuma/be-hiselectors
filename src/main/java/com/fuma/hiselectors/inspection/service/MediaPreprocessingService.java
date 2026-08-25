@@ -5,7 +5,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.ai.YoutubeIntegratedInspectionClient;
-import com.fuma.hiselectors.inspection.model.AiInspectionResult;
+import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
@@ -45,14 +45,14 @@ public class MediaPreprocessingService {
         }
         Optional<ContentMedia> video = media.stream()
                 .filter(item -> item.getMediaType() == MediaType.VIDEO)
-                .filter(item -> youtubeVideoId(item.getMediaUrl()) != null)
+                .filter(item -> resolveYoutubeVideoId(content, item) != null)
                 .findFirst();
         if (video.isEmpty()) {
             return PreprocessingResult.reused();
         }
 
         ContentMedia target = video.get();
-        String videoId = youtubeVideoId(target.getMediaUrl());
+        String videoId = resolveYoutubeVideoId(content, target);
         String inputHash = sha256(videoId);
         if (canReuse(target, inputHash, activePolicy)) {
             return PreprocessingResult.reused();
@@ -66,9 +66,33 @@ public class MediaPreprocessingService {
                 Optional.of(result.inspection()), Optional.of(extractionUpdate));
     }
 
+    /** 기존 추출 결과를 덮어쓰지 않고 새 버전에서 다시 추출해야 하는지 판별한다. */
+    public boolean requiresNewVersion(
+            Content content, List<ContentMedia> media, InspectionPolicy activePolicy) {
+        if (content.getSnsCode() != SnsPlatform.YOUTUBE) {
+            return false;
+        }
+        return media.stream()
+                .filter(item -> item.getMediaType() == MediaType.VIDEO)
+                .filter(item -> resolveYoutubeVideoId(content, item) != null)
+                .anyMatch(item -> requiresNewVersion(content, item, activePolicy));
+    }
+
+    private boolean requiresNewVersion(
+            Content content, ContentMedia media, InspectionPolicy activePolicy) {
+        Map<String, Object> body = media.bodyOrEmpty();
+        if (body.containsKey("stt") || body.containsKey("ocr")) {
+            return true;
+        }
+        if (media.getExtractedWithPolicyId() == null) {
+            return !body.isEmpty();
+        }
+        String videoId = resolveYoutubeVideoId(content, media);
+        return videoId == null || !canReuse(media, sha256(videoId), activePolicy);
+    }
+
     private boolean canReuse(ContentMedia media, String inputHash, InspectionPolicy activePolicy) {
-        if (!media.bodyOrEmpty().containsKey("stt")
-                || !media.bodyOrEmpty().containsKey("ocr")
+        if (!media.bodyOrEmpty().containsKey("text")
                 || media.getExtractedWithPolicyId() == null
                 || !inputHash.equals(media.getExtractionInputHash())) {
             return false;
@@ -81,17 +105,31 @@ public class MediaPreprocessingService {
 
     private MediaExtractionUpdate applyExtraction(ContentMedia media, SttResult result,
                                                   Long policyId, String inputHash) {
-        Map<String, Object> body = new LinkedHashMap<>(media.bodyOrEmpty());
-        body.put("summary", result.summary());
-        body.put("stt", result.stt().isBlank() ? List.of()
-                : List.of(Map.of("text", result.stt())));
-        body.put("ocr", result.ocr().isBlank() ? List.of()
-                : List.of(Map.of("text", result.ocr())));
+        if (!media.bodyOrEmpty().isEmpty() || media.getExtractedWithPolicyId() != null) {
+            throw new IllegalStateException("추출이 완료된 ContentMedia.body는 덮어쓸 수 없습니다.");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("text", combineText(result.stt(), result.ocr()));
         LocalDateTime extractedAt = LocalDateTime.now(clock);
         media.replaceBody(body);
         media.markExtracted(policyId, inputHash, extractedAt);
         return new MediaExtractionUpdate(
                 media.getId(), Map.copyOf(body), policyId, inputHash, extractedAt);
+    }
+
+    static String combineText(String stt, String ocr) {
+        return java.util.stream.Stream.of(stt, ocr)
+                .filter(java.util.Objects::nonNull)
+                .map(String::strip)
+                .filter(value -> !value.isEmpty())
+                .collect(java.util.stream.Collectors.joining("\n\n"));
+    }
+
+    private String resolveYoutubeVideoId(Content content, ContentMedia media) {
+        if (media.getSnsMediaId() != null && !media.getSnsMediaId().isBlank()) {
+            return media.getSnsMediaId().strip();
+        }
+        return youtubeVideoId(content.getContentUrl());
     }
 
     private String youtubeVideoId(String url) {
@@ -135,7 +173,7 @@ public class MediaPreprocessingService {
     }
 
     public record PreprocessingResult(
-            Optional<AiInspectionResult> integratedAiResult,
+            Optional<AiInspectionResponse> integratedAiResult,
             Optional<MediaExtractionUpdate> extractionUpdate) {
 
         public PreprocessingResult {

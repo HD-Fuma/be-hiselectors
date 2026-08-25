@@ -12,10 +12,13 @@ import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
 import com.fuma.hiselectors.application.model.ApplicationReport;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
@@ -26,7 +29,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -51,6 +57,7 @@ public class ApplicationAdminService {
     private final ApplicationReportRepository reportRepository;
     private final UserRepository userRepository;
     private final GenerationRepository generationRepository;
+    private final YoutubeContentFetcher youtubeContentFetcher;
 
     // 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감(주입 아님).
     private final tools.jackson.databind.ObjectMapper objectMapper =
@@ -69,8 +76,14 @@ public class ApplicationAdminService {
                 r.getContentStyle(),
                 r.getTone(),
                 r.getStrength(),
-                r.getWarning(),
+                r.getCautions(),
+                r.getRisks(),
                 r.getBrandHistory(),
+                r.getRepresentativeContentUrl(),
+                r.getRepresentativeContentType(),
+                r.getRepresentativeViewCount(),
+                r.getRepresentativeCategory(),
+                splitCsv(r.getRepresentativeKeywords()),
                 r.getStatus(),
                 r.getCreatedAt());
     }
@@ -103,20 +116,25 @@ public class ApplicationAdminService {
             SnsPlatform snsCode,
             ApplicationStatus status,
             Long generationId,
+            Boolean hasAiReport,
             Boolean minimumCriteriaOnly,
             Pageable pageable) {
+        ContentAnalysisStatus analysisStatus = Boolean.TRUE.equals(hasAiReport)
+                ? ContentAnalysisStatus.DONE : null;
         Page<Application> applications = applicationRepository.searchAdmin(
-                normalize(keyword), snsCode, status, generationId, minimumCriteriaOnly, pageable);
+                normalize(keyword), snsCode, status, generationId, analysisStatus, minimumCriteriaOnly, pageable);
         List<Long> applicationIds = applications.stream().map(Application::getId).toList();
         Map<Long, User> users = byId(userRepository.findAllById(
                 applications.stream().map(Application::getUserId).distinct().toList()), User::getId);
         Map<Long, Generation> generations = byId(generationRepository.findAllById(
                 applications.stream().map(Application::getGenerationId).distinct().toList()),
                 Generation::getId);
+        Map<String, String> youtubeTitles = youtubeChannelTitles(applications.getContent());
         Map<Long, List<ApplicationMedia>> mediaByApplication = applicationIds.isEmpty()
                 ? Map.of()
                 : mediaRepository
-                        .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAsc(applicationIds)
+                        .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(
+                                applicationIds)
                         .stream()
                         .collect(Collectors.groupingBy(ApplicationMedia::getApplicationId));
 
@@ -124,7 +142,8 @@ public class ApplicationAdminService {
                 application,
                 requiredUser(users, application.getUserId()),
                 requiredGeneration(generations, application.getGenerationId()),
-                mediaByApplication.getOrDefault(application.getId(), List.of())));
+                mediaByApplication.getOrDefault(application.getId(), List.of()),
+                snsDisplayName(application, youtubeTitles)));
     }
 
     public AdminApplicationDetailResponse findDetail(Long applicationId) {
@@ -135,7 +154,7 @@ public class ApplicationAdminService {
         Generation generation = generationRepository.findById(application.getGenerationId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.GENERATION_NOT_FOUND));
         List<ApplicationMedia> contents = mediaRepository
-                .findAllByApplicationIdOrderBySequenceNoAsc(applicationId);
+                .findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(applicationId);
         List<ApplicationMedia> recentContents = recentContents(application, contents);
 
         return new AdminApplicationDetailResponse(
@@ -149,9 +168,13 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                snsDisplayName(application, youtubeChannelTitles(List.of(application))),
+                application.getProfileUrl(),
+                application.getProfileImageUrl(),
                 application.getFollowerCount(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
+                application.getAnalysisStatus(),
                 application.getCreatedAt(),
                 application.getMediaCollectedAt(),
                 application.getUpdatedAt(),
@@ -163,7 +186,8 @@ public class ApplicationAdminService {
             Application application,
             User user,
             Generation generation,
-            List<ApplicationMedia> contents) {
+            List<ApplicationMedia> contents,
+            String snsDisplayName) {
         List<ApplicationMedia> recentContents = recentContents(application, contents);
         Long recentCount = application.getMediaCollectedAt() == null
                 ? null : (long) recentContents.size();
@@ -178,15 +202,34 @@ public class ApplicationAdminService {
                 generation.getGenerationName(),
                 application.getSnsCode(),
                 application.getSnsAccountId(),
+                snsDisplayName,
+                application.getProfileUrl(),
                 application.getFollowerCount(),
                 application.getContentCount(),
                 recentCount,
-                engagementRate(recentContents, application.getFollowerCount()).value(),
+                application.getEngagementRate(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
                 application.getCreatedAt(),
                 application.getMediaCollectedAt(),
                 application.getUpdatedAt());
+    }
+
+    private Map<String, String> youtubeChannelTitles(List<Application> applications) {
+        List<String> channelIds = applications.stream()
+                .filter(application -> application.getSnsCode() == SnsPlatform.YOUTUBE)
+                .map(Application::getSnsAccountId)
+                .toList();
+        return channelIds.isEmpty()
+                ? Map.of()
+                : youtubeContentFetcher.fetchChannelTitles(channelIds);
+    }
+
+    private String snsDisplayName(Application application, Map<String, String> youtubeTitles) {
+        return application.getSnsCode() == SnsPlatform.YOUTUBE
+                ? youtubeTitles.getOrDefault(
+                        application.getSnsAccountId(), application.getSnsAccountId())
+                : application.getSnsAccountId();
     }
 
     private QuantitativeMetrics metrics(
@@ -198,17 +241,88 @@ public class ApplicationAdminService {
                 .max(LocalDateTime::compareTo)
                 .orElse(null);
 
+        MetricAverage averageViewCount = average(recentContents, ApplicationMedia::getViewCount);
+        MetricAverage averageLikeCount = average(recentContents, ApplicationMedia::getLikeCount);
+        MetricAverage averageCommentCount = average(recentContents, ApplicationMedia::getCommentCount);
+        PeerAverages peers = peerAverages();
+
         return new QuantitativeMetrics(
                 ANALYSIS_WINDOW_DAYS,
                 application.getContentCount(),
                 recentCount,
                 lastPublishedAt,
                 cadence(recentContents, collected),
-                average(recentContents, ApplicationMedia::getViewCount),
-                average(recentContents, ApplicationMedia::getLikeCount),
-                average(recentContents, ApplicationMedia::getCommentCount),
-                engagementRate(recentContents, application.getFollowerCount()),
-                contentFormats(recentContents));
+                averageViewCount,
+                averageLikeCount,
+                averageCommentCount,
+                engagementRate(application, recentContents),
+                contentFormats(recentContents),
+                topPercentile(averageViewCount.value(), peers.viewAverages()),
+                topPercentile(averageLikeCount.value(), peers.likeAverages()),
+                topPercentile(averageCommentCount.value(), peers.commentAverages()));
+    }
+
+    /**
+     * 정량 지표 백분위 비교 모수. 미디어 수집이 끝난 전체 지원자의 평균 조회·좋아요·댓글을
+     * 한 번에 모아온다(요청당 1회). 지원자 규모가 커지면 캐싱을 고려해야 한다.
+     */
+    private PeerAverages peerAverages() {
+        List<Application> collected = applicationRepository
+                .findAllByMediaCollectionStatus(MediaCollectionStatus.DONE);
+        if (collected.isEmpty()) {
+            return new PeerAverages(List.of(), List.of(), List.of());
+        }
+        List<Long> peerIds = collected.stream().map(Application::getId).toList();
+        Map<Long, List<ApplicationMedia>> mediaByApplication = mediaRepository
+                .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(peerIds)
+                .stream()
+                .collect(Collectors.groupingBy(ApplicationMedia::getApplicationId));
+
+        List<BigDecimal> viewAverages = new ArrayList<>();
+        List<BigDecimal> likeAverages = new ArrayList<>();
+        List<BigDecimal> commentAverages = new ArrayList<>();
+        for (Application peer : collected) {
+            List<ApplicationMedia> peerRecentContents = recentContents(
+                    peer, mediaByApplication.getOrDefault(peer.getId(), List.of()));
+            addIfPresent(viewAverages, average(peerRecentContents, ApplicationMedia::getViewCount));
+            addIfPresent(likeAverages, average(peerRecentContents, ApplicationMedia::getLikeCount));
+            addIfPresent(commentAverages, average(peerRecentContents, ApplicationMedia::getCommentCount));
+        }
+        Collections.sort(viewAverages);
+        Collections.sort(likeAverages);
+        Collections.sort(commentAverages);
+        return new PeerAverages(viewAverages, likeAverages, commentAverages);
+    }
+
+    private void addIfPresent(List<BigDecimal> target, MetricAverage average) {
+        if (average.value() != null) {
+            target.add(average.value());
+        }
+    }
+
+    /**
+     * value 가 sortedPeers(오름차순, 본인 포함) 중 상위 몇 %인지. 1=최상위, 100=최하위.
+     * 동점은 평균 순위로 처리한다. 비교 대상이 없으면 null.
+     */
+    private Integer topPercentile(BigDecimal value, List<BigDecimal> sortedPeers) {
+        if (value == null || sortedPeers.isEmpty()) {
+            return null;
+        }
+        if (sortedPeers.size() == 1) {
+            return 1;
+        }
+        long strictlyLower = sortedPeers.stream().filter(peer -> peer.compareTo(value) < 0).count();
+        long equal = sortedPeers.stream().filter(peer -> peer.compareTo(value) == 0).count();
+        double averageRank = strictlyLower + (equal - 1) / 2.0;
+        double percentRank = averageRank / (sortedPeers.size() - 1) * 100;
+        long topPercent = Math.round(100 - percentRank);
+        return (int) Math.max(1, Math.min(100, topPercent));
+    }
+
+    private record PeerAverages(
+            List<BigDecimal> viewAverages,
+            List<BigDecimal> likeAverages,
+            List<BigDecimal> commentAverages) {
     }
 
     private List<ApplicationMedia> recentContents(
@@ -218,11 +332,16 @@ public class ApplicationAdminService {
             return List.of();
         }
         LocalDateTime collectedAfter = collectedAt.minusDays(ANALYSIS_WINDOW_DAYS);
-        return contents.stream()
+        return List.copyOf(contents.stream()
                 .filter(content -> content.getPublishedAt() != null)
                 .filter(content -> !content.getPublishedAt().isBefore(collectedAfter))
                 .filter(content -> !content.getPublishedAt().isAfter(collectedAt))
-                .toList();
+                .collect(Collectors.toMap(
+                        ApplicationMedia::getSnsContentId,
+                        Function.identity(),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new))
+                .values());
     }
 
     private UploadCadence cadence(List<ApplicationMedia> contents, boolean collected) {
@@ -259,19 +378,15 @@ public class ApplicationAdminService {
         return averageOf(measured);
     }
 
-    private MetricAverage engagementRate(List<ApplicationMedia> contents, Long followerCount) {
-        if (followerCount == null || followerCount <= 0) {
-            return new MetricAverage(null, 0);
-        }
-        List<BigDecimal> measured = contents.stream()
-                .filter(content -> content.getLikeCount() != null
-                        && content.getCommentCount() != null)
-                .map(content -> BigDecimal.valueOf(content.getLikeCount())
-                        .add(BigDecimal.valueOf(content.getCommentCount()))
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(BigDecimal.valueOf(followerCount), 8, RoundingMode.HALF_UP))
-                .toList();
-        return averageOf(measured);
+    private MetricAverage engagementRate(
+            Application application, List<ApplicationMedia> contents) {
+        long sampleCount = contents.stream()
+                .filter(content -> content.getViewCount() != null && content.getViewCount() > 0)
+                .filter(content -> content.getLikeCount() != null && content.getLikeCount() >= 0)
+                .filter(content -> content.getCommentCount() != null
+                        && content.getCommentCount() >= 0)
+                .count();
+        return new MetricAverage(application.getEngagementRate(), sampleCount);
     }
 
     private MetricAverage averageOf(List<BigDecimal> values) {

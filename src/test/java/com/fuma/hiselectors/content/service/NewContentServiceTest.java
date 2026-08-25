@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -29,6 +30,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,6 +56,9 @@ class NewContentServiceTest {
     private ContentFetcher fetcher;
 
     @Mock
+    private ContentFetcher youtubeFetcher;
+
+    @Mock
     private SelectorsContentClassifier classifier;
 
     @Mock
@@ -75,7 +80,7 @@ class NewContentServiceTest {
         service = new NewContentService(
                 generationService,
                 accountRepository,
-                List.of(fetcher),
+                List.of(fetcher, youtubeFetcher),
                 classifier,
                 contentRepository,
                 versionRepository,
@@ -148,9 +153,10 @@ class NewContentServiceTest {
         when(classifier.isSelectorsContent(rejected)).thenReturn(false);
         when(classifier.isSelectorsContent(selected)).thenReturn(true);
 
-        List<RawContent> candidates = service.newCandidates(target);
+        NewContentService.NewContentSelection selection = service.newCandidates(target);
 
-        assertThat(candidates).containsExactly(duplicate, selected);
+        assertThat(selection.candidateCount()).isEqualTo(3);
+        assertThat(selection.selectorsContents()).containsExactly(duplicate, selected);
         verify(fetcher).fetchByAccount("instagram-account", since);
     }
 
@@ -170,7 +176,10 @@ class NewContentServiceTest {
                 List.of(new RawContentMedia(
                         "image-1",
                         RawContentMedia.MediaType.IMAGE,
-                        "https://cdn.example.com/image.jpg")));
+                        "https://cdn.example.com/image.jpg",
+                        List.of(
+                                "https://cdn.example.com/image-small.jpg",
+                                "https://cdn.example.com/image-thumbnail.jpg"))));
         AtomicReference<List<Content>> savedContents = new AtomicReference<>();
         AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
         AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
@@ -210,7 +219,11 @@ class NewContentServiceTest {
 
         NewContentService.NewContentResult result = service.collect();
 
-        assertThat(result).isEqualTo(new NewContentService.NewContentResult(1, 0));
+        assertThat(result.savedContentCount()).isEqualTo(1);
+        assertThat(result.failedAccountCount()).isZero();
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new NewContentService.PlatformCollectionStats(1, 1, 1, 0));
         assertThat(savedContents.get()).singleElement().satisfies(content -> {
             assertThat(content.getSelectorsId()).isEqualTo(1L);
             assertThat(content.getSnsContentId()).isEqualTo("selected");
@@ -232,11 +245,51 @@ class NewContentServiceTest {
         });
         assertThat(savedMedia.get().get(1)).satisfies(media -> {
             assertThat(media.getMediaType()).isEqualTo(MediaType.IMAGE);
+            assertThat(media.getThumbnailUrl())
+                    .isEqualTo("https://cdn.example.com/image-thumbnail.jpg");
             assertThat(media.getSnsMediaId()).isEqualTo("image-1");
             assertThat(media.getSequenceNo()).isEqualTo(1);
         });
         verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
                 account.getId(), SnsPlatform.INSTAGRAM, "instagram-account", collectedAt);
+    }
+
+    @Test
+    void separatesInstagramAndYoutubeCollectionStats() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount instagram = platformAccount(
+                SnsPlatform.INSTAGRAM, "instagram-account", null);
+        SelectorsSnsAccount youtube = platformAccount(
+                SnsPlatform.YOUTUBE, "youtube-account", null);
+        RawContent instagramContent = raw(SnsPlatform.INSTAGRAM, "instagram-content");
+        RawContent youtubeContent = raw(SnsPlatform.YOUTUBE, "youtube-content");
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(instagram, youtube));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(fetcher.fetchByAccount("instagram-account", generationStart))
+                .thenReturn(List.of(instagramContent));
+        when(youtubeFetcher.fetchByAccount("youtube-account", generationStart))
+                .thenReturn(List.of(youtubeContent));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("instagram-content"))).thenReturn(List.of());
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.YOUTUBE, List.of("youtube-content"))).thenReturn(List.of());
+        when(classifier.isSelectorsContent(instagramContent)).thenReturn(true);
+        when(classifier.isSelectorsContent(youtubeContent)).thenReturn(true);
+        when(transactionTemplate.execute(any())).thenReturn(1);
+
+        NewContentService.NewContentResult result = service.collect();
+
+        assertThat(result.platformStats()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                SnsPlatform.INSTAGRAM,
+                new NewContentService.PlatformCollectionStats(1, 1, 1, 0),
+                SnsPlatform.YOUTUBE,
+                new NewContentService.PlatformCollectionStats(1, 1, 1, 0)));
     }
 
     @Test
@@ -274,8 +327,13 @@ class NewContentServiceTest {
         when(mediaRepository.saveAll(any()))
                 .thenThrow(new IllegalStateException("media save failed"));
 
-        assertThat(service.collect()).isEqualTo(
-                new NewContentService.NewContentResult(0, 1));
+        NewContentService.NewContentResult result = service.collect();
+
+        assertThat(result.savedContentCount()).isZero();
+        assertThat(result.failedAccountCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new NewContentService.PlatformCollectionStats(1, 1, 0, 1));
         verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
                 account.getId(), SnsPlatform.INSTAGRAM, "instagram-account",
                 LocalDateTime.of(2026, 8, 20, 12, 0));
@@ -318,8 +376,13 @@ class NewContentServiceTest {
             return values;
         });
 
-        assertThat(service.collect()).isEqualTo(
-                new NewContentService.NewContentResult(1, 1));
+        NewContentService.NewContentResult result = service.collect();
+
+        assertThat(result.savedContentCount()).isEqualTo(1);
+        assertThat(result.failedAccountCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new NewContentService.PlatformCollectionStats(1, 1, 1, 1));
         verify(accountRepository).advanceCollectionCursorIfAccountUnchanged(
                 successfulAccount.getId(), SnsPlatform.INSTAGRAM, "successful-account",
                 LocalDateTime.of(2026, 8, 20, 12, 0));
@@ -352,8 +415,13 @@ class NewContentServiceTest {
         when(accountRepository.advanceCollectionCursorIfAccountUnchanged(
                 any(), any(), any(), any())).thenReturn(0);
 
-        assertThat(service.collect()).isEqualTo(
-                new NewContentService.NewContentResult(0, 1));
+        NewContentService.NewContentResult result = service.collect();
+
+        assertThat(result.savedContentCount()).isZero();
+        assertThat(result.failedAccountCount()).isEqualTo(1);
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new NewContentService.PlatformCollectionStats(1, 1, 0, 1));
         verify(contentRepository, never()).saveAll(any());
     }
 
@@ -376,6 +444,70 @@ class NewContentServiceTest {
         assertThatThrownBy(service::collect).isSameAs(failure);
     }
 
+    @Test
+    void reportsSavedContentAndFailureAfterEachAccount() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount successfulAccount = instagramAccount("successful", null);
+        SelectorsSnsAccount failedAccount = instagramAccount("failed", null);
+        RawContent first = raw("first", "셀렉터스");
+        RawContent second = raw("second", "셀렉터스");
+        List<NewContentService.NewContentProgress> progress = new ArrayList<>();
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(successfulAccount, failedAccount));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(fetcher.fetchByAccount("successful", generationStart))
+                .thenReturn(List.of(first, second));
+        when(fetcher.fetchByAccount("failed", generationStart))
+                .thenThrow(new IllegalStateException("fetch failed"));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.INSTAGRAM, List.of("first", "second"))).thenReturn(List.of());
+        when(classifier.isSelectorsContent(first)).thenReturn(true);
+        when(classifier.isSelectorsContent(second)).thenReturn(true);
+        when(transactionTemplate.execute(any())).thenReturn(2);
+
+        NewContentService.NewContentResult result = service.collect(progress::add);
+
+        assertThat(progress).containsExactly(
+                new NewContentService.NewContentProgress(2, 0),
+                new NewContentService.NewContentProgress(0, 1));
+        assertThat(result.savedContentCount()).isEqualTo(2);
+        assertThat(result.failedAccountCount()).isEqualTo(1);
+    }
+
+    @Test
+    void propagatesProgressCallbackFailure() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount account = instagramAccount(null);
+        IllegalStateException failure = new IllegalStateException("progress failed");
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L)).thenReturn(List.of(account));
+        when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(fetcher.fetchByAccount("instagram-account", generationStart)).thenReturn(List.of());
+        when(transactionTemplate.execute(any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.collect(update -> {
+            throw failure;
+        })).isSameAs(failure);
+    }
+
+    @Test
+    void rejectsNullProgressCallbackBeforeLookingUpTargets() {
+        assertThatThrownBy(() -> service.collect(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("진행 콜백은 필수입니다.");
+
+        verifyNoInteractions(generationService);
+    }
+
     private SelectorsSnsAccount account(LocalDateTime lastCollectedAt) {
         return SelectorsSnsAccount.builder()
                 .selectorsId(1L)
@@ -390,9 +522,14 @@ class NewContentServiceTest {
 
     private SelectorsSnsAccount instagramAccount(
             String accountId, LocalDateTime lastCollectedAt) {
+        return platformAccount(SnsPlatform.INSTAGRAM, accountId, lastCollectedAt);
+    }
+
+    private SelectorsSnsAccount platformAccount(
+            SnsPlatform platform, String accountId, LocalDateTime lastCollectedAt) {
         SelectorsSnsAccount account = SelectorsSnsAccount.builder()
                 .selectorsId(1L)
-                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsCode(platform)
                 .accountId(accountId)
                 .lastCollectedAt(lastCollectedAt)
                 .build();
@@ -407,6 +544,17 @@ class NewContentServiceTest {
                 "https://example.com/" + id,
                 ContentType.FEED,
                 caption,
+                LocalDateTime.of(2026, 8, 20, 11, 0),
+                List.of());
+    }
+
+    private RawContent raw(SnsPlatform platform, String id) {
+        return new RawContent(
+                platform,
+                id,
+                "https://example.com/" + id,
+                ContentType.FEED,
+                "셀렉터스 콘텐츠",
                 LocalDateTime.of(2026, 8, 20, 11, 0),
                 List.of());
     }

@@ -32,6 +32,7 @@ public class InstagramDiscoveryService {
 
     private final MetaGraphApiClient metaGraphApiClient;
     private final InstagramEngagementCalculator engagementCalculator;
+    private final PublicEmailExtractor publicEmailExtractor;
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final TransactionTemplate transactionTemplate;
@@ -50,6 +51,16 @@ public class InstagramDiscoveryService {
         // 외부 네트워크 호출은 DB 저장 트랜잭션 밖에서 수행한다.
         BusinessDiscovery discovered = metaGraphApiClient.discover(
                 instagramHandle, RECENT_MEDIA_LIMIT);
+        String email = publicEmailExtractor.extract(discovered.biography())
+                .or(() -> publicEmailExtractor.extract(sourceCreator.getEmail()))
+                .orElse(null);
+        if (email == null || email.isBlank()) {
+            transactionTemplate.execute(status -> {
+                softDeleteExisting(discovered);
+                return null;
+            });
+            throw new BusinessException(ErrorCode.CREATOR_EMAIL_REQUIRED);
+        }
         BigDecimal engagementRate = engagementCalculator.calculate(
                 discovered.followersCount(), discovered.media());
         LocalDateTime lastContentAt = lastContentAt(discovered);
@@ -60,6 +71,7 @@ public class InstagramDiscoveryService {
                     youtubeCreatorId,
                     sourceCreator.getCategory(),
                     discovered,
+                    email,
                     engagementRate,
                     lastContentAt,
                     recent90DayContentCount
@@ -69,7 +81,7 @@ public class InstagramDiscoveryService {
             // 실패한 요청은 승리한 행을 다시 읽어 정상적인 갱신 결과로 반환한다.
             return Objects.requireNonNull(transactionTemplate.execute(status ->
                     updateAfterConcurrentInsert(
-                            youtubeCreatorId, discovered, engagementRate, lastContentAt,
+                            youtubeCreatorId, discovered, email, engagementRate, lastContentAt,
                             recent90DayContentCount)));
         }
     }
@@ -78,6 +90,7 @@ public class InstagramDiscoveryService {
             Long sourceCreatorId,
             String sourceCategory,
             BusinessDiscovery discovered,
+            String email,
             BigDecimal engagementRate,
             LocalDateTime lastContentAt,
             int recent90DayContentCount) {
@@ -102,6 +115,7 @@ public class InstagramDiscoveryService {
                     .snsCode(SnsPlatform.INSTAGRAM.name())
                     .accountId(instagramId)
                     .creatorName(username)
+                    .email(email)
                     .followerCount(discovered.followersCount())
                     .lastContentAt(lastContentAt)
                     .engagementRate(engagementRate)
@@ -111,6 +125,7 @@ public class InstagramDiscoveryService {
             if (!instagramId.equals(creator.getAccountId())) {
                 creator.migrateAccountId(instagramId);
             }
+            creator.updateEmail(email);
             creator.updateProfile(username, discovered.followersCount(),
                     engagementRate, lastContentAt);
             if (creator.isDeleted()) {
@@ -132,9 +147,25 @@ public class InstagramDiscoveryService {
         );
     }
 
+    private void softDeleteExisting(BusinessDiscovery discovered) {
+        CreatorPool creator = null;
+        if (discovered.id() != null && !discovered.id().isBlank()) {
+            creator = creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                    SnsPlatform.INSTAGRAM.name(), discovered.id()).orElse(null);
+        }
+        if (creator == null && discovered.username() != null && !discovered.username().isBlank()) {
+            creator = creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
+                    SnsPlatform.INSTAGRAM.name(), discovered.username()).orElse(null);
+        }
+        if (creator != null) {
+            creator.softDelete();
+        }
+    }
+
     private InstagramDiscoveryResult updateAfterConcurrentInsert(
             Long sourceCreatorId,
             BusinessDiscovery discovered,
+            String email,
             BigDecimal engagementRate,
             LocalDateTime lastContentAt,
             int recent90DayContentCount) {
@@ -142,6 +173,7 @@ public class InstagramDiscoveryService {
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(
                         SnsPlatform.INSTAGRAM.name(), discovered.id())
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        creator.updateEmail(email);
         creator.updateProfile(discovered.username(), discovered.followersCount(),
                 engagementRate, lastContentAt);
         if (creator.isDeleted()) {

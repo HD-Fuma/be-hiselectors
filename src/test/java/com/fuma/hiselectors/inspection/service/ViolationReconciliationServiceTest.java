@@ -12,6 +12,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
+import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.inspection.model.ViolationStatus;
@@ -194,7 +195,7 @@ class ViolationReconciliationServiceTest {
     }
 
     private ViolationEvidence evidence(String reason) {
-        return new ViolationEvidence(reason, 1.0, List.of());
+        return new ViolationEvidence(reason, 1.0, List.of(), EvidenceSource.AI);
     }
 
     private record Fixture(

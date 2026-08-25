@@ -32,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class CategoryAdminService {
 
+    private static final int MIN_KEYWORD_LENGTH = 2;
+    private static final int MAX_KEYWORD_LENGTH = 30;
+
     private final CategoryRepository categoryRepository;
     private final DiscoveryKeywordRepository keywordRepository;
     private final CreatorDiscoverySourceRepository discoverySourceRepository;
@@ -106,7 +109,11 @@ public class CategoryAdminService {
     @Transactional
     public KeywordCreateResponse addKeyword(Long categoryId, KeywordCreateRequest request) {
         Category category = getCategory(categoryId);
-        String keyword = request.keyword().trim();
+        String keyword = request.keyword() == null ? "" : request.keyword().trim();
+        if (keyword.length() < MIN_KEYWORD_LENGTH || keyword.length() > MAX_KEYWORD_LENGTH) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "키워드는 2자 이상 30자 이하여야 합니다.");
+        }
 
         if (category.hasKeyword(keyword)) {
             throw new BusinessException(ErrorCode.KEYWORD_DUPLICATED,

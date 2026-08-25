@@ -11,6 +11,14 @@ public enum ErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 HTTP 메서드입니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
+
+    // --- 작업 실행 ---
+    TASK_ALREADY_RUNNING(HttpStatus.CONFLICT, "같은 작업이 이미 실행 중입니다."),
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "멱등 키가 다른 요청에 이미 사용되었습니다."),
+    TASK_RUN_NOT_FOUND(HttpStatus.NOT_FOUND, "작업 실행 이력을 찾을 수 없습니다."),
+    TASK_RUN_LEASE_LOST(HttpStatus.CONFLICT, "작업 실행 권한이 만료되었습니다."),
+    INVALID_TASK_RUN_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 작업 실행 상태 변경입니다."),
+
     // --- 인증 / 인가 ---
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
@@ -71,7 +79,10 @@ public enum ErrorCode {
 
     // --- 캠페인 ---
     CAMPAIGN_NOT_FOUND(HttpStatus.NOT_FOUND, "캠페인을 찾을 수 없습니다."),
-    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "종료된 캠페인만 삭제할 수 있습니다."),
+    CAMPAIGN_DELETE_NOT_ALLOWED(HttpStatus.CONFLICT, "시작 전 캠페인만 삭제할 수 있습니다."),
+    MEDIA_STORAGE_CONFIG_MISSING(HttpStatus.INTERNAL_SERVER_ERROR, "미디어 저장소 설정이 누락되었습니다."),
+    MEDIA_UPLOAD_FAILED(HttpStatus.BAD_GATEWAY, "미디어 파일 업로드에 실패했습니다."),
+    MEDIA_DELETE_FAILED(HttpStatus.BAD_GATEWAY, "미디어 파일 삭제에 실패했습니다."),
 
     // --- 정산 ---
     SETTLEMENT_NOT_CALCULATED(HttpStatus.NOT_FOUND, "계산된 정산 이력이 없습니다."),
@@ -79,6 +90,8 @@ public enum ErrorCode {
     INVALID_SETTLEMENT_AMOUNT(HttpStatus.CONFLICT, "정산 대상 매출에 원 단위 미만 금액이 포함되어 있습니다."),
     SETTLEMENT_ACTIVITY_MONTH_DUPLICATED(HttpStatus.CONFLICT, "같은 활동월의 정산 이력이 중복되어 있습니다."),
     INVALID_SETTLEMENT_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 정산 상태 변경입니다."),
+    SETTLEMENT_ENCRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보 암호화 설정이 올바르지 않습니다."),
+    SETTLEMENT_DECRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보를 복호화할 수 없습니다."),
 
     // --- 발굴 카테고리 / 키워드 ---
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."),
@@ -159,10 +172,24 @@ public enum ErrorCode {
     // --- 콘텐츠 검수 / 위반 ---
     CONTENT_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠를 찾을 수 없습니다."),
     CONTENT_VERSION_NOT_FOUND(HttpStatus.NOT_FOUND, "콘텐츠 버전을 찾을 수 없습니다."),
+    HISTORICAL_CONTENT_VERSION_INSPECTION_NOT_ALLOWED(
+            HttpStatus.CONFLICT, "최신 콘텐츠 버전만 검수할 수 있습니다."),
+    INVALID_CONTENT_INSPECTION_CONFIRMATION(
+            HttpStatus.BAD_REQUEST, "콘텐츠 검수 확정 요청이 올바르지 않습니다."),
+    CONTENT_INSPECTION_ALREADY_CONFIRMED(
+            HttpStatus.CONFLICT, "이미 확정된 콘텐츠 검수입니다."),
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
+    AI_CONTENT_INSPECTION_QUOTA_EXCEEDED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "AI 콘텐츠 검수 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다."),
-    INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다.");
+    INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다."),
+
+    // --- 크리에이터 제안 ---
+    ADMIN_NOT_FOUND(HttpStatus.NOT_FOUND, "관리자를 찾을 수 없습니다."),
+    CREATOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "크리에이터의 공개 이메일을 확인할 수 없습니다."),
+    PROPOSAL_MAIL_SEND_FAILED(HttpStatus.BAD_GATEWAY, "제안 메일 발송에 실패했습니다.");
 
     private final HttpStatus status;
     private final String message;

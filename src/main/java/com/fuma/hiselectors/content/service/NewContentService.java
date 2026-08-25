@@ -1,11 +1,13 @@
 package com.fuma.hiselectors.content.service;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.classifier.SelectorsContentClassifier;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.repository.ContentBatchAccountRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -16,10 +18,13 @@ import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,23 +48,42 @@ public class NewContentService {
 
     /** 신규 셀렉터스 콘텐츠와 최초 버전을 저장합니다. */
     public NewContentResult collect() {
+        return collect(progress -> {
+        });
+    }
+
+    public NewContentResult collect(Consumer<NewContentProgress> progress) {
+        Objects.requireNonNull(progress, "진행 콜백은 필수입니다.");
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
         int savedCount = 0;
         int failedAccountCount = 0;
+        Map<SnsPlatform, PlatformCollectionStats> platformStats =
+                new EnumMap<>(SnsPlatform.class);
 
         for (CollectionTarget target : collectionTargets()) {
+            NewContentSelection selection = null;
+            int savedContentDelta = 0;
+            int failedAccountDelta = 0;
             try {
-                List<RawContent> candidates = newCandidates(target);
+                NewContentSelection selected = newCandidates(target);
+                selection = selected;
                 Integer saved = transactionTemplate.execute(status ->
-                        save(target.account(), candidates, collectedAt));
-                savedCount += saved == null ? 0 : saved;
+                        save(target.account(), selected.selectorsContents(), collectedAt));
+                int savedVersions = saved == null ? 0 : saved;
+                savedContentDelta = savedVersions;
+                savedCount += savedVersions;
+                mergeStats(platformStats, target.account().getSnsCode(),
+                        selection, savedVersions, 0);
             } catch (RuntimeException exception) {
+                failedAccountDelta = 1;
                 failedAccountCount++;
+                mergeStats(platformStats, target.account().getSnsCode(), selection, 0, 1);
                 log.error("신규 콘텐츠 수집에 실패했습니다. accountId={}",
                         target.account().getAccountId(), exception);
             }
+            progress.accept(new NewContentProgress(savedContentDelta, failedAccountDelta));
         }
-        return new NewContentResult(savedCount, failedAccountCount);
+        return new NewContentResult(savedCount, failedAccountCount, Map.copyOf(platformStats));
     }
 
     /** 현재 기수의 계정별 수집 시작 시각 결정 */
@@ -71,7 +95,7 @@ public class NewContentService {
                 .toList();
     }
 
-    List<RawContent> newCandidates(CollectionTarget target) {
+    NewContentSelection newCandidates(CollectionTarget target) {
         SelectorsSnsAccount account = target.account();
 
         // 계정 플랫폼에 맞는 Fetcher로 신규 후보 조회
@@ -95,7 +119,7 @@ public class NewContentService {
             }
         }
         if (uniqueContents.isEmpty()) {
-            return List.of();
+            return new NewContentSelection(0, List.of());
         }
 
         List<String> candidateIds = uniqueContents.stream()
@@ -109,11 +133,29 @@ public class NewContentService {
             existingIds.add(content.getSnsContentId());
         }
 
-        // 신규 콘텐츠 중 셀렉터스 콘텐츠만 반환
-        return uniqueContents.stream()
+        List<RawContent> newContents = uniqueContents.stream()
                 .filter(content -> !existingIds.contains(content.snsContentId()))
+                .toList();
+
+        // 신규 콘텐츠 중 셀렉터스 콘텐츠만 반환
+        List<RawContent> selectorsContents = newContents.stream()
                 .filter(classifier::isSelectorsContent)
                 .toList();
+        return new NewContentSelection(newContents.size(), selectorsContents);
+    }
+
+    private void mergeStats(
+            Map<SnsPlatform, PlatformCollectionStats> stats,
+            SnsPlatform platform,
+            NewContentSelection selection,
+            int savedVersionCount,
+            int failedAccountCount) {
+        PlatformCollectionStats update = new PlatformCollectionStats(
+                selection == null ? 0 : selection.candidateCount(),
+                selection == null ? 0 : selection.selectorsContents().size(),
+                savedVersionCount,
+                failedAccountCount);
+        stats.merge(platform, update, PlatformCollectionStats::plus);
     }
 
     private LocalDateTime since(
@@ -150,7 +192,8 @@ public class NewContentService {
                         contents.get(index).getId(),
                         1L,
                         rawContents.get(index),
-                        collectedAt));
+                        collectedAt,
+                        ContentVersionCreationReason.INITIAL));
             }
             versions = versionRepository.saveAll(versions);
 
@@ -168,6 +211,34 @@ public class NewContentService {
     record CollectionTarget(SelectorsSnsAccount account, LocalDateTime since) {
     }
 
-    public record NewContentResult(int savedContentCount, int failedAccountCount) {
+    record NewContentSelection(int candidateCount, List<RawContent> selectorsContents) {
+    }
+
+    public record PlatformCollectionStats(
+            int candidateCount,
+            int selectorsContentCount,
+            int savedVersionCount,
+            int failedAccountCount) {
+
+        private PlatformCollectionStats plus(PlatformCollectionStats other) {
+            return new PlatformCollectionStats(
+                    candidateCount + other.candidateCount,
+                    selectorsContentCount + other.selectorsContentCount,
+                    savedVersionCount + other.savedVersionCount,
+                    failedAccountCount + other.failedAccountCount);
+        }
+    }
+
+    public record NewContentResult(
+            int savedContentCount,
+            int failedAccountCount,
+            Map<SnsPlatform, PlatformCollectionStats> platformStats) {
+
+        public NewContentResult(int savedContentCount, int failedAccountCount) {
+            this(savedContentCount, failedAccountCount, Map.of());
+        }
+    }
+
+    public record NewContentProgress(int savedContentDelta, int failedAccountDelta) {
     }
 }

@@ -1,30 +1,35 @@
 package com.fuma.hiselectors.content.scheduler;
 
-import com.fuma.hiselectors.content.service.ContentBatchService;
-import com.fuma.hiselectors.content.service.ContentBatchService.ContentBatchResult;
+import com.fuma.hiselectors.content.task.ContentSyncTask;
+import com.fuma.hiselectors.taskrun.model.TaskType;
+import com.fuma.hiselectors.taskrun.model.TriggerType;
+import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
+import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class ContentBatchScheduler {
 
-    private final ContentBatchService contentBatchService;
+    private final TaskRunExecutionService taskRunExecutionService;
+    private final ContentSyncTask contentSyncTask;
+    private final ObjectMapper objectMapper;
 
     @Scheduled(
             cron = "${content.batch.cron:-}",
             zone = "${content.batch.zone:Asia/Seoul}")
     public void runContentBatch() {
-        ContentBatchResult result = contentBatchService.run();
-        log.info(
-                "콘텐츠 배치 완료: newContentCount={}, engagementCount={}, "
-                        + "newContentSucceeded={}, storedContentSucceeded={}",
-                result.newContentCount(),
-                result.engagementCount(),
-                result.newContentSucceeded(),
-                result.storedContentSucceeded());
+        taskRunExecutionService.submit(
+                new TaskStartCommand(
+                        TaskType.CONTENT_SYNC,
+                        TriggerType.SCHEDULED,
+                        null,
+                        UUID.randomUUID(),
+                        objectMapper.createObjectNode()),
+                contentSyncTask);
     }
 }

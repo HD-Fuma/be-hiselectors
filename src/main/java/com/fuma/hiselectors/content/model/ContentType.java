@@ -4,5 +4,7 @@ public enum ContentType {
     SHORT_FORM,
     LONG_FORM,
     SHORTS,
-    FEED
+    FEED,
+    REELS,
+    POST
 }
