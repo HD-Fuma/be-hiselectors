@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -82,8 +83,9 @@ public class ContentInspectionAdminController {
     public ResponseEntity<ContentInspectionConfirmationResponse> confirmInspection(
             @PathVariable Long contentId,
             @PathVariable Long contentVersionId,
-            @Valid @RequestBody ContentInspectionConfirmationRequest request) {
+            @Valid @RequestBody ContentInspectionConfirmationRequest request,
+            Principal principal) {
         return ResponseEntity.ok(contentInspectionConfirmationService.confirm(
-                contentId, contentVersionId, request));
+                contentId, contentVersionId, request, principal.getName()));
     }
 }

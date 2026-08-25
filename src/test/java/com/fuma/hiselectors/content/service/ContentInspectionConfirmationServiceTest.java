@@ -3,13 +3,18 @@ package com.fuma.hiselectors.content.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest.ViolationDecision;
+import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.repository.ContentReportRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -27,6 +32,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class ContentInspectionConfirmationServiceTest {
@@ -36,11 +43,13 @@ class ContentInspectionConfirmationServiceTest {
         Fixture fixture = fixture(List.of());
 
         var response = fixture.service.confirm(10L, 100L,
-                request(ContentInspectionDecision.APPROVED, List.of()));
+                request(ContentInspectionDecision.APPROVED, List.of()), "admin");
 
         assertThat(response.updatedCount()).isZero();
         assertThat(fixture.version.getInspectionDecision())
                 .isEqualTo(ContentInspectionDecision.APPROVED);
+        verify(fixture.eventPublisher, never()).publishEvent(
+                org.mockito.ArgumentMatchers.any(ContentViolationConfirmedEvent.class));
     }
 
     @Test
@@ -52,7 +61,7 @@ class ContentInspectionConfirmationServiceTest {
         var response = fixture.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
                         target(21L, ViolationStatus.DISMISSED),
-                        target(22L, ViolationStatus.DISMISSED))));
+                        target(22L, ViolationStatus.DISMISSED))), "admin");
 
         assertThat(response.updatedCount()).isEqualTo(2);
         assertThat(first.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
@@ -68,11 +77,16 @@ class ContentInspectionConfirmationServiceTest {
         var response = fixture.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.REJECTED, List.of(
                         target(21L, ViolationStatus.VIOLATION_CONFIRMED),
-                        target(22L, ViolationStatus.DISMISSED))));
+                        target(22L, ViolationStatus.DISMISSED))), "admin");
 
         assertThat(response.updatedCount()).isEqualTo(2);
         assertThat(first.getStatus()).isEqualTo(ViolationStatus.VIOLATION_CONFIRMED);
         assertThat(second.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
+        ArgumentCaptor<ContentViolationConfirmedEvent> eventCaptor =
+                ArgumentCaptor.forClass(ContentViolationConfirmedEvent.class);
+        verify(fixture.eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue()).isEqualTo(
+                new ContentViolationConfirmedEvent("admin", 10L, 5L));
     }
 
     @Test
@@ -81,7 +95,7 @@ class ContentInspectionConfirmationServiceTest {
 
         assertInvalid(() -> fixture.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
-                        target(21L, ViolationStatus.VIOLATION_CONFIRMED)))));
+                        target(21L, ViolationStatus.VIOLATION_CONFIRMED))), "admin"));
     }
 
     @Test
@@ -90,7 +104,7 @@ class ContentInspectionConfirmationServiceTest {
 
         assertInvalid(() -> fixture.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.REJECTED, List.of(
-                        target(21L, ViolationStatus.DISMISSED)))));
+                        target(21L, ViolationStatus.DISMISSED))), "admin"));
     }
 
     @Test
@@ -98,29 +112,29 @@ class ContentInspectionConfirmationServiceTest {
         Fixture missing = fixture(List.of(item(21L), item(22L)));
         assertInvalid(() -> missing.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
-                        target(21L, ViolationStatus.DISMISSED)))));
+                        target(21L, ViolationStatus.DISMISSED))), "admin"));
 
         Fixture additional = fixture(List.of(item(21L)));
         assertInvalid(() -> additional.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
                         target(21L, ViolationStatus.DISMISSED),
-                        target(999L, ViolationStatus.DISMISSED)))));
+                        target(999L, ViolationStatus.DISMISSED))), "admin"));
 
         Fixture duplicate = fixture(List.of(item(21L)));
         assertInvalid(() -> duplicate.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
                         target(21L, ViolationStatus.DISMISSED),
-                        target(21L, ViolationStatus.DISMISSED)))));
+                        target(21L, ViolationStatus.DISMISSED))), "admin"));
     }
 
     @Test
     void rejectsAlreadyConfirmedVersion() {
         Fixture fixture = fixture(List.of());
         fixture.service.confirm(10L, 100L,
-                request(ContentInspectionDecision.APPROVED, List.of()));
+                request(ContentInspectionDecision.APPROVED, List.of()), "admin");
 
         assertThatThrownBy(() -> fixture.service.confirm(10L, 100L,
-                request(ContentInspectionDecision.APPROVED, List.of())))
+                request(ContentInspectionDecision.APPROVED, List.of()), "admin"))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED));
@@ -131,7 +145,7 @@ class ContentInspectionConfirmationServiceTest {
         Fixture fixture = fixture(List.of());
 
         assertThatThrownBy(() -> fixture.service.confirm(11L, 100L,
-                request(ContentInspectionDecision.APPROVED, List.of())))
+                request(ContentInspectionDecision.APPROVED, List.of()), "admin"))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.getErrorCode())
                                 .isEqualTo(ErrorCode.CONTENT_VERSION_NOT_FOUND));
@@ -143,7 +157,7 @@ class ContentInspectionConfirmationServiceTest {
 
         assertInvalid(() -> fixture.service.confirm(10L, 100L,
                 request(ContentInspectionDecision.APPROVED, List.of(
-                        target(21L, ViolationStatus.PENDING)))));
+                        target(21L, ViolationStatus.PENDING))), "admin"));
     }
 
     private Fixture fixture(List<ViolationItem> items) {
@@ -153,7 +167,16 @@ class ContentInspectionConfirmationServiceTest {
         ViolationEvidenceHistoryRepository histories =
                 mock(ViolationEvidenceHistoryRepository.class);
         ViolationItemRepository violations = mock(ViolationItemRepository.class);
+        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
+        Content content = Content.builder()
+                .selectorsId(5L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId("post-1")
+                .contentUrl("https://instagram.com/p/post-1")
+                .contentType(ContentType.FEED)
+                .build();
+        ReflectionTestUtils.setField(content, "id", 10L);
         ContentVersion version = ContentVersion.create(10L, 1L, "hash");
         ReflectionTestUtils.setField(version, "id", 100L);
         version.startInspection();
@@ -161,8 +184,8 @@ class ContentInspectionConfirmationServiceTest {
         ContentReport report = ContentReport.create(
                 100L, ContentReportData.empty(), 7L);
 
-        when(contents.existsById(10L)).thenReturn(true);
-        when(contents.existsById(11L)).thenReturn(true);
+        when(contents.findById(10L)).thenReturn(Optional.of(content));
+        when(contents.findById(11L)).thenReturn(Optional.of(content));
         when(versions.findByIdForUpdate(100L)).thenReturn(Optional.of(version));
         when(reports.findFirstByContentVersionIdOrderByIdDesc(100L))
                 .thenReturn(Optional.of(report));
@@ -178,7 +201,8 @@ class ContentInspectionConfirmationServiceTest {
                     .thenReturn(items);
         }
         return new Fixture(new ContentInspectionConfirmationService(
-                contents, versions, reports, histories, violations), version);
+                contents, versions, reports, histories, violations, eventPublisher),
+                version, eventPublisher);
     }
 
     private ViolationItem item(Long id) {
@@ -212,6 +236,7 @@ class ContentInspectionConfirmationServiceTest {
 
     private record Fixture(
             ContentInspectionConfirmationService service,
-            ContentVersion version) {
+            ContentVersion version,
+            ApplicationEventPublisher eventPublisher) {
     }
 }

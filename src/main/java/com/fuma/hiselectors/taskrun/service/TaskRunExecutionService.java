@@ -93,10 +93,13 @@ public class TaskRunExecutionService {
 
     private TaskRunTerminalSnapshot failRunning(TaskLease lease, Exception failure) {
         try {
+            String errorType = failure instanceof BusinessException businessException
+                    ? businessException.getErrorCode().name()
+                    : failure.getClass().getSimpleName();
             return taskRunService.fail(
                     lease.runId(),
                     lease.token(),
-                    failure.getClass().getSimpleName(),
+                    errorType,
                     failure.getMessage());
         } catch (BusinessException transitionFailure) {
             log.info("Task run {} no longer owns its terminal transition: {}",

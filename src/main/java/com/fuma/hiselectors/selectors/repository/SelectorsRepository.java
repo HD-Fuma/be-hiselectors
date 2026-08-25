@@ -86,7 +86,12 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
             where s.deleted = false
               and (:roleId is null or s.selectorsRoleId = :roleId)
               and (:nickname is null
-                   or s.selectorsNickname like concat('%', :nickname, '%'))
+                   or s.selectorsNickname like concat('%', :nickname, '%')
+                   or exists (
+                        select 1 from SelectorsSnsAccount account
+                        where account.selectorsId = s.id
+                          and account.deleted = false
+                          and account.accountId like concat('%', :nickname, '%')))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))
@@ -100,7 +105,12 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
             where s.deleted = false
               and (:roleId is null or s.selectorsRoleId = :roleId)
               and (:nickname is null
-                   or s.selectorsNickname like concat('%', :nickname, '%'))
+                   or s.selectorsNickname like concat('%', :nickname, '%')
+                   or exists (
+                        select 1 from SelectorsSnsAccount account
+                        where account.selectorsId = s.id
+                          and account.deleted = false
+                          and account.accountId like concat('%', :nickname, '%')))
               and (:generationId is null or exists (
                     select 1 from SelectorsGeneration sg
                     where sg.selectorsId = s.id and sg.generationId = :generationId))

@@ -3,6 +3,7 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest.ViolationDecision;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationResponse;
+import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentVersion;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,13 +40,15 @@ public class ContentInspectionConfirmationService {
     private final ContentReportRepository contentReportRepository;
     private final ViolationEvidenceHistoryRepository historyRepository;
     private final ViolationItemRepository violationItemRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ContentInspectionConfirmationResponse confirm(
             Long contentId,
             Long contentVersionId,
-            ContentInspectionConfirmationRequest request) {
-        requireContent(contentId);
+            ContentInspectionConfirmationRequest request,
+            String adminLoginId) {
+        Content content = requireContent(contentId);
         ContentVersion version = requireOwnedVersionForUpdate(contentId, contentVersionId);
         if (version.getInspectionDecision() != null) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
@@ -79,13 +83,16 @@ public class ContentInspectionConfirmationService {
         }
         version.confirmInspection(request.decision());
         violationItemRepository.flush();
+        if (requestedStatuses.containsValue(ViolationStatus.VIOLATION_CONFIRMED)) {
+            eventPublisher.publishEvent(new ContentViolationConfirmedEvent(
+                    adminLoginId, contentId, content.getSelectorsId()));
+        }
         return new ContentInspectionConfirmationResponse(pendingItems.size());
     }
 
-    private void requireContent(Long contentId) {
-        if (!contentRepository.existsById(contentId)) {
-            throw new BusinessException(ErrorCode.CONTENT_NOT_FOUND);
-        }
+    private Content requireContent(Long contentId) {
+        return contentRepository.findById(contentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
     }
 
     private ContentVersion requireOwnedVersionForUpdate(Long contentId, Long contentVersionId) {
