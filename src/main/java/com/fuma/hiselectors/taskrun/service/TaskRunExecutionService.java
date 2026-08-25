@@ -26,6 +26,7 @@ public class TaskRunExecutionService {
     private final Clock clock;
     private final TaskExecutor executor;
     private final TaskRunFailureLogger failureLogger;
+    private final TaskRunProgressStream progressStream;
 
     public TaskRunExecutionService(
             TaskRunService taskRunService,
@@ -33,13 +34,15 @@ public class TaskRunExecutionService {
             TaskRunProperties properties,
             Clock clock,
             @Qualifier("taskRunExecutor") TaskExecutor executor,
-            TaskRunFailureLogger failureLogger) {
+            TaskRunFailureLogger failureLogger,
+            TaskRunProgressStream progressStream) {
         this.taskRunService = taskRunService;
         this.leaseTransaction = leaseTransaction;
         this.properties = properties;
         this.clock = clock;
         this.executor = executor;
         this.failureLogger = failureLogger;
+        this.progressStream = progressStream;
     }
 
     public TaskStartResult submit(TaskStartCommand command, TrackedTask task) {
@@ -68,7 +71,7 @@ public class TaskRunExecutionService {
         }
 
         ThrottledTaskProgressReporter reporter = new ThrottledTaskProgressReporter(
-                lease, leaseTransaction, properties.progress(), clock);
+                lease, leaseTransaction, progressStream, properties.progress(), clock);
         TaskRunTerminalSnapshot terminalSnapshot;
         try {
             task.execute(new TaskExecutionContext(lease, reporter));

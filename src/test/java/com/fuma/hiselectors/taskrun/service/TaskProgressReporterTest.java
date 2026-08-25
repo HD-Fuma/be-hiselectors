@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class TaskProgressReporterTest {
 
@@ -26,6 +27,7 @@ class TaskProgressReporterTest {
 
     private final TaskLease lease = new TaskLease(UUID.randomUUID(), UUID.randomUUID());
     private final TaskLeaseTransaction transaction = mock(TaskLeaseTransaction.class);
+    private final TaskRunProgressStream progressStream = mock(TaskRunProgressStream.class);
     private final MutableClock clock = new MutableClock(NOW);
     private ThrottledTaskProgressReporter reporter;
 
@@ -34,6 +36,7 @@ class TaskProgressReporterTest {
         reporter = new ThrottledTaskProgressReporter(
                 lease,
                 transaction,
+                progressStream,
                 new TaskRunProperties.Progress(10, 2_000),
                 clock);
     }
@@ -57,6 +60,7 @@ class TaskProgressReporterTest {
         reporter.advance(1, 0, 0);
 
         verify(transaction).apply(lease, null, null, false, null, 5, 3, 2, Map.of(), NOW);
+        verifyNoInteractions(progressStream);
     }
 
     @Test
@@ -183,6 +187,53 @@ class TaskProgressReporterTest {
                 Map.of(
                         "youtube", new TaskStepProgress(10L, 4L),
                         "instagram", new TaskStepProgress(null, 1L)),
+                NOW);
+    }
+
+    @Test
+    void contentStepSnapshotsPublishAbsoluteProgressImmediatelyWithoutDatabaseWrites() {
+        reporter.reportStep("NEW_CONTENT_SYNC", null, 1L);
+        reporter.reportStep("NEW_CONTENT_SYNC", null, 2L);
+        reporter.reportStep("NEW_CONTENT_SYNC", 3L, 3L);
+
+        InOrder order = org.mockito.Mockito.inOrder(progressStream);
+        order.verify(progressStream).publish(
+                new TaskRunProgressEvent(lease.runId(), "NEW_CONTENT_SYNC", null, 1L));
+        order.verify(progressStream).publish(
+                new TaskRunProgressEvent(lease.runId(), "NEW_CONTENT_SYNC", null, 2L));
+        order.verify(progressStream).publish(
+                new TaskRunProgressEvent(lease.runId(), "NEW_CONTENT_SYNC", 3L, 3L));
+        verifyNoInteractions(transaction);
+    }
+
+    @Test
+    void nonContentStepSnapshotStaysOffTheProgressStream() {
+        reporter.reportStep("youtube", 3L, 1L);
+
+        verifyNoInteractions(progressStream);
+        verifyNoInteractions(transaction);
+    }
+
+    @Test
+    void progressStreamFailureLeavesTheWorkerAndPendingSnapshotHealthy() {
+        doThrow(new IllegalStateException("stream unavailable"))
+                .when(progressStream)
+                .publish(new TaskRunProgressEvent(
+                        lease.runId(), "STORED_CONTENT_SYNC", 3L, 1L));
+
+        reporter.reportStep("STORED_CONTENT_SYNC", 3L, 1L);
+        reporter.flush();
+
+        verify(transaction).apply(
+                lease,
+                null,
+                null,
+                false,
+                null,
+                0,
+                0,
+                0,
+                Map.of("STORED_CONTENT_SYNC", new TaskStepProgress(3L, 1L)),
                 NOW);
     }
 

@@ -146,12 +146,13 @@ class ContentBatchServiceTest {
     }
 
     @Test
-    void returnsBothSyncStageResultsWithoutRunningStaleInspection() {
+    void oneAccountWithThreeSavedContentsReportsCumulativeProgressAndFinalTotal() {
         when(newContentService.collect(any())).thenAnswer(invocation -> {
             Consumer<NewContentService.NewContentProgress> callback = progress(invocation);
             callback.accept(new NewContentService.NewContentProgress(1, 0));
             callback.accept(new NewContentService.NewContentProgress(1, 0));
-            return new NewContentService.NewContentResult(2, 0);
+            callback.accept(new NewContentService.NewContentProgress(1, 0));
+            return new NewContentService.NewContentResult(3, 0);
         });
         when(storedContentService.check(any())).thenAnswer(invocation -> {
             Consumer<StoredContentService.StoredContentProgress> callback = progress(invocation);
@@ -176,7 +177,10 @@ class ContentBatchServiceTest {
         order.verify(progress).reportStep("NEW_CONTENT_SYNC", null, 2);
         order.verify(progress).describe("신규 콘텐츠 수집 중: 2건 처리");
         order.verify(progress).advance(1, 0, 0);
-        order.verify(progress).reportStep("NEW_CONTENT_SYNC", 2L, 2);
+        order.verify(progress).reportStep("NEW_CONTENT_SYNC", null, 3);
+        order.verify(progress).describe("신규 콘텐츠 수집 중: 3건 처리");
+        order.verify(progress).advance(1, 0, 0);
+        order.verify(progress).reportStep("NEW_CONTENT_SYNC", 3L, 3);
         order.verify(storedContentService).check(any());
         order.verify(progress).reportStep("STORED_CONTENT_SYNC", 3L, 0);
         order.verify(progress).describe("기존 콘텐츠 수집 중: 0건 처리");
@@ -190,10 +194,10 @@ class ContentBatchServiceTest {
         order.verify(progress).reportStep("STORED_CONTENT_SYNC", 3L, 3);
         order.verify(progress).describe("기존 콘텐츠 수집 중: 3건 처리");
         order.verify(progress).advance(1, 0, 0);
-        order.verify(progress).describe("신규 콘텐츠 2건 수집, 기존 콘텐츠 3건 수집");
+        order.verify(progress).describe("신규 콘텐츠 3건 수집, 기존 콘텐츠 3건 수집");
         verifyNoInteractions(staleContentInspectionService);
         assertThat(result).isEqualTo(
-                new ContentBatchService.ContentBatchResult(2, 0, true, false));
+                new ContentBatchService.ContentBatchResult(3, 0, true, false));
     }
 
     @Test
