@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS task_run (
     status VARCHAR(20) NOT NULL,
     current_step VARCHAR(255) NULL,
     progress_message VARCHAR(500) NULL,
+    step_progress JSON NULL,
     total_count BIGINT NULL,
     processed_count BIGINT NOT NULL DEFAULT 0,
     succeeded_count BIGINT NOT NULL DEFAULT 0,

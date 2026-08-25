@@ -75,6 +75,11 @@ jobs:
         task_run_table_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'task_run'")"
         task_run_unique_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'task_run' AND non_unique = 0 AND index_name IN ('uq_task_run_run_id', 'uq_task_run_concurrency_key', 'uq_task_run_idempotency_key')")"
         test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
+        step_progress_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress'")"
+        if [ "$step_progress_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE task_run ADD COLUMN step_progress JSON NULL AFTER progress_message"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress' AND data_type = 'json' AND is_nullable = 'YES'")" = "1"
         echo "task-run-migration=verified"
 
         profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"

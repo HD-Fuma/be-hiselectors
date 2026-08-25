@@ -2,9 +2,12 @@ package com.fuma.hiselectors.taskrun.dto;
 
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -15,6 +18,7 @@ public record TaskRunResponse(
         TaskRunStatus status,
         String currentStep,
         String progressMessage,
+        Map<String, TaskStepProgress> stepProgress,
         Long totalCount,
         long processedCount,
         long succeededCount,
@@ -25,6 +29,12 @@ public record TaskRunResponse(
         Instant startedAt,
         Instant finishedAt) {
 
+    public TaskRunResponse {
+        if (stepProgress != null) {
+            stepProgress = Collections.unmodifiableMap(new LinkedHashMap<>(stepProgress));
+        }
+    }
+
     public static TaskRunResponse from(TaskRun run, Map<Long, String> adminNames) {
         Long adminId = run.getStartedByAdminId();
         return new TaskRunResponse(
@@ -34,6 +44,7 @@ public record TaskRunResponse(
                 run.getStatus(),
                 run.getCurrentStep(),
                 run.getProgressMessage(),
+                run.getStepProgress(),
                 run.getTotalCount(),
                 run.getProcessedCount(),
                 run.getSucceededCount(),
