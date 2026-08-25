@@ -51,6 +51,7 @@ public class InstagramContentFetcher implements ContentFetcher {
     private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS;
 
     private static final int PAGE_SIZE = 10;
+    private static final int STORED_CONTENT_PAGE_SIZE = 100;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
 
     // Meta 게시물 작성 시각을 변환할 서비스 기준 시간대
@@ -176,7 +177,7 @@ public class InstagramContentFetcher implements ContentFetcher {
         Set<String> requestedIds = new HashSet<>(snsContentIds);
         Map<String, FetchResult> foundById = new LinkedHashMap<>();
         Set<String> requestedNextUrls = new HashSet<>();
-        MediaPage page = requestFirstPage(accountId);
+        MediaPage page = requestFirstPage(accountId, STORED_CONTENT_PAGE_SIZE);
 
         while (true) {
             List<Media> media = page.data();
@@ -290,9 +291,13 @@ public class InstagramContentFetcher implements ContentFetcher {
     }
 
     private MediaPage requestFirstPage(String username) {
+        return requestFirstPage(username, PAGE_SIZE);
+    }
+
+    private MediaPage requestFirstPage(String username, int pageSize) {
         // username 계정 게시글 조회
         String fields = "business_discovery.username(%s){media.limit(%d){%s}}"
-                .formatted(username, PAGE_SIZE, MEDIA_FIELDS);
+                .formatted(username, pageSize, MEDIA_FIELDS);
         URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
                 .pathSegment(properties.apiVersion(), properties.businessAccountId())
                 .queryParam("fields", fields)

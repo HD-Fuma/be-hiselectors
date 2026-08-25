@@ -517,7 +517,7 @@ class InstagramContentFetcherTest {
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(selector.insta)")
-                            .contains("media.limit(10)");
+                            .contains("media.limit(100)");
                 })
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
