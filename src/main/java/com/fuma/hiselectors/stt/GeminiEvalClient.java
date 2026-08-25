@@ -48,11 +48,13 @@ public class GeminiEvalClient {
             %s""";
 
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public GeminiEvalClient(GeminiProperties properties) {
+    public GeminiEvalClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         factory.setReadTimeout(Duration.ofMinutes(2));
@@ -77,17 +79,17 @@ public class GeminiEvalClient {
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.reportModelOrDefault());
         try {
-            return restClient.post()
-                    .uri(uri)
-                    .header("x-goog-api-key", properties.apiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            return requestExecutor.execute(properties.reportModelOrDefault(), attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
         } catch (RestClientException e) {
-            log.warn("Gemini 취합 호출 실패. model={}", properties.reportModelOrDefault(), e);
+            log.warn("Gemini 취합 후보를 모두 소진했습니다.", e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }

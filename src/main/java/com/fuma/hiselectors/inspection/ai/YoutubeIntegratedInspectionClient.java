@@ -9,6 +9,7 @@ import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.IntegratedInspectionResult;
 import com.fuma.hiselectors.stt.ContentInsight;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import com.fuma.hiselectors.stt.SttResult;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -32,15 +33,18 @@ public class YoutubeIntegratedInspectionClient {
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
 
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final GeminiAiInspectionClient inspectionMapper;
     private final RestClient restClient;
 
     public YoutubeIntegratedInspectionClient(
             GeminiProperties properties,
+            GeminiRequestExecutor requestExecutor,
             ObjectMapper objectMapper,
             GeminiAiInspectionClient inspectionMapper) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.objectMapper = objectMapper;
         this.inspectionMapper = inspectionMapper;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -80,13 +84,14 @@ public class YoutubeIntegratedInspectionClient {
                             "responseMimeType", "application/json",
                             "responseJsonSchema", integratedResponseSchema(),
                             "maxOutputTokens", properties.maxOutputTokensOrDefault()));
-            GeminiResponse response = restClient.post()
-                    .uri(ENDPOINT.formatted(policy.getAiModelName()))
-                    .header("x-goog-api-key", properties.apiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            GeminiResponse response = requestExecutor.execute(policy.getAiModelName(), attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
             return map(extractText(response));
         } catch (RestClientException | JacksonException | IllegalArgumentException e) {
             log.warn("Gemini YouTube 통합 검수 실패. videoId={}", videoId, e);

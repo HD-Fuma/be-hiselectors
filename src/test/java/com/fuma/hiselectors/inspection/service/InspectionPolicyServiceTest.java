@@ -42,7 +42,7 @@ class InspectionPolicyServiceTest {
                         new InspectionExtractionProperties.Instagram(
                                 "whisper-test", "ocr-test")),
                 new GeminiProperties(
-                        "key", "gemini-test", "youtube-test", "report-test",
+                        "key", null, null, "gemini-test", "youtube-test", "report-test",
                         MediaResolution.LOW, 8192),
                 new InspectionPromptProvider(),
                 new ObjectMapper(),

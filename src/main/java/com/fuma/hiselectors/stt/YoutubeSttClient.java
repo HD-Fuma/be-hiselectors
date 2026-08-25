@@ -29,14 +29,16 @@ public class YoutubeSttClient {
     private static final String ANALYSIS_MARKER = "===분석===";
 
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final InspectionPromptProvider promptProvider;
     // 작은 분석 JSON 파싱용. 상태 없는 파서라 빈 주입 없이 직접 만든다.
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient;
 
-    public YoutubeSttClient(GeminiProperties properties,
+    public YoutubeSttClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor,
                             InspectionPromptProvider promptProvider) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.promptProvider = promptProvider;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
@@ -65,17 +67,17 @@ public class YoutubeSttClient {
     }
 
     private GeminiResponse call(Map<String, Object> body) {
-        String uri = ENDPOINT.formatted(properties.youtubeModelOrDefault());
         try {
-            return restClient.post()
-                    .uri(uri)
-                    .header("x-goog-api-key", properties.apiKey())  // 키를 URL 대신 헤더로(로그 유출 방지)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            return requestExecutor.execute(properties.youtubeModelOrDefault(), attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
         } catch (RestClientException e) {
-            log.warn("Gemini STT 호출 실패. model={}", properties.youtubeModelOrDefault(), e);
+            log.warn("Gemini STT 후보를 모두 소진했습니다.", e);
             throw new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED);
         }
     }
