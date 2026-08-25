@@ -2,6 +2,7 @@ package com.fuma.hiselectors.taskrun.controller;
 
 import com.fuma.hiselectors.taskrun.dto.TaskRunPanelResponse;
 import com.fuma.hiselectors.taskrun.dto.TaskRunResponse;
+import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import com.fuma.hiselectors.taskrun.service.TaskRunQueryService;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -10,10 +11,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 @RequestMapping("/api/admin/task-runs")
@@ -24,6 +27,7 @@ public class TaskRunAdminController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final TaskRunQueryService taskRunQueryService;
+    private final TaskRunProgressStream taskRunProgressStream;
 
     @GetMapping("/panel")
     public ResponseEntity<TaskRunPanelResponse> getPanel() {
@@ -34,6 +38,11 @@ public class TaskRunAdminController {
     public ResponseEntity<Page<TaskRunResponse>> getRecent(
             @PageableDefault(size = DEFAULT_PAGE_SIZE) Pageable pageable) {
         return ResponseEntity.ok(taskRunQueryService.getRecent(limitPageSize(pageable)));
+    }
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        return taskRunProgressStream.subscribe();
     }
 
     @GetMapping("/{runId}")

@@ -94,11 +94,22 @@ class TaskRunExecutionServiceTest {
 
     private ThreadPoolTaskExecutor configuredExecutor;
     private final TaskRunFailureLogger failureLogger = mock(TaskRunFailureLogger.class);
+    private final TaskRunProgressStream progressStream = mock(TaskRunProgressStream.class);
 
     @BeforeEach
     void clearRuns() {
         repository.deleteAll();
-        reset(failureLogger);
+        reset(failureLogger, progressStream);
+    }
+
+    @Test
+    void workerReporterPublishesContentStepSnapshotWithCreatedRunId() {
+        TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
+                command(UUID.randomUUID()),
+                context -> context.progress().reportStep("NEW_CONTENT_SYNC", null, 1));
+
+        verify(progressStream).publish(new TaskRunProgressEvent(
+                runId(result), "NEW_CONTENT_SYNC", null, 1));
     }
 
     @AfterEach
@@ -384,7 +395,13 @@ class TaskRunExecutionServiceTest {
 
     private TaskRunExecutionService taskRunExecutionService(TaskExecutor executor) {
         return new TaskRunExecutionService(
-                service, leaseTransaction, properties, clock, executor, failureLogger);
+                service,
+                leaseTransaction,
+                properties,
+                clock,
+                executor,
+                failureLogger,
+                progressStream);
     }
 
     private TaskRun executeSettlementRecalculation(

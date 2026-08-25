@@ -8,12 +8,19 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 
 /** One reporter belongs to one worker thread; instances are intentionally not thread-safe. */
+@Slf4j
 public final class ThrottledTaskProgressReporter implements TaskProgressReporter {
+
+    private static final Set<String> STREAMED_STEP_KEYS =
+            Set.of("NEW_CONTENT_SYNC", "STORED_CONTENT_SYNC");
 
     private final TaskLease lease;
     private final TaskLeaseTransaction transaction;
+    private final TaskRunProgressStream progressStream;
     private final int flushCount;
     private final long flushIntervalMs;
     private final Clock clock;
@@ -29,10 +36,13 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     public ThrottledTaskProgressReporter(
             TaskLease lease,
             TaskLeaseTransaction transaction,
+            TaskRunProgressStream progressStream,
             TaskRunProperties.Progress properties,
             Clock clock) {
         this.lease = Objects.requireNonNull(lease, "lease must not be null");
         this.transaction = Objects.requireNonNull(transaction, "transaction must not be null");
+        this.progressStream = Objects.requireNonNull(
+                progressStream, "progressStream must not be null");
         Objects.requireNonNull(properties, "properties must not be null");
         this.flushCount = properties.flushCount();
         this.flushIntervalMs = properties.flushIntervalMs();
@@ -66,6 +76,9 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     public void reportStep(String stepKey, Long totalCount, long processedCount) {
         requireValidStepKey(stepKey);
         pendingStepProgress.put(stepKey, new TaskStepProgress(totalCount, processedCount));
+        if (STREAMED_STEP_KEYS.contains(stepKey)) {
+            publishStepProgress(stepKey, totalCount, processedCount);
+        }
     }
 
     @Override
@@ -136,6 +149,16 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
         }
         if (stepKey.length() > 100) {
             throw new IllegalArgumentException("단계 키는 100자를 초과할 수 없습니다.");
+        }
+    }
+
+    private void publishStepProgress(String stepKey, Long totalCount, long processedCount) {
+        try {
+            progressStream.publish(new TaskRunProgressEvent(
+                    lease.runId(), stepKey, totalCount, processedCount));
+        } catch (RuntimeException failure) {
+            log.warn("TaskRun progress stream publish failed: runId={}, stepKey={}",
+                    lease.runId(), stepKey, failure);
         }
     }
 }
