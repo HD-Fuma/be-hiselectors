@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -142,6 +143,29 @@ class SettlementAdminServiceTest {
         assertThat(result.histories()).hasSize(1);
     }
 
+    @Test
+    void summarizesAllMatchingRowsWithWeightedRateAndHandlesZeroSales() {
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SettlementAdminService service = service(historyRepository, mock(SelectorsRepository.class));
+        SettlementHistoryRepository.SettlementAggregate aggregate = aggregate(2L, 7L, 100_000L, 5_500L);
+        SettlementHistoryRepository.SettlementAggregate zeroSales = aggregate(0L, 0L, 0L, 0L);
+        int activityYearMonth = 202607;
+        when(historyRepository.summarize(
+                activityYearMonth, 15L, SettlementStatus.SETTLED)).thenReturn(aggregate, zeroSales);
+
+        var result = service.summarize(
+                YearMonth.of(2026, 7), 15L, SettlementStatus.SETTLED);
+        var zeroSalesResult = service.summarize(
+                YearMonth.of(2026, 7), 15L, SettlementStatus.SETTLED);
+
+        assertThat(result.settlementCount()).isEqualTo(2L);
+        assertThat(result.confirmedPurchaseCount()).isEqualTo(7L);
+        assertThat(result.confirmedSalesAmount()).isEqualTo(100_000L);
+        assertThat(result.settlementAmount()).isEqualTo(5_500L);
+        assertThat(result.commissionToSalesRate()).isEqualByComparingTo("5.50");
+        assertThat(zeroSalesResult.commissionToSalesRate()).isEqualByComparingTo("0.00");
+    }
+
     private SettlementAdminService service(
             SettlementHistoryRepository historyRepository, SelectorsRepository selectorsRepository) {
         return new SettlementAdminService(
@@ -175,5 +199,19 @@ class SettlementAdminServiceTest {
                 300L,
                 LocalDateTime.of(2026, 8, 1, 3, 0));
         return history;
+    }
+
+    private SettlementHistoryRepository.SettlementAggregate aggregate(
+            long settlementCount,
+            long confirmedPurchaseCount,
+            long confirmedSalesAmount,
+            long settlementAmount) {
+        SettlementHistoryRepository.SettlementAggregate aggregate =
+                mock(SettlementHistoryRepository.SettlementAggregate.class);
+        when(aggregate.getSettlementCount()).thenReturn(settlementCount);
+        when(aggregate.getConfirmedPurchaseCount()).thenReturn(confirmedPurchaseCount);
+        when(aggregate.getConfirmedSalesAmount()).thenReturn(confirmedSalesAmount);
+        when(aggregate.getSettlementAmount()).thenReturn(settlementAmount);
+        return aggregate;
     }
 }

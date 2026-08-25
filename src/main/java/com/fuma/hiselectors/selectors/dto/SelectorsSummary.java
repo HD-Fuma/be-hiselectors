@@ -15,6 +15,7 @@ public record SelectorsSummary(
         @Schema(description = "닉네임") String nickname,
         @Schema(description = "역할 코드", example = "ACTIVE") String roleId,
         @Schema(description = "역할명", example = "활성") String roleName,
+        @Schema(description = "분석 카테고리 코드", example = "BEAUTY") String category,
         @Schema(description = "대표 SNS 플랫폼", example = "YOUTUBE") String snsCode,
         @Schema(description = "대표 SNS 계정 ID") String snsAccountId,
         @Schema(description = "대표 SNS 표시명") String snsDisplayName,

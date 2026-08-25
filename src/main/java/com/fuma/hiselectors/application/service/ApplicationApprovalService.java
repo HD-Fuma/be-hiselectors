@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.dto.ApplicationResponse;
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -34,6 +35,7 @@ public class ApplicationApprovalService {
     private static final Logger log = LoggerFactory.getLogger(ApplicationApprovalService.class);
 
     private final ApplicationRepository applicationRepository;
+    private final ApplicationReportRepository applicationReportRepository;
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
@@ -86,6 +88,9 @@ public class ApplicationApprovalService {
             throw new BusinessException(ErrorCode.BLACKLISTED_SELECTOR);
         }
         selectors.activateForApplication(application.getId());
+        applicationReportRepository
+                .findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
+                .ifPresent(report -> selectors.assignCategory(report.getCategory()));
         if (!selectorsGenerationRepository.existsBySelectorsIdAndGenerationId(
                 selectors.getId(), application.getGenerationId())) {
             selectorsGenerationRepository.save(SelectorsGeneration.builder()

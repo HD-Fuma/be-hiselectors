@@ -38,6 +38,7 @@ public interface YoutubeDiscoveryClient {
             String channelId,
             String title,
             String description,
+            String profileImageUrl,
             Long subscriberCount,
             Long totalViewCount,
             LocalDateTime lastUploadAt,

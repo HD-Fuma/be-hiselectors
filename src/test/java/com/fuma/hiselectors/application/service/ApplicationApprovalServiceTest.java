@@ -11,7 +11,9 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -33,6 +35,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 class ApplicationApprovalServiceTest {
 
     private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
+    private final ApplicationReportRepository reportRepository =
+            mock(ApplicationReportRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
     private final SelectorsGenerationRepository membershipRepository =
@@ -42,8 +46,8 @@ class ApplicationApprovalServiceTest {
     private final com.fuma.hiselectors.notification.service.NotificationService notificationService =
             mock(com.fuma.hiselectors.notification.service.NotificationService.class);
     private final ApplicationApprovalService service = new ApplicationApprovalService(
-            applicationRepository, userRepository, selectorsRepository, membershipRepository,
-            snsAccountRepository, notificationService);
+            applicationRepository, reportRepository, userRepository, selectorsRepository,
+            membershipRepository, snsAccountRepository, notificationService);
 
     private Application application;
     private User user;
@@ -120,10 +124,13 @@ class ApplicationApprovalServiceTest {
                 .build();
         when(selectorsRepository.findByUserIdForUpdate(7L)).thenReturn(Optional.of(selectors));
         when(snsAccountRepository.findBySelectorsId(9L)).thenReturn(Optional.of(account));
+        when(reportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(31L))
+                .thenReturn(Optional.of(ApplicationReport.builder().category("BEAUTY").build()));
 
         service.updateStatus(
                 31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin");
 
+        assertThat(selectors.getCategory()).isEqualTo("BEAUTY");
         assertThat(account.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(account.getAccountId()).isEqualTo("UC-approved");
         assertThat(account.getProfileUrl())

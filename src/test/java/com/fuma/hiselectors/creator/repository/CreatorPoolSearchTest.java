@@ -86,6 +86,7 @@ class CreatorPoolSearchTest {
                 .igHandle(igHandle)
                 .igConfidence(new BigDecimal(igConfidence))
                 .recent90DayContentCount(recent90DayContentCount)
+                .profileImageUrl("https://cdn.example/" + accountId + ".jpg")
                 .build());
     }
 
@@ -96,6 +97,8 @@ class CreatorPoolSearchTest {
                 creatorPoolRepository.search(null, null, null, null, null, null, FIRST_PAGE);
 
         assertThat(result.getTotalElements()).isEqualTo(4);
+        assertThat(result.getContent()).extracting(CreatorSummary::profileImageUrl)
+                .contains("https://cdn.example/UC_fit01.jpg");
     }
 
     @Test

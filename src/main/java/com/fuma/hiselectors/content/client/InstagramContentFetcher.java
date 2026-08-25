@@ -49,8 +49,11 @@ public class InstagramContentFetcher implements ContentFetcher {
                     + "view_count,like_count,comments_count,"
                     + "children{id,media_type,media_url,thumbnail_url}";
     private static final String MEDIA_DETAIL_FIELDS = MEDIA_FIELDS;
+    private static final String STORED_MEDIA_FIELDS =
+            "id,media_type,media_url,thumbnail_url";
 
     private static final int PAGE_SIZE = 10;
+    private static final int STORED_MEDIA_PAGE_SIZE = 100;
     private static final int OUT_OF_PERIOD_STOP_THRESHOLD = 4;
 
     // Meta 게시물 작성 시각을 변환할 서비스 기준 시간대
@@ -175,38 +178,66 @@ public class InstagramContentFetcher implements ContentFetcher {
 
         Set<String> requestedIds = new HashSet<>(snsContentIds);
         Map<String, FetchResult> foundById = new LinkedHashMap<>();
-        Set<String> requestedNextUrls = new HashSet<>();
         MediaPage page = requestFirstPage(accountId);
-
-        while (true) {
-            List<Media> media = page.data();
-            if (media == null || media.isEmpty()) {
-                break;
-            }
+        List<Media> media = page.data();
+        if (media != null) {
             for (Media item : media) {
                 if (item != null && requestedIds.contains(item.id())) {
                     foundById.put(item.id(), found(item));
                 }
             }
-            if (foundById.keySet().containsAll(requestedIds)) {
-                break;
-            }
+        }
 
-            String nextUrl = page.paging() == null ? null : page.paging().next();
-            if (nextUrl == null) {
-                break;
-            }
-            if (!requestedNextUrls.add(nextUrl)) {
-                log.warn("Instagram 페이지 URL 반복 감지");
-                throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
-            }
-            page = requestNextPage(nextUrl);
+        if (!foundById.keySet().containsAll(requestedIds)) {
+            attachStoredMedia(accountId, requestedIds, foundById);
         }
 
         return snsContentIds.stream()
                 .map(id -> foundById.getOrDefault(
                         id, new FetchResult(id, FetchStatus.NOT_FOUND, null, null)))
                 .toList();
+    }
+
+    private void attachStoredMedia(
+            String accountId,
+            Set<String> requestedIds,
+            Map<String, FetchResult> foundById) {
+        MediaPage page = requestStoredMediaPage(accountId);
+        Set<String> requestedNextUrls = new HashSet<>();
+        while (true) {
+            if (page.data() != null) {
+                for (Media item : page.data()) {
+                    if (item == null
+                            || !requestedIds.contains(item.id())
+                            || foundById.containsKey(item.id())) {
+                        continue;
+                    }
+                    if (!"IMAGE".equals(item.mediaType()) && !"VIDEO".equals(item.mediaType())) {
+                        foundById.put(item.id(), failed(item.id()));
+                        continue;
+                    }
+                    foundById.put(item.id(), new FetchResult(
+                            item.id(),
+                            FetchStatus.FOUND,
+                            null,
+                            null,
+                            List.of(toRawContentMedia(item))));
+                }
+            }
+            if (foundById.keySet().containsAll(requestedIds)) {
+                return;
+            }
+
+            String nextUrl = page.paging() == null ? null : page.paging().next();
+            if (nextUrl == null) {
+                return;
+            }
+            if (!requestedNextUrls.add(nextUrl)) {
+                log.warn("Instagram 저장 콘텐츠 페이지 URL 반복 감지");
+                throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
+            }
+            page = requestNextPage(nextUrl);
+        }
     }
 
     private FetchResult fetchById(String snsContentId) {
@@ -293,6 +324,16 @@ public class InstagramContentFetcher implements ContentFetcher {
         // username 계정 게시글 조회
         String fields = "business_discovery.username(%s){media.limit(%d){%s}}"
                 .formatted(username, PAGE_SIZE, MEDIA_FIELDS);
+        return requestMediaPage(fields);
+    }
+
+    private MediaPage requestStoredMediaPage(String username) {
+        String fields = "business_discovery.username(%s){media.limit(%d){%s}}"
+                .formatted(username, STORED_MEDIA_PAGE_SIZE, STORED_MEDIA_FIELDS);
+        return requestMediaPage(fields);
+    }
+
+    private MediaPage requestMediaPage(String fields) {
         URI uri = UriComponentsBuilder.fromUriString(GRAPH_API_HOST)
                 .pathSegment(properties.apiVersion(), properties.businessAccountId())
                 .queryParam("fields", fields)

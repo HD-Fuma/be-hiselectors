@@ -44,6 +44,10 @@ public class Selectors extends BaseTimeEntity {
     @Column(name = "selectors_nickname", length = 20)
     private String selectorsNickname;
 
+    /** 지원자 콘텐츠 분석으로 산출된 대표 카테고리 코드(BEAUTY 등). 승인 시 지정. */
+    @Column(name = "category", length = 20)
+    private String category;
+
     /**
      * 탈퇴·제명된 셀렉터스. 행을 지우지 않고 표시만 한다.
      *
@@ -104,5 +108,12 @@ public class Selectors extends BaseTimeEntity {
 
     public void blacklist() {
         this.selectorsRoleId = BLACKLIST_ROLE;
+    }
+
+    /** 분석 카테고리 지정. 값이 있을 때만 덮어쓴다(재승인 시 기존값 보존). */
+    public void assignCategory(String category) {
+        if (category != null && !category.isBlank()) {
+            this.category = category;
+        }
     }
 }
