@@ -132,7 +132,7 @@ class ApplicationAnalysisServiceTest {
     }
 
     @Test
-    void 유튜브는_Shorts_조회수_상위_1개만_분석한다() {
+    void 유튜브는_Shorts_조회수_상위_3개만_분석한다() {
         runTransactionsInline();
         when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
                 .thenReturn(List.of(
@@ -147,11 +147,11 @@ class ApplicationAnalysisServiceTest {
         service.analyzeAndReport(1L);
 
         verify(evaluationService).addYoutubeContent(1L, "top");
-        verify(evaluationService, never()).addYoutubeContent(1L, "second");
-        verify(evaluationService, never()).addYoutubeContent(1L, "middle");
+        verify(evaluationService).addYoutubeContent(1L, "second");
+        verify(evaluationService).addYoutubeContent(1L, "middle");
         verify(evaluationService, never()).addYoutubeContent(1L, "low");
         verify(evaluationService, never()).addYoutubeContent(1L, "unknown");
-        verify(evaluationService, times(1)).addYoutubeContent(any(), any());
+        verify(evaluationService, times(3)).addYoutubeContent(any(), any());
     }
 
     @Test

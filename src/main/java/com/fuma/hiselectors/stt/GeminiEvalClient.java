@@ -31,9 +31,11 @@ public class GeminiEvalClient {
     private static final String PROMPT = """
             아래는 한 지원자의 여러 콘텐츠에서 추출한 음성 전사와 화면 텍스트를 합친 것이다
             (OCR 노이즈가 섞일 수 있으니 감안해라). 이 지원자를 종합 평가해 아래 JSON 하나만 출력해라.
+            콘텐츠를 개별적으로 나열하지 말고 2개 이상에서 반복되는 주제·형식·톤·강점을 공통점으로
+            우선 평가해라. 한 콘텐츠에만 나온 소재는 지원자의 전반적 특징으로 단정하지 마라.
             설명·마크다운·코드펜스 없이 JSON 객체만 낸다.
             {
-              "summary": "이 지원자의 콘텐츠가 전반적으로 어떤 주제·형식·특징인지 2~3문장으로 서술",
+              "summary": "여러 콘텐츠에서 반복되는 공통 주제·형식·특징을 중심으로 2~3문장으로 서술",
               "category": "BEAUTY|FASHION|FOOD|LIVING_LIFE|KIDS_FAMILY|CULTURE_SERVICE|SPORTS_LEISURE|TRAVEL|PET_LIFE 중 가장 가까운 하나",
               "keywords": ["콘텐츠 핵심 키워드. 최대 5개, 명사형 단어 또는 짧은 명사구"],
               "contentStyle": "리뷰언박싱|튜토리얼|브이로그|챌린지|소통Q&A|하울|비교추천|정보설명|인터뷰|숏폼밈|라이브 중 하나",
