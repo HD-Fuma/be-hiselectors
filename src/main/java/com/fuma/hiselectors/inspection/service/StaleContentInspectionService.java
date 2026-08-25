@@ -59,7 +59,9 @@ public class StaleContentInspectionService {
                 successCount++;
             } catch (RuntimeException e) {
                 if (e instanceof BusinessException businessException
-                        && businessException.getErrorCode() == ErrorCode.TASK_RUN_LEASE_LOST) {
+                        && (businessException.getErrorCode() == ErrorCode.TASK_RUN_LEASE_LOST
+                        || businessException.getErrorCode()
+                        == ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED)) {
                     throw businessException;
                 }
                 log.warn("최신 버전 재검수 실패: contentVersionId={}", versionId, e);
