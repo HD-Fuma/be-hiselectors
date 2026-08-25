@@ -23,6 +23,7 @@ import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @Import(SelectorsSnsAccountRepositoryTest.CacheConfig.class)
@@ -32,6 +33,9 @@ class SelectorsSnsAccountRepositoryTest {
     private SelectorsSnsAccountRepository accountRepository;
 
     @Autowired
+    private SelectorsRepository selectorsRepository;
+
+    @Autowired
     private ContentBatchAccountRepository batchAccountRepository;
 
     @Autowired
@@ -39,6 +43,27 @@ class SelectorsSnsAccountRepositoryTest {
 
     @Autowired
     private TestEntityManager entityManager;
+
+    @Test
+    @DisplayName("셀렉터스 목록을 SNS 계정 ID로 검색한다")
+    void searchSelectorsBySnsAccountId() {
+        Selectors selectors = entityManager.persist(Selectors.builder()
+                .userId(100L)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .selectorsNickname("하린데일리")
+                .build());
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(selectors.getId())
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("harin.daily")
+                .build());
+        entityManager.flush();
+
+        assertThat(selectorsRepository.search(
+                null, null, "harin.daily", null, PageRequest.of(0, 20)).getContent())
+                .extracting(Selectors::getId)
+                .containsExactly(selectors.getId());
+    }
 
     @Test
     @DisplayName("셀렉터스에는 SNS 계정을 하나만 연결할 수 있다")
