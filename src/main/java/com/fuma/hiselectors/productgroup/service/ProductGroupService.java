@@ -83,24 +83,17 @@ public class ProductGroupService {
     }
 
     public CampaignProductDisplayResponse findPublicProduct(String selectorsCode, Long productId) {
-        Selectors selectors = findPublicSelectors(selectorsCode);
+        findPublicSelectors(selectorsCode);
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-        return findPublicProduct(selectors, product);
+        return CampaignProductDisplayResponse.of(product);
     }
 
     public CampaignProductDisplayResponse findPublicProductByCode(
             String selectorsCode, String productCode) {
-        Selectors selectors = findPublicSelectors(selectorsCode);
+        findPublicSelectors(selectorsCode);
         Product product = productRepository.findByProductCode(productCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-        return findPublicProduct(selectors, product);
-    }
-
-    private CampaignProductDisplayResponse findPublicProduct(Selectors selectors, Product product) {
-        if (!itemRepository.existsActiveProductForSelectors(selectors.getId(), product.getId())) {
-            throw new BusinessException(ErrorCode.PRODUCT_NOT_FOUND);
-        }
         return CampaignProductDisplayResponse.of(product);
     }
 
