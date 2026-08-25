@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,6 +22,7 @@ import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunQueryService;
+import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +36,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:task-run-controller;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
@@ -59,6 +65,7 @@ class TaskRunAdminControllerTest {
     @Autowired private TaskRunAdminController controller;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     @MockitoBean private TaskRunQueryService taskRunQueryService;
+    @MockitoBean private TaskRunProgressStream taskRunProgressStream;
 
     @Test
     void adminCanReadPanelWithExactlyThePublicTaskRunFields() throws Exception {
@@ -147,6 +154,45 @@ class TaskRunAdminControllerTest {
             mockMvc.perform(get(path).header("Authorization", bearer("USER")))
                     .andExpect(status().isForbidden());
         }
+    }
+
+    @Test
+    void adminCanOpenUnwrappedEventStream() throws Exception {
+        SseEmitter emitter = new SseEmitter(1_000L);
+        emitter.send(SseEmitter.event().comment("connected"));
+        emitter.complete();
+        when(taskRunProgressStream.subscribe()).thenReturn(emitter);
+
+        MvcResult result = mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .header("Authorization", bearer("ADMIN"))
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).contains(":connected");
+        assertThat(body).doesNotContain("\"success\"").doesNotContain("\"data\"");
+        verify(taskRunProgressStream).subscribe();
+    }
+
+    @Test
+    void streamReturnsJsonSecurityErrorsForAnonymousAndUser() throws Exception {
+        mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+        mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .header("Authorization", bearer("USER"))
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 
     @Test
