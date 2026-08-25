@@ -106,7 +106,40 @@ class TaskRunProgressStreamTest {
     }
 
     @Test
-    void permanentlyStalledSendStartsNoSeparateCompletionWorkAfterOverflow() throws Exception {
+    void burstCoalescesAbsoluteSnapshotsAndEventuallyDeliversLatest() throws Exception {
+        TestEmitter emitter = new TestEmitter(EMITTER_TIMEOUT.toMillis());
+        emitter.blockEvents = true;
+        emitter.ignoreSendInterrupts = true;
+        emitter.expectProcessedCount(1_000L);
+        TaskRunProgressStream stream = stream(256, emitter);
+        stream.subscribe();
+        emitter.awaitFrameCount(1);
+        stream.publish(event(1L, 1_000L));
+        assertThat(emitter.eventSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        CountDownLatch published = new CountDownLatch(1);
+        Thread.startVirtualThread(() -> {
+            for (long processed = 2; processed <= 1_000; processed++) {
+                stream.publish(event(processed, 1_000L));
+            }
+            published.countDown();
+        });
+
+        assertThat(published.await(1, TimeUnit.SECONDS)).isTrue();
+        boolean connectedAfterBurst = stream.subscriberCount() == 1;
+        emitter.releaseEvents.countDown();
+
+        assertThat(connectedAfterBurst).isTrue();
+        assertThat(emitter.awaitExpectedProcessedCount()).isTrue();
+        List<Long> delivered = emitter.events().stream()
+                .map(TaskRunProgressEvent::processedCount)
+                .toList();
+        assertThat(delivered).isSorted();
+        assertThat(delivered.getLast()).isEqualTo(1_000L);
+        assertThat(emitter.completionAttempted.getCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void permanentlyStalledSendCoalescesWithoutCompletionWork() throws Exception {
         TestEmitter stalled = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         stalled.blockEvents = true;
         stalled.ignoreSendInterrupts = true;
@@ -124,16 +157,17 @@ class TaskRunProgressStreamTest {
         });
 
         assertThat(published.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(stalled.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(stalled.interrupted.await(300, TimeUnit.MILLISECONDS)).isFalse();
         assertThat(stalled.completionAttempted.await(300, TimeUnit.MILLISECONDS)).isFalse();
-        assertThat(stream.subscriberCount()).isZero();
+        assertThat(stream.subscriberCount()).isEqualTo(1);
     }
 
     @Test
-    void queueOverflowReturnsQuicklyWhileCompletionWaitsForSlowSend() throws Exception {
+    void fullQueueCoalescesSlowSubscriberWhileHealthySubscriberReceives() throws Exception {
         TestEmitter slow = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         slow.blockEvents = true;
         slow.ignoreSendInterrupts = true;
+        slow.expectProcessedCount(3L);
         TestEmitter fast = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         TaskRunProgressStream stream = stream(1, slow, fast);
         stream.subscribe();
@@ -153,21 +187,24 @@ class TaskRunProgressStreamTest {
         });
 
         assertThat(published.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(slow.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(slow.interrupted.await(300, TimeUnit.MILLISECONDS)).isFalse();
         fast.awaitEventCount(3);
         assertThat(fast.events()).extracting(TaskRunProgressEvent::processedCount)
                 .containsExactly(1L, 2L, 3L);
-        assertThat(stream.subscriberCount()).isEqualTo(1);
         slow.releaseEvents.countDown();
-        assertThat(slow.terminated.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(slow.terminalError.get()).hasMessage("SSE 구독자 큐가 가득 찼습니다.");
-        assertThat(slow.completionThread).hasValue(slow.drainThread.get());
+        assertThat(slow.awaitExpectedProcessedCount()).isTrue();
+        assertThat(slow.events()).extracting(TaskRunProgressEvent::processedCount)
+                .containsExactly(1L, 3L);
+        assertThat(stream.subscriberCount()).isEqualTo(2);
+        assertThat(slow.completionAttempted.getCount()).isEqualTo(1L);
     }
 
     @Test
-    void overflowInterruptIOExceptionSuppressesLocalCompletion() throws Exception {
+    void fullQueueDropsHeartbeatAndRetainsProgress() throws Exception {
         TestEmitter emitter = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         emitter.blockEvents = true;
+        emitter.ignoreSendInterrupts = true;
+        emitter.expectProcessedCount(2L);
         TaskRunProgressStream stream = stream(1, emitter);
         stream.subscribe();
         emitter.awaitFrameCount(1);
@@ -175,13 +212,14 @@ class TaskRunProgressStreamTest {
         stream.publish(event(1L));
         assertThat(emitter.eventSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
         stream.publish(event(2L));
-        stream.publish(event(3L));
+        stream.heartbeat();
 
-        assertThat(emitter.interrupted.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(emitter.eventSendExited.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(emitter.completionAttempted.await(300, TimeUnit.MILLISECONDS)).isFalse();
-        assertThat(emitter.completeWithErrorCalls).hasValue(0);
-        assertThat(emitter.terminalError.get()).isNull();
+        emitter.releaseEvents.countDown();
+        assertThat(emitter.awaitExpectedProcessedCount()).isTrue();
+        assertThat(emitter.events()).extracting(TaskRunProgressEvent::processedCount)
+                .containsExactly(1L, 2L);
+        assertThat(emitter.comments()).containsExactly("connected");
+        assertThat(stream.subscriberCount()).isEqualTo(1);
     }
 
     @Test
@@ -227,21 +265,20 @@ class TaskRunProgressStreamTest {
     }
 
     @Test
-    void completionRuntimeFailureDuringHeartbeatCannotStopHealthyOrLaterHeartbeats()
+    void fullSlowQueueCannotStopHealthyOrLaterHeartbeats()
             throws Exception {
-        TestEmitter failing = new TestEmitter(EMITTER_TIMEOUT.toMillis());
-        failing.blockEvents = true;
-        failing.ignoreSendInterrupts = true;
-        failing.throwOnCompleteWithError = true;
+        TestEmitter slow = new TestEmitter(EMITTER_TIMEOUT.toMillis());
+        slow.blockEvents = true;
+        slow.ignoreSendInterrupts = true;
         TestEmitter healthy = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
-        TaskRunProgressStream stream = stream(1, scheduler, failing, healthy);
+        TaskRunProgressStream stream = stream(1, scheduler, slow, healthy);
         stream.subscribe();
         stream.subscribe();
-        failing.awaitFrameCount(1);
+        slow.awaitFrameCount(1);
         healthy.awaitFrameCount(1);
         stream.publish(event(1L));
-        assertThat(failing.eventSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(slow.eventSendStarted.await(1, TimeUnit.SECONDS)).isTrue();
         healthy.awaitEventCount(1);
         stream.publish(event(2L));
         healthy.awaitEventCount(2);
@@ -252,27 +289,17 @@ class TaskRunProgressStreamTest {
                 eq(HEARTBEAT_INTERVAL.toMillis()),
                 eq(HEARTBEAT_INTERVAL.toMillis()),
                 eq(TimeUnit.MILLISECONDS));
-        CountDownLatch heartbeatReturned = new CountDownLatch(1);
-        AtomicReference<Throwable> heartbeatFailure = new AtomicReference<>();
-        Thread.startVirtualThread(() -> {
-            try {
-                heartbeat.getValue().run();
-            } catch (Throwable failure) {
-                heartbeatFailure.set(failure);
-            } finally {
-                heartbeatReturned.countDown();
-            }
-        });
-        assertThat(heartbeatReturned.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(heartbeatFailure.get()).isNull();
+        assertThatCode(heartbeat.getValue()::run).doesNotThrowAnyException();
         healthy.awaitFrameCount(4);
-        failing.releaseEvents.countDown();
-        assertThat(failing.completionAttempted.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(failing.completionFinished.await(1, TimeUnit.SECONDS)).isTrue();
+        slow.releaseEvents.countDown();
+        slow.awaitEventCount(2);
 
         assertThatCode(heartbeat.getValue()::run).doesNotThrowAnyException();
         healthy.awaitFrameCount(5);
+        slow.awaitFrameCount(4);
         assertThat(healthy.comments()).containsExactly("connected", "heartbeat", "heartbeat");
+        assertThat(slow.comments()).containsExactly("connected", "heartbeat");
+        assertThat(stream.subscriberCount()).isEqualTo(2);
     }
 
     @Test
@@ -338,6 +365,10 @@ class TaskRunProgressStreamTest {
         return new TaskRunProgressEvent(RUN_ID, "youtube", 10L, processedCount);
     }
 
+    private TaskRunProgressEvent event(long processedCount, long totalCount) {
+        return new TaskRunProgressEvent(RUN_ID, "youtube", totalCount, processedCount);
+    }
+
     private void awaitSubscriberCount(TaskRunProgressStream stream, int expected) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
         while (stream.subscriberCount() != expected && System.nanoTime() < deadline) {
@@ -362,18 +393,18 @@ class TaskRunProgressStreamTest {
         private final CountDownLatch interrupted = new CountDownLatch(1);
         private final CountDownLatch terminated = new CountDownLatch(1);
         private final CountDownLatch completionAttempted = new CountDownLatch(1);
-        private final CountDownLatch completionFinished = new CountDownLatch(1);
         private final AtomicReference<String> drainThread = new AtomicReference<>();
         private final AtomicReference<String> completionThread = new AtomicReference<>();
         private final AtomicBoolean virtualThread = new AtomicBoolean();
         private final AtomicReference<Throwable> terminalError = new AtomicReference<>();
+        private volatile long expectedProcessedCount = -1L;
+        private volatile CountDownLatch expectedProcessedCountDelivered = new CountDownLatch(1);
         private volatile Runnable completionCallback = () -> { };
         private volatile Runnable timeoutCallback = () -> { };
         private volatile Consumer<Throwable> errorCallback = error -> { };
         private volatile boolean blockEvents;
         private volatile boolean failEvents;
         private volatile boolean ignoreSendInterrupts;
-        private volatile boolean throwOnCompleteWithError;
 
         private TestEmitter(long timeout) {
             super(timeout);
@@ -407,6 +438,9 @@ class TaskRunProgressStreamTest {
                 if (event != null) {
                     eventCount.incrementAndGet();
                     sentEvents.release();
+                    if (event.processedCount() == expectedProcessedCount) {
+                        expectedProcessedCountDelivered.countDown();
+                    }
                 }
             } finally {
                 if (eventFrame) {
@@ -455,7 +489,6 @@ class TaskRunProgressStreamTest {
                 terminated.countDown();
             } finally {
                 simulatedWriteLock.unlock();
-                completionFinished.countDown();
             }
         }
 
@@ -466,14 +499,10 @@ class TaskRunProgressStreamTest {
             simulatedWriteLock.lock();
             try {
                 completeWithErrorCalls.incrementAndGet();
-                if (throwOnCompleteWithError) {
-                    throw new IllegalStateException("completion failed");
-                }
                 terminalError.compareAndSet(null, error);
                 terminated.countDown();
             } finally {
                 simulatedWriteLock.unlock();
-                completionFinished.countDown();
             }
         }
 
@@ -487,6 +516,15 @@ class TaskRunProgressStreamTest {
 
         private void triggerError(Throwable error) {
             errorCallback.accept(error);
+        }
+
+        private void expectProcessedCount(long processedCount) {
+            expectedProcessedCount = processedCount;
+            expectedProcessedCountDelivered = new CountDownLatch(1);
+        }
+
+        private boolean awaitExpectedProcessedCount() throws InterruptedException {
+            return expectedProcessedCountDelivered.await(1, TimeUnit.SECONDS);
         }
 
         private void awaitFrameCount(int expected) {

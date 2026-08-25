@@ -26,7 +26,6 @@ public class TaskRunProgressStream implements AutoCloseable {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(30);
     private static final Duration DEFAULT_HEARTBEAT_INTERVAL = Duration.ofSeconds(15);
     private static final int DEFAULT_QUEUE_CAPACITY = 256;
-    private static final String OVERFLOW_MESSAGE = "SSE 구독자 큐가 가득 찼습니다.";
 
     private final Supplier<SseEmitter> emitterFactory;
     private final int queueCapacity;
@@ -182,8 +181,21 @@ public class TaskRunProgressStream implements AutoCloseable {
         }
 
         private void enqueue(OutboundMessage message) {
-            if (isActive() && !queue.offer(message)) {
-                fail(new IllegalStateException(OVERFLOW_MESSAGE));
+            if (!isActive()) {
+                return;
+            }
+            synchronized (queue) {
+                if (queue.offer(message)) {
+                    return;
+                }
+                if (message instanceof ProgressMessage latest) {
+                    queue.removeIf(queued -> queued instanceof ProgressMessage progress
+                            && progress.hasSameKey(latest));
+                    if (!queue.offer(message)) {
+                        queue.poll();
+                        queue.offer(message);
+                    }
+                }
             }
         }
 
@@ -207,10 +219,6 @@ public class TaskRunProgressStream implements AutoCloseable {
 
         private void clientTerminated() {
             discard();
-        }
-
-        private void fail(Throwable failure) {
-            requestTerminal(TerminalAction.failure(failure));
         }
 
         private void shutdown() {
@@ -244,12 +252,8 @@ public class TaskRunProgressStream implements AutoCloseable {
         private void finishTerminalAction() {
             TerminalAction action = terminalAction.get();
             try {
-                if (action.complete()) {
-                    if (action.failure() == null) {
-                        emitter.complete();
-                    } else {
-                        emitter.completeWithError(action.failure());
-                    }
+                if (action == TerminalAction.COMPLETE) {
+                    emitter.complete();
                 }
             } catch (RuntimeException completionFailure) {
                 log.warn("TaskRun SSE 구독자 완료 신호 실패: subscriber={}",
@@ -262,28 +266,43 @@ public class TaskRunProgressStream implements AutoCloseable {
         }
     }
 
-    private record TerminalAction(boolean complete, Throwable failure) {
-
-        private static final TerminalAction ACTIVE = new TerminalAction(false, null);
-        private static final TerminalAction DISCARD = new TerminalAction(false, null);
-        private static final TerminalAction COMPLETE = new TerminalAction(true, null);
-
-        private static TerminalAction failure(Throwable failure) {
-            return new TerminalAction(true, Objects.requireNonNull(failure));
-        }
+    private enum TerminalAction {
+        ACTIVE,
+        DISCARD,
+        COMPLETE
     }
 
-    @FunctionalInterface
-    private interface OutboundMessage {
+    private sealed interface OutboundMessage permits CommentMessage, ProgressMessage {
 
         void send(SseEmitter emitter) throws IOException;
 
         static OutboundMessage comment(String comment) {
-            return emitter -> emitter.send(SseEmitter.event().comment(comment));
+            return new CommentMessage(comment);
         }
 
         static OutboundMessage event(TaskRunProgressEvent event) {
-            return emitter -> emitter.send(SseEmitter.event()
+            return new ProgressMessage(event);
+        }
+    }
+
+    private record CommentMessage(String comment) implements OutboundMessage {
+
+        @Override
+        public void send(SseEmitter emitter) throws IOException {
+            emitter.send(SseEmitter.event().comment(comment));
+        }
+    }
+
+    private record ProgressMessage(TaskRunProgressEvent event) implements OutboundMessage {
+
+        private boolean hasSameKey(ProgressMessage other) {
+            return event.runId().equals(other.event.runId())
+                    && event.stepKey().equals(other.event.stepKey());
+        }
+
+        @Override
+        public void send(SseEmitter emitter) throws IOException {
+            emitter.send(SseEmitter.event()
                     .name("task-run-progress")
                     .data(event));
         }
