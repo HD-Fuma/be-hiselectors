@@ -81,9 +81,7 @@ public class InspectionPolicyService {
         String ruleHash = sha256(writeJson(ruleConfig));
 
         String aiPrompt = promptProvider.aiPrompt();
-        String aiModel = platform == SnsPlatform.YOUTUBE
-                ? geminiProperties.youtubeModelOrDefault()
-                : geminiProperties.reportModelOrDefault();
+        String aiModel = geminiProperties.modelOrDefault();
         String aiConfigHash = sha256(String.join("\n",
                 aiModel,
                 InspectionPromptProvider.AI_PROMPT_VERSION,

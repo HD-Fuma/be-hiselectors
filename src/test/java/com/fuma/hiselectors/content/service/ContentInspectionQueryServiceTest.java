@@ -67,8 +67,14 @@ class ContentInspectionQueryServiceTest {
                 .thenReturn(List.of(
                         media(101L, MediaType.TEXT, null, null, 0, "제목"),
                         media(101L, MediaType.TEXT, null, null, 1, "본문"),
-                        media(101L, MediaType.IMAGE,
-                                "https://cdn.example.com/image.jpg", "image-1", 2, null),
+                        ContentMedia.create(
+                                101L,
+                                MediaType.IMAGE,
+                                "https://cdn.example.com/image.jpg",
+                                "https://cdn.example.com/image-thumbnail.jpg",
+                                "image-1",
+                                2,
+                                Map.of()),
                         media(101L, MediaType.VIDEO, null, "video-1", 3, null)));
 
         Page<ContentInspectionListItemResponse> result =
@@ -98,12 +104,15 @@ class ContentInspectionQueryServiceTest {
                     .extracting(
                             media -> media.mediaType(),
                             media -> media.mediaUrl(),
+                            media -> media.thumbnailUrl(),
                             media -> media.snsMediaId(),
                             media -> media.sequenceNo())
                     .containsExactly(
                             tuple(MediaType.IMAGE,
-                                    "https://cdn.example.com/image.jpg", "image-1", 2),
-                            tuple(MediaType.VIDEO, null, "video-1", 3));
+                                    "https://cdn.example.com/image.jpg",
+                                    "https://cdn.example.com/image-thumbnail.jpg",
+                                    "image-1", 2),
+                            tuple(MediaType.VIDEO, null, null, "video-1", 3));
         });
         verify(generationService).getCurrentActivity();
         verify(contentRepository).findInspectionRowsByGenerationId(10L, pageable);

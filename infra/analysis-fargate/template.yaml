@@ -33,6 +33,12 @@ Parameters:
   SttEndpoint:
     Type: String
     Default: whisper-large-v3-async
+  GeminiFallbackModels:
+    Type: String
+    Default: gemini-3.6-flash,gemini-3.5-flash-lite
+  AlertTopicName:
+    Type: String
+    Default: batch-alerts
 
 Resources:
   Cluster:
@@ -62,7 +68,26 @@ Resources:
       MessageRetentionPeriod: 345600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt AnalysisDeadLetterQueue.Arn
-        maxReceiveCount: 100
+        maxReceiveCount: 5
+
+  AnalysisDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: hiselectors-analysis-dlq
+      AlarmDescription: Applicant analysis jobs exhausted their retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt AnalysisDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${AlertTopicName}"
 
   AnalysisQueuePolicy:
     Type: AWS::SQS::QueuePolicy
@@ -194,11 +219,9 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: "0"
             - Name: GEMINI_MODEL
-              Value: gemini-3.5-flash-lite
-            - Name: GEMINI_YOUTUBE_MODEL
               Value: gemini-3.1-flash-lite
-            - Name: GEMINI_REPORT_MODEL
-              Value: gemini-3.1-flash-lite
+            - Name: GEMINI_FALLBACK_MODELS
+              Value: !Ref GeminiFallbackModels
             - Name: INSTAGRAM_REDIRECT_URI
               Value: https://hiselectors.shop/instagram/callback
           Secrets:
@@ -216,6 +239,8 @@ Resources:
               ValueFrom: !Sub "${RuntimeSecretArn}:JWT_SECRET::"
             - Name: GEMINI_API_KEY
               ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEY::"
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEYS::"
             - Name: META_API_VERSION
               ValueFrom: !Sub "${RuntimeSecretArn}:META_API_VERSION::"
             - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID

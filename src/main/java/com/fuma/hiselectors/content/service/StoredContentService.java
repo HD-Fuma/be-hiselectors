@@ -3,6 +3,8 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.ContentFetcher.FetchResult;
+import com.fuma.hiselectors.content.client.dto.RawContent;
+import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
@@ -276,6 +278,7 @@ public class StoredContentService {
                 result.fetched().content(),
                 "조회된 콘텐츠 정보가 없습니다. contentId=" + contentId);
         if (current.getContentHash().equals(snapshotFactory.contentHash(fetchedContent))) {
+            refreshCurrentMedia(current.getId(), fetchedContent);
             return false;
         }
 
@@ -292,6 +295,25 @@ public class StoredContentService {
             mediaRepository.saveAll(media);
         }
         return true;
+    }
+
+    private void refreshCurrentMedia(Long contentVersionId, RawContent fetchedContent) {
+        Map<String, RawContentMedia> fetchedById = fetchedContent.media().stream()
+                .collect(Collectors.toMap(RawContentMedia::snsMediaId, media -> media));
+        List<ContentMedia> changed = mediaRepository
+                .findByContentVersionIdOrderBySequenceNoAsc(contentVersionId)
+                .stream()
+                .filter(media -> media.getSnsMediaId() != null)
+                .filter(media -> fetchedById.containsKey(media.getSnsMediaId()))
+                .filter(media -> {
+                    RawContentMedia fetched = fetchedById.get(media.getSnsMediaId());
+                    return media.refreshExternalUrls(
+                            fetched.mediaUrl(), snapshotFactory.thumbnailUrl(fetched));
+                })
+                .toList();
+        if (!changed.isEmpty()) {
+            mediaRepository.saveAll(changed);
+        }
     }
 
     private boolean updateDeletionStatus(StoredContentFetch result) {

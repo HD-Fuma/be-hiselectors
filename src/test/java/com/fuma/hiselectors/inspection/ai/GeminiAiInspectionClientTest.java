@@ -8,6 +8,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -24,7 +25,9 @@ class GeminiAiInspectionClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        client = new GeminiAiInspectionClient(properties(), new ObjectMapper(),
+        GeminiProperties properties = properties();
+        client = new GeminiAiInspectionClient(properties, new GeminiRequestExecutor(properties),
+                new ObjectMapper(),
                 new InspectionPromptProvider(), builder.build());
     }
 
@@ -61,6 +64,7 @@ class GeminiAiInspectionClientTest {
     }
 
     private GeminiProperties properties() {
-        return new GeminiProperties("test-key", "test-model", null, null, null, null);
+        return new GeminiProperties(
+                "test-key", null, null, "test-model", null, null);
     }
 }

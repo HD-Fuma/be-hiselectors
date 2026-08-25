@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.ContentFetcher;
 import com.fuma.hiselectors.content.client.dto.RawContent;
+import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentEngagement;
 import com.fuma.hiselectors.content.model.ContentMedia;
@@ -317,6 +318,62 @@ class StoredContentServiceTest {
             assertThat(media.getBody()).containsExactlyEntriesOf(Map.of("text", "수정 후"));
         });
         verify(contentRepository).saveAll(List.of(changed));
+    }
+
+    @Test
+    void refreshesExternalMediaWithoutCreatingNewVersion() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "same");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        RawContent fetched = new RawContent(
+                SnsPlatform.INSTAGRAM,
+                "same",
+                "https://example.com/same",
+                ContentType.SHORT_FORM,
+                "동일 본문",
+                LocalDateTime.of(2026, 8, 20, 11, 0),
+                List.of(new RawContentMedia(
+                        "video-1",
+                        RawContentMedia.MediaType.VIDEO,
+                        "https://cdn.example.com/video-new.mp4",
+                        List.of("https://cdn.example.com/video-new.jpg"))));
+        ContentVersion current = version(10L, snapshotFactory.contentHash(fetched));
+        ReflectionTestUtils.setField(current, "id", 100L);
+        ContentMedia stored = ContentMedia.create(
+                100L,
+                com.fuma.hiselectors.content.model.MediaType.VIDEO,
+                "https://cdn.example.com/video-old.mp4",
+                null,
+                "video-1",
+                1,
+                Map.of());
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("same")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "same", ContentFetcher.FetchStatus.FOUND, fetched, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(current));
+        when(mediaRepository.findByContentVersionIdOrderBySequenceNoAsc(100L))
+                .thenReturn(List.of(stored));
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(result.platformStats()).containsEntry(
+                SnsPlatform.INSTAGRAM,
+                new StoredContentService.PlatformStoredContentStats(0, 0));
+        assertThat(stored.getMediaUrl())
+                .isEqualTo("https://cdn.example.com/video-new.mp4");
+        assertThat(stored.getThumbnailUrl())
+                .isEqualTo("https://cdn.example.com/video-new.jpg");
+        verify(mediaRepository).saveAll(List.of(stored));
+        verify(versionRepository, never()).saveAll(any());
     }
 
     @Test
