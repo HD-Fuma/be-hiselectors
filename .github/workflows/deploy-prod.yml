@@ -93,6 +93,11 @@ jobs:
             fi
             test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress' AND data_type = 'json' AND is_nullable = 'YES'")" = "1"
             echo "task-run-step-progress=verified"
+            if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors' AND column_name = 'category'")" = "0" ]; then
+              mysql_query "ALTER TABLE selectors ADD COLUMN category VARCHAR(20) NULL AFTER selectors_nickname"
+            fi
+            test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors' AND column_name = 'category'")" = "1"
+            echo "selectors-category=verified"
             if [ -n "${ANALYSIS_QUEUE_URL:-}" ]; then
               sed -i '/^APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=/d' .env
               printf 'APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=%s\n' "$ANALYSIS_QUEUE_URL" >> .env

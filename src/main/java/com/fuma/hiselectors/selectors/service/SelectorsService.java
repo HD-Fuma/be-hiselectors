@@ -191,6 +191,7 @@ public class SelectorsService {
                 selectors.getSelectorsNickname(),
                 selectors.getSelectorsRoleId(),
                 roleName,
+                selectors.getCategory(),
                 account == null || account.getSnsCode() == null
                         ? null : account.getSnsCode().name(),
                 account == null ? null : account.getAccountId(),
