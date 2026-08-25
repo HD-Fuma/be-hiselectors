@@ -145,12 +145,14 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             Pageable pageable);
 
     @Query("""
-            select count(h) as settlementCount,
+            select h.activityYearMonth as activityYearMonth,
+                   h.status as status,
+                   count(h) as settlementCount,
                    coalesce(sum(h.confirmedPurchaseCount), 0) as confirmedPurchaseCount,
                    coalesce(sum(h.totalSales), 0) as confirmedSalesAmount,
                    coalesce(sum(h.settlementAmount), 0) as settlementAmount
             from SettlementHistory h
-            where h.activityYearMonth = :activityYearMonth
+            where h.activityYearMonth between :fromActivityYearMonth and :toActivityYearMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
               and exists (
@@ -158,13 +160,20 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
                   from Selectors s
                   where s.id = h.selectorsId
               )
+            group by h.activityYearMonth, h.status
+            order by h.activityYearMonth, h.status
             """)
-    SettlementAggregate summarize(
-            @Param("activityYearMonth") Integer activityYearMonth,
+    List<SettlementAggregate> summarizeByMonthAndStatus(
+            @Param("fromActivityYearMonth") Integer fromActivityYearMonth,
+            @Param("toActivityYearMonth") Integer toActivityYearMonth,
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status);
 
     interface SettlementAggregate {
+
+        int getActivityYearMonth();
+
+        SettlementStatus getStatus();
 
         long getSettlementCount();
 
