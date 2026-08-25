@@ -517,7 +517,7 @@ class InstagramContentFetcherTest {
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
                     assertThat(query)
                             .contains("business_discovery.username(selector.insta)")
-                            .contains("media.limit(100)");
+                            .contains("media.limit(10)");
                 })
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
@@ -526,6 +526,16 @@ class InstagramContentFetcherTest {
                 nextUrl,
                 List.of(mediaJson("stored", "2026-08-12T05:00:00+0000")),
                 null);
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query)
+                            .contains("media.limit(100)")
+                            .contains("id,media_type,media_url,thumbnail_url")
+                            .doesNotContain("caption");
+                })
+                .andRespond(withSuccess(firstPageJson(List.of(), null),
+                        MediaType.APPLICATION_JSON));
 
         List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
                 "selector.insta", List.of("stored", "missing"));
@@ -536,6 +546,50 @@ class InstagramContentFetcherTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("stored", FetchStatus.FOUND),
                         org.assertj.core.groups.Tuple.tuple("missing", FetchStatus.NOT_FOUND));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("첫 페이지 밖의 기존 영상은 가벼운 100건 조회로 URL을 갱신한다")
+    void fetchStoredMediaFromWidePage() {
+        server.expect(request -> assertThat(URLDecoder.decode(
+                        request.getURI().getRawQuery(), StandardCharsets.UTF_8))
+                        .contains("media.limit(10)"))
+                .andRespond(withSuccess(firstPageJson(
+                        List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
+                        null), MediaType.APPLICATION_JSON));
+        server.expect(request -> assertThat(URLDecoder.decode(
+                        request.getURI().getRawQuery(), StandardCharsets.UTF_8))
+                        .contains("media.limit(100)")
+                        .contains("id,media_type,media_url,thumbnail_url")
+                        .doesNotContain("caption"))
+                .andRespond(withSuccess("""
+                        {
+                          "business_discovery": {
+                            "media": {
+                              "data": [{
+                                "id": "stored-video",
+                                "media_type": "VIDEO",
+                                "media_url": "https://cdn.example.com/stored.mp4",
+                                "thumbnail_url": "https://cdn.example.com/stored.jpg"
+                              }]
+                            }
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
+                "selector.insta", List.of("stored-video"));
+
+        assertThat(result).singleElement().satisfies(found -> {
+            assertThat(found.status()).isEqualTo(FetchStatus.FOUND);
+            assertThat(found.content()).isNull();
+            assertThat(found.refreshedMedia()).containsExactly(new RawContentMedia(
+                    "stored-video",
+                    RawContentMedia.MediaType.VIDEO,
+                    "https://cdn.example.com/stored.mp4",
+                    List.of("https://cdn.example.com/stored.jpg")));
+        });
         server.verify();
     }
 

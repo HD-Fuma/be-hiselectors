@@ -274,11 +274,13 @@ public class StoredContentService {
                 .findFirst()
                 .orElseThrow(() -> new NullPointerException(
                         "현재 콘텐츠 버전이 없습니다. contentId=" + contentId));
-        var fetchedContent = Objects.requireNonNull(
-                result.fetched().content(),
-                "조회된 콘텐츠 정보가 없습니다. contentId=" + contentId);
+        RawContent fetchedContent = result.fetched().content();
+        if (fetchedContent == null) {
+            refreshCurrentMedia(current.getId(), result.fetched().refreshedMedia());
+            return false;
+        }
         if (current.getContentHash().equals(snapshotFactory.contentHash(fetchedContent))) {
-            refreshCurrentMedia(current.getId(), fetchedContent);
+            refreshCurrentMedia(current.getId(), fetchedContent.media());
             return false;
         }
 
@@ -297,8 +299,9 @@ public class StoredContentService {
         return true;
     }
 
-    private void refreshCurrentMedia(Long contentVersionId, RawContent fetchedContent) {
-        Map<String, RawContentMedia> fetchedById = fetchedContent.media().stream()
+    private void refreshCurrentMedia(
+            Long contentVersionId, List<RawContentMedia> fetchedMedia) {
+        Map<String, RawContentMedia> fetchedById = fetchedMedia.stream()
                 .collect(Collectors.toMap(RawContentMedia::snsMediaId, media -> media));
         List<ContentMedia> changed = mediaRepository
                 .findByContentVersionIdOrderBySequenceNoAsc(contentVersionId)

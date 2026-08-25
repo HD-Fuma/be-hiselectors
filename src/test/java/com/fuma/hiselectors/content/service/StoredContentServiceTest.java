@@ -377,6 +377,60 @@ class StoredContentServiceTest {
     }
 
     @Test
+    void refreshesMediaOnlyResultAndRestoresContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "older-video");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        content.markDeleted();
+        ContentVersion current = version(10L, "existing-hash");
+        ReflectionTestUtils.setField(current, "id", 100L);
+        ContentMedia stored = ContentMedia.create(
+                100L,
+                com.fuma.hiselectors.content.model.MediaType.VIDEO,
+                "https://cdn.example.com/video-old.mp4",
+                null,
+                "older-video",
+                1,
+                Map.of());
+        RawContentMedia refreshed = new RawContentMedia(
+                "older-video",
+                RawContentMedia.MediaType.VIDEO,
+                "https://cdn.example.com/video-new.mp4",
+                List.of("https://cdn.example.com/video-new.jpg"));
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("older-video")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "older-video",
+                        ContentFetcher.FetchStatus.FOUND,
+                        null,
+                        null,
+                        List.of(refreshed))));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(current));
+        when(mediaRepository.findByContentVersionIdOrderBySequenceNoAsc(100L))
+                .thenReturn(List.of(stored));
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(content.isDeleted()).isFalse();
+        assertThat(content.getLastVersionNo()).isEqualTo(1L);
+        assertThat(stored.getMediaUrl())
+                .isEqualTo("https://cdn.example.com/video-new.mp4");
+        assertThat(stored.getThumbnailUrl())
+                .isEqualTo("https://cdn.example.com/video-new.jpg");
+        verify(mediaRepository).saveAll(List.of(stored));
+        verify(contentRepository).saveAll(List.of(content));
+        verify(versionRepository, never()).saveAll(any());
+    }
+
+    @Test
     void updatesDeletionOnlyForFoundAndNotFoundContent() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content notFound = content(SnsPlatform.INSTAGRAM, "not-found");
