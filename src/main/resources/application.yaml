@@ -134,9 +134,9 @@ discovery:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-3.6-flash}
-  youtube-model: ${GEMINI_YOUTUBE_MODEL:gemini-3.5-flash-lite}
-  report-model: ${GEMINI_REPORT_MODEL:gemini-3.5-flash-lite}
+  api-keys: ${GEMINI_API_KEYS:}
+  fallback-models: ${GEMINI_FALLBACK_MODELS:}
+  model: ${GEMINI_MODEL:gemini-3.1-flash-lite}
 
 # Instagram STT/OCR 파이썬 워커 (faster-whisper + RapidOCR)
 stt:
@@ -177,6 +177,7 @@ kakao:
     web-url: ${KAKAO_MESSAGE_WEB_URL:https://hiselectors.shop/}
     mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:https://hiselectors.shop/}
     image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
+    default-recipient-uuid: ${KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID:}
   token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}
 
 purchase:
@@ -222,6 +223,7 @@ application:
     run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
 
 settlement:
+  account-encryption-key: ${SETTLEMENT_ACCOUNT_ENCRYPTION_KEY:}
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
   estimate:
     cron: ${SETTLEMENT_ESTIMATE_CRON:0 0 3 * * *}
@@ -229,6 +231,7 @@ settlement:
     cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
   payment:
     cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+    minimum-amount: ${SETTLEMENT_PAYMENT_MINIMUM_AMOUNT:1000}
   expiry:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:

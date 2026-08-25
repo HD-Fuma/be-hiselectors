@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.dto.ApplicationResponse;
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -29,11 +30,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ApplicationApprovalService {
 
-    // ponytail: 테스트용 고정 수신자 uuid. 지원자별 uuid 조회 붙기 전까지 이 한 명에게만 발송.
-    private static final String TEST_RECIPIENT_UUID = "_cz_yfzN_Mr51eLT6tjv2urZ9cTxxfTA8sZH";
     private static final Logger log = LoggerFactory.getLogger(ApplicationApprovalService.class);
 
     private final ApplicationRepository applicationRepository;
+    private final ApplicationReportRepository applicationReportRepository;
     private final UserRepository userRepository;
     private final SelectorsRepository selectorsRepository;
     private final SelectorsGenerationRepository selectorsGenerationRepository;
@@ -71,10 +71,9 @@ public class ApplicationApprovalService {
                 .map(User::getName).orElse("");
         NotificationMessageCommand command = new NotificationMessageCommand(
                 null, application.getUserId(), application.getId(), name, null, type);
-        // ponytail: 디버그용. 원인 확인되면 catch-and-log 로 되돌린다.
         log.warn("승인/반려 카카오 알림 발송 시도 applicationId={} status={} adminLoginId={}",
                 application.getId(), status, adminLoginId);
-        notificationService.sendToUuid(adminLoginId, TEST_RECIPIENT_UUID, command);
+        notificationService.sendToFriend(adminLoginId, command);
     }
 
     private void approve(Application application) {
@@ -86,6 +85,9 @@ public class ApplicationApprovalService {
             throw new BusinessException(ErrorCode.BLACKLISTED_SELECTOR);
         }
         selectors.activateForApplication(application.getId());
+        applicationReportRepository
+                .findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
+                .ifPresent(report -> selectors.assignCategory(report.getCategory()));
         if (!selectorsGenerationRepository.existsBySelectorsIdAndGenerationId(
                 selectors.getId(), application.getGenerationId())) {
             selectorsGenerationRepository.save(SelectorsGeneration.builder()

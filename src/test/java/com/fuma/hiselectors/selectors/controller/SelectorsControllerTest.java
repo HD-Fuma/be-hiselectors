@@ -45,7 +45,7 @@ class SelectorsControllerTest {
     void returnsOneSnsAccountInDetail() throws Exception {
         LocalDateTime now = LocalDateTime.of(2026, 8, 20, 12, 0);
         when(selectorsService.findDetail(7L)).thenReturn(new SelectorsDetailResponse(
-                7L, "SEL-2601-007", "지안글로우", "INACTIVE", "비활성",
+                7L, "SEL-2601-007", "지안글로우", "INACTIVE", "비활성", "BEAUTY",
                 1L, 1L, now.minusDays(10), now.minusDays(9), true,
                 now, now, List.of(),
                 new SelectorsSnsAccountResponse(

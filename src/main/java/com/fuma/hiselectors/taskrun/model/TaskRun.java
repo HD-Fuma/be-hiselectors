@@ -12,6 +12,9 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.AccessLevel;
@@ -65,6 +68,10 @@ public class TaskRun {
 
     @Column(name = "progress_message", length = 500)
     private String progressMessage;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "step_progress")
+    private Map<String, TaskStepProgress> stepProgress;
 
     @Column(name = "total_count")
     private Long totalCount;
@@ -197,6 +204,29 @@ public class TaskRun {
         touch(now);
     }
 
+    public void mergeStepProgress(Map<String, TaskStepProgress> patch, Instant now) {
+        requireRunning();
+        Objects.requireNonNull(patch, "단계 진행률 변경값은 필수입니다.");
+        Objects.requireNonNull(now, "기준 시각은 필수입니다.");
+        LinkedHashMap<String, TaskStepProgress> merged = new LinkedHashMap<>();
+        if (stepProgress != null) {
+            merged.putAll(stepProgress);
+        }
+        patch.forEach((stepKey, progress) -> {
+            requireValidStepKey(stepKey);
+            merged.put(stepKey, Objects.requireNonNull(progress, "단계 진행률은 필수입니다."));
+        });
+        this.stepProgress = Collections.unmodifiableMap(merged);
+        touch(now);
+    }
+
+    public Map<String, TaskStepProgress> getStepProgress() {
+        if (stepProgress == null) {
+            return null;
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(stepProgress));
+    }
+
     public void addCounts(long succeeded, long failed, long skipped, Instant now) {
         requireRunning();
         Objects.requireNonNull(now, "기준 시각은 필수입니다.");
@@ -281,6 +311,15 @@ public class TaskRun {
     private void requireNonNegative(String name, long value) {
         if (value < 0) {
             throw new IllegalArgumentException(name + "는 음수일 수 없습니다.");
+        }
+    }
+
+    private void requireValidStepKey(String stepKey) {
+        if (stepKey == null || stepKey.isBlank()) {
+            throw new IllegalArgumentException("단계 키는 비어 있을 수 없습니다.");
+        }
+        if (stepKey.length() > 100) {
+            throw new IllegalArgumentException("단계 키는 100자를 초과할 수 없습니다.");
         }
     }
 

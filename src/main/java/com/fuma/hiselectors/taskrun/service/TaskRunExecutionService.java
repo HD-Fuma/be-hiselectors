@@ -26,6 +26,7 @@ public class TaskRunExecutionService {
     private final Clock clock;
     private final TaskExecutor executor;
     private final TaskRunFailureLogger failureLogger;
+    private final TaskRunProgressStream progressStream;
 
     public TaskRunExecutionService(
             TaskRunService taskRunService,
@@ -33,13 +34,15 @@ public class TaskRunExecutionService {
             TaskRunProperties properties,
             Clock clock,
             @Qualifier("taskRunExecutor") TaskExecutor executor,
-            TaskRunFailureLogger failureLogger) {
+            TaskRunFailureLogger failureLogger,
+            TaskRunProgressStream progressStream) {
         this.taskRunService = taskRunService;
         this.leaseTransaction = leaseTransaction;
         this.properties = properties;
         this.clock = clock;
         this.executor = executor;
         this.failureLogger = failureLogger;
+        this.progressStream = progressStream;
     }
 
     public TaskStartResult submit(TaskStartCommand command, TrackedTask task) {
@@ -68,7 +71,7 @@ public class TaskRunExecutionService {
         }
 
         ThrottledTaskProgressReporter reporter = new ThrottledTaskProgressReporter(
-                lease, leaseTransaction, properties.progress(), clock);
+                lease, leaseTransaction, progressStream, properties.progress(), clock);
         TaskRunTerminalSnapshot terminalSnapshot;
         try {
             task.execute(new TaskExecutionContext(lease, reporter));
@@ -93,10 +96,13 @@ public class TaskRunExecutionService {
 
     private TaskRunTerminalSnapshot failRunning(TaskLease lease, Exception failure) {
         try {
+            String errorType = failure instanceof BusinessException businessException
+                    ? businessException.getErrorCode().name()
+                    : failure.getClass().getSimpleName();
             return taskRunService.fail(
                     lease.runId(),
                     lease.token(),
-                    failure.getClass().getSimpleName(),
+                    errorType,
                     failure.getMessage());
         } catch (BusinessException transitionFailure) {
             log.info("Task run {} no longer owns its terminal transition: {}",

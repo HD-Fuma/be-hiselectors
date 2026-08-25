@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,11 +18,14 @@ import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
 import com.fuma.hiselectors.taskrun.dto.TaskRunPanelResponse;
 import com.fuma.hiselectors.taskrun.dto.TaskRunResponse;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunQueryService;
+import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -31,9 +36,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:task-run-controller;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
@@ -57,6 +65,7 @@ class TaskRunAdminControllerTest {
     @Autowired private TaskRunAdminController controller;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     @MockitoBean private TaskRunQueryService taskRunQueryService;
+    @MockitoBean private TaskRunProgressStream taskRunProgressStream;
 
     @Test
     void adminCanReadPanelWithExactlyThePublicTaskRunFields() throws Exception {
@@ -70,6 +79,8 @@ class TaskRunAdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.serverTime").value("2026-08-23T03:00:00Z"))
                 .andExpect(jsonPath("$.data.items[0].progressPercent").value(50))
+                .andExpect(jsonPath("$.data.items[0].stepProgress.youtube.totalCount").value(10))
+                .andExpect(jsonPath("$.data.items[0].stepProgress.youtube.processedCount").value(4))
                 .andExpect(jsonPath("$.data.items[0].startedBy.adminId").value(7))
                 .andExpect(jsonPath("$.data.items[0].startedBy.name").value("관리자"))
                 .andReturn().getResponse().getContentAsString();
@@ -78,7 +89,7 @@ class TaskRunAdminControllerTest {
         assertThat(taskRun.properties()).extracting(java.util.Map.Entry::getKey)
                 .containsExactlyInAnyOrderElementsOf(Set.of(
                         "runId", "taskType", "triggerType", "status", "currentStep",
-                        "progressMessage",
+                        "progressMessage", "stepProgress",
                         "totalCount", "processedCount", "succeededCount", "failedCount",
                         "skippedCount", "progressPercent", "startedBy", "startedAt", "finishedAt"));
     }
@@ -146,6 +157,45 @@ class TaskRunAdminControllerTest {
     }
 
     @Test
+    void adminCanOpenUnwrappedEventStream() throws Exception {
+        SseEmitter emitter = new SseEmitter(1_000L);
+        emitter.send(SseEmitter.event().comment("connected"));
+        emitter.complete();
+        when(taskRunProgressStream.subscribe()).thenReturn(emitter);
+
+        MvcResult result = mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .header("Authorization", bearer("ADMIN"))
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).contains(":connected");
+        assertThat(body).doesNotContain("\"success\"").doesNotContain("\"data\"");
+        verify(taskRunProgressStream).subscribe();
+    }
+
+    @Test
+    void streamReturnsJsonSecurityErrorsForAnonymousAndUser() throws Exception {
+        mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+        mockMvc.perform(get("/api/admin/task-runs/stream")
+                        .header("Authorization", bearer("USER"))
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
     void detailReturnsTaskRunNotFound() throws Exception {
         UUID runId = UUID.randomUUID();
         when(taskRunQueryService.getDetail(runId))
@@ -170,6 +220,7 @@ class TaskRunAdminControllerTest {
                 TaskRunStatus.RUNNING,
                 "콘텐츠 조회",
                 "크리에이터 5명 수집",
+                Map.of("youtube", new TaskStepProgress(10L, 4L)),
                 10L,
                 5L,
                 4L,

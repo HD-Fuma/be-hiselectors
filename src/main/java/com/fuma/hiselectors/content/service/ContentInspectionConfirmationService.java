@@ -3,6 +3,7 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest.ViolationDecision;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationResponse;
+import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentVersion;
@@ -16,12 +17,14 @@ import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.repository.ViolationEvidenceHistoryRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
+import com.fuma.hiselectors.penalty.service.PenaltyService;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,13 +41,16 @@ public class ContentInspectionConfirmationService {
     private final ContentReportRepository contentReportRepository;
     private final ViolationEvidenceHistoryRepository historyRepository;
     private final ViolationItemRepository violationItemRepository;
+    private final PenaltyService penaltyService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ContentInspectionConfirmationResponse confirm(
             Long contentId,
             Long contentVersionId,
-            ContentInspectionConfirmationRequest request) {
-        requireContent(contentId);
+            ContentInspectionConfirmationRequest request,
+            String adminLoginId) {
+        Content content = requireContent(contentId);
         ContentVersion version = requireOwnedVersionForUpdate(contentId, contentVersionId);
         if (version.getInspectionDecision() != null) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
@@ -73,19 +79,25 @@ public class ContentInspectionConfirmationService {
             ViolationStatus target = requestedStatuses.get(item.getId());
             if (target == ViolationStatus.VIOLATION_CONFIRMED) {
                 item.confirm();
+                penaltyService.activateIfAbsent(
+                        content.getSelectorsId(), contentVersionId,
+                        item.getViolationTypeId(), violationReason(item), adminLoginId);
             } else {
                 item.dismiss();
             }
         }
         version.confirmInspection(request.decision());
         violationItemRepository.flush();
+        if (requestedStatuses.containsValue(ViolationStatus.VIOLATION_CONFIRMED)) {
+            eventPublisher.publishEvent(new ContentViolationConfirmedEvent(
+                    adminLoginId, contentId, content.getSelectorsId()));
+        }
         return new ContentInspectionConfirmationResponse(pendingItems.size());
     }
 
-    private void requireContent(Long contentId) {
-        if (!contentRepository.existsById(contentId)) {
-            throw new BusinessException(ErrorCode.CONTENT_NOT_FOUND);
-        }
+    private Content requireContent(Long contentId) {
+        return contentRepository.findById(contentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
     }
 
     private ContentVersion requireOwnedVersionForUpdate(Long contentId, Long contentVersionId) {
@@ -149,6 +161,14 @@ public class ContentInspectionConfirmationService {
         if (decision == ContentInspectionDecision.REJECTED && !hasConfirmed) {
             throw invalid("REJECTED는 VIOLATION_CONFIRMED 항목이 하나 이상 필요합니다.");
         }
+    }
+
+    private String violationReason(ViolationItem item) {
+        if (item.getEvidence() == null || item.getEvidence().reason() == null
+                || item.getEvidence().reason().isBlank()) {
+            return "수정이 필요한 위반 사항";
+        }
+        return item.getEvidence().reason();
     }
 
     private BusinessException invalid(String message) {

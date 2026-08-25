@@ -23,6 +23,8 @@ import com.fuma.hiselectors.inspection.service.MediaPreprocessingService.MediaEx
 import com.fuma.hiselectors.inspection.service.MediaPreprocessingService.PreprocessingResult;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.taskrun.service.TaskLease;
+import com.fuma.hiselectors.taskrun.service.TaskLeaseTransaction;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,6 +52,7 @@ public class ContentInspectionExecutionService {
     private final ViolationResultMerger resultMerger;
     private final EvidenceLocationNormalizer evidenceLocationNormalizer;
     private final ViolationReconciliationService reconciliationService;
+    private final TaskLeaseTransaction taskLeaseTransaction;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
@@ -58,8 +61,12 @@ public class ContentInspectionExecutionService {
                 transactionTemplate.execute(status -> prepare(contentVersionId)));
         try {
             InspectionAnalysis analysis = analyze(preparation);
+            InspectionResult result = toResult(preparation, analysis);
             return Objects.requireNonNull(transactionTemplate.execute(
-                    status -> persist(preparation, analysis)));
+                    status -> {
+                        persist(preparation, analysis);
+                        return result;
+                    }));
         } catch (RuntimeException inspectionFailure) {
             try {
                 transactionTemplate.executeWithoutResult(
@@ -69,6 +76,55 @@ public class ContentInspectionExecutionService {
             }
             throw inspectionFailure;
         }
+    }
+
+    public InspectionResult inspectTracked(Long contentVersionId, TaskLease lease) {
+        InspectionPreparation preparation;
+        try {
+            preparation = Objects.requireNonNull(
+                    transactionTemplate.execute(status -> prepare(contentVersionId)));
+        } catch (RuntimeException preparationFailure) {
+            recordTrackedFailure(lease, null, preparationFailure);
+            throw preparationFailure;
+        }
+
+        try {
+            InspectionAnalysis analysis = analyze(preparation);
+            InspectionResult result = toResult(preparation, analysis);
+            taskLeaseTransaction.execute(
+                    lease, 1, 0, 0, () -> persist(preparation, analysis));
+            return result;
+        } catch (RuntimeException inspectionFailure) {
+            if (isLeaseLost(inspectionFailure)) {
+                throw inspectionFailure;
+            }
+            recordTrackedFailure(
+                    lease, preparation.version().getId(), inspectionFailure);
+            throw inspectionFailure;
+        }
+    }
+
+    private void recordTrackedFailure(
+            TaskLease lease, Long contentVersionId, RuntimeException inspectionFailure) {
+        try {
+            taskLeaseTransaction.execute(
+                    lease,
+                    0,
+                    1,
+                    0,
+                    contentVersionId == null ? () -> { } : () -> fail(contentVersionId));
+        } catch (RuntimeException statusFailure) {
+            if (isLeaseLost(statusFailure)) {
+                statusFailure.addSuppressed(inspectionFailure);
+                throw statusFailure;
+            }
+            inspectionFailure.addSuppressed(statusFailure);
+        }
+    }
+
+    private boolean isLeaseLost(RuntimeException failure) {
+        return failure instanceof BusinessException businessException
+                && businessException.getErrorCode() == ErrorCode.TASK_RUN_LEASE_LOST;
     }
 
     private InspectionPreparation prepare(Long contentVersionId) {
@@ -133,7 +189,7 @@ public class ContentInspectionExecutionService {
                 aiResponse.report(), merged, preprocessing.extractionUpdate());
     }
 
-    private InspectionResult persist(
+    private void persist(
             InspectionPreparation preparation, InspectionAnalysis analysis) {
         Long contentVersionId = preparation.version().getId();
         Content content = contentRepository.findByIdForUpdate(
@@ -147,9 +203,13 @@ public class ContentInspectionExecutionService {
         reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
+    }
+
+    private InspectionResult toResult(
+            InspectionPreparation preparation, InspectionAnalysis analysis) {
         return new InspectionResult(
                 preparation.requestedContentVersionId(),
-                contentVersionId,
+                preparation.version().getId(),
                 preparation.versionCreated(),
                 preparation.version().getCreationReason(),
                 analysis.violations().size());

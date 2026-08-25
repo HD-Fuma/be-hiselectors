@@ -90,6 +90,8 @@ public enum ErrorCode {
     INVALID_SETTLEMENT_AMOUNT(HttpStatus.CONFLICT, "정산 대상 매출에 원 단위 미만 금액이 포함되어 있습니다."),
     SETTLEMENT_ACTIVITY_MONTH_DUPLICATED(HttpStatus.CONFLICT, "같은 활동월의 정산 이력이 중복되어 있습니다."),
     INVALID_SETTLEMENT_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 정산 상태 변경입니다."),
+    SETTLEMENT_ENCRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보 암호화 설정이 올바르지 않습니다."),
+    SETTLEMENT_DECRYPTION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "정산 정보를 복호화할 수 없습니다."),
 
     // --- 발굴 카테고리 / 키워드 ---
     CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "카테고리를 찾을 수 없습니다."),
@@ -102,6 +104,8 @@ public enum ErrorCode {
     INVALID_CONTENT_INSPECTION_STATUS(HttpStatus.CONFLICT, "검수할 수 없는 콘텐츠 버전 상태입니다."),
     INVALID_VIOLATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 위반 상태 변경입니다."),
     ACTIVE_PENALTY_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 활성 패널티가 있습니다."),
+    PENALTY_NOT_FOUND(HttpStatus.NOT_FOUND, "패널티 이력을 찾을 수 없습니다."),
+    INVALID_PENALTY_STATUS_TRANSITION(HttpStatus.CONFLICT, "해제할 수 없는 패널티 상태입니다."),
 
     // --- 크리에이터 ---
     CREATOR_NOT_FOUND(HttpStatus.NOT_FOUND, "크리에이터를 찾을 수 없습니다."),
@@ -178,6 +182,9 @@ public enum ErrorCode {
             HttpStatus.CONFLICT, "이미 확정된 콘텐츠 검수입니다."),
     VIOLATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위반 항목을 찾을 수 없습니다."),
     VIOLATION_TYPE_NOT_FOUND(HttpStatus.CONFLICT, "등록된 위반 유형을 찾을 수 없습니다."),
+    AI_CONTENT_INSPECTION_QUOTA_EXCEEDED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "AI 콘텐츠 검수 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."),
     AI_CONTENT_INSPECTION_FAILED(HttpStatus.BAD_GATEWAY, "AI 콘텐츠 검수에 실패했습니다."),
     INSPECTION_ENGINE_NOT_READY(HttpStatus.CONFLICT, "활성 검수 엔진이 준비되지 않았습니다."),
 

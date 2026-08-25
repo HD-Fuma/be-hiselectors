@@ -3,6 +3,7 @@ package com.fuma.hiselectors.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,10 +12,14 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
+import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
@@ -33,6 +38,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 class ApplicationApprovalServiceTest {
 
     private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
+    private final ApplicationReportRepository reportRepository =
+            mock(ApplicationReportRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
     private final SelectorsGenerationRepository membershipRepository =
@@ -42,8 +49,8 @@ class ApplicationApprovalServiceTest {
     private final com.fuma.hiselectors.notification.service.NotificationService notificationService =
             mock(com.fuma.hiselectors.notification.service.NotificationService.class);
     private final ApplicationApprovalService service = new ApplicationApprovalService(
-            applicationRepository, userRepository, selectorsRepository, membershipRepository,
-            snsAccountRepository, notificationService);
+            applicationRepository, reportRepository, userRepository, selectorsRepository,
+            membershipRepository, snsAccountRepository, notificationService);
 
     private Application application;
     private User user;
@@ -100,6 +107,12 @@ class ApplicationApprovalServiceTest {
         assertThat(accountCaptor.getValue().getFollowerCount()).isEqualTo(12_345L);
         assertThat(accountCaptor.getValue().getProfileImageUrl())
                 .isEqualTo("https://cdn.example.com/profile.jpg");
+        ArgumentCaptor<NotificationMessageCommand> notificationCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("admin"), notificationCaptor.capture());
+        assertThat(notificationCaptor.getValue().recipientUserId()).isEqualTo(7L);
+        assertThat(notificationCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.SELECTION_APPROVED);
     }
 
     @Test
@@ -120,10 +133,13 @@ class ApplicationApprovalServiceTest {
                 .build();
         when(selectorsRepository.findByUserIdForUpdate(7L)).thenReturn(Optional.of(selectors));
         when(snsAccountRepository.findBySelectorsId(9L)).thenReturn(Optional.of(account));
+        when(reportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(31L))
+                .thenReturn(Optional.of(ApplicationReport.builder().category("BEAUTY").build()));
 
         service.updateStatus(
                 31L, new ApplicationStatusUpdateRequest(ApplicationStatus.APPROVED), "admin");
 
+        assertThat(selectors.getCategory()).isEqualTo("BEAUTY");
         assertThat(account.getSnsCode()).isEqualTo(SnsPlatform.YOUTUBE);
         assertThat(account.getAccountId()).isEqualTo("UC-approved");
         assertThat(account.getProfileUrl())

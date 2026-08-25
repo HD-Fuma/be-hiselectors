@@ -121,10 +121,12 @@ class ContentInspectionAdminControllerTest {
         when(confirmationService.confirm(
                 org.mockito.ArgumentMatchers.eq(1L),
                 org.mockito.ArgumentMatchers.eq(101L),
-                org.mockito.ArgumentMatchers.any()))
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("admin")))
                 .thenReturn(new ContentInspectionConfirmationResponse(2));
 
         mockMvc.perform(patch("/api/admin/contents/1/versions/101/inspection")
+                        .principal(() -> "admin")
                         .contentType("application/json")
                         .content("""
                                 {
@@ -145,6 +147,7 @@ class ContentInspectionAdminControllerTest {
     @Test
     void rejectsMissingViolationsBodyField() throws Exception {
         mockMvc.perform(patch("/api/admin/contents/1/versions/101/inspection")
+                        .principal(() -> "admin")
                         .contentType("application/json")
                         .content("{\"decision\":\"APPROVED\"}"))
                 .andExpect(status().isBadRequest())

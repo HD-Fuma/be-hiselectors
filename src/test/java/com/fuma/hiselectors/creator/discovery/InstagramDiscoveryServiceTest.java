@@ -100,7 +100,11 @@ class InstagramDiscoveryServiceTest {
         assertThat(result.instagramCreatorId()).isEqualTo(20L);
         assertThat(result.created()).isTrue();
         assertThat(result.mediaCount()).isEqualTo(1_668L);
-        verify(discoveryInfoRepository).save(any(CreatorDiscoveryInfo.class));
+        ArgumentCaptor<CreatorDiscoveryInfo> infoCaptor =
+                ArgumentCaptor.forClass(CreatorDiscoveryInfo.class);
+        verify(discoveryInfoRepository).save(infoCaptor.capture());
+        assertThat(infoCaptor.getValue().getProfileImageUrl())
+                .isEqualTo("https://ig.example/nike.jpg");
     }
 
     @Test
@@ -272,7 +276,8 @@ class InstagramDiscoveryServiceTest {
 
     private BusinessDiscovery discoveredAccount(List<MediaItem> mediaItems) {
         return new BusinessDiscovery(
-                "17841400602400210", "nike", "Nike", "Just Do It. contact@nike.com", null,
+                "17841400602400210", "nike", "Nike", "Just Do It. contact@nike.com",
+                "https://ig.example/nike.jpg",
                 291_530_362L, 1_668L, new Media(mediaItems)
         );
     }

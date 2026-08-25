@@ -64,6 +64,8 @@ class ApplicationMediaServiceTest {
     @Mock
     private TransactionTemplate transactionTemplate;
     @Mock
+    private AnalysisQueuePublisher analysisQueuePublisher;
+    @Mock
     private SelectorsRepository selectorsRepository;
     @Mock
     private SelectorsSnsAccountRepository selectorsSnsAccountRepository;
@@ -90,6 +92,7 @@ class ApplicationMediaServiceTest {
         service = new ApplicationMediaService(
                 applicationRepository, mediaRepository,
                 List.of(instagramFetcher, youtubeFetcher), transactionTemplate, CLOCK,
+                Optional.of(analysisQueuePublisher),
                 selectorsRepository, selectorsSnsAccountRepository);
     }
 
@@ -134,6 +137,8 @@ class ApplicationMediaServiceTest {
         });
 
         var result = service.collect(APPLICATION_ID);
+
+        verify(analysisQueuePublisher).publish(APPLICATION_ID);
 
         assertThat(result.fetchedCount()).isEqualTo(contents.size());
         assertThat(result.storedCount()).isEqualTo(52);

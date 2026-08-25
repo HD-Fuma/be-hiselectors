@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -50,11 +51,13 @@ public class ApplicationMediaService {
     private final List<ContentFetcher> contentFetchers;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final Optional<AnalysisQueuePublisher> analysisQueuePublisher;
     private final SelectorsRepository selectorsRepository;
     private final SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     public ApplicationMediaCollectionResponse collect(Long applicationId) {
         Application application = findApplication(applicationId);
+        ApplicationMediaCollectionResponse response;
         try {
             LocalDateTime collectedAt = LocalDateTime.now(clock);
             LocalDateTime collectedAfter = application.getSnsCode() == SnsPlatform.INSTAGRAM
@@ -87,7 +90,7 @@ public class ApplicationMediaService {
                 return values;
             }));
 
-            return new ApplicationMediaCollectionResponse(
+            response = new ApplicationMediaCollectionResponse(
                     applicationId,
                     application.getSnsCode(),
                     contents.size(),
@@ -103,6 +106,8 @@ public class ApplicationMediaService {
             });
             throw e;
         }
+        analysisQueuePublisher.ifPresent(publisher -> publisher.publish(applicationId));
+        return response;
     }
 
     @Transactional(readOnly = true)

@@ -81,8 +81,9 @@ public class InspectionPolicyService {
         String ruleHash = sha256(writeJson(ruleConfig));
 
         String aiPrompt = promptProvider.aiPrompt();
+        String aiModel = geminiProperties.modelOrDefault();
         String aiConfigHash = sha256(String.join("\n",
-                geminiProperties.modelOrDefault(),
+                aiModel,
                 InspectionPromptProvider.AI_PROMPT_VERSION,
                 aiPrompt,
                 String.valueOf(geminiProperties.maxOutputTokensOrDefault())));
@@ -92,8 +93,8 @@ public class InspectionPolicyService {
         String extractionPromptVersion;
         String extractionPrompt;
         if (platform == SnsPlatform.YOUTUBE) {
-            sttModel = geminiProperties.modelOrDefault();
-            ocrModel = geminiProperties.modelOrDefault();
+            sttModel = aiModel;
+            ocrModel = aiModel;
             extractionPromptVersion =
                     InspectionPromptProvider.YOUTUBE_EXTRACTION_PROMPT_VERSION;
             extractionPrompt = promptProvider.youtubeExtractionPrompt();
@@ -118,7 +119,7 @@ public class InspectionPolicyService {
                 + "-policy-" + configHash.substring(0, 12);
         return new PolicyDefinition(
                 platform, version, ruleConfig, ruleHash,
-                geminiProperties.modelOrDefault(),
+                aiModel,
                 InspectionPromptProvider.AI_PROMPT_VERSION, aiPrompt, aiConfigHash,
                 sttModel, ocrModel, extractionPromptVersion, extractionPrompt,
                 extractionConfigHash, configHash);

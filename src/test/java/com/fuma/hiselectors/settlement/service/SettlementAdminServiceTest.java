@@ -20,10 +20,12 @@ import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
+import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -81,7 +83,8 @@ class SettlementAdminServiceTest {
                 historyRepository, mock(SettlementAccountRepository.class), selectorsRepository,
                 snsAccountRepository,
                 purchaseHistoryRepository, clock,
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
         Selectors selectors = selectors(15L);
         SelectorsSnsAccount snsAccount = SelectorsSnsAccount.builder()
                 .selectorsId(15L)
@@ -117,6 +120,7 @@ class SettlementAdminServiceTest {
                         SettlementStatus.PAYMENT_HOLD_BLACK,
                         SettlementStatus.PAYMENT_HOLD_INFO,
                         SettlementStatus.PAYMENT_PENDING,
+                        SettlementStatus.PAYMENT_CARRYOVER,
                         SettlementStatus.CALCULATING)))
                 .thenReturn(List.of(nextPaymentHistory));
         when(historyRepository.sumSalesBySelectorsId(15L)).thenReturn(10_000L);
@@ -134,10 +138,78 @@ class SettlementAdminServiceTest {
         assertThat(result.settlementSummary().nextMonthScheduledCommission()).isEqualTo(300L);
         assertThat(result.settlementSummary().cumulativeSalesAmount()).isEqualTo(10_000L);
         assertThat(result.settlementSummary().nextPaymentMonth())
-                .isEqualTo(java.time.YearMonth.of(2026, 8));
+                .isEqualTo(java.time.YearMonth.of(2026, 9));
         assertThat(result.settlementSummary().nextPaymentSettlementStatus())
                 .isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(result.histories()).hasSize(1);
+    }
+
+    @Test
+    void summarizesCurrentMonthTrendAndStatusDistributionFromOneAggregateQuery() {
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SettlementAdminService service = service(historyRepository, mock(SelectorsRepository.class));
+        List<SettlementHistoryRepository.SettlementAggregate> aggregates = List.of(
+                aggregate(202602, SettlementStatus.SETTLED, 1L, 1L, 10_000L, 100L),
+                aggregate(202606, SettlementStatus.SETTLED, 1L, 2L, 90_000L, 9_000L),
+                aggregate(202607, SettlementStatus.SETTLED, 2L, 7L, 100_000L, 5_000L),
+                aggregate(202607, SettlementStatus.PAYMENT_HOLD_INFO,
+                        1L, 1L, 20_000L, 500L));
+        when(historyRepository.summarizeByMonthAndStatus(
+                202602, 202607, 15L, null)).thenReturn(aggregates);
+
+        var result = service.summarize(YearMonth.of(2026, 7), 15L, null);
+
+        assertThat(result.settlementCount()).isEqualTo(3L);
+        assertThat(result.confirmedPurchaseCount()).isEqualTo(8L);
+        assertThat(result.confirmedSalesAmount()).isEqualTo(120_000L);
+        assertThat(result.settlementAmount()).isEqualTo(5_500L);
+        assertThat(result.commissionToSalesRate()).isEqualByComparingTo("4.58");
+        assertThat(result.monthlyTrend())
+                .extracting(trend -> trend.activityMonth())
+                .containsExactly(
+                        YearMonth.of(2026, 2), YearMonth.of(2026, 3),
+                        YearMonth.of(2026, 4), YearMonth.of(2026, 5),
+                        YearMonth.of(2026, 6), YearMonth.of(2026, 7));
+        assertThat(result.monthlyTrend().subList(1, 4))
+                .allSatisfy(trend -> {
+                    assertThat(trend.settlementCount()).isZero();
+                    assertThat(trend.confirmedSalesAmount()).isZero();
+                    assertThat(trend.settlementAmount()).isZero();
+                    assertThat(trend.commissionToSalesRate()).isEqualByComparingTo("0.00");
+                });
+        assertThat(result.monthlyTrend().getLast().commissionToSalesRate())
+                .isEqualByComparingTo("4.58");
+        assertThat(result.statusDistribution())
+                .extracting(distribution -> distribution.status())
+                .containsExactly(SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.SETTLED);
+        assertThat(result.statusDistribution().getFirst().settlementAmount()).isEqualTo(500L);
+        assertThat(result.statusDistribution().getLast().settlementCount()).isEqualTo(2L);
+        verify(historyRepository).summarizeByMonthAndStatus(
+                202602, 202607, 15L, null);
+    }
+
+    @Test
+    void keepsStatusFilterAndHandlesZeroSales() {
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SettlementAdminService service = service(historyRepository, mock(SelectorsRepository.class));
+        SettlementHistoryRepository.SettlementAggregate zeroSales = aggregate(
+                202607, SettlementStatus.SETTLED, 1L, 0L, 0L, 0L);
+        when(historyRepository.summarizeByMonthAndStatus(
+                202602, 202607, 15L, SettlementStatus.SETTLED))
+                .thenReturn(List.of(zeroSales));
+
+        var result = service.summarize(
+                YearMonth.of(2026, 7), 15L, SettlementStatus.SETTLED);
+
+        assertThat(result.commissionToSalesRate()).isEqualByComparingTo("0.00");
+        assertThat(result.monthlyTrend()).hasSize(6);
+        assertThat(result.statusDistribution()).singleElement().satisfies(distribution -> {
+            assertThat(distribution.status()).isEqualTo(SettlementStatus.SETTLED);
+            assertThat(distribution.settlementCount()).isEqualTo(1L);
+            assertThat(distribution.settlementAmount()).isZero();
+        });
+        verify(historyRepository).summarizeByMonthAndStatus(
+                202602, 202607, 15L, SettlementStatus.SETTLED);
     }
 
     private SettlementAdminService service(
@@ -149,7 +221,8 @@ class SettlementAdminServiceTest {
                 mock(SelectorsSnsAccountRepository.class),
                 mock(PurchaseHistoryRepository.class),
                 Clock.systemUTC(),
-                mock(SettlementProvisionalEstimateService.class));
+                mock(SettlementProvisionalEstimateService.class),
+                mock(SettlementAccountCrypto.class));
     }
 
     private Selectors selectors(Long selectorsId) {
@@ -172,5 +245,23 @@ class SettlementAdminServiceTest {
                 300L,
                 LocalDateTime.of(2026, 8, 1, 3, 0));
         return history;
+    }
+
+    private SettlementHistoryRepository.SettlementAggregate aggregate(
+            int activityYearMonth,
+            SettlementStatus status,
+            long settlementCount,
+            long confirmedPurchaseCount,
+            long confirmedSalesAmount,
+            long settlementAmount) {
+        SettlementHistoryRepository.SettlementAggregate aggregate =
+                mock(SettlementHistoryRepository.SettlementAggregate.class);
+        when(aggregate.getActivityYearMonth()).thenReturn(activityYearMonth);
+        when(aggregate.getStatus()).thenReturn(status);
+        when(aggregate.getSettlementCount()).thenReturn(settlementCount);
+        when(aggregate.getConfirmedPurchaseCount()).thenReturn(confirmedPurchaseCount);
+        when(aggregate.getConfirmedSalesAmount()).thenReturn(confirmedSalesAmount);
+        when(aggregate.getSettlementAmount()).thenReturn(settlementAmount);
+        return aggregate;
     }
 }

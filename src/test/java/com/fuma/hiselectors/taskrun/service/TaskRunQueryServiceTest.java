@@ -16,6 +16,7 @@ import com.fuma.hiselectors.taskrun.dto.TaskRunPanelResponse;
 import com.fuma.hiselectors.taskrun.dto.TaskRunResponse;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
@@ -25,6 +26,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,6 +128,10 @@ class TaskRunQueryServiceTest {
     @Test
     void detailPreservesAdminIdWithNullNameWhenAdminNoLongerExists() {
         TaskRun run = running(9L, NOW.minusSeconds(5));
+        LinkedHashMap<String, TaskStepProgress> patch = new LinkedHashMap<>();
+        patch.put("youtube", new TaskStepProgress(10L, 4L));
+        patch.put("instagram", new TaskStepProgress(null, 2L));
+        run.mergeStepProgress(patch, NOW.minusSeconds(4));
         when(taskRunRepository.findByRunId(run.getRunId())).thenReturn(Optional.of(run));
         when(adminRepository.findNamesByIdIn(List.of(9L))).thenReturn(List.of());
 
@@ -133,6 +139,11 @@ class TaskRunQueryServiceTest {
 
         assertThat(response.startedBy()).isEqualTo(new TaskRunResponse.StartedBy(9L, null));
         assertThat(response.progressPercent()).isNull();
+        assertThat(response.stepProgress()).containsExactlyEntriesOf(patch);
+        patch.clear();
+        assertThat(response.stepProgress()).hasSize(2);
+        assertThatThrownBy(() -> response.stepProgress().clear())
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

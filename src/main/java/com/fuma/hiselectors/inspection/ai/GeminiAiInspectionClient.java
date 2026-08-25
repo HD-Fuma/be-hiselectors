@@ -13,15 +13,18 @@ import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,19 +35,33 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final InspectionPromptProvider promptProvider;
     private final RestClient restClient;
 
-    public GeminiAiInspectionClient(GeminiProperties properties, ObjectMapper objectMapper,
+    @Autowired
+    public GeminiAiInspectionClient(GeminiProperties properties,
+                                    GeminiRequestExecutor requestExecutor, ObjectMapper objectMapper,
                                     InspectionPromptProvider promptProvider) {
+        this(properties, requestExecutor, objectMapper, promptProvider, createRestClient());
+    }
+
+    GeminiAiInspectionClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor,
+                              ObjectMapper objectMapper,
+                              InspectionPromptProvider promptProvider, RestClient restClient) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.objectMapper = objectMapper;
         this.promptProvider = promptProvider;
+        this.restClient = restClient;
+    }
+
+    private static RestClient createRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         factory.setReadTimeout(Duration.ofMinutes(2));
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        return RestClient.builder().requestFactory(factory).build();
     }
 
     @Override
@@ -85,14 +102,21 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                             "responseMimeType", "application/json",
                             "responseJsonSchema", responseJsonSchema(),
                             "maxOutputTokens", properties.maxOutputTokensOrDefault()));
-            GeminiResponse response = restClient.post()
-                    .uri(ENDPOINT.formatted(modelName))
-                    .header("x-goog-api-key", properties.apiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            GeminiResponse response = requestExecutor.execute(modelName, attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
             return mapResponse(extractText(response));
+        } catch (RestClientResponseException e) {
+            log.warn("Gemini 콘텐츠 검수 오류 응답. status={}", e.getStatusCode());
+            if (e.getStatusCode().value() == 429) {
+                throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED);
+            }
+            throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);
         } catch (RestClientException | JacksonException | IllegalArgumentException e) {
             log.warn("Gemini 콘텐츠 검수 실패", e);
             throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);

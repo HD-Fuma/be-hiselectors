@@ -133,7 +133,7 @@ public class InstagramDiscoveryService {
             }
         }
 
-        saveRecentActivity(creator, recent90DayContentCount);
+        saveDiscoveryInfo(creator, recent90DayContentCount, discovered.profilePictureUrl());
 
         return new InstagramDiscoveryResult(
                 sourceCreatorId,
@@ -179,7 +179,7 @@ public class InstagramDiscoveryService {
         if (creator.isDeleted()) {
             creator.restore();
         }
-        saveRecentActivity(creator, recent90DayContentCount);
+        saveDiscoveryInfo(creator, recent90DayContentCount, discovered.profilePictureUrl());
         return new InstagramDiscoveryResult(
                 sourceCreatorId,
                 creator.getId(),
@@ -192,13 +192,18 @@ public class InstagramDiscoveryService {
         );
     }
 
-    private void saveRecentActivity(CreatorPool creator, int recent90DayContentCount) {
+    private void saveDiscoveryInfo(CreatorPool creator, int recent90DayContentCount,
+                                   String profileImageUrl) {
         discoveryInfoRepository.findById(creator.getId()).ifPresentOrElse(
-                info -> info.updateRecent90DayContentCount(recent90DayContentCount),
+                info -> {
+                    info.updateRecent90DayContentCount(recent90DayContentCount);
+                    info.updateProfileImageUrl(profileImageUrl);
+                },
                 () -> discoveryInfoRepository.save(CreatorDiscoveryInfo.builder()
                         .creatorPool(creator)
                         .brandScore(0)
                         .recent90DayContentCount(recent90DayContentCount)
+                        .profileImageUrl(profileImageUrl)
                         .build()));
     }
 

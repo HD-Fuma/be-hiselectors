@@ -1,6 +1,9 @@
 package com.fuma.hiselectors.notification.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -11,6 +14,7 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.kakao.config.KakaoMessageProperties;
 import com.fuma.hiselectors.kakao.dto.KakaoMessageTemplate;
 import com.fuma.hiselectors.kakao.model.KakaoRecipientStatus;
 import com.fuma.hiselectors.kakao.model.UserKakaoRecipient;
@@ -54,7 +58,8 @@ class NotificationServiceTest {
     void setUp() {
         service = new NotificationService(adminRepository, recipientRepository,
                 templateFactoryResolver, recorder, notificationSender, recipientStatusService,
-                notificationRepository, textTemplateFactory);
+                notificationRepository, textTemplateFactory,
+                new KakaoMessageProperties(null, null, null, "default-uuid"));
         Admin admin = mock(Admin.class);
         recipient = mock(UserKakaoRecipient.class);
         when(adminRepository.findByLoginId("admin")).thenReturn(Optional.of(admin));
@@ -95,6 +100,66 @@ class NotificationServiceTest {
 
         verify(recipientStatusService, never()).markReauthRequired(4L);
         verify(recorder).markFailed(5L);
+    }
+
+    @Test
+    void usesDefaultUuidWhenRecipientConnectionDoesNotExist() {
+        when(recipientRepository.findByUserId(2L)).thenReturn(Optional.empty());
+        when(recorder.createRequested(eq("SELECTION_APPROVED"), eq(3L), eq("default-uuid"),
+                anyString(), eq(NotificationInitiatorType.ADMIN), eq(6L)))
+                .thenReturn(7L);
+
+        var response = service.sendToFriend("admin", command);
+
+        assertThat(response.notificationId()).isEqualTo(7L);
+        assertThat(response.status()).isEqualTo(NotificationStatus.SENT);
+        verify(notificationSender).sendToFriend(1L, "default-uuid", template);
+        verify(recorder).markSent(7L);
+    }
+
+    @Test
+    void rejectsMissingRecipientWhenDefaultUuidIsNotConfigured() {
+        when(recipientRepository.findByUserId(2L)).thenReturn(Optional.empty());
+        NotificationService serviceWithoutDefault = new NotificationService(
+                adminRepository, recipientRepository, templateFactoryResolver, recorder,
+                notificationSender, recipientStatusService, notificationRepository,
+                textTemplateFactory, new KakaoMessageProperties(null, null, null, ""));
+
+        assertThatThrownBy(() -> serviceWithoutDefault.sendToFriend("admin", command))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
+
+        verify(notificationSender, never()).sendToFriend(1L, "default-uuid", template);
+    }
+
+    @Test
+    void doesNotUseDefaultUuidForNonReadyRecipient() {
+        when(recipient.getStatus()).thenReturn(KakaoRecipientStatus.REAUTH_REQUIRED);
+
+        assertThatThrownBy(() -> service.sendToFriend("admin", command))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.KAKAO_RECIPIENT_NOT_READY));
+
+        verify(notificationSender, never()).sendToFriend(1L, "default-uuid", template);
+    }
+
+    @Test
+    void doesNotMarkRecipientWhenDefaultUuidIsInvalid() {
+        when(recipientRepository.findByUserId(2L)).thenReturn(Optional.empty());
+        when(recorder.createRequested(eq("SELECTION_APPROVED"), eq(3L), eq("default-uuid"),
+                anyString(), eq(NotificationInitiatorType.ADMIN), eq(6L)))
+                .thenReturn(7L);
+        doThrow(new BusinessException(ErrorCode.KAKAO_RECIPIENT_INVALID))
+                .when(notificationSender).sendToFriend(1L, "default-uuid", template);
+
+        assertThatThrownBy(() -> service.sendToFriend("admin", command))
+                .isInstanceOf(BusinessException.class);
+
+        verify(recipientStatusService, never()).markReauthRequired(
+                org.mockito.ArgumentMatchers.anyLong());
+        verify(recorder).markFailed(7L);
     }
 
     @Test

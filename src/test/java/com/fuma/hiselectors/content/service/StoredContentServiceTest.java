@@ -1,11 +1,14 @@
 package com.fuma.hiselectors.content.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -28,13 +31,16 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
@@ -532,6 +538,174 @@ class StoredContentServiceTest {
                 new StoredContentService.PlatformStoredContentStats(0, 1));
     }
 
+    @Test
+    void reportsEveryCheckedContentIncludingContentsWithoutSavedEngagement() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.INSTAGRAM, "first");
+        Content second = content(SnsPlatform.INSTAGRAM, "second");
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("first", "second"))).thenReturn(List.of());
+
+        StoredContentService.StoredContentResult result = service.check(progress::add);
+
+        assertThat(progress).containsExactly(
+                new StoredContentService.StoredContentProgress(2, 0, 0),
+                new StoredContentService.StoredContentProgress(2, 1, 1),
+                new StoredContentService.StoredContentProgress(2, 2, 2));
+        assertThat(result.checkedContentCount()).isEqualTo(2);
+        assertThat(result.savedEngagementCount()).isZero();
+    }
+
+    @Test
+    void reportsZeroTargetSnapshotWithoutExternalFetch() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of());
+
+        StoredContentService.StoredContentResult result = service.check(progress::add);
+
+        assertThat(progress).containsExactly(
+                new StoredContentService.StoredContentProgress(0, 0, 0));
+        assertThat(result.checkedContentCount()).isZero();
+        verifyNoInteractions(instagramFetcher, youtubeFetcher);
+    }
+
+    @Test
+    void reportsInitialTotalBeforeExternalFetchAndCumulativeProgressAfterEachContent() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content found = content(SnsPlatform.INSTAGRAM, "found");
+        Content failed = content(SnsPlatform.INSTAGRAM, "failed");
+        ReflectionTestUtils.setField(found, "id", 10L);
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(found, failed));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("found", "failed"))).thenAnswer(invocation -> {
+                    assertThat(progress).containsExactly(
+                            new StoredContentService.StoredContentProgress(2, 0, 0));
+                    return List.of(
+                            new ContentFetcher.FetchResult(
+                                    "found", ContentFetcher.FetchStatus.FOUND,
+                                    raw("found", "같은 본문"), null),
+                            new ContentFetcher.FetchResult(
+                                    "failed", ContentFetcher.FetchStatus.FAILED, null, null));
+                });
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(version(
+                        10L, snapshotFactory.contentHash(raw("found", "같은 본문")))));
+        executeTransaction();
+
+        service.check(progress::add);
+
+        assertThat(progress).containsExactly(
+                new StoredContentService.StoredContentProgress(2, 0, 0),
+                new StoredContentService.StoredContentProgress(2, 1, 0),
+                new StoredContentService.StoredContentProgress(2, 2, 1));
+        InOrder order = inOrder(contentRepository, instagramFetcher);
+        order.verify(contentRepository).findAllByGenerationId(3L);
+        order.verify(instagramFetcher).fetchByAccountContentIds(
+                "selector.insta", List.of("found", "failed"));
+    }
+
+    @Test
+    void reportsEveryProcessedSnapshotAfterItsDomainTransactionCompletes() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content first = content(SnsPlatform.INSTAGRAM, "first");
+        Content second = content(SnsPlatform.INSTAGRAM, "second");
+        AtomicBoolean inTransaction = new AtomicBoolean();
+        AtomicBoolean transactionCompleted = new AtomicBoolean();
+        List<StoredContentService.StoredContentProgress> progress = new ArrayList<>();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(first, second));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("first", "second"))).thenReturn(List.of(
+                        new ContentFetcher.FetchResult(
+                                "first", ContentFetcher.FetchStatus.NOT_FOUND, null, null),
+                        new ContentFetcher.FetchResult(
+                                "second", ContentFetcher.FetchStatus.NOT_FOUND, null, null)));
+        executeTransaction(inTransaction, transactionCompleted);
+
+        service.check(update -> {
+            if (update.checkedContentCount() > 0) {
+                assertThat(inTransaction).isFalse();
+                assertThat(transactionCompleted).isTrue();
+                transactionCompleted.set(false);
+            }
+            progress.add(update);
+        });
+
+        assertThat(progress).containsExactly(
+                new StoredContentService.StoredContentProgress(2, 0, 0),
+                new StoredContentService.StoredContentProgress(2, 1, 0),
+                new StoredContentService.StoredContentProgress(2, 2, 0));
+    }
+
+    @Test
+    void propagatesProcessedProgressFailureAfterCleanDomainTransactionCompletes() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "not-found");
+        IllegalStateException failure = new IllegalStateException("progress failed");
+        AtomicBoolean inTransaction = new AtomicBoolean();
+        AtomicBoolean transactionCompleted = new AtomicBoolean();
+        AtomicBoolean callbackObservedCompletion = new AtomicBoolean();
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("not-found"))).thenReturn(List.of(
+                        new ContentFetcher.FetchResult(
+                                "not-found", ContentFetcher.FetchStatus.NOT_FOUND, null, null)));
+        executeTransaction(inTransaction, transactionCompleted);
+
+        assertThatThrownBy(() -> service.check(update -> {
+            if (update.checkedContentCount() > 0) {
+                callbackObservedCompletion.set(
+                        !inTransaction.get() && transactionCompleted.get());
+                throw failure;
+            }
+        })).isSameAs(failure);
+
+        assertThat(callbackObservedCompletion).isTrue();
+        assertThat(inTransaction).isFalse();
+    }
+
+    @Test
+    void propagatesProgressCallbackFailure() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "missing");
+        IllegalStateException failure = new IllegalStateException("progress failed");
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+
+        assertThatThrownBy(() -> service.check(update -> {
+            throw failure;
+        })).isSameAs(failure);
+
+        verifyNoInteractions(instagramFetcher, youtubeFetcher);
+    }
+
+    @Test
+    void rejectsNullProgressCallbackBeforeFetchingContents() {
+        assertThatThrownBy(() -> service.check(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("진행 콜백은 필수입니다.");
+
+        verifyNoInteractions(generationService);
+    }
+
     private Content content(SnsPlatform platform, String snsContentId) {
         return Content.builder()
                 .selectorsId(1L)
@@ -566,6 +740,20 @@ class StoredContentServiceTest {
         when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             TransactionCallback<?> callback = invocation.getArgument(0);
             return callback.doInTransaction(null);
+        });
+    }
+
+    private void executeTransaction(
+            AtomicBoolean inTransaction, AtomicBoolean transactionCompleted) {
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            TransactionCallback<?> callback = invocation.getArgument(0);
+            inTransaction.set(true);
+            try {
+                return callback.doInTransaction(null);
+            } finally {
+                inTransaction.set(false);
+                transactionCompleted.set(true);
+            }
         });
     }
 

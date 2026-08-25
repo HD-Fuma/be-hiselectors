@@ -13,7 +13,7 @@ class FeedTemplateFactoryTest {
 
     private final FeedTemplateFactory factory = new FeedTemplateFactory(
             new KakaoMessageProperties("https://example.com", "https://m.example.com",
-                    "https://example.com/image.png"),
+                    "https://example.com/image.png", ""),
             new NotificationMessageFactory());
 
     @Test

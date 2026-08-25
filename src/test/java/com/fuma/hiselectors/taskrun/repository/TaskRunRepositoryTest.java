@@ -6,10 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,6 +76,20 @@ class TaskRunRepositoryTest {
         repository.saveAndFlush(queued(UUID.randomUUID(), null));
 
         assertThat(repository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void persistsStepProgressAsJsonAndRestoresTypedValues() {
+        TaskRun run = running(NOW);
+        run.mergeStepProgress(
+                Map.of("youtube", new TaskStepProgress(10L, 4L)), NOW.plusSeconds(1));
+        TaskRun saved = repository.saveAndFlush(run);
+        entityManager.clear();
+
+        assertThat(repository.findById(saved.getId())).get()
+                .extracting(TaskRun::getStepProgress)
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("youtube", new TaskStepProgress(10L, 4L));
     }
 
     @Test

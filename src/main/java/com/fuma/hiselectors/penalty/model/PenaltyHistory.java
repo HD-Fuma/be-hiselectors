@@ -31,6 +31,22 @@ public class PenaltyHistory extends BaseTimeEntity {
     @Column(name = "generation_id")
     private Long generationId;
 
+    @Column(name = "content_version_id")
+    private Long contentVersionId;
+
+    @Column(name = "reason")
+    private String reason;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = false, length = 20)
+    private PenaltySource source;
+
+    @Column(name = "granted_by_admin_id")
+    private Long grantedByAdminId;
+
+    @Column(name = "released_by_admin_id")
+    private Long releasedByAdminId;
+
     @Column(name = "violation_type_id", nullable = false)
     private Long violationTypeId;
 
@@ -46,14 +62,27 @@ public class PenaltyHistory extends BaseTimeEntity {
 
     public static PenaltyHistory activate(Long selectorsId, Long violationTypeId,
                                           LocalDateTime startedAt) {
-        return activate(selectorsId, null, violationTypeId, startedAt);
+        return activate(selectorsId, null, null, violationTypeId, null,
+                PenaltySource.AUTOMATIC, null, startedAt);
     }
 
     public static PenaltyHistory activate(Long selectorsId, Long generationId,
                                           Long violationTypeId, LocalDateTime startedAt) {
+        return activate(selectorsId, generationId, null, violationTypeId, null,
+                PenaltySource.AUTOMATIC, null, startedAt);
+    }
+
+    public static PenaltyHistory activate(Long selectorsId, Long generationId,
+                                          Long contentVersionId, Long violationTypeId,
+                                          String reason, PenaltySource source,
+                                          Long grantedByAdminId, LocalDateTime startedAt) {
         PenaltyHistory history = new PenaltyHistory();
         history.selectorsId = selectorsId;
         history.generationId = generationId;
+        history.contentVersionId = contentVersionId;
+        history.reason = reason;
+        history.source = source;
+        history.grantedByAdminId = grantedByAdminId;
         history.violationTypeId = violationTypeId;
         history.startedAt = startedAt;
         history.status = PenaltyStatus.ACTIVE;
@@ -64,6 +93,13 @@ public class PenaltyHistory extends BaseTimeEntity {
         if (status == PenaltyStatus.ACTIVE) {
             status = PenaltyStatus.RELEASED;
             this.endedAt = endedAt;
+        }
+    }
+
+    public void releaseByAdmin(Long adminId, LocalDateTime endedAt) {
+        if (status == PenaltyStatus.ACTIVE) {
+            release(endedAt);
+            releasedByAdminId = adminId;
         }
     }
 }

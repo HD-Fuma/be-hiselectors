@@ -4,6 +4,7 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.settlement.dto.SettlementAdminSummaryResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementPaymentResponse;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
@@ -66,6 +67,17 @@ public class SettlementAdminController {
             Pageable pageable) {
         return ResponseEntity.ok(
                 settlementAdminService.search(activityMonth, selectorsId, status, pageable));
+    }
+
+    @Operation(summary = "월별 셀렉터스 정산 요약 조회")
+    @GetMapping("/summary")
+    public ResponseEntity<SettlementAdminSummaryResponse> summarize(
+            @RequestParam(required = false)
+            @DateTimeFormat(pattern = "yyyy-MM") YearMonth activityMonth,
+            @RequestParam(required = false) Long selectorsId,
+            @RequestParam(required = false) SettlementStatus status) {
+        return ResponseEntity.ok(
+                settlementAdminService.summarize(activityMonth, selectorsId, status));
     }
 
     /**

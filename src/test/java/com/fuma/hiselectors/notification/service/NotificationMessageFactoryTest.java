@@ -141,4 +141,17 @@ class NotificationMessageFactoryTest {
                         + "자세한 내용은 정산 내역에서 확인해 주세요.");
         assertThat(message.buttonTitle()).isEqualTo("정산 내역 확인하기");
     }
+
+    @Test
+    void createsSettlementCarryoverMessage() {
+        NotificationMessageFactory.MessageText message = factory.create(
+                NotificationType.SETTLEMENT_CARRYOVER, "셀렉터스",
+                "현재 누적 수수료가 900원으로 1,000원 미만입니다.");
+
+        assertThat(message.title()).isEqualTo("[셀렉터스 정산 이월 안내]");
+        assertThat(message.description()).isEqualTo(
+                "셀렉터스님, 현재 누적 수수료가 900원으로 1,000원 미만입니다. "
+                        + "자세한 내용은 정산 내역에서 확인해 주세요.");
+        assertThat(message.buttonTitle()).isEqualTo("정산 내역 확인하기");
+    }
 }
