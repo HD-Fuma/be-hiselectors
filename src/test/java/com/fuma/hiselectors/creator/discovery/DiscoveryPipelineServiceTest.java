@@ -124,6 +124,7 @@ class DiscoveryPipelineServiceTest {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 1, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_NEW", "새 크리에이터", "Instagram @new_creator / hello@example.com",
+                "https://yt.example/new.jpg",
                 120_000L, 3_000_000L, uploadedAt,
                 12, 1_000L, 40L, 10L);
         CreatorPool savedCreator = org.mockito.Mockito.mock(CreatorPool.class);
@@ -172,6 +173,8 @@ class DiscoveryPipelineServiceTest {
         assertThat(infoCaptor.getValue().getIgHandle()).isEqualTo("new_creator");
         assertThat(infoCaptor.getValue().getIgConfidence()).isEqualByComparingTo("0.75");
         assertThat(infoCaptor.getValue().getRecent90DayContentCount()).isEqualTo(12);
+        assertThat(infoCaptor.getValue().getProfileImageUrl())
+                .isEqualTo("https://yt.example/new.jpg");
         assertThat(infoCaptor.getValue().getDiscoveredAt()).isNotNull();
 
         ArgumentCaptor<CreatorDiscoverySource> sourceCaptor =
@@ -187,6 +190,7 @@ class DiscoveryPipelineServiceTest {
     void skipNewCreatorWithoutEmail() {
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_NO_EMAIL", "이메일 없는 크리에이터", "Instagram @no_email",
+                null,
                 10_000L, 100_000L, null,
                 3, 100L, 4L, 1L);
 
@@ -218,6 +222,7 @@ class DiscoveryPipelineServiceTest {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 2, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_EXISTING", "기존 크리에이터", "contact@example.com",
+                "https://yt.example/refreshed.jpg",
                 50_000L, 1_000_000L, uploadedAt,
                 7, 200L, 8L, 2L);
         CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);
@@ -254,6 +259,7 @@ class DiscoveryPipelineServiceTest {
         verify(existingCreator).restore();
         verify(existingInfo).refresh(2, "공식", null, null);
         verify(existingInfo).updateRecent90DayContentCount(7);
+        verify(existingInfo).updateProfileImageUrl("https://yt.example/refreshed.jpg");
         verify(existingSource).refresh(new BigDecimal("1.00000"));
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);
@@ -310,6 +316,7 @@ class DiscoveryPipelineServiceTest {
     void skipExistingCreatorWithoutCurrentEmail() {
         DiscoveredChannel channel = new DiscoveredChannel(
                 "UC_EXISTING", "기존 크리에이터", "Instagram @no_email",
+                null,
                 50_000L, 1_000_000L, null,
                 7, 200L, 8L, 2L);
         CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);

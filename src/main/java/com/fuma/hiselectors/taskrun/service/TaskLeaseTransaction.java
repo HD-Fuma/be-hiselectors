@@ -4,9 +4,11 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -33,8 +35,10 @@ public class TaskLeaseTransaction {
             long succeededDelta,
             long failedDelta,
             long skippedDelta,
+            Map<String, TaskStepProgress> stepProgressPatch,
             Instant now) {
         Objects.requireNonNull(now, "now must not be null");
+        Objects.requireNonNull(stepProgressPatch, "stepProgressPatch must not be null");
         TaskRun run = lockRunningLease(lease);
         if (updateTotal && totalCount != null) {
             run.setTotal(totalCount, now);
@@ -44,6 +48,9 @@ public class TaskLeaseTransaction {
         }
         if (progressMessage != null) {
             run.changeProgressMessage(progressMessage, now);
+        }
+        if (!stepProgressPatch.isEmpty()) {
+            run.mergeStepProgress(stepProgressPatch, now);
         }
         run.addCounts(succeededDelta, failedDelta, skippedDelta, now);
         repository.flush();

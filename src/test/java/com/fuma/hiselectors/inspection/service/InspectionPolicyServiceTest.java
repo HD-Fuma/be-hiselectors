@@ -25,6 +25,45 @@ class InspectionPolicyServiceTest {
 
     @Test
     void createsIndependentPlatformPoliciesWithPromptSnapshots() {
+        List<InspectionPolicy> saved = createPolicies("gemini-test");
+
+        assertThat(saved).hasSize(2);
+        InspectionPolicy youtube = findPolicy(saved, SnsPlatform.YOUTUBE);
+        InspectionPolicy instagram = findPolicy(saved, SnsPlatform.INSTAGRAM);
+        assertThat(youtube.getAiModelName()).isEqualTo("gemini-test");
+        assertThat(youtube.getSttModelName()).isEqualTo("gemini-test");
+        assertThat(youtube.getOcrModelName()).isEqualTo("gemini-test");
+        assertThat(instagram.getAiModelName()).isEqualTo("gemini-test");
+        assertThat(youtube.getAiPrompt()).contains("검수 대상");
+        assertThat(youtube.getExtractionPrompt()).contains("유튜브 Shorts 영상");
+        assertThat(instagram.getSttModelName()).isEqualTo("whisper-test");
+        assertThat(instagram.getOcrModelName()).isEqualTo("ocr-test");
+        assertThat(youtube.getConfigHash()).isNotEqualTo(instagram.getConfigHash());
+        assertThat(youtube.isActive()).isTrue();
+        assertThat(instagram.isActive()).isTrue();
+    }
+
+    @Test
+    void sharedModelChangeUpdatesBothPlatformHashes() {
+        List<InspectionPolicy> baseline = createPolicies("gemini-v1");
+        List<InspectionPolicy> changed = createPolicies("gemini-v2");
+
+        InspectionPolicy baselineYoutube = findPolicy(baseline, SnsPlatform.YOUTUBE);
+        InspectionPolicy baselineInstagram = findPolicy(baseline, SnsPlatform.INSTAGRAM);
+        InspectionPolicy changedYoutube = findPolicy(changed, SnsPlatform.YOUTUBE);
+        InspectionPolicy changedInstagram = findPolicy(changed, SnsPlatform.INSTAGRAM);
+
+        assertThat(changedYoutube.getAiConfigHash())
+                .isNotEqualTo(baselineYoutube.getAiConfigHash());
+        assertThat(changedYoutube.getConfigHash())
+                .isNotEqualTo(baselineYoutube.getConfigHash());
+        assertThat(changedInstagram.getAiConfigHash())
+                .isNotEqualTo(baselineInstagram.getAiConfigHash());
+        assertThat(changedInstagram.getConfigHash())
+                .isNotEqualTo(baselineInstagram.getConfigHash());
+    }
+
+    private List<InspectionPolicy> createPolicies(String model) {
         InspectionPolicyRepository repository = mock(InspectionPolicyRepository.class);
         List<InspectionPolicy> saved = new ArrayList<>();
         when(repository.findByConfigHash(any())).thenReturn(Optional.empty());
@@ -42,27 +81,19 @@ class InspectionPolicyServiceTest {
                         new InspectionExtractionProperties.Instagram(
                                 "whisper-test", "ocr-test")),
                 new GeminiProperties(
-                        "key", "gemini-test", "youtube-test", "report-test",
-                        MediaResolution.LOW, 8192),
+                        "key", null, null, model, MediaResolution.LOW, 8192),
                 new InspectionPromptProvider(),
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), ZoneOffset.UTC));
 
         service.syncActivePolicies();
+        return saved;
+    }
 
-        assertThat(saved).hasSize(2);
-        InspectionPolicy youtube = saved.stream()
-                .filter(policy -> policy.getPlatform() == SnsPlatform.YOUTUBE)
+    private InspectionPolicy findPolicy(
+            List<InspectionPolicy> policies, SnsPlatform platform) {
+        return policies.stream()
+                .filter(policy -> policy.getPlatform() == platform)
                 .findFirst().orElseThrow();
-        InspectionPolicy instagram = saved.stream()
-                .filter(policy -> policy.getPlatform() == SnsPlatform.INSTAGRAM)
-                .findFirst().orElseThrow();
-        assertThat(youtube.getAiPrompt()).contains("검수 대상");
-        assertThat(youtube.getExtractionPrompt()).contains("유튜브 영상");
-        assertThat(instagram.getSttModelName()).isEqualTo("whisper-test");
-        assertThat(instagram.getOcrModelName()).isEqualTo("ocr-test");
-        assertThat(youtube.getConfigHash()).isNotEqualTo(instagram.getConfigHash());
-        assertThat(youtube.isActive()).isTrue();
-        assertThat(instagram.isActive()).isTrue();
     }
 }

@@ -8,8 +8,12 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 class TaskRunTest {
 
@@ -146,6 +150,45 @@ class TaskRunTest {
     }
 
     @Test
+    void stepProgressMergeRetainsExistingKeysAndReplacesPatchedKeys() {
+        TaskRun run = running();
+        LinkedHashMap<String, TaskStepProgress> firstPatch = new LinkedHashMap<>();
+        firstPatch.put("youtube", new TaskStepProgress(10L, 2L));
+        firstPatch.put("instagram", new TaskStepProgress(null, 1L));
+        run.mergeStepProgress(firstPatch, NOW.plusSeconds(2));
+
+        run.mergeStepProgress(
+                Map.of("youtube", new TaskStepProgress(10L, 7L)),
+                NOW.plusSeconds(3));
+        firstPatch.clear();
+
+        assertThat(run.getStepProgress()).containsExactly(
+                org.assertj.core.api.Assertions.entry(
+                        "youtube", new TaskStepProgress(10L, 7L)),
+                org.assertj.core.api.Assertions.entry(
+                        "instagram", new TaskStepProgress(null, 1L)));
+        assertThatThrownBy(() -> run.getStepProgress().put(
+                "store", new TaskStepProgress(1L, 1L)))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThat(run.getHeartbeatAt()).isEqualTo(NOW.plusSeconds(3));
+    }
+
+    @Test
+    void stepProgressRejectsInvalidKeysBeforeMutation() {
+        TaskRun run = running();
+
+        assertThatThrownBy(() -> run.mergeStepProgress(
+                Map.of(" ", new TaskStepProgress(1L, 0L)), NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("단계 키는 비어 있을 수 없습니다.");
+        assertThatThrownBy(() -> run.mergeStepProgress(
+                Map.of("가".repeat(101), new TaskStepProgress(1L, 0L)), NOW.plusSeconds(2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("단계 키는 100자를 초과할 수 없습니다.");
+        assertThat(run.getStepProgress()).isNull();
+    }
+
+    @Test
     void completionUsesFailedThenPartialFailedThenSucceededPrecedence() {
         TaskRun failed = running();
         failed.addCounts(0, 2, 1, NOW.plusSeconds(2));
@@ -210,6 +253,9 @@ class TaskRunTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.changeProgressMessage("message", NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> run.mergeStepProgress(
+                Map.of("step", new TaskStepProgress(1L, 1L)), NOW.plusSeconds(3)))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.addCounts(1, 0, 0, NOW.plusSeconds(3)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> run.fail("ERROR", "message", NOW.plusSeconds(3)))
@@ -240,6 +286,17 @@ class TaskRunTest {
 
         assertThat(column.nullable()).isTrue();
         assertThat(column.length()).isEqualTo(500);
+    }
+
+    @Test
+    void stepProgressIsMappedAsNullableJson() throws NoSuchFieldException {
+        var field = TaskRun.class.getDeclaredField("stepProgress");
+        Column column = field.getAnnotation(Column.class);
+        JdbcTypeCode jdbcTypeCode = field.getAnnotation(JdbcTypeCode.class);
+
+        assertThat(column.name()).isEqualTo("step_progress");
+        assertThat(column.nullable()).isTrue();
+        assertThat(jdbcTypeCode.value()).isEqualTo(SqlTypes.JSON);
     }
 
     private TaskRun running() {

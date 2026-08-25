@@ -1,6 +1,7 @@
 import base64
 from datetime import datetime
 import gzip
+import html
 import json
 import math
 import os
@@ -23,12 +24,23 @@ TASK_RUN_ONLY_STATUSES = {"PARTIAL_FAILED", "STALE"}
 BATCH_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MARKER = re.compile(r"(?<!\S)" + re.escape(PREFIX))
 METADATA_KEY = re.compile(r"^[a-z][a-zA-Z0-9]*(?:-[a-z0-9]+)*$")
-TITLES = {
-    "SUCCEEDED": "✅ Batch succeeded",
-    "PARTIAL_FAILURE": "⚠️ Batch partially failed",
-    "PARTIAL_FAILED": "⚠️ Batch partially failed",
-    "FAILED": "🚨 Batch failed",
-    "STALE": "🚨 Batch stale",
+TASK_LABELS = {
+    "CREATOR_SYNC": "크리에이터 수집",
+    "CONTENT_SYNC": "콘텐츠 수집",
+    "APPLICATION_REPORT_GENERATION": "지원자 리포트 생성",
+    "CONTENT_REPORT_GENERATION": "콘텐츠 검수 리포트 생성",
+    "SETTLEMENT_CALCULATION": "정산 계산",
+    "KAKAO_MESSAGE_SEND": "카카오 메시지 발송",
+    "PROPOSAL_EMAIL_SEND": "제안 이메일 발송",
+}
+TRIGGER_LABELS = {
+    "SCHEDULED": "자동 실행",
+    "ADMIN_TRIGGERED": "관리자 실행",
+}
+STATUS_TITLES = {
+    "PARTIAL_FAILED": "⚠️ {task} 일부 실패",
+    "FAILED": "🚨 {task} 실패",
+    "STALE": "⏱️ {task} 비정상 종료",
 }
 
 
@@ -51,7 +63,7 @@ def lambda_handler(event, _context, sns_client=None):
             client.publish(
                 TopicArn=topic_arn,
                 Message=json.dumps(
-                    _notification(batch_event),
+                    _task_run_notification(batch_event),
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -176,11 +188,11 @@ def _safe_scalar(value):
 
 
 def _should_publish(event):
-    if event["batch"] == "task-run":
-        return event["status"] in {"PARTIAL_FAILED", "FAILED", "STALE"}
-    return event["status"] in TERMINAL_STATUSES or (
-        event["batch"] == "content-sync" and event["status"] == "SKIPPED"
-    )
+    return event["batch"] == "task-run" and event["status"] in {
+        "PARTIAL_FAILED",
+        "FAILED",
+        "STALE",
+    }
 
 
 def _uuid(value):
@@ -200,133 +212,58 @@ def _offset_timestamp(value):
         return False
 
 
-def _notification(event):
-    if event["batch"] == "content-sync":
-        return _content_sync_notification(event)
-    if event["batch"] == "task-run":
-        return _task_run_notification(event)
-
-    description = [
-        "**Status:** " + event["status"],
-        "**Run ID:** " + event["runId"],
-        "**Duration:** " + str(event["durationMs"]) + " ms",
-    ]
-    for label, key in (("Counts", "counts"), ("Details", "details"), ("Reason", "reason"), ("Error", "error")):
-        if key in event:
-            value = event[key]
-            if isinstance(value, (dict, list)):
-                value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            description.append("**" + label + ":** `" + str(value) + "`")
-    return {
-        "version": "1.0",
-        "source": "custom",
-        "content": {
-            "textType": "client-markdown",
-            "title": TITLES[event["status"]] + ": " + event["batch"],
-            "description": "\n".join(description),
-        },
-    }
-
-
 def _task_run_notification(event):
     details = event.get("details", {})
-    task_type = details.get("taskType", "UNKNOWN")
-    trigger_type = details.get("triggerType", "UNKNOWN")
-    error = event["error"]
-    title = {
-        "PARTIAL_FAILED": "⚠️ TaskRun partially failed",
-        "FAILED": "🚨 TaskRun failed",
-        "STALE": "🚨 TaskRun stale",
-    }[event["status"]]
+    task = TASK_LABELS.get(details.get("taskType"), "알 수 없는 작업")
+    trigger = TRIGGER_LABELS.get(details.get("triggerType"), "알 수 없는 실행")
     description = [
-        "**Status:** " + event["status"],
-        "**Task type:** " + task_type,
-        "**Trigger type:** " + trigger_type,
-        "**Run ID:** " + event["runId"],
-        "**Duration:** " + str(event["durationMs"]) + " ms",
-        "**Error type:** `" + error["type"] + "`",
-        "**Error:** " + error["message"],
+        "실행 방식: " + trigger,
     ]
-    if "counts" in event:
-        description.append(
-            "**Counts:** `"
-            + json.dumps(event["counts"], ensure_ascii=False, separators=(",", ":"))
-            + "`"
-        )
+    counts = _format_counts(event.get("counts"))
+    if counts:
+        description.append("처리 결과: " + counts)
+    description.extend(
+        [
+            "실패 원인: " + html.escape(event["error"]["message"], quote=False),
+            "실행 시간: " + _format_duration(event["durationMs"]),
+            "실행 ID: " + event["runId"],
+        ]
+    )
     return {
         "version": "1.0",
         "source": "custom",
         "content": {
             "textType": "client-markdown",
-            "title": title + ": " + task_type,
+            "title": STATUS_TITLES[event["status"]].format(task=task),
             "description": "\n".join(description),
         },
     }
 
 
-def _content_sync_notification(event):
-    counts = event.get("counts", {})
-    instagram = _platform_row(counts, "instagram")
-    youtube = _platform_row(counts, "youtube")
-    failed_stage_count = counts.get("failedStageCount", 0)
-    total = [
-        instagram[index] + youtube[index]
-        for index in range(4)
-    ]
-    total_failed = instagram[4] + youtube[4] + failed_stage_count
-    title = {
-        "SUCCEEDED": "✅ 콘텐츠 동기화 완료",
-        "PARTIAL_FAILURE": "⚠️ 콘텐츠 동기화 부분 실패",
-        "FAILED": "🚨 콘텐츠 동기화 실패",
-        "SKIPPED": (
-            "ℹ️ 콘텐츠 동기화 대상 없음"
-            if event.get("reason") == "NO_TARGETS"
-            else "ℹ️ 콘텐츠 동기화 실행 건너뜀"
-        ),
-    }[event["status"]]
-    description = [
-        "```",
-        "플랫폼 | 신규 후보 | 셀렉터스 | 수정 감지 | 버전 저장 | 실패",
-        _table_row("Instagram", instagram),
-        _table_row("YouTube", youtube),
-        _table_row("합계", (*total, total_failed)),
-        "```",
-        "실행 시간: " + format(event["durationMs"] / 1000, ".1f") + "초",
-        "실행 ID: " + event["runId"],
-    ]
-    if failed_stage_count:
-        description.append("플랫폼 미분류 단계 실패: " + str(failed_stage_count))
-    if "details" in event:
-        description.append(
-            "상세: `"
-            + json.dumps(event["details"], ensure_ascii=False, separators=(",", ":"))
-            + "`"
-        )
-    if "error" in event:
-        description.append("오류: `" + event["error"]["type"] + "`")
-    return {
-        "version": "1.0",
-        "source": "custom",
-        "content": {
-            "textType": "client-markdown",
-            "title": title,
-            "description": "\n".join(description),
-        },
-    }
-
-
-def _platform_row(counts, prefix):
+def _format_counts(counts):
+    if not counts or not any(
+        counts.get(key, 0) > 0
+        for key in ("total", "processed", "succeeded", "failed", "skipped")
+    ):
+        return None
+    first_label = "전체" if "total" in counts else "처리"
+    first_value = counts.get("total", counts.get("processed", 0))
     return (
-        counts.get(prefix + "NewCandidateCount", 0),
-        counts.get(prefix + "SelectorsContentCount", 0),
-        counts.get(prefix + "ChangedContentCount", 0),
-        counts.get(prefix + "SavedVersionCount", 0),
-        counts.get(prefix + "FailedCount", 0),
+        f"{first_label} {first_value}건 / "
+        f"성공 {counts.get('succeeded', 0)}건 / "
+        f"실패 {counts.get('failed', 0)}건"
     )
 
 
-def _table_row(label, values):
-    return label + " | " + " | ".join(str(value) for value in values)
+def _format_duration(duration_ms):
+    seconds = duration_ms // 1000
+    if seconds < 60:
+        return str(seconds) + "초"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return str(minutes) + "분 " + str(seconds) + "초"
+    hours, minutes = divmod(minutes, 60)
+    return str(hours) + "시간 " + str(minutes) + "분 " + str(seconds) + "초"
 
 
 def _sns_client():

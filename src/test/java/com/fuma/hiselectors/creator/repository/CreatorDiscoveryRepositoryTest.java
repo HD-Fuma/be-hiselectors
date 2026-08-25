@@ -107,6 +107,25 @@ class CreatorDiscoveryRepositoryTest {
     }
 
     @Test
+    @DisplayName("빈 값이나 500자 초과 URL은 기존 프로필 이미지를 지우지 않는다")
+    void invalidProfileImageDoesNotReplaceExistingValue() {
+        CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");
+        CreatorDiscoveryInfo info = infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(creator)
+                .profileImageUrl("https://yt.example/original.jpg")
+                .build());
+
+        info.updateProfileImageUrl(null);
+        info.updateProfileImageUrl("   ");
+        info.updateProfileImageUrl("x".repeat(501));
+        em.flush();
+        em.clear();
+
+        assertThat(infoRepository.findById(creator.getId()).orElseThrow().getProfileImageUrl())
+                .isEqualTo("https://yt.example/original.jpg");
+    }
+
+    @Test
     @DisplayName("신뢰도가 더 낮은 핸들로는 덮어쓰지 않는다")
     void refreshKeepsHigherConfidenceHandle() {
         CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");

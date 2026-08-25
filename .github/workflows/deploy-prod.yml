@@ -273,25 +273,13 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Build and push ARM64 STT worker image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: ./stt-worker
-          platforms: linux/arm64
-          push: true
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker
-          cache-from: type=gha,scope=stt-worker-arm64
-          cache-to: type=gha,mode=max,scope=stt-worker-arm64
-
       - name: Deploy through SSM
         env:
           REMOTE_SCRIPT: |
             set -eu
             IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}'
-            WORKER_IMAGE_URI='${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-worker'
             aws ecr get-login-password --region '${{ env.AWS_REGION }}' | docker login --username AWS --password-stdin '${{ env.ECR_REGISTRY }}'
             docker pull "$IMAGE_URI"
-            docker pull "$WORKER_IMAGE_URI"
             cd /srv/hiselectors
             # 장애 복구 배포도 진행할 수 있도록 기존 컨테이너의 health는 여기서 기다리지 않는다.
             docker compose up -d api
@@ -299,8 +287,6 @@ jobs:
             test -n "$OLD_API_CONTAINER"
             OLD_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$OLD_API_CONTAINER")"
             test -n "$OLD_IMAGE_ID"
-            API_NETWORK="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}' "$OLD_API_CONTAINER" | head -n 1)"
-            test -n "$API_NETWORK"
 
             container_env() {
               docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$OLD_API_CONTAINER" |
@@ -316,10 +302,28 @@ jobs:
             DB_NAME="${DB_NAME:-hiselectors}"
             DB_USERNAME="${DB_USERNAME:-root}"
             test -n "$DB_HOST"
+            export MYSQL_PWD="$DB_PASSWORD"
+            mysql_query() {
+              docker run --rm --network "container:$OLD_API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+                mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+                -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+            }
+            if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress'")" = "0" ]; then
+              mysql_query "ALTER TABLE task_run ADD COLUMN step_progress JSON NULL AFTER progress_message"
+            fi
+            test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress' AND data_type = 'json' AND is_nullable = 'YES'")" = "1"
+            echo "task-run-step-progress=verified"
+            if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors' AND column_name = 'category'")" = "0" ]; then
+              mysql_query "ALTER TABLE selectors ADD COLUMN category VARCHAR(20) NULL AFTER selectors_nickname"
+            fi
+            test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors' AND column_name = 'category'")" = "1"
+            echo "selectors-category=verified"
             if [ -n "${ANALYSIS_QUEUE_URL:-}" ]; then
               sed -i '/^APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=/d' .env
               printf 'APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=%s\n' "$ANALYSIS_QUEUE_URL" >> .env
             fi
+            sed -i '/^APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED=/d' .env
+            printf 'APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED=false\n' >> .env
 
             DEPLOY_VERIFIED=false
             rollback() {
@@ -337,40 +341,9 @@ jobs:
             trap 'exit 130' 2
             trap 'exit 143' 15
 
-            docker rm -f hiselectors-stt-worker >/dev/null 2>&1 || true
             docker compose stop -t 30 api
-            export MYSQL_PWD="$DB_PASSWORD"
-            mysql_query() {
-              docker run --rm --network "$API_NETWORK" -e MYSQL_PWD mysql:8.4 \
-                mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
-                -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
-            }
-            mysql_query "UPDATE generation SET activity_start_date = COALESCE(activity_start_date, start_date), activity_end_date = COALESCE(activity_end_date, end_date) WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
-            mysql_query "UPDATE selectors_generation sg JOIN generation g ON g.generation_id = sg.generation_id SET sg.created_at = COALESCE(g.activity_start_date, g.start_date) WHERE sg.created_at IS NULL"
-            test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
-            test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
-            test "$(mysql_query "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date")" = "0"
-            echo "008-pre-deploy=verified"
-
             docker tag "$IMAGE_URI" '${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest'
             docker compose up -d --force-recreate --wait --wait-timeout 180 api
-            API_CONTAINER="$(docker compose ps -q api)"
-            docker run -d \
-              --name hiselectors-stt-worker \
-              --restart always \
-              --network "container:$API_CONTAINER" \
-              -e STT_BACKEND=sagemaker \
-              -e STT_S3_BUCKET=hi-selectors-stt \
-              -e STT_ENDPOINT=whisper-large-v3-async \
-              -e AWS_REGION='${{ env.AWS_REGION }}' \
-              "$WORKER_IMAGE_URI"
-            for _ in $(seq 1 30); do
-              if docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"; then
-                break
-              fi
-              sleep 2
-            done
-            docker exec hiselectors-stt-worker python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/health', timeout=3)"
             DEPLOY_VERIFIED=true
             trap - 0 1 2 15
             docker image prune -f

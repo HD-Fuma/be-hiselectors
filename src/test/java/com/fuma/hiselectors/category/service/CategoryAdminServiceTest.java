@@ -118,6 +118,24 @@ class CategoryAdminServiceTest {
     }
 
     @Test
+    @DisplayName("너무 짧거나 긴 키워드는 등록할 수 없다")
+    void rejectAbnormalKeywordLength() {
+        when(categoryRepository.findById(1L)).thenReturn(Optional.of(beauty));
+
+        assertThatThrownBy(() -> categoryAdminService.addKeyword(
+                1L, new KeywordCreateRequest("a", 10)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+        assertThatThrownBy(() -> categoryAdminService.addKeyword(
+                1L, new KeywordCreateRequest("가".repeat(31), 10)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_INPUT);
+        verify(categoryRepository, never()).flush();
+    }
+
+    @Test
     @DisplayName("같은 카테고리에는 동일한 키워드를 중복 등록할 수 없다")
     void addDuplicatedKeywordInSameCategory() {
         beauty.addKeyword("겟레디윗미", 10);

@@ -26,7 +26,7 @@ class SettlementHistoryRepositoryTest {
     private TestEntityManager entityManager;
 
     @Test
-    void excludesSettlementHistoryWhenSelectorsRowIsMissing() {
+    void excludesSettlementHistoryFromSearchAndSummaryWhenSelectorsRowIsMissing() {
         Selectors selectors = entityManager.persist(Selectors.builder()
                 .userId(101L)
                 .selectorsRoleId(Selectors.ACTIVE_ROLE)
@@ -40,11 +40,17 @@ class SettlementHistoryRepositoryTest {
 
         Page<SettlementHistory> result = repository.search(
                 202607, null, null, PageRequest.of(0, 20));
+        SettlementHistoryRepository.SettlementAggregate summary =
+                repository.summarize(202607, null, null);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().getFirst().getSelectorsId())
                 .isEqualTo(selectors.getId());
         assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(summary.getSettlementCount()).isEqualTo(1);
+        assertThat(summary.getConfirmedPurchaseCount()).isEqualTo(2);
+        assertThat(summary.getConfirmedSalesAmount()).isEqualTo(10_000);
+        assertThat(summary.getSettlementAmount()).isEqualTo(300);
     }
 
     private SettlementHistory history(Long selectorsId) {

@@ -6,7 +6,9 @@ import com.fuma.hiselectors.application.model.ApplicationReport;
 import com.fuma.hiselectors.application.repository.ApplicationContentAnalysisRepository;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
+import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.application.service.LocalAnalyzerClient;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.application.service.ReportStatus;
 import com.fuma.hiselectors.creator.discovery.MetaGraphApiClient;
 import com.fuma.hiselectors.exception.BusinessException;
@@ -53,6 +55,8 @@ public class CreatorEvaluationService {
     private final ApplicationContentAnalysisRepository repository;
     private final ApplicationMediaRepository mediaRepository;
     private final ApplicationReportRepository reportRepository;
+    private final ApplicationRepository applicationRepository;
+    private final SelectorsRepository selectorsRepository;
     private final MetaGraphApiClient metaGraphApiClient;
     private final LocalAnalyzerClient analyzer;
     private final TransactionTemplate transactionTemplate;
@@ -232,7 +236,18 @@ public class CreatorEvaluationService {
         reportRepository.deleteByApplicationId(applicationId);
         ApplicationReport saved = reportRepository.save(report);
         repository.deleteByApplicantId(applicationId);
+        backfillSelectorCategory(applicationId, saved.getCategory());
         return saved;
+    }
+
+    /** 이미 승인된 셀렉터스면 분석 카테고리를 소급 지정(승인이 분석보다 먼저였거나 재평가로 바뀐 경우). */
+    private void backfillSelectorCategory(Long applicationId, String category) {
+        if (category == null || category.isBlank()) {
+            return;
+        }
+        applicationRepository.findById(applicationId)
+                .flatMap(a -> selectorsRepository.findByUserId(a.getUserId()))
+                .ifPresent(selectors -> selectors.assignCategory(category));
     }
 
     /** 콘텐츠별 값 최빈(non-blank). 없으면 null. */

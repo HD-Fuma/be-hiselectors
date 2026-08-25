@@ -31,6 +31,7 @@ class ContentMediaMappingTest {
                 1L,
                 MediaType.IMAGE,
                 "https://cdn.example.com/image.jpg",
+                "https://cdn.example.com/image-thumbnail.jpg",
                 "media-1",
                 2,
                 body);
@@ -38,8 +39,18 @@ class ContentMediaMappingTest {
         assertThat(media.getContentVersionId()).isEqualTo(1L);
         assertThat(media.getMediaType()).isEqualTo(MediaType.IMAGE);
         assertThat(media.getMediaUrl()).isEqualTo("https://cdn.example.com/image.jpg");
+        assertThat(media.getThumbnailUrl())
+                .isEqualTo("https://cdn.example.com/image-thumbnail.jpg");
         assertThat(media.getSnsMediaId()).isEqualTo("media-1");
         assertThat(media.getSequenceNo()).isEqualTo(2);
         assertThat(media.getBody()).containsExactlyEntriesOf(body);
+
+        assertThat(media.refreshExternalUrls(
+                "https://cdn.example.com/image-refreshed.jpg",
+                "https://cdn.example.com/image-thumbnail-refreshed.jpg")).isTrue();
+        assertThat(media.getMediaUrl())
+                .isEqualTo("https://cdn.example.com/image-refreshed.jpg");
+        assertThat(media.getThumbnailUrl())
+                .isEqualTo("https://cdn.example.com/image-thumbnail-refreshed.jpg");
     }
 }

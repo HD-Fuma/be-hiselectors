@@ -33,7 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class ApplicationAnalysisService {
 
-    private static final int MAX_YOUTUBE_VIDEOS = 1;
+    private static final int MAX_YOUTUBE_SHORTS = 3;
 
     private final ApplicationMediaRepository mediaRepository;
     private final ApplicationRepository applicationRepository;
@@ -57,7 +57,7 @@ public class ApplicationAnalysisService {
             throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
         }
 
-        // 비용이 큰 YouTube 영상 분석은 Shorts 중 조회수 상위 1건만 수행한다.
+        // 비용이 큰 YouTube 영상 분석은 Shorts 중 조회수 상위 3건만 수행한다.
         Set<String> youtubeTargets = topYoutubeVideoIds(media);
 
         // 미디어별 STT/OCR 적재(외부호출, 멱등). 플랫폼별 취득 경로가 다르다.
@@ -110,7 +110,7 @@ public class ApplicationAnalysisService {
                                 ApplicationMedia::getViewCount,
                                 Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparingInt(ApplicationMedia::getSequenceNo))
-                .limit(MAX_YOUTUBE_VIDEOS)
+                .limit(MAX_YOUTUBE_SHORTS)
                 .map(ApplicationMedia::getSnsContentId)
                 .forEach(selected::add);
         return selected;

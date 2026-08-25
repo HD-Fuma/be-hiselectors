@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.discovery.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
+import java.util.Map;
 
 /**
  * channels.list 응답.
@@ -18,7 +19,12 @@ public record YoutubeChannelListResponse(List<Item> items) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Snippet(String title, String description, String country) {
+    public record Snippet(String title, String description, String country,
+                          Map<String, Thumbnail> thumbnails) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Thumbnail(String url) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

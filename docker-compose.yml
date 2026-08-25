@@ -1,5 +1,5 @@
-# 하나의 EC2 에 Spring(app) + STT/OCR 파이썬 워커(stt-worker)를 함께 띄운다.
-#   docker compose up -d --build
+# 기본은 Spring app만 띄운다. 로컬 분석이 필요할 때만 워커 프로필을 명시한다.
+#   docker compose --profile analysis-local up -d --build
 # 앱 설정은 .env 로 주입한다(.env.example 참고).
 #
 # AWS 자격증명: 워커가 SageMaker/S3 를 쓰며 EC2 인스턴스 role(hiselectors-ec2-role)로 boto3 가 자동 획득.
@@ -16,12 +16,10 @@ services:
     environment:
       # Spring 은 컨테이너이므로 워커를 localhost 가 아니라 compose 서비스명으로 호출한다.
       STT_WORKER_BASE_URL: http://stt-worker:8900
-    depends_on:
-      stt-worker:
-        condition: service_healthy
     restart: unless-stopped
 
   stt-worker:
+    profiles: [analysis-local]
     build: ./stt-worker
     image: hiselectors-worker
     # 같은 compose 네트워크에서 app 이 http://stt-worker:8900 으로 접근. 호스트 디버깅용으로만 127.0.0.1 공개.

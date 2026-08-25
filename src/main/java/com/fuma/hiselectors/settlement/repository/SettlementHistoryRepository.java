@@ -143,4 +143,35 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status,
             Pageable pageable);
+
+    @Query("""
+            select count(h) as settlementCount,
+                   coalesce(sum(h.confirmedPurchaseCount), 0) as confirmedPurchaseCount,
+                   coalesce(sum(h.totalSales), 0) as confirmedSalesAmount,
+                   coalesce(sum(h.settlementAmount), 0) as settlementAmount
+            from SettlementHistory h
+            where h.activityYearMonth = :activityYearMonth
+              and (:selectorsId is null or h.selectorsId = :selectorsId)
+              and (:status is null or h.status = :status)
+              and exists (
+                  select s.id
+                  from Selectors s
+                  where s.id = h.selectorsId
+              )
+            """)
+    SettlementAggregate summarize(
+            @Param("activityYearMonth") Integer activityYearMonth,
+            @Param("selectorsId") Long selectorsId,
+            @Param("status") SettlementStatus status);
+
+    interface SettlementAggregate {
+
+        long getSettlementCount();
+
+        long getConfirmedPurchaseCount();
+
+        long getConfirmedSalesAmount();
+
+        long getSettlementAmount();
+    }
 }

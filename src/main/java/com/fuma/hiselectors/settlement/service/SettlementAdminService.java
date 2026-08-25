@@ -8,6 +8,7 @@ import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
+import com.fuma.hiselectors.settlement.dto.SettlementAdminSummaryResponse;
 import com.fuma.hiselectors.settlement.dto.SelectorSettlementDetailResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
@@ -16,6 +17,8 @@ import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.repository.SettlementAccountRepository;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -33,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SettlementAdminService {
+
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
 
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementAccountRepository settlementAccountRepository;
@@ -57,9 +62,7 @@ public class SettlementAdminService {
             Long selectorsId,
             SettlementStatus status,
             Pageable pageable) {
-        YearMonth activityMonth = requestedMonth == null
-                ? YearMonth.from(LocalDate.now(clock)).minusMonths(1)
-                : requestedMonth;
+        YearMonth activityMonth = resolveActivityMonth(requestedMonth);
         Page<SettlementHistory> histories = settlementHistoryRepository.search(
                 toYearMonthKey(activityMonth), selectorsId, status, pageable);
         Map<Long, Selectors> selectorsById = selectorsRepository
@@ -70,6 +73,28 @@ public class SettlementAdminService {
         return histories.map(history -> toResponse(
                 history,
                 requireSelectors(selectorsById, history.getSelectorsId())));
+    }
+
+    public SettlementAdminSummaryResponse summarize(
+            YearMonth requestedMonth, Long selectorsId, SettlementStatus status) {
+        YearMonth activityMonth = resolveActivityMonth(requestedMonth);
+        SettlementHistoryRepository.SettlementAggregate aggregate = settlementHistoryRepository
+                .summarize(toYearMonthKey(activityMonth), selectorsId, status);
+        long confirmedSalesAmount = aggregate.getConfirmedSalesAmount();
+        long settlementAmount = aggregate.getSettlementAmount();
+        BigDecimal commissionToSalesRate = confirmedSalesAmount == 0L
+                ? new BigDecimal("0.00")
+                : BigDecimal.valueOf(settlementAmount)
+                        .multiply(ONE_HUNDRED)
+                        .divide(BigDecimal.valueOf(confirmedSalesAmount), 2, RoundingMode.HALF_UP);
+
+        return new SettlementAdminSummaryResponse(
+                activityMonth,
+                aggregate.getSettlementCount(),
+                aggregate.getConfirmedPurchaseCount(),
+                confirmedSalesAmount,
+                settlementAmount,
+                commissionToSalesRate);
     }
 
     public Page<SettlementEstimateResponse> getHistories(Long selectorsId, Pageable pageable) {
@@ -143,6 +168,12 @@ public class SettlementAdminService {
         return settlementHistoryRepository
                 .findAllBySelectorsIdOrderByActivityMonthDesc(selectorsId, pageable)
                 .map(history -> toResponse(history, selectors));
+    }
+
+    private YearMonth resolveActivityMonth(YearMonth requestedMonth) {
+        return requestedMonth == null
+                ? YearMonth.from(LocalDate.now(clock)).minusMonths(1)
+                : requestedMonth;
     }
 
     private Selectors requireSelectors(Map<Long, Selectors> selectorsById, Long selectorsId) {

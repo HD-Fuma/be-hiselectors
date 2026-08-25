@@ -13,6 +13,7 @@ import com.fuma.hiselectors.content.repository.ContentReportRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,7 +70,17 @@ class TaskLeaseTransactionTest {
     void appliesCountsAndHeartbeatAtomicallyForTheCurrentRunningLease() {
         TaskLease lease = runningRun();
 
-        transaction.apply(lease, "STORE", 4, true, "크리에이터 4명 수집", 2, 1, 1, UPDATED_AT);
+        transaction.apply(
+                lease,
+                "STORE",
+                4,
+                true,
+                "크리에이터 4명 수집",
+                2,
+                1,
+                1,
+                Map.of("youtube", new TaskStepProgress(4L, 3L)),
+                UPDATED_AT);
 
         TaskRun updated = repository.findByRunId(lease.runId()).orElseThrow();
         assertThat(updated.getCurrentStep()).isEqualTo("STORE");
@@ -78,6 +90,8 @@ class TaskLeaseTransactionTest {
         assertThat(updated.getSkippedCount()).isEqualTo(1);
         assertThat(updated.getProcessedCount()).isEqualTo(4);
         assertThat(updated.getProgressMessage()).isEqualTo("크리에이터 4명 수집");
+        assertThat(updated.getStepProgress())
+                .containsEntry("youtube", new TaskStepProgress(4L, 3L));
         assertThat(updated.getHeartbeatAt()).isEqualTo(UPDATED_AT);
     }
 
@@ -94,12 +108,34 @@ class TaskLeaseTransactionTest {
                 1,
                 0,
                 0,
+                Map.of("youtube", new TaskStepProgress(1L, 1L)),
                 UPDATED_AT))
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(TASK_RUN_LEASE_LOST));
 
         assertThat(repository.findByRunId(lease.runId())).get()
-                .extracting(TaskRun::getProcessedCount).isEqualTo(0L);
+                .satisfies(run -> {
+                    assertThat(run.getProcessedCount()).isZero();
+                    assertThat(run.getStepProgress()).isNull();
+                });
+    }
+
+    @Test
+    void consecutiveAppliesMergeStepProgressWithoutLosingPreviousKeys() {
+        TaskLease lease = runningRun();
+        transaction.apply(
+                lease, null, null, false, null, 0, 0, 0,
+                Map.of("youtube", new TaskStepProgress(10L, 2L)), UPDATED_AT);
+
+        transaction.apply(
+                lease, null, null, false, null, 0, 0, 0,
+                Map.of("instagram", new TaskStepProgress(5L, 1L)), UPDATED_AT.plusSeconds(1));
+
+        assertThat(repository.findByRunId(lease.runId())).get()
+                .extracting(TaskRun::getStepProgress)
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("youtube", new TaskStepProgress(10L, 2L))
+                .containsEntry("instagram", new TaskStepProgress(5L, 1L));
     }
 
     @Test

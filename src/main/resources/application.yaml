@@ -134,9 +134,9 @@ discovery:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: ${GEMINI_MODEL:gemini-3.6-flash}
-  youtube-model: ${GEMINI_YOUTUBE_MODEL:gemini-3.5-flash-lite}
-  report-model: ${GEMINI_REPORT_MODEL:gemini-3.5-flash-lite}
+  api-keys: ${GEMINI_API_KEYS:}
+  fallback-models: ${GEMINI_FALLBACK_MODELS:}
+  model: ${GEMINI_MODEL:gemini-3.1-flash-lite}
 
 # Instagram STT/OCR 파이썬 워커 (faster-whisper + RapidOCR)
 stt:
