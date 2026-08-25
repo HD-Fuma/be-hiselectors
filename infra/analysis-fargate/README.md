@@ -7,6 +7,10 @@
 `EventBridge Scheduler`는 메시지 발행 누락이나 작업 시작 실패를 복구하기 위해 1시간마다
 동일한 Lambda를 호출한다. 평상시 분석 시작은 15분 주기가 아니라 SQS 이벤트가 담당한다.
 
+분석 메시지가 재시도를 모두 소진해 DLQ로 이동하면 CloudWatch Alarm이 기존
+`batch-alerts` SNS 주제(`AlertTopicName`)를 호출한다. 이 주제에 연결된 Amazon Q Slack
+채널로 장애 알림이 전달된다.
+
 ## 최초 설정
 
 Secrets Manager 런타임 시크릿과 아래 GitHub 값을 등록한다.

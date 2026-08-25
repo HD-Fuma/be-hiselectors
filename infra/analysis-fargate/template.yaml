@@ -36,6 +36,9 @@ Parameters:
   GeminiFallbackModels:
     Type: String
     Default: gemini-3.6-flash,gemini-3.5-flash-lite
+  AlertTopicName:
+    Type: String
+    Default: batch-alerts
 
 Resources:
   Cluster:
@@ -82,6 +85,8 @@ Resources:
       Threshold: 0
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${AlertTopicName}"
 
   AnalysisQueuePolicy:
     Type: AWS::SQS::QueuePolicy
