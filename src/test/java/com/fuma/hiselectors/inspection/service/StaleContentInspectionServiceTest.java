@@ -260,6 +260,31 @@ class StaleContentInspectionServiceTest {
     }
 
     @Test
+    void rethrowsQuotaExhaustionBeforeTheNextInspectionAndProgressSnapshot() {
+        givenThreeStaleLatestVersions();
+        List<Long> inspectedVersionIds = new ArrayList<>();
+        List<ReinspectStaleResponse> snapshots = new ArrayList<>();
+        BusinessException quotaExceeded =
+                new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED);
+
+        assertThatThrownBy(() -> service.reinspectStale(
+                10,
+                Set.of(),
+                versionId -> {
+                    inspectedVersionIds.add(versionId);
+                    if (versionId.equals(11L)) {
+                        throw quotaExceeded;
+                    }
+                },
+                snapshots::add))
+                .isSameAs(quotaExceeded);
+        assertThat(inspectedVersionIds).containsExactly(11L);
+        assertThat(snapshots)
+                .extracting(snapshot -> snapshot.successCount() + snapshot.failureCount())
+                .containsExactly(0);
+    }
+
+    @Test
     void rejectsNullArgumentsBeforeSelectingTargets() {
         Consumer<Long> inspector = ignored -> {
         };

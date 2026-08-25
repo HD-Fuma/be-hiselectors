@@ -11,6 +11,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fuma.hiselectors.config.CacheConfig;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.settlement.dto.SettlementRecalculationResponse;
 import com.fuma.hiselectors.settlement.service.SettlementRecalculationService;
 import com.fuma.hiselectors.settlement.task.SettlementRecalculationTask;
@@ -225,6 +227,27 @@ class TaskRunExecutionServiceTest {
                         && snapshot.status() == TaskRunStatus.FAILED
                         && "IllegalStateException".equals(snapshot.errorType())
                         && "broken".equals(snapshot.errorMessage())));
+    }
+
+    @Test
+    void uncaughtBusinessFailurePersistsErrorCodeAndPublicMessageInRunAndFailureLog() {
+        ErrorCode errorCode = ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED;
+
+        TaskStartResult result = taskRunExecutionService(Runnable::run).submit(
+                command(UUID.randomUUID()),
+                context -> {
+                    throw new BusinessException(errorCode);
+                });
+
+        TaskRun run = find(runId(result));
+        assertThat(run.getStatus()).isEqualTo(TaskRunStatus.FAILED);
+        assertThat(run.getErrorType()).isEqualTo(errorCode.name());
+        assertThat(run.getErrorMessage()).isEqualTo(errorCode.getMessage());
+        verify(failureLogger).log(org.mockito.ArgumentMatchers.argThat(snapshot ->
+                snapshot.runId().equals(run.getRunId())
+                        && snapshot.status() == TaskRunStatus.FAILED
+                        && errorCode.name().equals(snapshot.errorType())
+                        && errorCode.getMessage().equals(snapshot.errorMessage())));
     }
 
     @Test
