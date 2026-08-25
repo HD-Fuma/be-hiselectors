@@ -11,6 +11,10 @@
 
 Secrets Manager 런타임 시크릿과 아래 GitHub 값을 등록한다.
 
+런타임 시크릿에는 `GEMINI_API_KEY`와 예비 키를 쉼표로 구분한 `GEMINI_API_KEYS`를 모두
+넣는다. Fargate는 기본 모델이 실패하면 `GeminiFallbackModels`의 모델들을 같은 키로 먼저
+시도하고, 이후 다음 키로 넘어간다.
+
 - Secret `ANALYSIS_RUNTIME_SECRET_ARN`
 - Variable `ANALYSIS_SUBNET_IDS`
 - Variable `ANALYSIS_SECURITY_GROUP_IDS`

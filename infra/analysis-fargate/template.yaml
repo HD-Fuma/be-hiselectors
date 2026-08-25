@@ -33,6 +33,9 @@ Parameters:
   SttEndpoint:
     Type: String
     Default: whisper-large-v3-async
+  GeminiFallbackModels:
+    Type: String
+    Default: gemini-3.6-flash,gemini-3.5-flash-lite
 
 Resources:
   Cluster:
@@ -210,11 +213,13 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: "0"
             - Name: GEMINI_MODEL
-              Value: gemini-3.5-flash-lite
+              Value: gemini-3.6-flash
             - Name: GEMINI_YOUTUBE_MODEL
               Value: gemini-3.5-flash-lite
             - Name: GEMINI_REPORT_MODEL
               Value: gemini-3.5-flash-lite
+            - Name: GEMINI_FALLBACK_MODELS
+              Value: !Ref GeminiFallbackModels
             - Name: INSTAGRAM_REDIRECT_URI
               Value: https://hiselectors.shop/instagram/callback
           Secrets:
@@ -232,6 +237,8 @@ Resources:
               ValueFrom: !Sub "${RuntimeSecretArn}:JWT_SECRET::"
             - Name: GEMINI_API_KEY
               ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEY::"
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub "${RuntimeSecretArn}:GEMINI_API_KEYS::"
             - Name: META_API_VERSION
               ValueFrom: !Sub "${RuntimeSecretArn}:META_API_VERSION::"
             - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
