@@ -67,6 +67,32 @@ jobs:
             test -n "$OLD_API_CONTAINER"
             OLD_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$OLD_API_CONTAINER")"
             test -n "$OLD_IMAGE_ID"
+
+            container_env() {
+              docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$OLD_API_CONTAINER" |
+                sed -n "s/^$1=//p" |
+                head -n 1
+            }
+            DB_HOST="$(container_env DB_HOST)"
+            DB_PORT="$(container_env DB_PORT)"
+            DB_NAME="$(container_env DB_NAME)"
+            DB_USERNAME="$(container_env DB_USERNAME)"
+            DB_PASSWORD="$(container_env DB_PASSWORD)"
+            DB_PORT="${DB_PORT:-3306}"
+            DB_NAME="${DB_NAME:-hiselectors}"
+            DB_USERNAME="${DB_USERNAME:-root}"
+            test -n "$DB_HOST"
+            export MYSQL_PWD="$DB_PASSWORD"
+            mysql_query() {
+              docker run --rm --network "container:$OLD_API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+                mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+                -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+            }
+            if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress'")" = "0" ]; then
+              mysql_query "ALTER TABLE task_run ADD COLUMN step_progress JSON NULL AFTER progress_message"
+            fi
+            test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress' AND data_type = 'json' AND is_nullable = 'YES'")" = "1"
+            echo "task-run-step-progress=verified"
             if [ -n "${ANALYSIS_QUEUE_URL:-}" ]; then
               sed -i '/^APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=/d' .env
               printf 'APPLICATION_CONTENT_ANALYSIS_QUEUE_URL=%s\n' "$ANALYSIS_QUEUE_URL" >> .env

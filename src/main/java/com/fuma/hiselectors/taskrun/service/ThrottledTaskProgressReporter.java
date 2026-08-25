@@ -1,8 +1,12 @@
 package com.fuma.hiselectors.taskrun.service;
 
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /** One reporter belongs to one worker thread; instances are intentionally not thread-safe. */
@@ -18,6 +22,8 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     private long pendingFailed;
     private long pendingSkipped;
     private String pendingMessage;
+    private final LinkedHashMap<String, TaskStepProgress> pendingStepProgress =
+            new LinkedHashMap<>();
     private Instant lastFlushAt;
 
     public ThrottledTaskProgressReporter(
@@ -57,6 +63,12 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     }
 
     @Override
+    public void reportStep(String stepKey, Long totalCount, long processedCount) {
+        requireValidStepKey(stepKey);
+        pendingStepProgress.put(stepKey, new TaskStepProgress(totalCount, processedCount));
+    }
+
+    @Override
     public void advance(int succeededDelta, int failedDelta, int skippedDelta) {
         requireNonNegative(succeededDelta, failedDelta, skippedDelta);
         pendingSucceeded = Math.addExact(pendingSucceeded, succeededDelta);
@@ -69,19 +81,22 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
 
     @Override
     public void heartbeat() {
-        if (intervalElapsed(clock.instant())) {
+        if (!pendingStepProgress.isEmpty() || intervalElapsed(clock.instant())) {
             persist(null, null, false);
         }
     }
 
     void flush() {
-        if (pendingItems() > 0 || pendingMessage != null) {
+        if (pendingItems() > 0 || pendingMessage != null || !pendingStepProgress.isEmpty()) {
             persist(null, null, false);
         }
     }
 
     private void persist(String stepCode, Integer totalCount, boolean updateTotal) {
         Instant now = clock.instant();
+        Map<String, TaskStepProgress> stepProgressPatch = pendingStepProgress.isEmpty()
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(pendingStepProgress));
         transaction.apply(
                 lease,
                 stepCode,
@@ -91,11 +106,13 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
                 pendingSucceeded,
                 pendingFailed,
                 pendingSkipped,
+                stepProgressPatch,
                 now);
         pendingSucceeded = 0;
         pendingFailed = 0;
         pendingSkipped = 0;
         pendingMessage = null;
+        pendingStepProgress.clear();
         lastFlushAt = now;
     }
 
@@ -110,6 +127,15 @@ public final class ThrottledTaskProgressReporter implements TaskProgressReporter
     private void requireNonNegative(int succeeded, int failed, int skipped) {
         if (succeeded < 0 || failed < 0 || skipped < 0) {
             throw new IllegalArgumentException("progress deltas must not be negative");
+        }
+    }
+
+    private void requireValidStepKey(String stepKey) {
+        if (stepKey == null || stepKey.isBlank()) {
+            throw new IllegalArgumentException("단계 키는 비어 있을 수 없습니다.");
+        }
+        if (stepKey.length() > 100) {
+            throw new IllegalArgumentException("단계 키는 100자를 초과할 수 없습니다.");
         }
     }
 }

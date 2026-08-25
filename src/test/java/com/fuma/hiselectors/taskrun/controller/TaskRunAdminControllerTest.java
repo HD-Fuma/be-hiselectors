@@ -16,11 +16,13 @@ import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
 import com.fuma.hiselectors.taskrun.dto.TaskRunPanelResponse;
 import com.fuma.hiselectors.taskrun.dto.TaskRunResponse;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.model.TaskStepProgress;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunQueryService;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -70,6 +72,8 @@ class TaskRunAdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.serverTime").value("2026-08-23T03:00:00Z"))
                 .andExpect(jsonPath("$.data.items[0].progressPercent").value(50))
+                .andExpect(jsonPath("$.data.items[0].stepProgress.youtube.totalCount").value(10))
+                .andExpect(jsonPath("$.data.items[0].stepProgress.youtube.processedCount").value(4))
                 .andExpect(jsonPath("$.data.items[0].startedBy.adminId").value(7))
                 .andExpect(jsonPath("$.data.items[0].startedBy.name").value("관리자"))
                 .andReturn().getResponse().getContentAsString();
@@ -78,7 +82,7 @@ class TaskRunAdminControllerTest {
         assertThat(taskRun.properties()).extracting(java.util.Map.Entry::getKey)
                 .containsExactlyInAnyOrderElementsOf(Set.of(
                         "runId", "taskType", "triggerType", "status", "currentStep",
-                        "progressMessage",
+                        "progressMessage", "stepProgress",
                         "totalCount", "processedCount", "succeededCount", "failedCount",
                         "skippedCount", "progressPercent", "startedBy", "startedAt", "finishedAt"));
     }
@@ -170,6 +174,7 @@ class TaskRunAdminControllerTest {
                 TaskRunStatus.RUNNING,
                 "콘텐츠 조회",
                 "크리에이터 5명 수집",
+                Map.of("youtube", new TaskStepProgress(10L, 4L)),
                 10L,
                 5L,
                 4L,
