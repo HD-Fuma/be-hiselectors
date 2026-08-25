@@ -9,6 +9,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.EnumSet;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,36 +44,40 @@ public class SettlementPaymentService {
     private SettlementPaymentResponse process(
             YearMonth paymentMonth, YearMonth latestEligibleActivityMonth) {
         reopenResolvedHolds();
-        List<SettlementHistory> histories = settlementHistoryRepository
-                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
+        List<SettlementHistory> histories = settlementHistoryRepository.findAllPayablePending(
                         SettlementStatus.PAYMENT_PENDING,
-                        toYearMonthKey(latestEligibleActivityMonth));
+                        toYearMonthKey(latestEligibleActivityMonth),
+                        toYearMonthKey(paymentMonth));
         int settledCount = 0;
         int heldCount = 0;
         int skippedCount = 0;
         int failedCount = 0;
 
-        for (SettlementHistory history : histories) {
+        for (PaymentTarget target : paymentTargets(histories)) {
             try {
-                SettlementPaymentWorker.PaymentOutcome outcome = settlementPaymentWorker
-                        .process(history.getId());
+                SettlementPaymentWorker.PaymentOutcome outcome = target.grouped()
+                        ? settlementPaymentWorker.processGroup(target.settlementIds())
+                        : settlementPaymentWorker.process(target.settlementIds().getFirst());
+                int targetSize = target.settlementIds().size();
                 switch (outcome) {
                     case SETTLED -> {
-                        settledCount++;
-                        notifyCompleted(history.getId());
+                        settledCount += targetSize;
+                        target.settlementIds().forEach(this::notifyCompleted);
                     }
                     case HELD_INFO -> {
-                        heldCount++;
-                        settlementMissingNotificationService.notifyMissing(
-                                history.getId(), history.getSelectorsId());
+                        heldCount += targetSize;
+                        for (SettlementHistory history : target.histories()) {
+                            settlementMissingNotificationService.notifyMissing(
+                                    history.getId(), history.getSelectorsId());
+                        }
                     }
-                    case HELD_BLACK -> heldCount++;
-                    case SKIPPED -> skippedCount++;
+                    case HELD_BLACK -> heldCount += targetSize;
+                    case SKIPPED -> skippedCount += targetSize;
                 }
             } catch (RuntimeException e) {
-                failedCount++;
-                log.error("정산 지급 상태 처리 실패: settlementId={}, paymentMonth={}",
-                        history.getId(), paymentMonth, e);
+                failedCount += target.settlementIds().size();
+                log.error("정산 지급 상태 처리 실패: settlementIds={}, paymentMonth={}",
+                        target.settlementIds(), paymentMonth, e);
             }
         }
 
@@ -82,6 +89,24 @@ public class SettlementPaymentService {
         return new SettlementPaymentResponse(
                 paymentMonth, latestEligibleActivityMonth, processedCount, settledCount, heldCount,
                 skippedCount, failedCount);
+    }
+
+    private List<PaymentTarget> paymentTargets(List<SettlementHistory> histories) {
+        List<PaymentTarget> targets = new ArrayList<>();
+        Map<PaymentGroupKey, List<SettlementHistory>> groups = new LinkedHashMap<>();
+        for (SettlementHistory history : histories) {
+            if (history.getScheduledPaymentYearMonth() == null
+                    || history.getScheduledPaymentYearMonth() <= 0) {
+                targets.add(new PaymentTarget(List.of(history), false));
+                continue;
+            }
+            groups.computeIfAbsent(
+                    new PaymentGroupKey(history.getSelectorsId(),
+                            history.getScheduledPaymentYearMonth()),
+                    ignored -> new ArrayList<>()).add(history);
+        }
+        groups.values().forEach(group -> targets.add(new PaymentTarget(group, true)));
+        return targets;
     }
 
     private int toYearMonthKey(YearMonth yearMonth) {
@@ -106,5 +131,14 @@ public class SettlementPaymentService {
                         log.error("보류 정산 재개 처리 실패: settlementId={}", history.getId(), e);
                     }
                 });
+    }
+
+    private record PaymentGroupKey(Long selectorsId, Integer scheduledPaymentYearMonth) {
+    }
+
+    private record PaymentTarget(List<SettlementHistory> histories, boolean grouped) {
+        private List<Long> settlementIds() {
+            return histories.stream().map(SettlementHistory::getId).toList();
+        }
     }
 }

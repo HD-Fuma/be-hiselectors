@@ -9,6 +9,8 @@ import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import com.fuma.hiselectors.settlement.dto.SettlementAdminSummaryResponse;
+import com.fuma.hiselectors.settlement.dto.SettlementAdminSummaryResponse.MonthlyTrend;
+import com.fuma.hiselectors.settlement.dto.SettlementAdminSummaryResponse.StatusDistribution;
 import com.fuma.hiselectors.settlement.dto.SelectorSettlementDetailResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementEstimateResponse;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
@@ -22,10 +24,12 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SettlementAdminService {
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final int TREND_MONTHS = 6;
 
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementAccountRepository settlementAccountRepository;
@@ -54,6 +59,7 @@ public class SettlementAdminService {
             SettlementStatus.PAYMENT_HOLD_BLACK,
             SettlementStatus.PAYMENT_HOLD_INFO,
             SettlementStatus.PAYMENT_PENDING,
+            SettlementStatus.PAYMENT_CARRYOVER,
             SettlementStatus.CALCULATING);
 
     public Page<SettlementEstimateResponse> search(
@@ -77,23 +83,73 @@ public class SettlementAdminService {
     public SettlementAdminSummaryResponse summarize(
             YearMonth requestedMonth, Long selectorsId, SettlementStatus status) {
         YearMonth activityMonth = resolveActivityMonth(requestedMonth);
-        SettlementHistoryRepository.SettlementAggregate aggregate = settlementHistoryRepository
-                .summarize(toYearMonthKey(activityMonth), selectorsId, status);
-        long confirmedSalesAmount = aggregate.getConfirmedSalesAmount();
-        long settlementAmount = aggregate.getSettlementAmount();
-        BigDecimal commissionToSalesRate = confirmedSalesAmount == 0L
+        YearMonth firstTrendMonth = activityMonth.minusMonths(TREND_MONTHS - 1L);
+        List<SettlementHistoryRepository.SettlementAggregate> aggregates =
+                settlementHistoryRepository.summarizeByMonthAndStatus(
+                        toYearMonthKey(firstTrendMonth),
+                        toYearMonthKey(activityMonth),
+                        selectorsId,
+                        status);
+        List<MonthlyTrend> monthlyTrend = IntStream.range(0, TREND_MONTHS)
+                .mapToObj(offset -> summarizeMonth(firstTrendMonth.plusMonths(offset), aggregates))
+                .toList();
+        MonthlyTrend current = monthlyTrend.getLast();
+        List<StatusDistribution> statusDistribution = aggregates.stream()
+                .filter(aggregate -> aggregate.getActivityYearMonth()
+                        == toYearMonthKey(activityMonth))
+                .sorted(Comparator.comparingInt(aggregate -> aggregate.getStatus().ordinal()))
+                .map(aggregate -> new StatusDistribution(
+                        aggregate.getStatus(),
+                        aggregate.getSettlementCount(),
+                        aggregate.getSettlementAmount()))
+                .toList();
+
+        return new SettlementAdminSummaryResponse(
+                activityMonth,
+                current.settlementCount(),
+                current.confirmedPurchaseCount(),
+                current.confirmedSalesAmount(),
+                current.settlementAmount(),
+                current.commissionToSalesRate(),
+                monthlyTrend,
+                statusDistribution);
+    }
+
+    private MonthlyTrend summarizeMonth(
+            YearMonth activityMonth,
+            List<SettlementHistoryRepository.SettlementAggregate> aggregates) {
+        int activityYearMonth = toYearMonthKey(activityMonth);
+        long settlementCount = aggregates.stream()
+                .filter(aggregate -> aggregate.getActivityYearMonth() == activityYearMonth)
+                .mapToLong(SettlementHistoryRepository.SettlementAggregate::getSettlementCount)
+                .sum();
+        long confirmedPurchaseCount = aggregates.stream()
+                .filter(aggregate -> aggregate.getActivityYearMonth() == activityYearMonth)
+                .mapToLong(SettlementHistoryRepository.SettlementAggregate::getConfirmedPurchaseCount)
+                .sum();
+        long confirmedSalesAmount = aggregates.stream()
+                .filter(aggregate -> aggregate.getActivityYearMonth() == activityYearMonth)
+                .mapToLong(SettlementHistoryRepository.SettlementAggregate::getConfirmedSalesAmount)
+                .sum();
+        long settlementAmount = aggregates.stream()
+                .filter(aggregate -> aggregate.getActivityYearMonth() == activityYearMonth)
+                .mapToLong(SettlementHistoryRepository.SettlementAggregate::getSettlementAmount)
+                .sum();
+        return new MonthlyTrend(
+                activityMonth,
+                settlementCount,
+                confirmedPurchaseCount,
+                confirmedSalesAmount,
+                settlementAmount,
+                commissionToSalesRate(confirmedSalesAmount, settlementAmount));
+    }
+
+    private BigDecimal commissionToSalesRate(long confirmedSalesAmount, long settlementAmount) {
+        return confirmedSalesAmount == 0L
                 ? new BigDecimal("0.00")
                 : BigDecimal.valueOf(settlementAmount)
                         .multiply(ONE_HUNDRED)
                         .divide(BigDecimal.valueOf(confirmedSalesAmount), 2, RoundingMode.HALF_UP);
-
-        return new SettlementAdminSummaryResponse(
-                activityMonth,
-                aggregate.getSettlementCount(),
-                aggregate.getConfirmedPurchaseCount(),
-                confirmedSalesAmount,
-                settlementAmount,
-                commissionToSalesRate);
     }
 
     public Page<SettlementEstimateResponse> getHistories(Long selectorsId, Pageable pageable) {
@@ -116,9 +172,13 @@ public class SettlementAdminService {
         YearMonth paymentMonth = currentMonth;
         List<SettlementHistory> pendingHistories = settlementHistoryRepository
                 .findAllBySelectorsIdAndStatus(selectorsId, SettlementStatus.PAYMENT_PENDING);
-        long scheduledCommission = pendingHistories.stream()
+        List<SettlementHistory> carryoverHistories = settlementHistoryRepository
+                .findAllBySelectorsIdAndStatus(selectorsId, SettlementStatus.PAYMENT_CARRYOVER);
+        long scheduledCommission = java.util.stream.Stream.concat(
+                        pendingHistories.stream(), carryoverHistories.stream())
                 .mapToLong(SettlementHistory::getSettlementAmount)
                 .sum();
+        paymentMonth = nextPaymentMonth(pendingHistories);
         SettlementStatus paymentStatus = currentPaymentStatus(
                 settlementHistoryRepository.findAllBySelectorsIdAndStatusIn(
                         selectorsId, ACTIVE_PAYMENT_STATUSES));
@@ -197,10 +257,23 @@ public class SettlementAdminService {
         if (hasStatus(histories, SettlementStatus.PAYMENT_PENDING)) {
             return SettlementStatus.PAYMENT_PENDING;
         }
+        if (hasStatus(histories, SettlementStatus.PAYMENT_CARRYOVER)) {
+            return SettlementStatus.PAYMENT_CARRYOVER;
+        }
         if (hasStatus(histories, SettlementStatus.CALCULATING)) {
             return SettlementStatus.CALCULATING;
         }
         return null;
+    }
+
+    private YearMonth nextPaymentMonth(List<SettlementHistory> pendingHistories) {
+        return pendingHistories.stream()
+                .map(history -> history.getScheduledPaymentYearMonth() == null
+                        ? YearMonth.from(history.getActivityMonth()).plusMonths(2)
+                        : YearMonth.of(history.getScheduledPaymentYearMonth() / 100,
+                                history.getScheduledPaymentYearMonth() % 100))
+                .min(YearMonth::compareTo)
+                .orElse(null);
     }
 
     private boolean hasStatus(List<SettlementHistory> histories, SettlementStatus status) {

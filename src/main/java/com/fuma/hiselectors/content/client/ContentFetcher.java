@@ -2,7 +2,6 @@ package com.fuma.hiselectors.content.client;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.client.dto.RawContent;
-import com.fuma.hiselectors.content.client.dto.RawContentMedia;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -55,20 +54,7 @@ public interface ContentFetcher {
             String snsContentId,
             FetchStatus status,
             RawContent content,
-            Engagement engagement,
-            List<RawContentMedia> refreshedMedia) {
-
-        public FetchResult {
-            refreshedMedia = refreshedMedia == null ? List.of() : List.copyOf(refreshedMedia);
-        }
-
-        public FetchResult(
-                String snsContentId,
-                FetchStatus status,
-                RawContent content,
-                Engagement engagement) {
-            this(snsContentId, status, content, engagement, List.of());
-        }
+            Engagement engagement) {
     }
 
     enum FetchStatus {

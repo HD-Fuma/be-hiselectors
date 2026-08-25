@@ -31,7 +31,12 @@ import lombok.NoArgsConstructor;
 public class SettlementHistory extends BaseTimeEntity {
 
     private static final Map<SettlementStatus, Set<SettlementStatus>> ALLOWED_TRANSITIONS = Map.of(
-            SettlementStatus.CALCULATING, EnumSet.of(SettlementStatus.PAYMENT_PENDING),
+            SettlementStatus.CALCULATING, EnumSet.of(
+                    SettlementStatus.PAYMENT_CARRYOVER,
+                    SettlementStatus.PAYMENT_PENDING,
+                    SettlementStatus.SETTLED),
+            SettlementStatus.PAYMENT_CARRYOVER, EnumSet.of(
+                    SettlementStatus.PAYMENT_PENDING),
             SettlementStatus.PAYMENT_PENDING, EnumSet.of(
                     SettlementStatus.PAYMENT_HOLD_INFO,
                     SettlementStatus.PAYMENT_HOLD_BLACK,
@@ -81,6 +86,10 @@ public class SettlementHistory extends BaseTimeEntity {
     @Column(name = "settled_at")
     private LocalDateTime settledAt;
 
+    /** 최소 지급액을 충족하여 실제 지급 대상으로 편성된 년월(예: 202609). */
+    @Column(name = "scheduled_payment_year_month")
+    private Integer scheduledPaymentYearMonth;
+
     public static SettlementHistory create(Long selectorsId, LocalDateTime activityMonth) {
         SettlementHistory history = new SettlementHistory();
         YearMonth normalizedActivityMonth = YearMonth.from(activityMonth);
@@ -102,6 +111,13 @@ public class SettlementHistory extends BaseTimeEntity {
     /** 관리자 정합성 보정에서만 지급 대기 이력을 다시 계산 가능 상태로 되돌린다. */
     public void reopenPaymentPendingForRecalculation() {
         if (status != SettlementStatus.PAYMENT_PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
+        }
+        this.status = SettlementStatus.CALCULATING;
+    }
+
+    public void reopenCarryoverForRecalculation() {
+        if (status != SettlementStatus.PAYMENT_CARRYOVER) {
             throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
         }
         this.status = SettlementStatus.CALCULATING;
@@ -145,5 +161,12 @@ public class SettlementHistory extends BaseTimeEntity {
         if (nextStatus == SettlementStatus.SETTLED) {
             this.settledAt = transitionAt;
         }
+    }
+
+    public void schedulePayment(YearMonth paymentMonth) {
+        if (status != SettlementStatus.PAYMENT_PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_SETTLEMENT_STATUS_TRANSITION);
+        }
+        this.scheduledPaymentYearMonth = paymentMonth.getYear() * 100 + paymentMonth.getMonthValue();
     }
 }

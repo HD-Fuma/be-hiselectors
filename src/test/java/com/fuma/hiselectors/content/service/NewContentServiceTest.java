@@ -179,10 +179,7 @@ class NewContentServiceTest {
                 List.of(new RawContentMedia(
                         "image-1",
                         RawContentMedia.MediaType.IMAGE,
-                        "https://cdn.example.com/image.jpg",
-                        List.of(
-                                "https://cdn.example.com/image-small.jpg",
-                                "https://cdn.example.com/image-thumbnail.jpg"))));
+                        "https://cdn.example.com/image.jpg")));
         AtomicReference<List<Content>> savedContents = new AtomicReference<>();
         AtomicReference<List<ContentVersion>> savedVersions = new AtomicReference<>();
         AtomicReference<List<ContentMedia>> savedMedia = new AtomicReference<>();
@@ -248,8 +245,6 @@ class NewContentServiceTest {
         });
         assertThat(savedMedia.get().get(1)).satisfies(media -> {
             assertThat(media.getMediaType()).isEqualTo(MediaType.IMAGE);
-            assertThat(media.getThumbnailUrl())
-                    .isEqualTo("https://cdn.example.com/image-thumbnail.jpg");
             assertThat(media.getSnsMediaId()).isEqualTo("image-1");
             assertThat(media.getSequenceNo()).isEqualTo(1);
         });

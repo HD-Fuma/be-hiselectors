@@ -3,6 +3,7 @@ package com.fuma.hiselectors.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,6 +18,8 @@ import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
 import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
+import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
@@ -104,6 +107,12 @@ class ApplicationApprovalServiceTest {
         assertThat(accountCaptor.getValue().getFollowerCount()).isEqualTo(12_345L);
         assertThat(accountCaptor.getValue().getProfileImageUrl())
                 .isEqualTo("https://cdn.example.com/profile.jpg");
+        ArgumentCaptor<NotificationMessageCommand> notificationCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("admin"), notificationCaptor.capture());
+        assertThat(notificationCaptor.getValue().recipientUserId()).isEqualTo(7L);
+        assertThat(notificationCaptor.getValue().notificationType())
+                .isEqualTo(NotificationType.SELECTION_APPROVED);
     }
 
     @Test

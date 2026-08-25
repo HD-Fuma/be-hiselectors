@@ -4,11 +4,13 @@ import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
 import com.fuma.hiselectors.penalty.service.PenaltyService;
 import com.fuma.hiselectors.selectors.dto.PenaltyHistoryResponse;
 import jakarta.validation.Valid;
+import java.security.Principal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,8 +25,18 @@ public class PenaltyAdminController {
     @PostMapping
     public ResponseEntity<PenaltyHistoryResponse> create(
             @PathVariable Long selectorsId,
-            @Valid @RequestBody PenaltyCreateRequest request) {
+            @Valid @RequestBody PenaltyCreateRequest request,
+            Principal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(penaltyService.create(selectorsId, request));
+                .body(penaltyService.create(selectorsId, request, principal.getName()));
+    }
+
+    @PatchMapping("/{penaltyHistoryId}/release")
+    public ResponseEntity<PenaltyHistoryResponse> release(
+            @PathVariable Long selectorsId,
+            @PathVariable Long penaltyHistoryId,
+            Principal principal) {
+        return ResponseEntity.ok(penaltyService.releaseManually(
+                selectorsId, penaltyHistoryId, principal.getName()));
     }
 }

@@ -20,7 +20,227 @@ env:
   EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
 
 jobs:
+  database-008-expand:
+    runs-on: ubuntu-latest
+    env:
+      REMOTE_SCRIPT: |
+        set -eu
+        cd /srv/hiselectors
+        API_CONTAINER="$(docker compose ps -q api)"
+        test -n "$API_CONTAINER"
+
+        container_env() {
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$API_CONTAINER" |
+            sed -n "s/^$1=//p" |
+            head -n 1
+        }
+        assert_eq() {
+          echo "$1=$2"
+          test "$2" = "$3"
+        }
+
+        DDL_AUTO_VALUE="$(container_env DDL_AUTO)"
+        assert_eq ddl-auto "${DDL_AUTO_VALUE:-validate}" validate
+
+        DB_HOST="$(container_env DB_HOST)"
+        DB_PORT="$(container_env DB_PORT)"
+        DB_NAME="$(container_env DB_NAME)"
+        DB_USERNAME="$(container_env DB_USERNAME)"
+        DB_PASSWORD="$(container_env DB_PASSWORD)"
+        DB_PORT="${DB_PORT:-3306}"
+        DB_NAME="${DB_NAME:-hiselectors}"
+        DB_USERNAME="${DB_USERNAME:-root}"
+        test -n "$DB_HOST"
+
+        export MYSQL_PWD="$DB_PASSWORD"
+        mysql_query() {
+          docker run --rm --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
+        }
+        mysql_apply_file() {
+          docker run --rm -i --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
+            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            -u "$DB_USERNAME" "$DB_NAME"
+        }
+
+        TASK_RUN_MIGRATION_FILE="$(mktemp)"
+        cleanup_task_run_migration() {
+          rm -f "$TASK_RUN_MIGRATION_FILE"
+        }
+        trap cleanup_task_run_migration EXIT HUP INT TERM
+        printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d > "$TASK_RUN_MIGRATION_FILE"
+        cat "$TASK_RUN_MIGRATION_FILE" | mysql_apply_file
+
+        task_run_table_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'task_run'")"
+        task_run_unique_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'task_run' AND non_unique = 0 AND index_name IN ('uq_task_run_run_id', 'uq_task_run_concurrency_key', 'uq_task_run_idempotency_key')")"
+        test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
+        echo "task-run-migration=verified"
+
+        profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
+        if [ "$profile_image_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE application ADD COLUMN profile_image_url VARCHAR(500) NULL AFTER profile_url"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        echo "application-profile-image=verified"
+
+        selectors_profile_url_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url'")"
+        if [ "$selectors_profile_url_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE selectors_sns_account ADD COLUMN profile_url VARCHAR(500) NULL AFTER account_id"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'selectors_sns_account' AND column_name = 'profile_url' AND data_type = 'varchar' AND character_maximum_length = 500 AND is_nullable = 'YES'")" = "1"
+        selectors_profile_identity_mismatch_count="$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE NOT (account.sns_code <=> app.sns_code) OR NOT (BINARY account.account_id <=> BINARY app.sns_account_id)")"
+        assert_eq selectors-profile-identity-mismatch "$selectors_profile_identity_mismatch_count" 0
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_url = app.profile_url WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE account.sns_code <=> app.sns_code AND BINARY account.account_id <=> BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_url), '') IS NULL AND NULLIF(TRIM(app.profile_url), '') IS NOT NULL")" = "0"
+        mysql_query "UPDATE selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id SET account.profile_image_url = TRIM(app.profile_image_url) WHERE app.status = 'APPROVED' AND selector.is_deleted = 0 AND account.is_deleted = 0 AND account.sns_code = app.sns_code AND BINARY account.account_id = BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_image_url), '') IS NULL AND NULLIF(TRIM(app.profile_image_url), '') IS NOT NULL"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_sns_account account JOIN selectors selector ON selector.selectors_id = account.selectors_id JOIN application app ON app.application_id = selector.application_id WHERE app.status = 'APPROVED' AND selector.is_deleted = 0 AND account.is_deleted = 0 AND account.sns_code = app.sns_code AND BINARY account.account_id = BINARY app.sns_account_id AND NULLIF(TRIM(account.profile_image_url), '') IS NULL AND NULLIF(TRIM(app.profile_image_url), '') IS NOT NULL")" = "0"
+        echo "selectors-sns-profile=verified"
+
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
+        mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
+          mysql_query "ALTER TABLE application_media MODIFY COLUMN media_sequence_no INT NOT NULL"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM application_media WHERE media_sequence_no IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND data_type = 'int' AND is_nullable = 'NO'")" = "1"
+        echo "application-media-sequence=verified"
+
+        activity_start_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date'")"
+        activity_end_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date'")"
+        if [ "$activity_start_column_count" = "0" ] || [ "$activity_end_column_count" = "0" ]; then
+          case "${SELECTORS_LIFECYCLE_ENABLED:-$(container_env SELECTORS_LIFECYCLE_ENABLED)}" in
+            ""|false|False|FALSE) ;;
+            *) echo "SELECTORS_LIFECYCLE_ENABLED must be false for the initial 008 expansion"; exit 1 ;;
+          esac
+        fi
+
+        test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE start_date IS NULL OR end_date IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE selectors_id IS NULL OR generation_id IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM (SELECT selectors_id, generation_id FROM selectors_generation GROUP BY selectors_id, generation_id HAVING COUNT(*) > 1) duplicates")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM (SELECT user_id FROM selectors WHERE user_id IS NOT NULL GROUP BY user_id HAVING COUNT(*) > 1) duplicates")" = "0"
+
+        if [ "$activity_start_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE generation ADD COLUMN activity_start_date DATETIME(6) NULL AFTER end_date"
+        fi
+        if [ "$activity_end_column_count" = "0" ]; then
+          mysql_query "ALTER TABLE generation ADD COLUMN activity_end_date DATETIME(6) NULL AFTER activity_start_date"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_start_date' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE generation MODIFY COLUMN activity_start_date DATETIME(6) NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name = 'activity_end_date' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE generation MODIFY COLUMN activity_end_date DATETIME(6) NULL"
+        fi
+        mysql_query "UPDATE generation SET activity_start_date = COALESCE(activity_start_date, start_date), activity_end_date = COALESCE(activity_end_date, end_date) WHERE activity_start_date IS NULL OR activity_end_date IS NULL"
+        mysql_query "UPDATE selectors_generation sg JOIN generation g ON g.generation_id = sg.generation_id SET sg.created_at = COALESCE(g.activity_start_date, g.start_date) WHERE sg.created_at IS NULL"
+
+        test "$(mysql_query "SELECT COUNT(*) FROM generation first_generation JOIN generation second_generation ON first_generation.generation_id < second_generation.generation_id AND first_generation.activity_start_date <= second_generation.activity_end_date AND first_generation.activity_end_date >= second_generation.activity_start_date")" = "0"
+
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "0" ]; then
+          mysql_query "ALTER TABLE generation ADD INDEX idx_generation_activity_period (activity_start_date, activity_end_date)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'selectors_generation' AND constraint_name = 'uq_selectors_generation' AND constraint_type = 'UNIQUE'")" = "0" ]; then
+          mysql_query "ALTER TABLE selectors_generation ADD CONSTRAINT uq_selectors_generation UNIQUE (selectors_id, generation_id)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'selectors' AND constraint_name = 'uq_selectors_user' AND constraint_type = 'UNIQUE'")" = "0" ]; then
+          mysql_query "ALTER TABLE selectors ADD CONSTRAINT uq_selectors_user UNIQUE (user_id)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN generation_id BIGINT NULL AFTER selectors_id"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'content_version_id' AND is_nullable = 'NO'")" = "1" ]; then
+          mysql_query "ALTER TABLE penalty_history MODIFY COLUMN content_version_id BIGINT NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN source VARCHAR(20) NULL AFTER reason"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'granted_by_admin_id'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN granted_by_admin_id BIGINT NULL AFTER source"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'released_by_admin_id'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD COLUMN released_by_admin_id BIGINT NULL AFTER granted_by_admin_id"
+        fi
+        mysql_query "UPDATE penalty_history SET source = 'LEGACY' WHERE source IS NULL"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source' AND is_nullable = 'YES'")" = "1" ]; then
+          mysql_query "ALTER TABLE penalty_history MODIFY COLUMN source VARCHAR(20) NOT NULL"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_granted_admin'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_granted_admin FOREIGN KEY (granted_by_admin_id) REFERENCES admin (admin_id)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_released_admin'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_released_admin FOREIGN KEY (released_by_admin_id) REFERENCES admin (admin_id)"
+        fi
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD INDEX idx_penalty_selectors_generation (selectors_id, generation_id)"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM penalty_history p LEFT JOIN generation g ON g.generation_id = p.generation_id WHERE p.generation_id IS NOT NULL AND g.generation_id IS NULL")" = "0"
+        if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND referenced_table_name = 'generation'")" = "0" ]; then
+          mysql_query "ALTER TABLE penalty_history ADD CONSTRAINT fk_penalty_generation FOREIGN KEY (generation_id) REFERENCES generation (generation_id)"
+        fi
+        mysql_query "INSERT IGNORE INTO selectors_role (selectors_role_id, role_name) VALUES ('BLACKLIST', '블랙리스트')"
+        mysql_query "INSERT INTO blacklist_history (selectors_id, reason, status, created_at, updated_at) SELECT accumulated.selectors_id, '패널티 누적 3회로 인한 자동 블랙리스트 전환', 'ACTIVE', CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6) FROM (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated WHERE NOT EXISTS (SELECT 1 FROM blacklist_history history WHERE history.selectors_id = accumulated.selectors_id AND history.status = 'ACTIVE')"
+        mysql_query "UPDATE selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id SET s.selectors_role_id = 'BLACKLIST' WHERE s.selectors_role_id <> 'BLACKLIST'"
+
+        test "$(mysql_query "SELECT COUNT(*) FROM generation WHERE activity_start_date IS NULL OR activity_end_date IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors_generation WHERE created_at IS NULL")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM selectors s JOIN (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated ON accumulated.selectors_id = s.selectors_id WHERE s.selectors_role_id <> 'BLACKLIST'")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM (SELECT selectors_id FROM penalty_history GROUP BY selectors_id HAVING COUNT(*) >= 3) accumulated WHERE NOT EXISTS (SELECT 1 FROM blacklist_history history WHERE history.selectors_id = accumulated.selectors_id AND history.status = 'ACTIVE')")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'generation' AND column_name IN ('activity_start_date', 'activity_end_date') AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES'")" = "2"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'generation_id' AND data_type = 'bigint' AND is_nullable = 'YES'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'content_version_id' AND is_nullable = 'NO'")" = "0"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name = 'source' AND data_type = 'varchar' AND is_nullable = 'NO'")" = "1"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND column_name IN ('granted_by_admin_id', 'released_by_admin_id') AND data_type = 'bigint' AND is_nullable = 'YES'")" = "2"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'generation' AND index_name = 'idx_generation_activity_period'")" = "activity_start_date,activity_end_date"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors_generation' AND index_name = 'uq_selectors_generation' AND non_unique = 0")" = "selectors_id,generation_id"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'selectors' AND index_name = 'uq_selectors_user' AND non_unique = 0")" = "user_id"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'penalty_history' AND index_name = 'idx_penalty_selectors_generation'")" = "selectors_id,generation_id"
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.key_column_usage WHERE constraint_schema = DATABASE() AND table_name = 'penalty_history' AND constraint_name = 'fk_penalty_generation' AND column_name = 'generation_id' AND referenced_table_name = 'generation' AND referenced_column_name = 'generation_id'")" = "1"
+        echo "008-expand=verified"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Expand 008 through SSM
+        run: |
+          test -n "$EC2_INSTANCE_ID"
+          TASK_RUN_MIGRATION_B64="$(base64 -w0 docs/task-run-migration.sql)"
+          printf -v TASK_RUN_MIGRATION_ASSIGNMENT 'TASK_RUN_MIGRATION_B64=%q\n' "$TASK_RUN_MIGRATION_B64"
+          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
+          test "${#REMOTE_COMMAND}" -lt 24000
+          PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)"
+          STATUS=
+          for _ in {1..120}; do
+            STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID"
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          test "$STATUS" = "Success"
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --query '{Status:Status,Output:StandardOutputContent}'
+
   deploy:
+    needs: database-008-expand
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

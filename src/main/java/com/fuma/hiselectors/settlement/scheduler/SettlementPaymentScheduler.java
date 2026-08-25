@@ -50,9 +50,11 @@ public class SettlementPaymentScheduler {
             return;
         }
         int activityYearMonth = activityMonth.getYear() * 100 + activityMonth.getMonthValue();
+        int paymentYearMonth = YearMonth.from(paymentDate).getYear() * 100
+                + YearMonth.from(paymentDate).getMonthValue();
         settlementHistoryRepository
-                .findAllByStatusAndActivityYearMonthAndSettlementAmountGreaterThan(
-                        SettlementStatus.PAYMENT_PENDING, activityYearMonth, 0L)
+                .findAllUpcomingPending(
+                        SettlementStatus.PAYMENT_PENDING, activityYearMonth, paymentYearMonth)
                 .forEach(history -> settlementStatusNotificationService.notifyUpcoming(
                         history.getId(), paymentDate));
     }

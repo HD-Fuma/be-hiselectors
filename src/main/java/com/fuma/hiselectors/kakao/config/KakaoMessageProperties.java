@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record KakaoMessageProperties(
         String webUrl,
         String mobileWebUrl,
-        String imageUrl
+        String imageUrl,
+        String defaultRecipientUuid
 ) {
 }

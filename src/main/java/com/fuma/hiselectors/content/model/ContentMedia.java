@@ -12,7 +12,6 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -35,9 +34,6 @@ public class ContentMedia extends BaseTimeEntity {
 
     @Column(name = "media_url", length = 500)
     private String mediaUrl;
-
-    @Column(name = "thumbnail_url", columnDefinition = "TEXT")
-    private String thumbnailUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "media_type", nullable = false, length = 20)
@@ -70,22 +66,10 @@ public class ContentMedia extends BaseTimeEntity {
             String snsMediaId,
             Integer sequenceNo,
             Map<String, Object> body) {
-        return create(contentVersionId, mediaType, mediaUrl, null, snsMediaId, sequenceNo, body);
-    }
-
-    public static ContentMedia create(
-            Long contentVersionId,
-            MediaType mediaType,
-            String mediaUrl,
-            String thumbnailUrl,
-            String snsMediaId,
-            Integer sequenceNo,
-            Map<String, Object> body) {
         ContentMedia media = new ContentMedia();
         media.contentVersionId = contentVersionId;
         media.mediaType = mediaType;
         media.mediaUrl = mediaUrl;
-        media.thumbnailUrl = thumbnailUrl;
         media.snsMediaId = snsMediaId;
         media.sequenceNo = sequenceNo;
         media.replaceBody(body);
@@ -115,21 +99,5 @@ public class ContentMedia extends BaseTimeEntity {
         this.extractedWithPolicyId = policyId;
         this.extractionInputHash = inputHash;
         this.extractedAt = extractedAt;
-    }
-
-    public boolean refreshExternalUrls(String mediaUrl, String thumbnailUrl) {
-        String nextMediaUrl = hasText(mediaUrl) ? mediaUrl : this.mediaUrl;
-        String nextThumbnailUrl = hasText(thumbnailUrl) ? thumbnailUrl : this.thumbnailUrl;
-        if (Objects.equals(this.mediaUrl, nextMediaUrl)
-                && Objects.equals(this.thumbnailUrl, nextThumbnailUrl)) {
-            return false;
-        }
-        this.mediaUrl = nextMediaUrl;
-        this.thumbnailUrl = nextThumbnailUrl;
-        return true;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 }

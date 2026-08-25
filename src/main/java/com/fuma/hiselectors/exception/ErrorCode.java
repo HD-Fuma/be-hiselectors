@@ -104,6 +104,8 @@ public enum ErrorCode {
     INVALID_CONTENT_INSPECTION_STATUS(HttpStatus.CONFLICT, "검수할 수 없는 콘텐츠 버전 상태입니다."),
     INVALID_VIOLATION_STATUS_TRANSITION(HttpStatus.CONFLICT, "허용되지 않는 위반 상태 변경입니다."),
     ACTIVE_PENALTY_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 활성 패널티가 있습니다."),
+    PENALTY_NOT_FOUND(HttpStatus.NOT_FOUND, "패널티 이력을 찾을 수 없습니다."),
+    INVALID_PENALTY_STATUS_TRANSITION(HttpStatus.CONFLICT, "해제할 수 없는 패널티 상태입니다."),
 
     // --- 크리에이터 ---
     CREATOR_NOT_FOUND(HttpStatus.NOT_FOUND, "크리에이터를 찾을 수 없습니다."),

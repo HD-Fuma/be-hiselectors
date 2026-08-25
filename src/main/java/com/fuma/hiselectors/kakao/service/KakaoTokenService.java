@@ -12,6 +12,7 @@ import com.fuma.hiselectors.kakao.security.KakaoTokenCrypto;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -24,7 +25,9 @@ public class KakaoTokenService {
     private final KakaoOAuthClient oauthClient;
     private final KakaoTokenCrypto tokenCrypto;
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            noRollbackFor = BusinessException.class)
     public String getValidAccessToken(Long connectionId) {
         KakaoSenderConnection connection = lockedConnection(connectionId);
         if (connection.getStatus() == KakaoSenderConnectionStatus.REAUTH_REQUIRED) {
@@ -37,7 +40,9 @@ public class KakaoTokenService {
         return refresh(connection);
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            noRollbackFor = BusinessException.class)
     public String forceRefresh(Long connectionId) {
         return refresh(lockedConnection(connectionId));
     }

@@ -32,8 +32,8 @@ class SettlementPaymentSchedulerTest {
                 2L, LocalDateTime.of(2026, 6, 1, 0, 0));
         ReflectionTestUtils.setField(history, "id", 10L);
         when(historyRepository
-                .findAllByStatusAndActivityYearMonthAndSettlementAmountGreaterThan(
-                        SettlementStatus.PAYMENT_PENDING, 202606, 0L))
+                .findAllUpcomingPending(
+                        SettlementStatus.PAYMENT_PENDING, 202606, 202608))
                 .thenReturn(List.of(history));
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-16T15:00:00Z"), ZoneId.of("Asia/Seoul"));
@@ -63,7 +63,7 @@ class SettlementPaymentSchedulerTest {
         scheduler.notifyUpcomingSettlements();
 
         verify(historyRepository, never())
-                .findAllByStatusAndActivityYearMonthAndSettlementAmountGreaterThan(
+                .findAllUpcomingPending(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any());
