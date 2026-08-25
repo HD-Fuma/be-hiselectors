@@ -54,6 +54,7 @@ public class SettlementAdminService {
             SettlementStatus.PAYMENT_HOLD_BLACK,
             SettlementStatus.PAYMENT_HOLD_INFO,
             SettlementStatus.PAYMENT_PENDING,
+            SettlementStatus.PAYMENT_CARRYOVER,
             SettlementStatus.CALCULATING);
 
     public Page<SettlementEstimateResponse> search(
@@ -116,9 +117,13 @@ public class SettlementAdminService {
         YearMonth paymentMonth = currentMonth;
         List<SettlementHistory> pendingHistories = settlementHistoryRepository
                 .findAllBySelectorsIdAndStatus(selectorsId, SettlementStatus.PAYMENT_PENDING);
-        long scheduledCommission = pendingHistories.stream()
+        List<SettlementHistory> carryoverHistories = settlementHistoryRepository
+                .findAllBySelectorsIdAndStatus(selectorsId, SettlementStatus.PAYMENT_CARRYOVER);
+        long scheduledCommission = java.util.stream.Stream.concat(
+                        pendingHistories.stream(), carryoverHistories.stream())
                 .mapToLong(SettlementHistory::getSettlementAmount)
                 .sum();
+        paymentMonth = nextPaymentMonth(pendingHistories);
         SettlementStatus paymentStatus = currentPaymentStatus(
                 settlementHistoryRepository.findAllBySelectorsIdAndStatusIn(
                         selectorsId, ACTIVE_PAYMENT_STATUSES));
@@ -197,10 +202,23 @@ public class SettlementAdminService {
         if (hasStatus(histories, SettlementStatus.PAYMENT_PENDING)) {
             return SettlementStatus.PAYMENT_PENDING;
         }
+        if (hasStatus(histories, SettlementStatus.PAYMENT_CARRYOVER)) {
+            return SettlementStatus.PAYMENT_CARRYOVER;
+        }
         if (hasStatus(histories, SettlementStatus.CALCULATING)) {
             return SettlementStatus.CALCULATING;
         }
         return null;
+    }
+
+    private YearMonth nextPaymentMonth(List<SettlementHistory> pendingHistories) {
+        return pendingHistories.stream()
+                .map(history -> history.getScheduledPaymentYearMonth() == null
+                        ? YearMonth.from(history.getActivityMonth()).plusMonths(2)
+                        : YearMonth.of(history.getScheduledPaymentYearMonth() / 100,
+                                history.getScheduledPaymentYearMonth() % 100))
+                .min(YearMonth::compareTo)
+                .orElse(null);
     }
 
     private boolean hasStatus(List<SettlementHistory> histories, SettlementStatus status) {

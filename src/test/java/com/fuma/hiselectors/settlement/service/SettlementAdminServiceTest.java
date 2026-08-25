@@ -120,6 +120,7 @@ class SettlementAdminServiceTest {
                         SettlementStatus.PAYMENT_HOLD_BLACK,
                         SettlementStatus.PAYMENT_HOLD_INFO,
                         SettlementStatus.PAYMENT_PENDING,
+                        SettlementStatus.PAYMENT_CARRYOVER,
                         SettlementStatus.CALCULATING)))
                 .thenReturn(List.of(nextPaymentHistory));
         when(historyRepository.sumSalesBySelectorsId(15L)).thenReturn(10_000L);
@@ -137,7 +138,7 @@ class SettlementAdminServiceTest {
         assertThat(result.settlementSummary().nextMonthScheduledCommission()).isEqualTo(300L);
         assertThat(result.settlementSummary().cumulativeSalesAmount()).isEqualTo(10_000L);
         assertThat(result.settlementSummary().nextPaymentMonth())
-                .isEqualTo(java.time.YearMonth.of(2026, 8));
+                .isEqualTo(java.time.YearMonth.of(2026, 9));
         assertThat(result.settlementSummary().nextPaymentSettlementStatus())
                 .isEqualTo(SettlementStatus.PAYMENT_PENDING);
         assertThat(result.histories()).hasSize(1);

@@ -23,7 +23,7 @@ class KakaoTemplateFactoryResolverTest {
     KakaoTemplateFactoryResolverTest() {
         KakaoMessageProperties properties = new KakaoMessageProperties(
                 "https://example.com", "https://m.example.com",
-                "https://example.com/image.png");
+                "https://example.com/image.png", "");
         NotificationMessageFactory messageFactory = new NotificationMessageFactory();
         resolver = new KakaoTemplateFactoryResolver(List.of(
                 new TextTemplateFactory(properties, messageFactory),

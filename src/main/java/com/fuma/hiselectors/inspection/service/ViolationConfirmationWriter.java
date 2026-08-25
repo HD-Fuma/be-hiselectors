@@ -25,7 +25,7 @@ public class ViolationConfirmationWriter {
     private final PenaltyService penaltyService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ConfirmationPreparation prepare(Long violationId) {
+    public ConfirmationPreparation prepare(Long violationId, String adminLoginId) {
         ViolationItem item = requireViolationForUpdate(violationId);
         Content content = contentRepository.findById(item.getContentId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
@@ -41,8 +41,10 @@ public class ViolationConfirmationWriter {
             throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
         }
 
+        String reason = violationReason(item);
         boolean penaltyCreated = penaltyService.activateIfAbsent(
-                selectors.getId(), item.getViolationTypeId());
+                selectors.getId(), item.getLastDetectedContentVersionId(),
+                item.getViolationTypeId(), reason, adminLoginId);
         return preparation(item, selectors, penaltyCreated, false);
     }
 
@@ -78,11 +80,18 @@ public class ViolationConfirmationWriter {
     private ConfirmationPreparation preparation(ViolationItem item, Selectors selectors,
                                                 boolean penaltyCreated,
                                                 boolean alreadyRequested) {
-        String reason = item.getEvidence() == null ? "수정이 필요한 위반 사항"
-                : item.getEvidence().reason();
+        String reason = violationReason(item);
         return new ConfirmationPreparation(
                 item.getId(), selectors.getUserId(), selectors.getSelectorsNickname(), reason,
                 penaltyCreated, alreadyRequested);
+    }
+
+    private String violationReason(ViolationItem item) {
+        if (item.getEvidence() == null || item.getEvidence().reason() == null
+                || item.getEvidence().reason().isBlank()) {
+            return "수정이 필요한 위반 사항";
+        }
+        return item.getEvidence().reason();
     }
 
     public record ConfirmationPreparation(

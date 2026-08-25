@@ -47,6 +47,17 @@ class SettlementHistoryTest {
     }
 
     @Test
+    void calculatingHistoryCanMoveDirectlyToSettled() {
+        SettlementHistory history = calculatedHistory();
+        LocalDateTime settledAt = LocalDateTime.of(2026, 8, 20, 0, 0);
+
+        history.transitionTo(SettlementStatus.SETTLED, settledAt);
+
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.SETTLED);
+        assertThat(history.getSettledAt()).isEqualTo(settledAt);
+    }
+
+    @Test
     void settledHistoryCannotChangeOrRecalculate() {
         SettlementHistory history = calculatedHistory();
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.now());

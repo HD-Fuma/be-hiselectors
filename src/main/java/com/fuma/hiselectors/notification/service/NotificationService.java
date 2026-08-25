@@ -4,6 +4,7 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.kakao.config.KakaoMessageProperties;
 import com.fuma.hiselectors.kakao.model.KakaoRecipientStatus;
 import com.fuma.hiselectors.kakao.model.UserKakaoRecipient;
 import com.fuma.hiselectors.kakao.repository.UserKakaoRecipientRepository;
@@ -20,8 +21,10 @@ import com.fuma.hiselectors.notification.sender.NotificationSender;
 import java.time.LocalDateTime;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
@@ -36,6 +39,7 @@ public class NotificationService {
     private final KakaoRecipientStatusService recipientStatusService;
     private final NotificationRepository notificationRepository;
     private final TextTemplateFactory textTemplateFactory;
+    private final KakaoMessageProperties messageProperties;
 
     public NotificationSendResponse sendToMe(String adminLoginId,
                                                NotificationMessageCommand command) {
@@ -150,27 +154,24 @@ public class NotificationService {
         if (command.recipientUserId() == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "수신 사용자 ID가 필요합니다.");
         }
-        UserKakaoRecipient recipient = recipientRepository.findByUserId(command.recipientUserId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
-        if (recipient.getStatus() != KakaoRecipientStatus.READY) {
-            throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_READY);
-        }
+        ResolvedRecipient recipient = resolveRecipient(command.recipientUserId());
 
         CreatedKakaoTemplate created = templateFactoryResolver.create(
                 DEFAULT_TEMPLATE_TYPE, command);
         Long notificationId = recorder.createRequested(
                 command.notificationType().getPurposeCode(), command.referenceId(),
-                recipient.getKakaoMessageUuid(), created.body(),
+                recipient.uuid(), created.body(),
                 initiatedByType, initiatedById);
         try {
-            notificationSender.sendToFriend(connectionId, recipient.getKakaoMessageUuid(),
+            notificationSender.sendToFriend(connectionId, recipient.uuid(),
                     created.template());
             recorder.markSent(notificationId);
             return new NotificationSendResponse(notificationId, NotificationStatus.SENT);
         } catch (BusinessException e) {
             recorder.markFailed(notificationId);
-            if (e.getErrorCode() == ErrorCode.KAKAO_RECIPIENT_INVALID) {
-                recipientStatusService.markReauthRequired(recipient.getId());
+            if (e.getErrorCode() == ErrorCode.KAKAO_RECIPIENT_INVALID
+                    && recipient.recipientId() != null) {
+                recipientStatusService.markReauthRequired(recipient.recipientId());
             }
             throw e;
         } catch (RuntimeException e) {
@@ -179,10 +180,32 @@ public class NotificationService {
         }
     }
 
+    private ResolvedRecipient resolveRecipient(Long recipientUserId) {
+        UserKakaoRecipient recipient = recipientRepository.findByUserId(recipientUserId)
+                .orElse(null);
+        if (recipient != null) {
+            if (recipient.getStatus() != KakaoRecipientStatus.READY) {
+                throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_READY);
+            }
+            return new ResolvedRecipient(recipient.getKakaoMessageUuid(), recipient.getId());
+        }
+
+        String defaultRecipientUuid = messageProperties.defaultRecipientUuid();
+        if (defaultRecipientUuid == null || defaultRecipientUuid.isBlank()) {
+            throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND);
+        }
+        log.warn("Kakao recipient connection not found; using default recipient: userId={}",
+                recipientUserId);
+        return new ResolvedRecipient(defaultRecipientUuid, null);
+    }
+
     private Long requireConnection(Admin admin) {
         if (admin.getKakaoSenderConnectionId() == null) {
             throw new BusinessException(ErrorCode.KAKAO_SENDER_NOT_CONNECTED);
         }
         return admin.getKakaoSenderConnectionId();
+    }
+
+    private record ResolvedRecipient(String uuid, Long recipientId) {
     }
 }

@@ -3,6 +3,7 @@ package com.fuma.hiselectors.settlement.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
@@ -105,6 +106,36 @@ class SettlementPaymentWorkerTest {
     }
 
     @Test
+    void settlesScheduledPaymentGroupAtomically() {
+        SettlementHistory first = pendingHistory(9L, YearMonth.of(2026, 5), 400L);
+        SettlementHistory second = pendingHistory(9L, YearMonth.of(2026, 6), 600L);
+        first.schedulePayment(YearMonth.of(2026, 8));
+        second.schedulePayment(YearMonth.of(2026, 8));
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        SettlementAccountRepository accountRepository = mock(SettlementAccountRepository.class);
+        SettlementCompletionRecorder recorder = mock(SettlementCompletionRecorder.class);
+        Selectors selectors = mock(Selectors.class);
+        when(historyRepository.findAllByIdInForUpdate(List.of(1L, 2L)))
+                .thenReturn(List.of(first, second));
+        when(selectorsRepository.findById(9L)).thenReturn(Optional.of(selectors));
+        when(selectors.getSelectorsRoleId()).thenReturn("ACTIVE");
+        when(accountRepository.findFirstBySelectorsIdAndDeletedFalseOrderByIdDesc(9L))
+                .thenReturn(Optional.of(completeAccount()));
+        SettlementPaymentWorker worker = new SettlementPaymentWorker(
+                historyRepository, selectorsRepository, accountRepository,
+                CLOCK, ACCOUNT_CRYPTO, recorder);
+
+        var outcome = worker.processGroup(List.of(1L, 2L));
+
+        assertThat(outcome).isEqualTo(SettlementPaymentWorker.PaymentOutcome.SETTLED);
+        assertThat(first.getStatus()).isEqualTo(SettlementStatus.SETTLED);
+        assertThat(second.getStatus()).isEqualTo(SettlementStatus.SETTLED);
+        verify(recorder).record(first);
+        verify(recorder).record(second);
+    }
+
+    @Test
     void incompleteAccountDoesNotReopenInformationHold() {
         SettlementHistory history = heldInformationHistory();
         SettlementAccount incompleteAccount = completeAccount(
@@ -163,9 +194,11 @@ class SettlementPaymentWorkerTest {
                 YearMonth.of(2026, 5).atDay(1).atStartOfDay(),
                 YearMonth.of(2026, 6).atDay(1).atStartOfDay()))
                 .thenReturn(memberships);
+        SettlementCompletionRecorder completionRecorder =
+                new SettlementCompletionRecorder(generationRepository);
         return new SettlementPaymentWorker(
-                historyRepository, generationRepository, selectorsRepository,
-                accountRepository, CLOCK, ACCOUNT_CRYPTO);
+                historyRepository, selectorsRepository, accountRepository,
+                CLOCK, ACCOUNT_CRYPTO, completionRecorder);
     }
 
     private SettlementAccount completeAccount() {
@@ -191,6 +224,18 @@ class SettlementPaymentWorkerTest {
                 10_000L, 2L, new BigDecimal("3.00"), 300L,
                 LocalDateTime.of(2026, 6, 1, 3, 0));
         history.transitionTo(SettlementStatus.PAYMENT_PENDING, LocalDateTime.of(2026, 6, 21, 0, 0));
+        return history;
+    }
+
+    private SettlementHistory pendingHistory(
+            Long selectorsId, YearMonth activityMonth, long settlementAmount) {
+        SettlementHistory history = SettlementHistory.create(
+                selectorsId, activityMonth.atDay(1).atStartOfDay());
+        history.updateCalculation(
+                10_000L, 2L, new BigDecimal("3.00"), settlementAmount,
+                activityMonth.plusMonths(1).atDay(1).atStartOfDay());
+        history.transitionTo(SettlementStatus.PAYMENT_PENDING,
+                activityMonth.plusMonths(1).atDay(21).atStartOfDay());
         return history;
     }
 

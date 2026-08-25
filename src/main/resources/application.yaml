@@ -177,6 +177,7 @@ kakao:
     web-url: ${KAKAO_MESSAGE_WEB_URL:https://hiselectors.shop/}
     mobile-web-url: ${KAKAO_MESSAGE_MOBILE_WEB_URL:https://hiselectors.shop/}
     image-url: ${KAKAO_MESSAGE_IMAGE_URL:https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_medium.png}
+    default-recipient-uuid: ${KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID:}
   token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:}
 
 purchase:
@@ -230,6 +231,7 @@ settlement:
     cron: ${SETTLEMENT_FINALIZATION_CRON:0 0 0 * * *}
   payment:
     cron: ${SETTLEMENT_PAYMENT_CRON:0 0 0 * * *}
+    minimum-amount: ${SETTLEMENT_PAYMENT_MINIMUM_AMOUNT:1000}
   expiry:
     cron: ${SETTLEMENT_EXPIRY_CRON:0 0 0 1 * *}
   notification:

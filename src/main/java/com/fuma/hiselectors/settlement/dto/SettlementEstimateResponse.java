@@ -40,7 +40,7 @@ public record SettlementEstimateResponse(
                 selectors.getSelectorsNickname(),
                 YearMonth.from(history.getActivityMonth()),
                 YearMonth.from(history.getActivityMonth()).plusMonths(1),
-                YearMonth.from(history.getActivityMonth()).plusMonths(2),
+                paymentMonth(history),
                 history.getConfirmedPurchaseCount(),
                 history.getTotalSales(),
                 history.getSettlementRate(),
@@ -50,5 +50,16 @@ public record SettlementEstimateResponse(
                 history.getCalculatedAt(),
                 history.getUpdatedAt()
         );
+    }
+
+    private static YearMonth paymentMonth(SettlementHistory history) {
+        if (history.getScheduledPaymentYearMonth() != null) {
+            int value = history.getScheduledPaymentYearMonth();
+            return YearMonth.of(value / 100, value % 100);
+        }
+        if (history.getStatus() == SettlementStatus.PAYMENT_CARRYOVER) {
+            return null;
+        }
+        return YearMonth.from(history.getActivityMonth()).plusMonths(2);
     }
 }

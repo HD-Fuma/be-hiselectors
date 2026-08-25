@@ -12,6 +12,7 @@ import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.penalty.model.PenaltyHistory;
+import com.fuma.hiselectors.penalty.model.PenaltySource;
 import com.fuma.hiselectors.penalty.model.PenaltyStatus;
 import com.fuma.hiselectors.penalty.repository.PenaltyHistoryRepository;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
@@ -160,6 +161,25 @@ class SelectorsLifecycleServiceTest {
         verify(penaltyRepository, times(2))
                 .findAllBySelectorsIdAndGenerationIdAndStatus(9L, 1L, PenaltyStatus.ACTIVE);
         verify(penaltyRepository, never()).delete(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void doesNotReleaseManualPenaltyWhenGenerationEnds() {
+        PenaltyHistory penalty = PenaltyHistory.activate(
+                9L, 1L, null, 4L, "관리자 수동 사유",
+                PenaltySource.MANUAL, 3L, NOW.minusDays(10));
+        when(generationRepository
+                .findFirstByActivityStartDateGreaterThanOrderByActivityStartDateAscIdAsc(
+                        ended.getActivityEndDate()))
+                .thenReturn(Optional.empty());
+        when(penaltyRepository.findAllBySelectorsIdAndGenerationIdAndStatus(
+                9L, 1L, PenaltyStatus.ACTIVE)).thenReturn(List.of(penalty));
+        when(membershipRepository.findGenerationsOf(9L)).thenReturn(List.of());
+
+        service.enrollQualifiedSelectors();
+
+        assertThat(penalty.getStatus()).isEqualTo(PenaltyStatus.ACTIVE);
+        assertThat(penalty.getEndedAt()).isNull();
     }
 
     private Generation generation(Long id, LocalDateTime activityStart, LocalDateTime activityEnd) {

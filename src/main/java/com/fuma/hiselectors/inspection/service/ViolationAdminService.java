@@ -20,7 +20,8 @@ public class ViolationAdminService {
     private final NotificationService notificationService;
 
     public ViolationActionResponse confirm(Long violationId, String adminLoginId) {
-        ConfirmationPreparation preparation = confirmationWriter.prepare(violationId);
+        ConfirmationPreparation preparation = confirmationWriter.prepare(
+                violationId, adminLoginId);
         if (preparation.alreadyRequested()) {
             return new ViolationActionResponse(
                     violationId, ViolationStatus.EDIT_REQUESTED, false, null);

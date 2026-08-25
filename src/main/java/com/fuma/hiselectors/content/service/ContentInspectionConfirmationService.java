@@ -17,6 +17,7 @@ import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.repository.ViolationEvidenceHistoryRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
+import com.fuma.hiselectors.penalty.service.PenaltyService;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +41,7 @@ public class ContentInspectionConfirmationService {
     private final ContentReportRepository contentReportRepository;
     private final ViolationEvidenceHistoryRepository historyRepository;
     private final ViolationItemRepository violationItemRepository;
+    private final PenaltyService penaltyService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
@@ -77,6 +79,9 @@ public class ContentInspectionConfirmationService {
             ViolationStatus target = requestedStatuses.get(item.getId());
             if (target == ViolationStatus.VIOLATION_CONFIRMED) {
                 item.confirm();
+                penaltyService.activateIfAbsent(
+                        content.getSelectorsId(), contentVersionId,
+                        item.getViolationTypeId(), violationReason(item), adminLoginId);
             } else {
                 item.dismiss();
             }
@@ -156,6 +161,14 @@ public class ContentInspectionConfirmationService {
         if (decision == ContentInspectionDecision.REJECTED && !hasConfirmed) {
             throw invalid("REJECTED는 VIOLATION_CONFIRMED 항목이 하나 이상 필요합니다.");
         }
+    }
+
+    private String violationReason(ViolationItem item) {
+        if (item.getEvidence() == null || item.getEvidence().reason() == null
+                || item.getEvidence().reason().isBlank()) {
+            return "수정이 필요한 위반 사항";
+        }
+        return item.getEvidence().reason();
     }
 
     private BusinessException invalid(String message) {

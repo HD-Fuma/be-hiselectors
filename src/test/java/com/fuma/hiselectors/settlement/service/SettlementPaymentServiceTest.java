@@ -48,8 +48,8 @@ class SettlementPaymentServiceTest {
                 SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)))
                 .thenReturn(List.of());
         when(historyRepository
-                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
-                        SettlementStatus.PAYMENT_PENDING, 202604))
+                .findAllPayablePending(
+                        SettlementStatus.PAYMENT_PENDING, 202604, 202606))
                 .thenReturn(List.of(first, second, third));
         when(paymentWorker.process(any())).thenReturn(
                 SettlementPaymentWorker.PaymentOutcome.SETTLED,
@@ -91,8 +91,8 @@ class SettlementPaymentServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("lock timeout"))
                 .when(paymentWorker).reopenIfResolved(1L);
         when(historyRepository
-                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
-                        SettlementStatus.PAYMENT_PENDING, 202604))
+                .findAllPayablePending(
+                        SettlementStatus.PAYMENT_PENDING, 202604, 202606))
                 .thenReturn(List.of(pending));
         when(paymentWorker.process(2L)).thenReturn(SettlementPaymentWorker.PaymentOutcome.SETTLED);
 
@@ -121,8 +121,8 @@ class SettlementPaymentServiceTest {
                 SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)))
                 .thenReturn(List.of());
         when(historyRepository
-                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
-                        SettlementStatus.PAYMENT_PENDING, 202606))
+                .findAllPayablePending(
+                        SettlementStatus.PAYMENT_PENDING, 202606, 202608))
                 .thenReturn(List.of(pending));
         when(paymentWorker.process(6L))
                 .thenReturn(SettlementPaymentWorker.PaymentOutcome.SETTLED);
@@ -153,8 +153,8 @@ class SettlementPaymentServiceTest {
                 SettlementStatus.PAYMENT_HOLD_INFO, SettlementStatus.PAYMENT_HOLD_BLACK)))
                 .thenReturn(List.of());
         when(historyRepository
-                .findAllByStatusAndActivityYearMonthLessThanEqualOrderByActivityYearMonthAsc(
-                        SettlementStatus.PAYMENT_PENDING, 202606))
+                .findAllPayablePending(
+                        SettlementStatus.PAYMENT_PENDING, 202606, 202608))
                 .thenReturn(List.of(pending));
         when(paymentWorker.process(7L))
                 .thenReturn(SettlementPaymentWorker.PaymentOutcome.SETTLED);
@@ -165,5 +165,40 @@ class SettlementPaymentServiceTest {
 
         assertThat(result.settledCount()).isEqualTo(1);
         assertThat(result.failedCount()).isZero();
+    }
+
+    @Test
+    void processesScheduledHistoriesAsOneGroupAndNotifiesEachMonth() {
+        SettlementHistoryRepository historyRepository = mock(SettlementHistoryRepository.class);
+        SettlementPaymentWorker paymentWorker = mock(SettlementPaymentWorker.class);
+        SettlementMissingNotificationService missingNotificationService = mock(
+                SettlementMissingNotificationService.class);
+        SettlementStatusNotificationService statusNotificationService = mock(
+                SettlementStatusNotificationService.class);
+        SettlementPaymentService service = new SettlementPaymentService(
+                historyRepository, paymentWorker, missingNotificationService,
+                statusNotificationService, new SettlementSchedulePolicy(),
+                Clock.fixed(Instant.parse("2026-09-20T00:00:00Z"), SEOUL));
+        SettlementHistory first = mock(SettlementHistory.class);
+        SettlementHistory second = mock(SettlementHistory.class);
+        when(first.getId()).thenReturn(11L);
+        when(first.getSelectorsId()).thenReturn(3L);
+        when(first.getScheduledPaymentYearMonth()).thenReturn(202609);
+        when(second.getId()).thenReturn(12L);
+        when(second.getSelectorsId()).thenReturn(3L);
+        when(second.getScheduledPaymentYearMonth()).thenReturn(202609);
+        when(historyRepository.findAllByStatusIn(any())).thenReturn(List.of());
+        when(historyRepository.findAllPayablePending(
+                SettlementStatus.PAYMENT_PENDING, 202607, 202609))
+                .thenReturn(List.of(first, second));
+        when(paymentWorker.processGroup(List.of(11L, 12L)))
+                .thenReturn(SettlementPaymentWorker.PaymentOutcome.SETTLED);
+
+        SettlementPaymentResponse result = service.process(YearMonth.of(2026, 9));
+
+        assertThat(result.processedCount()).isEqualTo(2);
+        assertThat(result.settledCount()).isEqualTo(2);
+        verify(statusNotificationService).notifyCompleted(11L);
+        verify(statusNotificationService).notifyCompleted(12L);
     }
 }

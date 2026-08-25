@@ -1,8 +1,6 @@
 package com.fuma.hiselectors.settlement.service;
 
 import com.fuma.hiselectors.selectors.model.Selectors;
-import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
-import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementAccount;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
@@ -13,11 +11,9 @@ import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import com.fuma.hiselectors.settlement.security.SettlementAccountCrypto;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
-import java.util.List;
 import java.util.Optional;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,63 +21,73 @@ import org.springframework.transaction.annotation.Transactional;
 /** 지급 대상 한 건을 독립 트랜잭션으로 처리한다. */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class SettlementPaymentWorker {
 
     private static final String BLACKLIST_ROLE = "BLACKLIST";
 
     private final SettlementHistoryRepository settlementHistoryRepository;
-    private final SelectorsGenerationRepository selectorsGenerationRepository;
     private final SelectorsRepository selectorsRepository;
     private final SettlementAccountRepository settlementAccountRepository;
     private final Clock clock;
     private final SettlementAccountCrypto accountCrypto;
+    private final SettlementCompletionRecorder completionRecorder;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PaymentOutcome process(Long settlementId) {
         SettlementHistory history = settlementHistoryRepository.findByIdForUpdate(settlementId)
                 .orElse(null);
-        if (history == null || history.getStatus() != SettlementStatus.PAYMENT_PENDING) {
+        return history == null ? PaymentOutcome.SKIPPED : processHistories(List.of(history), 1);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PaymentOutcome processGroup(List<Long> settlementIds) {
+        if (settlementIds == null || settlementIds.isEmpty()) {
             return PaymentOutcome.SKIPPED;
         }
+        List<SettlementHistory> histories = settlementHistoryRepository
+                .findAllByIdInForUpdate(settlementIds);
+        return processHistories(histories, settlementIds.size());
+    }
 
-        Selectors selectors = findSelectors(history.getSelectorsId()).orElse(null);
-        SettlementAccount account = findAccount(history.getSelectorsId()).orElse(null);
+    private PaymentOutcome processHistories(
+            List<SettlementHistory> histories, int expectedSize) {
+        if (!isValidPaymentGroup(histories, expectedSize)) {
+            return PaymentOutcome.SKIPPED;
+        }
+        SettlementHistory first = histories.getFirst();
+
+        Selectors selectors = findSelectors(first.getSelectorsId()).orElse(null);
+        SettlementAccount account = findAccount(first.getSelectorsId()).orElse(null);
         LocalDateTime processedAt = LocalDateTime.now(clock);
 
         if (isBlacklisted(selectors)) {
-            history.transitionTo(SettlementStatus.PAYMENT_HOLD_BLACK, processedAt);
+            histories.forEach(history -> history.transitionTo(
+                    SettlementStatus.PAYMENT_HOLD_BLACK, processedAt));
             return PaymentOutcome.HELD_BLACK;
         }
         if (isSettlementAccountMissing(account)) {
-            history.transitionTo(SettlementStatus.PAYMENT_HOLD_INFO, processedAt);
+            histories.forEach(history -> history.transitionTo(
+                    SettlementStatus.PAYMENT_HOLD_INFO, processedAt));
             return PaymentOutcome.HELD_INFO;
         }
 
-        history.transitionTo(SettlementStatus.SETTLED, processedAt);
-        recordSettledSettlement(history);
+        for (SettlementHistory history : histories) {
+            history.transitionTo(SettlementStatus.SETTLED, processedAt);
+            completionRecorder.record(history);
+        }
         return PaymentOutcome.SETTLED;
     }
 
-    private void recordSettledSettlement(SettlementHistory history) {
-        YearMonth activityMonth = YearMonth.from(history.getActivityMonth());
-        List<SelectorsGeneration> memberships = selectorsGenerationRepository
-                .findAllBySelectorsIdAndActivityMonthForUpdate(
-                        history.getSelectorsId(),
-                        activityMonth.atDay(1).atStartOfDay(),
-                        activityMonth.plusMonths(1).atDay(1).atStartOfDay());
-        if (memberships.size() != 1) {
-            log.warn("기수별 정산 성과 집계 대상이 명확하지 않음: settlementId={}, selectorsId={}, "
-                            + "activityMonth={}, membershipCount={}",
-                    history.getId(), history.getSelectorsId(), activityMonth, memberships.size());
-            return;
+    private boolean isValidPaymentGroup(List<SettlementHistory> histories, int expectedSize) {
+        if (histories.size() != expectedSize) {
+            return false;
         }
-
-        memberships.getFirst().addSettledSettlement(
-                history.getTotalSales(),
-                history.getConfirmedPurchaseCount() == null
-                        ? 0L : history.getConfirmedPurchaseCount(),
-                history.getSettlementAmount());
+        SettlementHistory first = histories.getFirst();
+        return histories.stream().allMatch(history ->
+                history.getStatus() == SettlementStatus.PAYMENT_PENDING
+                        && first.getSelectorsId().equals(history.getSelectorsId())
+                        && java.util.Objects.equals(first.getScheduledPaymentYearMonth(),
+                        history.getScheduledPaymentYearMonth()));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

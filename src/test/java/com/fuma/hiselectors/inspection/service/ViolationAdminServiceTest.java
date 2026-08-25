@@ -20,7 +20,7 @@ class ViolationAdminServiceTest {
     void sendsEditRequestAndMarksViolationAfterSuccessfulNotification() {
         ViolationConfirmationWriter writer = mock(ViolationConfirmationWriter.class);
         NotificationService notificationService = mock(NotificationService.class);
-        when(writer.prepare(10L)).thenReturn(new ConfirmationPreparation(
+        when(writer.prepare(10L, "admin")).thenReturn(new ConfirmationPreparation(
                 10L, 7L, "셀렉터", "광고 문구 누락", true, false));
         when(notificationService.sendToFriend(any(), any()))
                 .thenReturn(new NotificationSendResponse(99L, NotificationStatus.SENT));
@@ -38,7 +38,7 @@ class ViolationAdminServiceTest {
     void doesNotResendAlreadyRequestedViolation() {
         ViolationConfirmationWriter writer = mock(ViolationConfirmationWriter.class);
         NotificationService notificationService = mock(NotificationService.class);
-        when(writer.prepare(10L)).thenReturn(new ConfirmationPreparation(
+        when(writer.prepare(10L, "admin")).thenReturn(new ConfirmationPreparation(
                 10L, 7L, "셀렉터", "광고 문구 누락", false, true));
         ViolationAdminService service = new ViolationAdminService(writer, notificationService);
 

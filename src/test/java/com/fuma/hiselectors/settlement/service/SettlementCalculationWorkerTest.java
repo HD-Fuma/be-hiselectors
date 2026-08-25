@@ -21,6 +21,7 @@ import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.model.SettlementHistory;
 import com.fuma.hiselectors.settlement.model.SettlementStatus;
+import com.fuma.hiselectors.settlement.event.SettlementCarryoverConfirmedEvent;
 import com.fuma.hiselectors.settlement.repository.SettlementHistoryRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 class SettlementCalculationWorkerTest {
 
@@ -42,6 +44,8 @@ class SettlementCalculationWorkerTest {
     private ApplicationRepository applicationRepository;
     private PurchaseHistoryRepository purchaseHistoryRepository;
     private SettlementHistoryRepository settlementHistoryRepository;
+    private SettlementCompletionRecorder completionRecorder;
+    private ApplicationEventPublisher eventPublisher;
     private SettlementCalculationWorker worker;
 
     @BeforeEach
@@ -50,6 +54,8 @@ class SettlementCalculationWorkerTest {
         applicationRepository = mock(ApplicationRepository.class);
         purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
         settlementHistoryRepository = mock(SettlementHistoryRepository.class);
+        completionRecorder = mock(SettlementCompletionRecorder.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-21T18:00:00Z"), SEOUL);
         worker = new SettlementCalculationWorker(
                 selectorsRepository,
@@ -57,6 +63,8 @@ class SettlementCalculationWorkerTest {
                 purchaseHistoryRepository,
                 settlementHistoryRepository,
                 new CommissionRateCalculator(),
+                completionRecorder,
+                eventPublisher,
                 clock);
         givenRateSource(SnsPlatform.YOUTUBE, 5_000L);
         when(settlementHistoryRepository.save(any(SettlementHistory.class)))
@@ -84,11 +92,83 @@ class SettlementCalculationWorkerTest {
 
         SettlementHistory history = result.settlementHistory();
         assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.FINALIZED);
-        assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_CARRYOVER);
         assertThat(history.getTotalSales()).isEqualTo(12_345L);
         assertThat(history.getConfirmedPurchaseCount()).isEqualTo(2L);
         assertThat(history.getSettlementRate()).isEqualByComparingTo("3.00");
         assertThat(history.getSettlementAmount()).isEqualTo(370L);
+    }
+
+    @Test
+    void finalizesZeroPaymentAmountDirectlyAsSettled() {
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        1L,
+                        LocalDateTime.of(2026, 7, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(List.of());
+        PurchaseSettlementSummary purchaseSummary = summary("1.00", 1L);
+        when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
+                1L,
+                PurchaseStatus.PURCHASE_CONFIRMED,
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(purchaseSummary);
+
+        SettlementCalculationResult result = worker.calculate(1L, JULY, true);
+
+        SettlementHistory history = result.settlementHistory();
+        assertThat(result.outcome()).isEqualTo(SettlementCalculationOutcome.FINALIZED);
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.SETTLED);
+        assertThat(history.getSettlementAmount()).isZero();
+        assertThat(history.getSettledAt())
+                .isEqualTo(LocalDateTime.of(2026, 8, 22, 3, 0));
+        verify(completionRecorder).record(history);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void exactMinimumAmountBecomesPaymentPending() {
+        givenEmptyJulyHistoryAndSummary("33334.00", 1L);
+
+        SettlementHistory history = worker.calculate(1L, JULY, true).settlementHistory();
+
+        assertThat(history.getSettlementAmount()).isEqualTo(1_000L);
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
+        assertThat(history.getScheduledPaymentYearMonth()).isEqualTo(202609);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void accumulatedCarryoverReleasesAllHistoriesIntoTheSamePaymentMonth() {
+        SettlementHistory carryover = SettlementHistory.create(
+                1L, LocalDateTime.of(2026, 6, 1, 0, 0));
+        carryover.updateCalculation(13_334L, 1L, new BigDecimal("3.00"), 400L,
+                LocalDateTime.of(2026, 7, 21, 0, 0));
+        carryover.transitionTo(SettlementStatus.PAYMENT_CARRYOVER,
+                LocalDateTime.of(2026, 7, 21, 0, 0));
+        givenEmptyJulyHistoryAndSummary("20000.00", 1L);
+        when(settlementHistoryRepository.findAllBySelectorsIdAndStatusForUpdate(
+                1L, SettlementStatus.PAYMENT_CARRYOVER)).thenReturn(List.of(carryover));
+
+        SettlementHistory current = worker.calculate(1L, JULY, true).settlementHistory();
+
+        assertThat(current.getSettlementAmount()).isEqualTo(600L);
+        assertThat(current.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
+        assertThat(carryover.getStatus()).isEqualTo(SettlementStatus.PAYMENT_PENDING);
+        assertThat(current.getScheduledPaymentYearMonth()).isEqualTo(202609);
+        assertThat(carryover.getScheduledPaymentYearMonth()).isEqualTo(202609);
+    }
+
+    @Test
+    void belowMinimumPublishesCarryoverEvent() {
+        givenEmptyJulyHistoryAndSummary("33333.00", 1L);
+
+        SettlementHistory history = worker.calculate(1L, JULY, true).settlementHistory();
+
+        assertThat(history.getSettlementAmount()).isEqualTo(999L);
+        assertThat(history.getStatus()).isEqualTo(SettlementStatus.PAYMENT_CARRYOVER);
+        verify(eventPublisher).publishEvent(any(SettlementCarryoverConfirmedEvent.class));
     }
 
     @Test
@@ -194,5 +274,21 @@ class SettlementCalculationWorkerTest {
         when(summary.getTotalSales()).thenReturn(new BigDecimal(totalSales));
         when(summary.getConfirmedPurchaseCount()).thenReturn(count);
         return summary;
+    }
+
+    private void givenEmptyJulyHistoryAndSummary(String totalSales, long count) {
+        PurchaseSettlementSummary purchaseSummary = summary(totalSales, count);
+        when(settlementHistoryRepository
+                .findAllBySelectorsIdAndActivityMonthGreaterThanEqualAndActivityMonthLessThanOrderByActivityMonthDesc(
+                        1L,
+                        LocalDateTime.of(2026, 7, 1, 0, 0),
+                        LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(List.of());
+        when(purchaseHistoryRepository.summarizeConfirmedPurchasesForActivityMonth(
+                1L,
+                PurchaseStatus.PURCHASE_CONFIRMED,
+                LocalDateTime.of(2026, 7, 1, 0, 0),
+                LocalDateTime.of(2026, 8, 1, 0, 0)))
+                .thenReturn(purchaseSummary);
     }
 }
