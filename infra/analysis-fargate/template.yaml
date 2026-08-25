@@ -35,7 +35,7 @@ Parameters:
     Default: whisper-large-v3-async
   GeminiFallbackModels:
     Type: String
-    Default: gemini-3.6-flash,gemini-3.5-flash-lite
+    Default: gemini-3.6-flash
   AlertTopicName:
     Type: String
     Default: batch-alerts
@@ -219,7 +219,7 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: "0"
             - Name: GEMINI_MODEL
-              Value: gemini-3.1-flash-lite
+              Value: gemini-3.5-flash-lite
             - Name: GEMINI_FALLBACK_MODELS
               Value: !Ref GeminiFallbackModels
             - Name: INSTAGRAM_REDIRECT_URI

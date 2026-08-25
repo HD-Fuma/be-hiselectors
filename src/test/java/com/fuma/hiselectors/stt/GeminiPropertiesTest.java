@@ -13,7 +13,7 @@ class GeminiPropertiesTest {
         GeminiProperties properties = new GeminiProperties(
                 "key", null, null, null, null, null);
 
-        assertEquals("gemini-3.1-flash-lite", properties.modelOrDefault());
+        assertEquals("gemini-3.5-flash-lite", properties.modelOrDefault());
     }
 
     @Test
