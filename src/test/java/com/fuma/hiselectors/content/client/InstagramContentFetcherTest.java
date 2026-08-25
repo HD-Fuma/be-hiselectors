@@ -507,7 +507,7 @@ class InstagramContentFetcherTest {
     }
 
     @Test
-    @DisplayName("기존 Instagram 콘텐츠를 계정별 Business Discovery 응답에서 찾는다")
+    @DisplayName("첫 페이지 밖의 기존 콘텐츠는 상세 페이지네이션 없이 가벼운 조회로 찾는다")
     void fetchStoredContentsByAccount() {
         String nextUrl = nextUrl("stored-next");
         server.expect(request -> {
@@ -522,10 +522,6 @@ class InstagramContentFetcherTest {
                 .andRespond(withSuccess(firstPageJson(
                         List.of(mediaJson("other", "2026-08-13T05:00:00+0000")),
                         nextUrl), MediaType.APPLICATION_JSON));
-        expectNextPage(
-                nextUrl,
-                List.of(mediaJson("stored", "2026-08-12T05:00:00+0000")),
-                null);
         server.expect(request -> {
                     String query = URLDecoder.decode(
                             request.getURI().getRawQuery(), StandardCharsets.UTF_8);
@@ -534,8 +530,19 @@ class InstagramContentFetcherTest {
                             .contains("id,media_type,media_url,thumbnail_url")
                             .doesNotContain("caption");
                 })
-                .andRespond(withSuccess(firstPageJson(List.of(), null),
-                        MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess("""
+                        {
+                          "business_discovery": {
+                            "media": {
+                              "data": [{
+                                "id": "stored",
+                                "media_type": "IMAGE",
+                                "media_url": "https://cdn.example.com/stored.jpg"
+                              }]
+                            }
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
 
         List<ContentFetcher.FetchResult> result = client.fetchByAccountContentIds(
                 "selector.insta", List.of("stored", "missing"));

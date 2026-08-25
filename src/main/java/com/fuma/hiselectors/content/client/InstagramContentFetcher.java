@@ -178,32 +178,14 @@ public class InstagramContentFetcher implements ContentFetcher {
 
         Set<String> requestedIds = new HashSet<>(snsContentIds);
         Map<String, FetchResult> foundById = new LinkedHashMap<>();
-        Set<String> requestedNextUrls = new HashSet<>();
         MediaPage page = requestFirstPage(accountId);
-
-        while (true) {
-            List<Media> media = page.data();
-            if (media == null || media.isEmpty()) {
-                break;
-            }
+        List<Media> media = page.data();
+        if (media != null) {
             for (Media item : media) {
                 if (item != null && requestedIds.contains(item.id())) {
                     foundById.put(item.id(), found(item));
                 }
             }
-            if (foundById.keySet().containsAll(requestedIds)) {
-                break;
-            }
-
-            String nextUrl = page.paging() == null ? null : page.paging().next();
-            if (nextUrl == null) {
-                break;
-            }
-            if (!requestedNextUrls.add(nextUrl)) {
-                log.warn("Instagram 페이지 URL 반복 감지");
-                throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
-            }
-            page = requestNextPage(nextUrl);
         }
 
         if (!foundById.keySet().containsAll(requestedIds)) {
