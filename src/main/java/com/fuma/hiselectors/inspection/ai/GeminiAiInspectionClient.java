@@ -13,6 +13,7 @@ import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -34,19 +35,23 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
     private final GeminiProperties properties;
+    private final GeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final InspectionPromptProvider promptProvider;
     private final RestClient restClient;
 
     @Autowired
-    public GeminiAiInspectionClient(GeminiProperties properties, ObjectMapper objectMapper,
+    public GeminiAiInspectionClient(GeminiProperties properties,
+                                    GeminiRequestExecutor requestExecutor, ObjectMapper objectMapper,
                                     InspectionPromptProvider promptProvider) {
-        this(properties, objectMapper, promptProvider, createRestClient());
+        this(properties, requestExecutor, objectMapper, promptProvider, createRestClient());
     }
 
-    GeminiAiInspectionClient(GeminiProperties properties, ObjectMapper objectMapper,
-                             InspectionPromptProvider promptProvider, RestClient restClient) {
+    GeminiAiInspectionClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor,
+                              ObjectMapper objectMapper,
+                              InspectionPromptProvider promptProvider, RestClient restClient) {
         this.properties = properties;
+        this.requestExecutor = requestExecutor;
         this.objectMapper = objectMapper;
         this.promptProvider = promptProvider;
         this.restClient = restClient;
@@ -97,13 +102,14 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                             "responseMimeType", "application/json",
                             "responseJsonSchema", responseJsonSchema(),
                             "maxOutputTokens", properties.maxOutputTokensOrDefault()));
-            GeminiResponse response = restClient.post()
-                    .uri(ENDPOINT.formatted(modelName))
-                    .header("x-goog-api-key", properties.apiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(GeminiResponse.class);
+            GeminiResponse response = requestExecutor.execute(modelName, attempt ->
+                    restClient.post()
+                            .uri(ENDPOINT.formatted(attempt.model()))
+                            .header("x-goog-api-key", attempt.apiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(body)
+                            .retrieve()
+                            .body(GeminiResponse.class));
             return mapResponse(extractText(response));
         } catch (RestClientResponseException e) {
             log.warn("Gemini 콘텐츠 검수 오류 응답. status={}", e.getStatusCode());

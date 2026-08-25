@@ -15,6 +15,7 @@ import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.InspectionRuleConfig;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
+import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,9 +38,11 @@ class YoutubeIntegratedInspectionClientTest {
         GeminiProperties properties = properties();
         ObjectMapper objectMapper = new ObjectMapper();
         GeminiAiInspectionClient inspectionMapper = new GeminiAiInspectionClient(
-                properties, objectMapper, new InspectionPromptProvider());
+                properties, new GeminiRequestExecutor(properties), objectMapper,
+                new InspectionPromptProvider());
         client = new YoutubeIntegratedInspectionClient(
-                properties, objectMapper, inspectionMapper, builder.build());
+                properties, new GeminiRequestExecutor(properties), objectMapper,
+                inspectionMapper, builder.build());
     }
 
     @Test
@@ -102,6 +105,7 @@ class YoutubeIntegratedInspectionClientTest {
     }
 
     private GeminiProperties properties() {
-        return new GeminiProperties("test-key", "test-model", null, null, null, null);
+        return new GeminiProperties(
+                "test-key", null, null, "test-model", null, null);
     }
 }
