@@ -30,6 +30,8 @@ class CreatorEvaluationServiceTest {
     private final CreatorEvaluationService service = new CreatorEvaluationService(
             mock(InstagramSttClient.class), mock(YoutubeSttClient.class), evalClient,
             repository, mediaRepository, mock(ApplicationReportRepository.class),
+            mock(com.fuma.hiselectors.application.repository.ApplicationRepository.class),
+            mock(com.fuma.hiselectors.selectors.repository.SelectorsRepository.class),
             mock(MetaGraphApiClient.class), mock(LocalAnalyzerClient.class),
             mock(TransactionTemplate.class));
 
