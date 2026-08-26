@@ -23,6 +23,8 @@ public interface GenerationRepository extends JpaRepository<Generation, Long> {
 
     List<Generation> findAllByOrderByStartDateDescIdDesc();
 
+    List<Generation> findAllByStatusOrderByActivityStartDateAscIdAsc(GenerationStatus status);
+
     Optional<Generation>
     findFirstByStartDateLessThanEqualAndEndDateGreaterThanEqualAndStatusOrderByStartDateAsc(
             LocalDateTime startBound, LocalDateTime endBound, GenerationStatus status);
