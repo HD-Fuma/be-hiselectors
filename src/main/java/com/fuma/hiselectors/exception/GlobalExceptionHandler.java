@@ -15,6 +15,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.util.DisconnectedClientHelper;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -112,6 +113,11 @@ public class GlobalExceptionHandler {
     // 예상치 못한 에러 -> 500 (원인은 로그로 남긴다)
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResult<Void>> handleUnexpected(Exception e) {
+        if (DisconnectedClientHelper.isClientDisconnectedException(e)) {
+            log.warn("클라이언트가 응답 전송 중 연결을 종료했습니다.");
+            return null;
+        }
+
         log.error("처리되지 않은 예외", e);
         return build(ErrorCode.INTERNAL_ERROR, ErrorCode.INTERNAL_ERROR.getMessage());
     }
