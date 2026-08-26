@@ -88,6 +88,7 @@ public class ContentInspectionConfirmationService {
         }
         version.confirmInspection(request.decision());
         violationItemRepository.flush();
+        penaltyService.releaseIfEligible(content.getSelectorsId());
         if (requestedStatuses.containsValue(ViolationStatus.VIOLATION_CONFIRMED)) {
             eventPublisher.publishEvent(new ContentViolationConfirmedEvent(
                     adminLoginId, contentId, content.getSelectorsId()));
