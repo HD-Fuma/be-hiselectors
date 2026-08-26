@@ -12,6 +12,7 @@ import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
 import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
 import com.fuma.hiselectors.taskrun.service.TaskStartResult;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.security.Principal;
 import java.util.Collections;
 import java.util.UUID;
@@ -26,6 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 @RestController
 @RequestMapping("/api/admin/content-batch")
 @RequiredArgsConstructor
+@Tag(name = "콘텐츠 배치", description = "콘텐츠 동기화 배치 수동 실행 (관리자 전용)")
 public class ContentBatchAdminController {
 
     private final TaskRunExecutionService taskRunExecutionService;

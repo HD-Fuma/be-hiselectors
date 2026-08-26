@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.dto.ApplicationMediaCollectionResponse;
 import com.fuma.hiselectors.application.dto.ApplicationMediaResponse;
 import com.fuma.hiselectors.application.service.ApplicationMediaService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/applications/{applicationId}/media")
+@Tag(name = "지원자 미디어 관리", description = "지원자 SNS 최신 미디어 수집 및 조회 (관리자 전용)")
 public class ApplicationMediaAdminController {
 
     private final ApplicationMediaService applicationMediaService;

@@ -36,7 +36,6 @@ public class SecurityConfig {
             "/index.html",           // 루트(/)가 forward 되는 대상 → 반드시 허용
             "/youtube-test.html",    // OAuth 흐름 수동 테스트용 정적 페이지
             "/instagram-test.html",  // OAuth 흐름 수동 테스트용 정적 페이지
-            "/kakao-test",          // local 프로필에서만 Controller가 제공
             "/favicon.ico",
             "/css/**", "/js/**", "/images/**",
             "/actuator/health",

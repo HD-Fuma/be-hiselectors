@@ -6,6 +6,7 @@ import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionResponse;
 import com.fuma.hiselectors.kakao.dto.KakaoRecipientConnectionStatusResponse;
 import com.fuma.hiselectors.kakao.oauth.KakaoConnectionType;
 import com.fuma.hiselectors.kakao.service.KakaoOAuthService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/kakao/oauth")
 @RequiredArgsConstructor
+@Tag(name = "카카오 수신 인증", description = "카카오 메시지 수신용 사용자 계정 연동 및 상태 조회")
 public class KakaoOAuthController {
 
     private final KakaoOAuthService oauthService;
