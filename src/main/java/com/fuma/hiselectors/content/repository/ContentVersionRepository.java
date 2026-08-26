@@ -29,9 +29,6 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
 
     Optional<ContentVersion> findByIdAndContentId(Long id, Long contentId);
 
-    Optional<ContentVersion> findFirstByContentIdAndContentHashOrderByVersionNoDesc(
-            Long contentId, String contentHash);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select cv from ContentVersion cv where cv.id = :contentVersionId")
     Optional<ContentVersion> findByIdForUpdate(@Param("contentVersionId") Long contentVersionId);
