@@ -145,6 +145,22 @@ class InstagramDiscoveryBatchServiceTest {
     }
 
     @Test
+    void runsOnlySelectedCategoryCandidates() {
+        CreatorDiscoveryInfo candidate = candidate(1L, "beauty_creator");
+        when(discoveryInfoRepository.findInstagramCandidatesByCategoryId("YOUTUBE", 10L))
+                .thenReturn(List.of(candidate));
+        when(instagramDiscoveryService.discoverFromYoutubeCreator(1L))
+                .thenReturn(discoveryResult(1L, true));
+
+        InstagramDiscoveryBatchResult result = service.runByCategory(10L, ignored -> { });
+
+        assertThat(result.targetCreators()).isEqualTo(1);
+        verify(discoveryInfoRepository, never())
+                .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
+                        "YOUTUBE");
+    }
+
+    @Test
     void propagatesMetaApiFailure() {
         CreatorDiscoveryInfo candidate = candidate(1L, "creator");
         when(discoveryInfoRepository

@@ -32,4 +32,12 @@ public interface DiscoveryKeywordRepository extends JpaRepository<DiscoveryKeywo
             order by k.priority desc, k.lastRunAt asc nulls first
             """)
     List<DiscoveryKeyword> findRunnable();
+
+    @Query("""
+            select k from DiscoveryKeyword k
+            join fetch k.category c
+            where k.enabled = true and c.enabled = true and c.id = :categoryId
+            order by k.priority desc, k.lastRunAt asc nulls first
+            """)
+    List<DiscoveryKeyword> findRunnableByCategoryId(Long categoryId);
 }

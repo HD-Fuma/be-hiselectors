@@ -46,12 +46,25 @@ public class YoutubeDiscoveryBatchService {
 
     public YoutubeDiscoveryBatchResult runYoutubeOnly(
             boolean test, Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
+        return runYoutubeOnly(test, null, progressCallback);
+    }
+
+    public YoutubeDiscoveryBatchResult runYoutubeOnlyByCategory(
+            Long categoryId, Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
+        return runYoutubeOnly(false, Objects.requireNonNull(categoryId), progressCallback);
+    }
+
+    private YoutubeDiscoveryBatchResult runYoutubeOnly(
+            boolean test, Long categoryId,
+            Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
         Objects.requireNonNull(progressCallback, "progressCallback");
         if (!discoveryProperties.hasApiKey()) {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        List<DiscoveryKeyword> runnableKeywords = keywordRepository.findRunnable();
+        List<DiscoveryKeyword> runnableKeywords = categoryId == null
+                ? keywordRepository.findRunnable()
+                : keywordRepository.findRunnableByCategoryId(categoryId);
         List<DiscoveryKeyword> selectedKeywords = runnableKeywords;
         if (test) {
             Set<Long> categoryIds = new HashSet<>();

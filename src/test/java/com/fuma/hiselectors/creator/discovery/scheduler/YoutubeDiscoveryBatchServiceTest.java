@@ -170,6 +170,26 @@ class YoutubeDiscoveryBatchServiceTest {
     }
 
     @Test
+    @DisplayName("선택 카테고리의 활성 키워드만 실행한다")
+    void runOnlySelectedCategory() {
+        DiscoveryKeyword first = keyword(1L, "뷰티 첫 번째");
+        DiscoveryKeyword second = keyword(2L, "뷰티 두 번째");
+        when(keywordRepository.findRunnableByCategoryId(10L))
+                .thenReturn(List.of(first, second));
+        when(discoveryPipelineService.runByKeyword(1L, 25))
+                .thenReturn(result("뷰티 첫 번째", 1, 1, 0, 102));
+        when(discoveryPipelineService.runByKeyword(2L, 25))
+                .thenReturn(result("뷰티 두 번째", 1, 0, 1, 102));
+
+        YoutubeDiscoveryBatchResult result = service(10_000, 25, 50)
+                .runYoutubeOnlyByCategory(10L, ignored -> { });
+
+        verify(keywordRepository, never()).findRunnable();
+        assertThat(result.runnableKeywords()).isEqualTo(2);
+        assertThat(result.attemptedKeywords()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("API 키가 없으면 설정 오류를 반환한다")
     void failWithoutApiKey() {
         YoutubeDiscoveryProperties withoutApiKey =
