@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +48,7 @@ public class PenaltyService {
     private final ViolationTypeRepository violationTypeRepository;
     private final ViolationItemRepository violationItemRepository;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public PenaltyHistoryResponse create(Long selectorsId, PenaltyCreateRequest request,
@@ -94,6 +96,7 @@ public class PenaltyService {
             throw new BusinessException(ErrorCode.INVALID_PENALTY_STATUS_TRANSITION);
         }
         penalty.releaseByAdmin(admin.getId(), LocalDateTime.now(clock));
+        publishReleased(penalty, admin.getId());
         return PenaltyHistoryResponse.from(penalty);
     }
 
@@ -108,8 +111,17 @@ public class PenaltyService {
                 .filter(penalty -> penalty.getSource() != PenaltySource.MANUAL)
                 .map(penalty -> {
             penalty.release(LocalDateTime.now(clock));
+            publishReleased(penalty, penalty.getGrantedByAdminId());
             return true;
         }).orElse(false);
+    }
+
+    private void publishReleased(PenaltyHistory penalty, Long senderAdminId) {
+        if (senderAdminId == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new PenaltyReleasedEvent(
+                senderAdminId, penalty.getId(), penalty.getSelectorsId()));
     }
 
     private PenaltyHistory activate(Selectors selectors, Long contentVersionId,

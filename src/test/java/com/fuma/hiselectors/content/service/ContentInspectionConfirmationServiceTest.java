@@ -49,6 +49,7 @@ class ContentInspectionConfirmationServiceTest {
         assertThat(response.updatedCount()).isZero();
         assertThat(fixture.version.getInspectionDecision())
                 .isEqualTo(ContentInspectionDecision.APPROVED);
+        verify(fixture.penaltyService).releaseIfEligible(5L);
         verify(fixture.eventPublisher, never()).publishEvent(
                 org.mockito.ArgumentMatchers.any(ContentViolationConfirmedEvent.class));
     }
@@ -73,6 +74,7 @@ class ContentInspectionConfirmationServiceTest {
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString());
+        verify(fixture.penaltyService).releaseIfEligible(5L);
     }
 
     @Test
@@ -91,6 +93,7 @@ class ContentInspectionConfirmationServiceTest {
         assertThat(second.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
         verify(fixture.penaltyService).activateIfAbsent(
                 5L, 100L, 121L, "근거", "admin");
+        verify(fixture.penaltyService).releaseIfEligible(5L);
         ArgumentCaptor<ContentViolationConfirmedEvent> eventCaptor =
                 ArgumentCaptor.forClass(ContentViolationConfirmedEvent.class);
         verify(fixture.eventPublisher).publishEvent(eventCaptor.capture());

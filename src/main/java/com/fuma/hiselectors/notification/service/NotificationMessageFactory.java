@@ -22,6 +22,7 @@ public class NotificationMessageFactory {
             case SALES_100K, SALES_500K, SALES_1M, SALES_5M, SALES_10M ->
                     salesMilestone(name, detail);
             case ORDERS_10, ORDERS_50, ORDERS_100 -> orderMilestone(name, detail);
+            case PENALTY_RELEASED -> penaltyReleased(name);
             case SETTLEMENT_COMPLETED -> settlementCompleted(name, detail);
             case SETTLEMENT_CARRYOVER -> settlementCarryover(name, detail);
             case SETTLEMENT_MISSING -> settlementMissing(name);
@@ -76,6 +77,16 @@ public class NotificationMessageFactory {
                         + "해당 콘텐츠는 현재 정상 상태로 처리되었습니다.\n\n"
                         + "협조해 주셔서 감사합니다.",
                 "콘텐츠 확인하기"
+        );
+    }
+
+    private MessageText penaltyReleased(String name) {
+        return new MessageText(
+                "[셀렉터스 패널티 해제 안내]",
+                name + "님의 패널티가 해제되었습니다.\n\n"
+                        + "현재 적용 중이던 패널티 주기가 종료되었습니다.\n\n"
+                        + "앞으로도 활동 가이드와 유의사항을 확인해 주세요.",
+                "활동 가이드 확인하기"
         );
     }
 

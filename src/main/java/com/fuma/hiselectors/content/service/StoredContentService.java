@@ -13,6 +13,8 @@ import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
+import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
@@ -127,11 +129,15 @@ public class StoredContentService {
             return new StoredContentSaveResult(0, 0);
         }
 
-        int savedEngagementCount = saveEngagement(result, collectedAt);
-        boolean versionChanged = saveChangedVersion(result, collectedAt);
-        boolean deletionStatusChanged = updateDeletionStatus(result);
+        Content lockedContent = contentRepository.findByIdForUpdate(result.content().getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
+        StoredContentFetch lockedResult = new StoredContentFetch(
+                lockedContent, result.fetched(), result.failure());
+        int savedEngagementCount = saveEngagement(lockedResult, collectedAt);
+        boolean versionChanged = saveChangedVersion(lockedResult, collectedAt);
+        boolean deletionStatusChanged = updateDeletionStatus(lockedResult);
         if (versionChanged || deletionStatusChanged) {
-            contentRepository.saveAll(List.of(result.content()));
+            contentRepository.saveAll(List.of(lockedContent));
         }
         return new StoredContentSaveResult(savedEngagementCount, versionChanged ? 1 : 0);
     }

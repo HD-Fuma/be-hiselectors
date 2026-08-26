@@ -34,6 +34,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +78,8 @@ class StoredContentServiceTest {
     private ContentFetcher youtubeFetcher;
 
     private final ContentSnapshotFactory snapshotFactory = new ContentSnapshotFactory();
+    private final List<Content> createdContents = new ArrayList<>();
+    private long nextContentId = 1L;
     private StoredContentService service;
 
     @BeforeEach
@@ -100,6 +103,12 @@ class StoredContentServiceTest {
                         .snsCode(SnsPlatform.INSTAGRAM)
                         .accountId("selector.insta")
                         .build()));
+        lenient().when(contentRepository.findByIdForUpdate(anyLong())).thenAnswer(invocation -> {
+            Long contentId = invocation.getArgument(0);
+            return createdContents.stream()
+                    .filter(content -> contentId.equals(content.getId()))
+                    .findFirst();
+        });
     }
 
     @Test
@@ -317,6 +326,96 @@ class StoredContentServiceTest {
             assertThat(media.getBody()).containsExactlyEntriesOf(Map.of("text", "수정 후"));
         });
         verify(contentRepository).saveAll(List.of(changed));
+    }
+
+    @Test
+    void createsNextVersionFromLockedContentInsteadOfStaleFetchedSnapshot() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content fetchedSnapshot = content(SnsPlatform.INSTAGRAM, "changed");
+        Content lockedContent = content(SnsPlatform.INSTAGRAM, "changed");
+        ReflectionTestUtils.setField(fetchedSnapshot, "id", 10L);
+        ReflectionTestUtils.setField(lockedContent, "id", 10L);
+        ReflectionTestUtils.setField(lockedContent, "lastVersionNo", 2L);
+        RawContent currentRaw = raw("changed", "현재 저장 본문");
+        RawContent changedRaw = raw("changed", "새 변경 본문");
+        AtomicReference<ContentVersion> savedVersion = new AtomicReference<>();
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(fetchedSnapshot));
+        when(contentRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(lockedContent));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("changed")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "changed", ContentFetcher.FetchStatus.FOUND, changedRaw, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(10L)
+                        .versionNo(2L)
+                        .contentHash(snapshotFactory.contentHash(currentRaw))
+                        .createdAt(LocalDateTime.of(2026, 8, 19, 12, 0))
+                        .build()));
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            savedVersion.set(values.getFirst());
+            return values;
+        });
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(fetchedSnapshot.getLastVersionNo()).isEqualTo(1L);
+        assertThat(lockedContent.getLastVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getContentHash())
+                .isEqualTo(snapshotFactory.contentHash(changedRaw));
+        verify(contentRepository).saveAll(List.of(lockedContent));
+    }
+
+    @Test
+    void createsNewVersionWhenSourceReturnsToHistoricalHash() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "returned");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        ReflectionTestUtils.setField(content, "lastVersionNo", 2L);
+        RawContent historicalRaw = raw("returned", "과거 원본 A");
+        RawContent currentRaw = raw("returned", "현재 원본 B");
+        AtomicReference<ContentVersion> savedVersion = new AtomicReference<>();
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("returned")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "returned", ContentFetcher.FetchStatus.FOUND, historicalRaw, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(10L)
+                        .versionNo(2L)
+                        .contentHash(snapshotFactory.contentHash(currentRaw))
+                        .createdAt(LocalDateTime.of(2026, 8, 19, 12, 0))
+                        .build()));
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            savedVersion.set(values.getFirst());
+            return values;
+        });
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(content.getLastVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getContentHash())
+                .isEqualTo(snapshotFactory.contentHash(historicalRaw));
     }
 
     @Test
@@ -798,13 +897,16 @@ class StoredContentServiceTest {
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {
-        return Content.builder()
+        Content content = Content.builder()
                 .selectorsId(1L)
                 .snsCode(platform)
                 .snsContentId(snsContentId)
                 .contentUrl("https://example.com/" + snsContentId)
                 .contentType(ContentType.FEED)
                 .build();
+        ReflectionTestUtils.setField(content, "id", nextContentId++);
+        createdContents.add(content);
+        return content;
     }
 
     private RawContent raw(String snsContentId, String text) {

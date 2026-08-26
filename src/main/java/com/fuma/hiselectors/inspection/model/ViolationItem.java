@@ -74,8 +74,10 @@ public class ViolationItem extends BaseTimeEntity {
         return item;
     }
 
-    public void detectAgain(ContentVersion version, ViolationEvidence evidence) {
+    public void redetectForReview(ContentVersion version, ViolationEvidence evidence) {
         requireOpen();
+        status = ViolationStatus.PENDING;
+        resolvedContentVersionId = null;
         applyDetection(version, evidence);
     }
 

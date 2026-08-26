@@ -37,7 +37,7 @@ class ViolationConfirmationWriterTest {
         ReflectionTestUtils.setField(item, "id", 10L);
         ContentVersion latestVersion = ContentVersion.create(20L, 1L, "latest");
         ReflectionTestUtils.setField(latestVersion, "id", 101L);
-        item.detectAgain(latestVersion, evidence("최신 탐지 사유"));
+        item.redetectForReview(latestVersion, evidence("최신 탐지 사유"));
 
         Content content = mock(Content.class);
         when(content.getSelectorsId()).thenReturn(9L);
