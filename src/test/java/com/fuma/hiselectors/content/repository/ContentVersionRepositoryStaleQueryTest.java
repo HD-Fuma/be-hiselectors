@@ -1,19 +1,23 @@
 package com.fuma.hiselectors.content.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentVersionStatus;
 import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +69,15 @@ class ContentVersionRepositoryStaleQueryTest {
         Long matchingLatest = latestWithPolicy(ACTIVE_POLICY_ID);
         Long mismatchedLatest = latestWithPolicy(1L);
         Long nullEngineLatest = latestWithPolicy(null);
+        Long confirmedLatest = latestWithPolicy(1L);
+        ContentVersion confirmedVersion = contentVersionRepository.findById(confirmedLatest).orElseThrow();
+        confirmedVersion.startInspection();
+        confirmedVersion.completeInspection(LocalDateTime.now());
+        confirmedVersion.confirmInspection(ContentInspectionDecision.APPROVED);
+        assertThatThrownBy(confirmedVersion::startInspection)
+                .isInstanceOf(BusinessException.class);
+        assertThat(confirmedVersion.getInspectionDecision())
+                .isEqualTo(ContentInspectionDecision.APPROVED);
         Long inspectingLatest = latestWithoutReport();
         contentVersionRepository.findById(inspectingLatest).orElseThrow().startInspection();
         Long outOfGeneration = latestWithoutReportForSelectors(selectorsRepository.save(
@@ -82,7 +95,9 @@ class ContentVersionRepositoryStaleQueryTest {
 
         assertThat(staleIds)
                 .contains(noReportLatest, mismatchedLatest, nullEngineLatest)
-                .doesNotContain(matchingLatest, inspectingLatest, outOfGeneration, deletedLatest);
+                .doesNotContain(
+                        matchingLatest, confirmedLatest, inspectingLatest,
+                        outOfGeneration, deletedLatest);
     }
 
     @Test

@@ -109,6 +109,9 @@ public class ContentVersion {
     }
 
     public void startInspection() {
+        if (inspectionDecision != null) {
+            throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
+        }
         if (status == ContentVersionStatus.INSPECTING) {
             throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
         }
@@ -117,7 +120,6 @@ public class ContentVersion {
                 || status == ContentVersionStatus.COMPLETED
                 || status == ContentVersionStatus.FAILED) {
             status = ContentVersionStatus.INSPECTING;
-            inspectionDecision = null;
             return;
         }
         throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
