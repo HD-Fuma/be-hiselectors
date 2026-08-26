@@ -4,6 +4,7 @@ import com.fuma.hiselectors.security.jwt.JwtAuthenticationEntryPoint;
 import com.fuma.hiselectors.security.jwt.JwtAuthenticationFilter;
 import com.fuma.hiselectors.security.jwt.JwtTokenProvider;
 import com.fuma.hiselectors.security.jwt.JwtAccessDeniedHandler;
+import jakarta.servlet.DispatcherType;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -63,6 +64,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthenticationEntryPoint)
                         .accessDeniedHandler(jwtAccessDeniedHandler))
                 .authorizeHttpRequests(auth -> {
+                    // 최초 SSE 요청은 아래 경로 규칙으로 인증하고, 이후 내부 비동기
+                    // 디스패치만 재인가하지 않아 이미 커밋된 스트림 응답을 보호한다.
+                    auth.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll();
                     auth.requestMatchers(PUBLIC_ENDPOINTS).permitAll();
                     // STT 테스트 경로는 로컬에서만 공개. 운영에선 관리자만(미인증+과금 남용 방지).
                     if (environment.matchesProfiles("local")) {
