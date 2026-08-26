@@ -34,6 +34,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class PenaltyServiceTest {
@@ -50,11 +51,13 @@ class PenaltyServiceTest {
     private final ViolationTypeRepository violationTypeRepository = mock(ViolationTypeRepository.class);
     private final ViolationItemRepository violationItemRepository =
             mock(ViolationItemRepository.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final PenaltyService service = new PenaltyService(
             selectorsRepository, blacklistHistoryRepository, adminRepository,
             membershipRepository, penaltyRepository, violationTypeRepository,
-            violationItemRepository,
-            Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), ZoneOffset.UTC));
+             violationItemRepository,
+             Clock.fixed(Instant.parse("2026-08-20T00:00:00Z"), ZoneOffset.UTC),
+             eventPublisher);
     private Selectors selectors;
     private Admin admin;
 
@@ -180,13 +183,18 @@ class PenaltyServiceTest {
 
     @Test
     void releasesActivePenaltyAfterAllViolationsAreClosed() {
-        PenaltyHistory active = PenaltyHistory.activate(9L, 2L, 4L, NOW.minusDays(1));
+        PenaltyHistory active = PenaltyHistory.activate(
+                9L, 2L, 100L, 4L, "자동 검수 사유",
+                PenaltySource.AUTOMATIC, 3L, NOW.minusDays(1));
+        ReflectionTestUtils.setField(active, "id", 11L);
         when(violationItemRepository.existsOpenBySelectorsId(any(), any())).thenReturn(false);
         when(penaltyRepository.findFirstBySelectorsIdAndStatusOrderByIdDesc(
                 9L, PenaltyStatus.ACTIVE)).thenReturn(Optional.of(active));
 
         assertThat(service.releaseIfEligible(9L)).isTrue();
         assertThat(active.getStatus()).isEqualTo(PenaltyStatus.RELEASED);
+        verify(eventPublisher).publishEvent(
+                new PenaltyReleasedEvent(3L, 11L, 9L));
     }
 
     @Test
@@ -230,5 +238,7 @@ class PenaltyServiceTest {
         assertThat(manual.getEndedAt()).isEqualTo(NOW);
         assertThat(manual.getReleasedByAdminId()).isEqualTo(3L);
         assertThat(response.releasedByAdminId()).isEqualTo(3L);
+        verify(eventPublisher).publishEvent(
+                new PenaltyReleasedEvent(3L, 11L, 9L));
     }
 }

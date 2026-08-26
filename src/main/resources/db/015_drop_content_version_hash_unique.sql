@@ -15,3 +15,13 @@ PREPARE drop_content_version_hash_unique
     FROM @drop_content_version_hash_unique;
 EXECUTE drop_content_version_hash_unique;
 DEALLOCATE PREPARE drop_content_version_hash_unique;
+
+
+
+SELECT index_name,
+       non_unique,
+       GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
+FROM information_schema.statistics
+WHERE table_schema = DATABASE()
+  AND table_name = 'content_version'
+GROUP BY index_name, non_unique;
