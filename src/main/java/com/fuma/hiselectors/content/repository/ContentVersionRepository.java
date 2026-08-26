@@ -47,6 +47,7 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
               and c.deleted = false
               and c.snsCode = :platform
               and (cv.status is null or cv.status <> :excludedStatus)
+              and cv.inspectionDecision is null
               and cv.versionNo = (
                     select max(innerCv.versionNo) from ContentVersion innerCv
                     where innerCv.contentId = cv.contentId)
