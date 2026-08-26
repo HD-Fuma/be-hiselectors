@@ -32,7 +32,7 @@ class ViolationReconciliationServiceTest {
     private static final Long POLICY_ID = 9L;
 
     @Test
-    void keepsSameViolationAndUpdatesLastDetectedVersion() {
+    void returnsEditRequestedViolationToPendingWhenDetectedAgain() {
         Fixture fixture = fixture();
         ViolationItem existing = item(fixture.v1, 100L, "욕설");
         existing.confirm();
@@ -47,9 +47,28 @@ class ViolationReconciliationServiceTest {
                 POLICY_ID);
 
         assertThat(existing.getLastDetectedContentVersionId()).isEqualTo(2L);
-        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.EDIT_REQUESTED);
+        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.PENDING);
         verify(fixture.historyService).upsert(existing, fixture.v2, POLICY_ID);
         verify(fixture.itemRepository, never()).save(any());
+    }
+
+    @Test
+    void returnsConfirmedViolationToPendingWhenDetectedAgain() {
+        Fixture fixture = fixture();
+        ViolationItem existing = item(fixture.v1, 100L, "욕설");
+        existing.confirm();
+        when(fixture.itemRepository.findAllByContentIdForUpdate(10L))
+                .thenReturn(List.of(existing));
+        when(fixture.typeRepository.findAllById(any()))
+                .thenReturn(List.of(type(100L, ViolationTypeCode.ABUSIVE_LANGUAGE)));
+
+        fixture.service.reconcile(fixture.content, fixture.v2,
+                List.of(detected(ViolationTypeCode.ABUSIVE_LANGUAGE)),
+                POLICY_ID);
+
+        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.PENDING);
+        assertThat(existing.getLastDetectedContentVersionId()).isEqualTo(2L);
+        verify(fixture.historyService).upsert(existing, fixture.v2, POLICY_ID);
     }
 
     @Test
