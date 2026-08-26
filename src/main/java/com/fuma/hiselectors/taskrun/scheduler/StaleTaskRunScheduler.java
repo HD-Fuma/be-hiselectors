@@ -6,6 +6,7 @@ import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.repository.TaskRunRepository;
+import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import com.fuma.hiselectors.taskrun.service.TaskRunTerminalSnapshot;
 import java.time.Clock;
 import java.time.Instant;
@@ -30,18 +31,21 @@ public class StaleTaskRunScheduler {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final TaskRunFailureLogger failureLogger;
+    private final TaskRunProgressStream progressStream;
 
     public StaleTaskRunScheduler(
             TaskRunRepository repository,
             TaskTypePolicy policy,
             TransactionTemplate transactions,
             Clock clock,
-            TaskRunFailureLogger failureLogger) {
+            TaskRunFailureLogger failureLogger,
+            TaskRunProgressStream progressStream) {
         this.repository = repository;
         this.policy = policy;
         this.transactions = transactions;
         this.clock = clock;
         this.failureLogger = failureLogger;
+        this.progressStream = progressStream;
     }
 
     @Scheduled(fixedDelayString = "${task-run.stale.fixed-delay:60000}")
@@ -53,6 +57,7 @@ public class StaleTaskRunScheduler {
                 TaskRunTerminalSnapshot snapshot =
                         transactions.execute(ignored -> markIfStillStale(runId, now));
                 if (snapshot != null) {
+                    progressStream.publishChanged(snapshot.runId());
                     logFailure(snapshot);
                 }
             }

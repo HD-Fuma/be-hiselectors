@@ -148,6 +148,7 @@ class TaskRunExecutionServiceTest {
         assertThat(run.getSucceededCount()).isEqualTo(2);
         assertThat(run.getSkippedCount()).isEqualTo(1);
         assertThat(terminal.get()).isEqualTo(new TaskTerminalContext(runId, TaskRunStatus.SUCCEEDED));
+        verify(progressStream, times(3)).publishChanged(runId);
         verify(failureLogger, never()).log(any());
     }
 

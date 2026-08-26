@@ -80,6 +80,19 @@ class TaskRunProgressStreamTest {
     }
 
     @Test
+    void publishesTaskLifecycleChanges() {
+        TestEmitter emitter = new TestEmitter(EMITTER_TIMEOUT.toMillis());
+        TaskRunProgressStream stream = stream(8, emitter);
+        stream.subscribe();
+        emitter.awaitFrameCount(1);
+
+        stream.publishChanged(RUN_ID);
+
+        emitter.awaitFrameCount(2);
+        assertThat(emitter.frames).anySatisfy(frame -> assertThat(frame).contains(RUN_ID.toString()));
+    }
+
+    @Test
     void slowSubscriberDoesNotDelayPublisherOrOtherSubscriber() throws Exception {
         TestEmitter slow = new TestEmitter(EMITTER_TIMEOUT.toMillis());
         slow.blockEvents = true;
