@@ -124,6 +124,25 @@ class ViolationReconciliationServiceTest {
     }
 
     @Test
+    void resolvesEditRequestedViolationWhenItIsNotDetectedAfterEdit() {
+        Fixture fixture = fixture();
+        ViolationItem existing = item(fixture.v1, 100L, "욕설");
+        existing.confirm();
+        existing.requestEdit();
+        when(fixture.itemRepository.findAllByContentIdForUpdate(10L))
+                .thenReturn(List.of(existing));
+        when(fixture.typeRepository.findAllById(any()))
+                .thenReturn(List.of(type(100L, ViolationTypeCode.ABUSIVE_LANGUAGE)));
+
+        fixture.service.reconcile(fixture.content, fixture.v2, List.of(), POLICY_ID);
+
+        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.RESOLVED);
+        assertThat(existing.getResolvedContentVersionId()).isEqualTo(2L);
+        verify(fixture.historyService, never()).upsert(any(), any(), any());
+        verify(fixture.penaltyService).releaseIfEligible(7L);
+    }
+
+    @Test
     void reopensResolvedViolationAsPending() {
         Fixture fixture = fixture();
         ViolationItem existing = item(fixture.v1, 100L, "욕설");
@@ -192,6 +211,7 @@ class ViolationReconciliationServiceTest {
         ContentVersion v3 = ContentVersion.create(10L, 3L, "v3");
         ReflectionTestUtils.setField(v3, "id", 3L);
         return new Fixture(itemRepository, typeRepository, historyService,
+                penaltyService,
                 new ViolationReconciliationService(
                         itemRepository, typeRepository, historyService, penaltyService),
                 content, v1, v2, v3);
@@ -221,6 +241,7 @@ class ViolationReconciliationServiceTest {
             ViolationItemRepository itemRepository,
             ViolationTypeRepository typeRepository,
             ViolationEvidenceHistoryService historyService,
+            PenaltyService penaltyService,
             ViolationReconciliationService service,
             Content content,
             ContentVersion v1,

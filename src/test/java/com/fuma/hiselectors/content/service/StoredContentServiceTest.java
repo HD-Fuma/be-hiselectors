@@ -377,6 +377,48 @@ class StoredContentServiceTest {
     }
 
     @Test
+    void createsNewVersionWhenSourceReturnsToHistoricalHash() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = content(SnsPlatform.INSTAGRAM, "returned");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        ReflectionTestUtils.setField(content, "lastVersionNo", 2L);
+        RawContent historicalRaw = raw("returned", "과거 원본 A");
+        RawContent currentRaw = raw("returned", "현재 원본 B");
+        AtomicReference<ContentVersion> savedVersion = new AtomicReference<>();
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(instagramFetcher.fetchByAccountContentIds(
+                "selector.insta", List.of("returned")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "returned", ContentFetcher.FetchStatus.FOUND, historicalRaw, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(ContentVersion.builder()
+                        .contentId(10L)
+                        .versionNo(2L)
+                        .contentHash(snapshotFactory.contentHash(currentRaw))
+                        .createdAt(LocalDateTime.of(2026, 8, 19, 12, 0))
+                        .build()));
+        when(versionRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<ContentVersion> values = toList(invocation.getArgument(0));
+            ReflectionTestUtils.setField(values.getFirst(), "id", 100L);
+            savedVersion.set(values.getFirst());
+            return values;
+        });
+        executeTransaction();
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(content.getLastVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getVersionNo()).isEqualTo(3L);
+        assertThat(savedVersion.get().getContentHash())
+                .isEqualTo(snapshotFactory.contentHash(historicalRaw));
+    }
+
+    @Test
     void updatesDeletionOnlyForFoundAndNotFoundContent() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content notFound = content(SnsPlatform.INSTAGRAM, "not-found");
