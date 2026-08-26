@@ -2,14 +2,22 @@ package com.fuma.hiselectors.performance.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fuma.hiselectors.analytics.model.ClickLog;
+import com.fuma.hiselectors.analytics.model.ViewPageType;
+import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSales;
+import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.DatedSales;
 import com.fuma.hiselectors.purchase.model.PurchaseHistory;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -21,6 +29,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DataJpaTest(properties = "spring.jpa.hibernate.ddl-auto=create-drop")
 @Import({SelectorPerformanceQueryRepository.class,
@@ -94,6 +103,102 @@ class SelectorPerformanceQueryRepositoryTest {
                 });
     }
 
+    @Test
+    void groupsConfirmedSalesByDayAndMonthAndIgnoresSelfPurchases() {
+        Selectors selector = entityManager.persist(selector(301L, "SEL-DAY", "일자"));
+        entityManager.persist(confirmedPurchase(
+                selector.getId(), 401L, 1L, "ORD-D1", "100", "2026-08-01T10:00:00"));
+        entityManager.persist(confirmedPurchase(
+                selector.getId(), 402L, 2L, "ORD-D2", "40", "2026-08-02T10:00:00"));
+        entityManager.persist(confirmedPurchase(
+                selector.getId(), 301L, 3L, "ORD-SELF", "999", "2026-08-02T11:00:00"));
+        entityManager.persist(confirmedPurchase(
+                selector.getId(), 403L, 4L, "ORD-SEP", "70", "2026-09-01T10:00:00"));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<DatedSales> days = repository.summarizeConfirmedSalesByDay(
+                List.of(selector.getId()),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 1, 0, 0));
+        assertThat(days).extracting(DatedSales::date)
+                .containsExactlyInAnyOrder(
+                        LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 2));
+        assertThat(days).filteredOn(row -> row.date().equals(LocalDate.of(2026, 8, 1)))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.totalSales()).isEqualByComparingTo("100");
+                    assertThat(row.confirmedOrderCount()).isEqualTo(1L);
+                });
+
+        List<DatedSales> months = repository.summarizeConfirmedSalesByMonth(
+                List.of(selector.getId()),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 10, 1, 0, 0));
+        assertThat(months).extracting(DatedSales::date)
+                .containsExactlyInAnyOrder(
+                        LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 1));
+    }
+
+    @Test
+    void countsProductClicksContentsAndProfilesForMembersOnly() {
+        Selectors member = entityManager.persist(selector(501L, "SEL-M", "멤버"));
+        member.assignCategory("BEAUTY");
+        Selectors outsider = entityManager.persist(selector(502L, "SEL-O", "외부"));
+        Generation active = entityManager.persist(generation(
+                "5기", LocalDateTime.of(2026, 7, 1, 0, 0), GenerationStatus.ACTIVE));
+        entityManager.persist(SelectorsGeneration.builder()
+                .selectorsId(member.getId()).generationId(active.getId()).build());
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(member.getId())
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("member")
+                .followerCount(12_000L)
+                .profileImageUrl("https://cdn.example.com/member.jpg")
+                .build());
+        entityManager.persist(clickLog(
+                member.getId(), ViewPageType.PRODUCT, 1L, LocalDateTime.of(2026, 8, 10, 10, 0)));
+        entityManager.persist(clickLog(
+                member.getId(), ViewPageType.SHOP, 1L, LocalDateTime.of(2026, 8, 10, 11, 0)));
+        entityManager.persist(clickLog(
+                outsider.getId(), ViewPageType.PRODUCT, 1L, LocalDateTime.of(2026, 8, 10, 12, 0)));
+        entityManager.persist(content(
+                member.getId(), "c-1", LocalDateTime.of(2026, 8, 5, 0, 0)));
+        entityManager.persist(content(
+                member.getId(), "c-old", LocalDateTime.of(2026, 7, 1, 0, 0)));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(repository.findVisibleMembers(List.of(active.getId())))
+                .extracting(Selectors::getSelectorsNickname)
+                .containsExactly("멤버");
+        assertThat(repository.countProductClicks(
+                List.of(member.getId(), outsider.getId()),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 1, 0, 0)))
+                .satisfies(rows -> {
+                    assertThat(rows).hasSize(2);
+                    assertThat(rows).filteredOn(row -> row.selectorId().equals(member.getId()))
+                            .singleElement()
+                            .satisfies(row -> assertThat(row.count()).isEqualTo(1L));
+                    assertThat(rows).filteredOn(row -> row.selectorId().equals(outsider.getId()))
+                            .singleElement()
+                            .satisfies(row -> assertThat(row.count()).isEqualTo(1L));
+                });
+        assertThat(repository.countContents(
+                List.of(member.getId()),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 9, 1, 0, 0)))
+                .singleElement()
+                .satisfies(row -> assertThat(row.count()).isEqualTo(1L));
+        assertThat(repository.findSnsProfiles(List.of(member.getId())))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.profileImageUrl()).isEqualTo("https://cdn.example.com/member.jpg");
+                    assertThat(row.followerCount()).isEqualTo(12_000L);
+                });
+    }
+
     private Selectors selector(Long userId, String code, String nickname) {
         return Selectors.builder()
                 .userId(userId)
@@ -104,14 +209,39 @@ class SelectorPerformanceQueryRepositoryTest {
     }
 
     private Generation generation(String name, LocalDateTime activityStartDate) {
+        return generation(name, activityStartDate, GenerationStatus.INACTIVE);
+    }
+
+    private Generation generation(
+            String name, LocalDateTime activityStartDate, GenerationStatus status) {
         return Generation.builder()
                 .generationName(name)
                 .startDate(activityStartDate.minusMonths(1))
                 .endDate(activityStartDate.minusDays(1))
                 .activityStartDate(activityStartDate)
                 .activityEndDate(activityStartDate.plusMonths(3))
-                .status(GenerationStatus.INACTIVE)
+                .status(status)
                 .build();
+    }
+
+    private ClickLog clickLog(
+            Long selectorsId, ViewPageType type, Long referenceId, LocalDateTime createdAt) {
+        ClickLog clickLog = new ClickLog(selectorsId, type, referenceId, null);
+        ReflectionTestUtils.setField(clickLog, "createdAt", createdAt);
+        return clickLog;
+    }
+
+    private Content content(Long selectorsId, String snsContentId, LocalDateTime createdAt) {
+        Content content = Content.builder()
+                .selectorsId(selectorsId)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .snsContentId(snsContentId)
+                .contentUrl("https://instagram.com/" + snsContentId)
+                .contentType(ContentType.REELS)
+                .lastVersionNo(1L)
+                .build();
+        ReflectionTestUtils.setField(content, "createdAt", createdAt);
+        return content;
     }
 
     private PurchaseHistory confirmedPurchase(

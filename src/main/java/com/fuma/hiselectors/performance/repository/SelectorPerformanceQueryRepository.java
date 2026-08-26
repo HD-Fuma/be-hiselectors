@@ -1,9 +1,13 @@
 package com.fuma.hiselectors.performance.repository;
 
+import com.fuma.hiselectors.analytics.model.ViewPageType;
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +26,22 @@ public class SelectorPerformanceQueryRepository {
                         where s.deleted = false
                         order by s.id
                         """, Selectors.class)
+                .getResultList();
+    }
+
+    public List<Selectors> findVisibleMembers(List<Long> generationIds) {
+        if (generationIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery("""
+                        select distinct s
+                        from Selectors s
+                        join SelectorsGeneration sg on sg.selectorsId = s.id
+                        where s.deleted = false
+                          and sg.generationId in :generationIds
+                        order by s.id
+                        """, Selectors.class)
+                .setParameter("generationIds", generationIds)
                 .getResultList();
     }
 
@@ -68,30 +88,199 @@ public class SelectorPerformanceQueryRepository {
                   and p.confirmedAt is not null
                   and (s.userId is null or p.userId <> s.userId)
                 """);
+        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(" group by p.selectorsId");
+
+        return confirmedSalesQuery(jpql.toString(), selectorIds, startInclusive, endExclusive)
+                .getResultList().stream()
+                .map(row -> new ConfirmedSales(
+                        (Long) row[0],
+                        (BigDecimal) row[1],
+                        ((Number) row[2]).longValue()))
+                .toList();
+    }
+
+    public List<DatedSales> summarizeConfirmedSalesByDay(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        return summarizeConfirmedSalesByDatePart(selectorIds, startInclusive, endExclusive, true);
+    }
+
+    public List<DatedSales> summarizeConfirmedSalesByMonth(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        return summarizeConfirmedSalesByDatePart(selectorIds, startInclusive, endExclusive, false);
+    }
+
+    public List<SelectorCount> countProductClicks(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder jpql = new StringBuilder("""
+                select c.selectorsId, count(c)
+                from ClickLog c
+                where c.selectorsId in :selectorIds
+                  and c.linkType = :linkType
+                """);
+        appendCreatedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(" group by c.selectorsId");
+        TypedQuery<Object[]> query = entityManager.createQuery(jpql.toString(), Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .setParameter("linkType", ViewPageType.PRODUCT);
+        bindCreatedAtPeriod(query, startInclusive, endExclusive);
+        return query.getResultList().stream()
+                .map(row -> new SelectorCount((Long) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    public List<SelectorCount> countContents(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder jpql = new StringBuilder("""
+                select content.selectorsId, count(content)
+                from Content content
+                where content.selectorsId in :selectorIds
+                  and content.deleted = false
+                """);
+        appendCreatedAtPeriod(jpql, "content.createdAt", startInclusive, endExclusive);
+        jpql.append(" group by content.selectorsId");
+        TypedQuery<Object[]> query = entityManager.createQuery(jpql.toString(), Object[].class)
+                .setParameter("selectorIds", selectorIds);
+        bindCreatedAtPeriod(query, startInclusive, endExclusive);
+        return query.getResultList().stream()
+                .map(row -> new SelectorCount((Long) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
+    public List<SelectorSnsProfile> findSnsProfiles(List<Long> selectorIds) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery("""
+                        select account.selectorsId, account.profileImageUrl,
+                               account.snsCode, account.followerCount
+                        from SelectorsSnsAccount account
+                        where account.selectorsId in :selectorIds
+                          and account.deleted = false
+                        """, Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .getResultList().stream()
+                .map(row -> new SelectorSnsProfile(
+                        (Long) row[0],
+                        (String) row[1],
+                        (SnsPlatform) row[2],
+                        (Long) row[3]))
+                .toList();
+    }
+
+    private List<DatedSales> summarizeConfirmedSalesByDatePart(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive,
+            boolean daily) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        String dateSelect = daily
+                ? "year(p.confirmedAt), month(p.confirmedAt), day(p.confirmedAt)"
+                : "year(p.confirmedAt), month(p.confirmedAt)";
+        StringBuilder jpql = new StringBuilder("""
+                select %s, coalesce(sum(p.paidAmount), 0), count(distinct p.orderNo)
+                from PurchaseHistory p
+                join Selectors s on s.id = p.selectorsId
+                where p.selectorsId in :selectorIds
+                  and s.deleted = false
+                  and p.status = :status
+                  and p.confirmedAt is not null
+                  and (s.userId is null or p.userId <> s.userId)
+                """.formatted(dateSelect));
+        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(daily
+                ? " group by year(p.confirmedAt), month(p.confirmedAt), day(p.confirmedAt)"
+                : " group by year(p.confirmedAt), month(p.confirmedAt)");
+        return confirmedSalesQuery(jpql.toString(), selectorIds, startInclusive, endExclusive)
+                .getResultList().stream()
+                .map(row -> toDatedSales(row, daily))
+                .toList();
+    }
+
+    private DatedSales toDatedSales(Object[] row, boolean daily) {
+        int year = ((Number) row[0]).intValue();
+        int month = ((Number) row[1]).intValue();
+        int day = daily ? ((Number) row[2]).intValue() : 1;
+        int salesIndex = daily ? 3 : 2;
+        return new DatedSales(
+                LocalDate.of(year, month, day),
+                (BigDecimal) row[salesIndex],
+                ((Number) row[salesIndex + 1]).longValue());
+    }
+
+    private TypedQuery<Object[]> confirmedSalesQuery(
+            String jpql,
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        TypedQuery<Object[]> query = entityManager.createQuery(jpql, Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED);
+        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
+        return query;
+    }
+
+    private void appendConfirmedAtPeriod(
+            StringBuilder jpql, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         if (startInclusive != null) {
             jpql.append(" and p.confirmedAt >= :startInclusive");
         }
         if (endExclusive != null) {
             jpql.append(" and p.confirmedAt < :endExclusive");
         }
-        jpql.append(" group by p.selectorsId");
+    }
 
-        var query = entityManager.createQuery(jpql.toString(), Object[].class)
-                .setParameter("selectorIds", selectorIds)
-                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED);
+    private void appendCreatedAtPeriod(
+            StringBuilder jpql, LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        appendCreatedAtPeriod(jpql, "c.createdAt", startInclusive, endExclusive);
+    }
+
+    private void appendCreatedAtPeriod(
+            StringBuilder jpql,
+            String column,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        if (startInclusive != null) {
+            jpql.append(" and ").append(column).append(" >= :startInclusive");
+        }
+        if (endExclusive != null) {
+            jpql.append(" and ").append(column).append(" < :endExclusive");
+        }
+    }
+
+    private void bindConfirmedAtPeriod(
+            TypedQuery<Object[]> query,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
         if (startInclusive != null) {
             query.setParameter("startInclusive", startInclusive);
         }
         if (endExclusive != null) {
             query.setParameter("endExclusive", endExclusive);
         }
+    }
 
-        return query.getResultList().stream()
-                .map(row -> new ConfirmedSales(
-                        (Long) row[0],
-                        (BigDecimal) row[1],
-                        ((Number) row[2]).longValue()))
-                .toList();
+    private void bindCreatedAtPeriod(
+            TypedQuery<Object[]> query,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
     }
 
     public record GenerationMembership(
@@ -108,5 +297,26 @@ public class SelectorPerformanceQueryRepository {
     ) {
         public static final ConfirmedSales ZERO =
                 new ConfirmedSales(null, BigDecimal.ZERO, 0L);
+    }
+
+    public record DatedSales(
+            LocalDate date,
+            BigDecimal totalSales,
+            long confirmedOrderCount
+    ) {
+    }
+
+    public record SelectorCount(
+            Long selectorId,
+            long count
+    ) {
+    }
+
+    public record SelectorSnsProfile(
+            Long selectorId,
+            String profileImageUrl,
+            SnsPlatform snsCode,
+            Long followerCount
+    ) {
     }
 }
