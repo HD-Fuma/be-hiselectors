@@ -34,7 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * search.list(키워드)    100 units → 영상 ID
  * videos.list(배치)        1 unit  → 조회수·채널 ID
  * channels.list(배치)      1 unit  → 구독자수·채널 설명
- * playlistItems.list       1+ unit → 최근 90일 활동 수
+ * playlistItems.list       1+ unit → 최근 활동일·최근 90일 활동 수
  *   → 채널 설명에서 인스타 핸들 추출
  *   → 브랜드 신호 점수 계산
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장

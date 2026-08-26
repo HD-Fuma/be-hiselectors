@@ -26,7 +26,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  *
  * <p><b>쿼터가 이 기능의 가장 큰 제약이다.</b> 일일 한도 10,000 units 인데
  * {@code search.list} 가 1회 100 units 를 쓴다. 나머지는 1 unit(id 50개 배치)이라
- * 키워드 검색·통계 조회에 약 102 units, 최근 90일 활동 수 조회에 채널별 최소
+ * 키워드 검색·통계 조회에 약 102 units, 최근 활동 조회에 채널별 최소
  * 1 unit가 추가된다. 검색을 아끼고 배치 조회를 늘리는 것이 최적화 방향이다.
  */
 @Slf4j
@@ -165,6 +165,7 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                                                   ChannelAccumulator acc) {
         YoutubeChannelListResponse.Snippet snippet = item.snippet();
         YoutubeChannelListResponse.Statistics stats = item.statistics();
+        RecentActivity recentActivity = fetchRecentActivity(item);
 
         return new DiscoveredChannel(
                 item.id(),
@@ -173,8 +174,8 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                 profileImageUrl(snippet),
                 stats == null ? null : parseLongOrNull(stats.subscriberCount()),
                 stats == null ? null : parseLongOrNull(stats.viewCount()),
-                acc.lastUploadAt,
-                fetchRecent90DayContentCount(item),
+                recentActivity.lastContentAt(),
+                recentActivity.recent90DayContentCount(),
                 acc.views, acc.likes, acc.comments);
     }
 
@@ -190,13 +191,13 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                 .orElse(null);
     }
 
-    private Integer fetchRecent90DayContentCount(YoutubeChannelListResponse.Item channel) {
+    private RecentActivity fetchRecentActivity(YoutubeChannelListResponse.Item channel) {
         String uploads = channel.contentDetails() == null
                 || channel.contentDetails().relatedPlaylists() == null
                 ? null
                 : channel.contentDetails().relatedPlaylists().uploads();
         if (uploads == null || uploads.isBlank()) {
-            return null;
+            return new RecentActivity(null, null);
         }
 
         LocalDateTime cutoff = LocalDateTime.now(SEOUL).minusDays(ACTIVITY_WINDOW_DAYS);
@@ -210,14 +211,19 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         YoutubePlaylistItemListResponse response = call(
                 uri, YoutubePlaylistItemListResponse.class, LIST_COST);
         if (response == null || response.items() == null) {
-            return null;
+            return new RecentActivity(null, null);
         }
+        List<LocalDateTime> publishedDates = response.items().stream()
+                .map(this::parsePublishedAt)
+                .filter(publishedAt -> publishedAt != null)
+                .toList();
         // Meta와 같은 25건 공개 범위로 맞춘다. 관리자 최소 필터도 25가 상한이므로
         // 고활동 채널은 정확한 총량 대신 "25건 이상"으로 다룬다.
-        return (int) response.items().stream()
-                .map(this::parsePublishedAt)
-                .filter(publishedAt -> publishedAt != null && !publishedAt.isBefore(cutoff))
-                .count();
+        return new RecentActivity(
+                publishedDates.stream().max(LocalDateTime::compareTo).orElse(null),
+                (int) publishedDates.stream()
+                        .filter(publishedAt -> !publishedAt.isBefore(cutoff))
+                        .count());
     }
 
     private LocalDateTime parsePublishedAt(YoutubePlaylistItemListResponse.Item item) {
@@ -293,7 +299,6 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
         private long views;
         private long likes;
         private long comments;
-        private LocalDateTime lastUploadAt;
 
         private void add(YoutubeVideoListResponse.Item video) {
             YoutubeVideoListResponse.Statistics stats = video.statistics();
@@ -302,29 +307,15 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
                 likes += zeroIfNull(parseLongOrNull(stats.likeCount()));
                 comments += zeroIfNull(parseLongOrNull(stats.commentCount()));
             }
-
-            LocalDateTime publishedAt = parsePublishedAt(video.snippet());
-            if (publishedAt != null && (lastUploadAt == null || publishedAt.isAfter(lastUploadAt))) {
-                lastUploadAt = publishedAt;
-            }
         }
 
         private static long zeroIfNull(Long value) {
             return value == null ? 0 : value;
         }
 
-        /** publishedAt 은 {@code 2026-07-28T09:00:00Z} 형태로 온다. */
-        private static LocalDateTime parsePublishedAt(YoutubeVideoListResponse.Snippet snippet) {
-            if (snippet == null || snippet.publishedAt() == null) {
-                return null;
-            }
-            try {
-                return OffsetDateTime.parse(snippet.publishedAt())
-                        .atZoneSameInstant(ZoneId.of("Asia/Seoul"))
-                        .toLocalDateTime();
-            } catch (DateTimeParseException e) {
-                return null;
-            }
-        }
+    }
+
+    private record RecentActivity(
+            LocalDateTime lastContentAt, Integer recent90DayContentCount) {
     }
 }
