@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.controller;
 
 import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
+import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.creator.discovery.DiscoveryPipelineService;
 import com.fuma.hiselectors.creator.discovery.InstagramDiscoveryService;
 import com.fuma.hiselectors.creator.discovery.dto.DiscoveryRunResult;
@@ -54,6 +55,7 @@ public class DiscoveryAdminController {
     private final CreatorSyncTask creatorSyncTask;
     private final InstagramCreatorSyncTask instagramCreatorSyncTask;
     private final AdminRepository adminRepository;
+    private final CategoryRepository categoryRepository;
     private final ObjectMapper objectMapper;
 
     @Operation(summary = "YouTube·Instagram 크리에이터 일괄 발굴",
@@ -77,6 +79,25 @@ public class DiscoveryAdminController {
                 : submitTask(idempotencyKey, principal, "youtube", creatorSyncTask);
     }
 
+    @Operation(summary = "선택 카테고리 크리에이터 발굴",
+            description = "선택 카테고리의 활성 키워드와 해당 출처의 Instagram 후보만 발굴한다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "202", description = "카테고리 발굴 작업 접수"),
+            @ApiResponse(responseCode = "404", description = "카테고리 없음"),
+            @ApiResponse(responseCode = "409", description = "같은 작업이 이미 실행 중")
+    })
+    @PostMapping("/categories/{categoryId}/run")
+    public ResponseEntity<TaskRunResponse> runCategoryBatch(
+            @PathVariable Long categoryId,
+            @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            Principal principal) {
+        if (!categoryRepository.existsById(categoryId)) {
+            throw new BusinessException(ErrorCode.CATEGORY_NOT_FOUND);
+        }
+        return submitTask(idempotencyKey, principal, "youtube-category", categoryId,
+                context -> creatorSyncTask.executeCategory(context, categoryId));
+    }
+
     @Operation(summary = "Instagram 크리에이터 일괄 발굴",
             description = "관리자가 크리에이터 모집을 시작할 때 YouTube 채널에서 추출한 "
                     + "Instagram 사용자명을 Meta Graph API로 조회한다. "
@@ -95,11 +116,21 @@ public class DiscoveryAdminController {
 
     private ResponseEntity<TaskRunResponse> submitTask(
             UUID idempotencyKey, Principal principal, String source, TrackedTask task) {
+        return submitTask(idempotencyKey, principal, source, null, task);
+    }
+
+    private ResponseEntity<TaskRunResponse> submitTask(
+            UUID idempotencyKey, Principal principal, String source,
+            Long categoryId, TrackedTask task) {
         Admin admin = adminRepository.findByLoginId(principal.getName())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_NOT_FOUND));
+        var payload = objectMapper.createObjectNode().put("source", source);
+        if (categoryId != null) {
+            payload.put("categoryId", categoryId);
+        }
         TaskStartResult result = taskRunExecutionService.submit(new TaskStartCommand(
                 TaskType.CREATOR_SYNC, TriggerType.ADMIN_TRIGGERED, admin.getId(), idempotencyKey,
-                objectMapper.createObjectNode().put("source", source)), task);
+                payload), task);
         if (result instanceof TaskStartResult.ActiveConflict) {
             throw new BusinessException(ErrorCode.TASK_ALREADY_RUNNING);
         }

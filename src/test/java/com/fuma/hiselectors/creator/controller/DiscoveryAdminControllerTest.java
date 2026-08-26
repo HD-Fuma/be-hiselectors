@@ -15,6 +15,7 @@ import com.fuma.hiselectors.creator.task.CreatorSyncTask;
 import com.fuma.hiselectors.creator.task.InstagramCreatorSyncTask;
 import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
+import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskType;
 import com.fuma.hiselectors.taskrun.model.TriggerType;
@@ -42,6 +43,7 @@ class DiscoveryAdminControllerTest {
     private InstagramDiscoveryService instagramDiscoveryService;
     private TaskRunExecutionService taskRunExecutionService;
     private AdminRepository adminRepository;
+    private CategoryRepository categoryRepository;
     private CreatorSyncTask creatorSyncTask;
     private InstagramCreatorSyncTask instagramCreatorSyncTask;
     private Admin admin;
@@ -54,6 +56,7 @@ class DiscoveryAdminControllerTest {
         instagramDiscoveryService = mock(InstagramDiscoveryService.class);
         taskRunExecutionService = mock(TaskRunExecutionService.class);
         adminRepository = mock(AdminRepository.class);
+        categoryRepository = mock(CategoryRepository.class);
         creatorSyncTask = mock(CreatorSyncTask.class);
         instagramCreatorSyncTask = mock(InstagramCreatorSyncTask.class);
         admin = mock(Admin.class);
@@ -67,6 +70,7 @@ class DiscoveryAdminControllerTest {
                         creatorSyncTask,
                         instagramCreatorSyncTask,
                         adminRepository,
+                        categoryRepository,
                         new ObjectMapper()
                 ))
                 .setControllerAdvice(new GlobalExceptionHandler(), new ApiResultAdvice())
@@ -120,6 +124,32 @@ class DiscoveryAdminControllerTest {
         TaskExecutionContext context = mock(TaskExecutionContext.class);
         task.getValue().execute(context);
         verify(creatorSyncTask).executeTest(context);
+    }
+
+    @Test
+    void runsSelectedCategoryDiscoveryBatch() throws Exception {
+        UUID key = UUID.randomUUID();
+        when(categoryRepository.existsById(12L)).thenReturn(true);
+        when(taskRunExecutionService.submit(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new TaskStartResult.Created(run(TaskType.CREATOR_SYNC, key)));
+
+        mockMvc.perform(post("/api/admin/discovery/categories/12/run")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status").value("QUEUED"));
+
+        ArgumentCaptor<TrackedTask> task = ArgumentCaptor.forClass(TrackedTask.class);
+        verify(taskRunExecutionService).submit(org.mockito.ArgumentMatchers.argThat(command ->
+                        command.idempotencyKey().equals(key)
+                                && command.businessPayload().get("source").asText()
+                                .equals("youtube-category")
+                                && command.businessPayload().get("categoryId").asLong() == 12L),
+                task.capture());
+        TaskExecutionContext context = mock(TaskExecutionContext.class);
+        task.getValue().execute(context);
+        verify(creatorSyncTask).executeCategory(context, 12L);
     }
 
     @Test

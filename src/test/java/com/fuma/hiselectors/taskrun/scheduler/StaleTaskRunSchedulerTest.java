@@ -18,6 +18,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import com.fuma.hiselectors.taskrun.config.TaskTypePolicy;
 import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
+import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
 import com.fuma.hiselectors.taskrun.model.TaskType;
@@ -77,11 +78,12 @@ class StaleTaskRunSchedulerTest {
     private TaskTypePolicy policy;
     private StaleTaskRunScheduler scheduler;
     private final TaskRunFailureLogger failureLogger = mock(TaskRunFailureLogger.class);
+    private final TaskRunProgressStream progressStream = mock(TaskRunProgressStream.class);
 
     @BeforeEach
     void setUp() {
         repository.deleteAll();
-        reset(failureLogger);
+        reset(failureLogger, progressStream);
         transactions = new TransactionTemplate(transactionManager);
         TaskRunProperties properties = properties();
         policy = new TaskTypePolicy(properties);
@@ -90,7 +92,8 @@ class StaleTaskRunSchedulerTest {
                 policy,
                 transactions,
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                failureLogger);
+                failureLogger,
+                progressStream);
     }
 
     @Test
@@ -193,7 +196,8 @@ class StaleTaskRunSchedulerTest {
                 policy,
                 candidateTransactions,
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                failureLogger);
+                failureLogger,
+                progressStream);
 
         candidateScheduler.markStaleRuns();
 

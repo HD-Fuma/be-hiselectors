@@ -87,6 +87,24 @@ class CreatorSyncTaskTest {
         verify(instagram).run(eq(true), any());
     }
 
+    @Test
+    void executeCategoryRunsBothPlatformsForThatCategory() {
+        YoutubeDiscoveryBatchService youtube = mock(YoutubeDiscoveryBatchService.class);
+        InstagramDiscoveryBatchService instagram = mock(InstagramDiscoveryBatchService.class);
+        TaskProgressReporter progress = mock(TaskProgressReporter.class);
+        when(youtube.runYoutubeOnlyByCategory(eq(10L), any()))
+                .thenReturn(youtubeResult(2, 2, 2, 0, 2));
+        when(instagram.runByCategory(eq(10L), any()))
+                .thenReturn(instagramResult(2, 2, 2, 0, 2));
+
+        new CreatorSyncTask(youtube, instagram)
+                .executeCategory(
+                        new TaskExecutionContext(mock(TaskLease.class), progress), 10L);
+
+        verify(youtube).runYoutubeOnlyByCategory(eq(10L), any());
+        verify(instagram).runByCategory(eq(10L), any());
+    }
+
     private YoutubeDiscoveryBatchResult youtubeResult(
             int target, int attempted, int succeeded, int failed, int uniqueCollected) {
         return new YoutubeDiscoveryBatchResult(

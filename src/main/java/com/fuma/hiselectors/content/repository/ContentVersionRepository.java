@@ -33,6 +33,23 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
     @Query("select cv from ContentVersion cv where cv.id = :contentVersionId")
     Optional<ContentVersion> findByIdForUpdate(@Param("contentVersionId") Long contentVersionId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select cv
+            from ContentVersion cv, Content c, Selectors selectors, SelectorsGeneration sg
+            where c.id = cv.contentId
+              and selectors.id = c.selectorsId
+              and sg.selectorsId = selectors.id
+              and sg.generationId = :generationId
+              and selectors.deleted = false
+              and c.deleted = false
+              and cv.versionNo = c.lastVersionNo
+              and cv.inspectionDecision is not null
+            order by cv.id
+            """)
+    List<ContentVersion> findConfirmedCurrentByGenerationIdForUpdate(
+            @Param("generationId") Long generationId);
+
     @Query("""
             select cv.id
             from ContentVersion cv, Content c, Selectors selectors, SelectorsGeneration sg
@@ -44,6 +61,7 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
               and c.deleted = false
               and c.snsCode = :platform
               and (cv.status is null or cv.status <> :excludedStatus)
+              and cv.inspectionDecision is null
               and cv.versionNo = (
                     select max(innerCv.versionNo) from ContentVersion innerCv
                     where innerCv.contentId = cv.contentId)

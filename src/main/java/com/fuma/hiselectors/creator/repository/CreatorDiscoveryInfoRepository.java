@@ -17,6 +17,23 @@ public interface CreatorDiscoveryInfoRepository
             findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
                     String snsCode);
 
+    /** 선택 카테고리의 키워드에서 발견된 Instagram 후보만 조회한다. */
+    @Query("""
+            select distinct info from CreatorDiscoveryInfo info
+            join fetch info.creatorPool creator
+            where creator.snsCode = :snsCode
+              and creator.deleted = false
+              and info.igHandle is not null
+              and exists (
+                  select source.id from CreatorDiscoverySource source
+                  where source.creatorPool = creator
+                    and source.keyword.category.id = :categoryId
+              )
+            order by info.id asc
+            """)
+    List<CreatorDiscoveryInfo> findInstagramCandidatesByCategoryId(
+            String snsCode, Long categoryId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             delete from CreatorDiscoveryInfo info

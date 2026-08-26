@@ -36,10 +36,24 @@ public class InstagramDiscoveryBatchService {
 
     public InstagramDiscoveryBatchResult run(
             boolean test, Consumer<InstagramDiscoveryBatchResult> progressCallback) {
+        return run(null, test, progressCallback);
+    }
+
+    public InstagramDiscoveryBatchResult runByCategory(
+            Long categoryId, Consumer<InstagramDiscoveryBatchResult> progressCallback) {
+        return run(Objects.requireNonNull(categoryId), false, progressCallback);
+    }
+
+    private InstagramDiscoveryBatchResult run(
+            Long categoryId, boolean test,
+            Consumer<InstagramDiscoveryBatchResult> progressCallback) {
         Objects.requireNonNull(progressCallback, "progressCallback");
-        List<CreatorDiscoveryInfo> candidates = discoveryInfoRepository
-                .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
-                        SnsPlatform.YOUTUBE.name())
+        List<CreatorDiscoveryInfo> candidates = (categoryId == null
+                ? discoveryInfoRepository
+                        .findByCreatorPoolSnsCodeAndCreatorPoolDeletedFalseAndIgHandleIsNotNullOrderByIdAsc(
+                                SnsPlatform.YOUTUBE.name())
+                : discoveryInfoRepository.findInstagramCandidatesByCategoryId(
+                        SnsPlatform.YOUTUBE.name(), categoryId))
                 .stream()
                 .filter(candidate -> !candidate.getIgHandle().isBlank())
                 .toList();
