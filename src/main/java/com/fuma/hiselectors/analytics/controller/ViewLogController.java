@@ -4,6 +4,7 @@ import com.fuma.hiselectors.analytics.dto.ViewLogRequest;
 import com.fuma.hiselectors.analytics.dto.ViewLogResponse;
 import com.fuma.hiselectors.analytics.service.ViewLogService;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @SecurityRequirements
+@Tag(name = "상품 조회 로그", description = "상품 조회 로그 기록")
 @RestController
 @RequestMapping("/api/view-logs")
 @RequiredArgsConstructor

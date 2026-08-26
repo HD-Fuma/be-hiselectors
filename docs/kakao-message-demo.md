@@ -9,7 +9,6 @@
 ```text
 KAKAO_REST_API_KEY=<앱 REST API 키>
 KAKAO_CLIENT_SECRET=<REST API Client Secret>
-KAKAO_REDIRECT_URI=http://localhost:8080/kakao-test
 KAKAO_TOKEN_ENCRYPTION_KEY=<32바이트 난수를 Base64로 인코딩한 값>
 KAKAO_MESSAGE_WEB_URL=http://localhost:3000
 KAKAO_MESSAGE_MOBILE_WEB_URL=http://localhost:3000

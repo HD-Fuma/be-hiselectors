@@ -4,6 +4,7 @@ import com.fuma.hiselectors.taskrun.dto.TaskRunPanelResponse;
 import com.fuma.hiselectors.taskrun.dto.TaskRunResponse;
 import com.fuma.hiselectors.taskrun.service.TaskRunProgressStream;
 import com.fuma.hiselectors.taskrun.service.TaskRunQueryService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 @RequestMapping("/api/admin/task-runs")
 @RequiredArgsConstructor
+@Tag(name = "작업 실행 관리", description = "백그라운드 작업 실행 현황·이력·진행률 조회 (관리자 전용)")
 public class TaskRunAdminController {
 
     private static final int DEFAULT_PAGE_SIZE = 20;

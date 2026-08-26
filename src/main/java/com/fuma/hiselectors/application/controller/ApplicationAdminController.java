@@ -9,6 +9,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.service.ApplicationAdminService;
 import com.fuma.hiselectors.application.service.ApplicationService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/applications")
+@Tag(name = "지원자 관리", description = "지원자 목록·상세·AI 리포트 조회 및 테스트 지원자 등록 (관리자 전용)")
 public class ApplicationAdminController {
 
     private static final int MAX_PAGE_SIZE = 100;
