@@ -146,4 +146,11 @@ public class ContentVersion {
         }
         inspectionDecision = decision;
     }
+
+    public void resetInspectionDecision() {
+        if (status != ContentVersionStatus.COMPLETED || inspectionDecision == null) {
+            throw new BusinessException(ErrorCode.INVALID_CONTENT_INSPECTION_STATUS);
+        }
+        inspectionDecision = null;
+    }
 }

@@ -115,6 +115,16 @@ public class ViolationItem extends BaseTimeEntity {
         status = ViolationStatus.DISMISSED;
     }
 
+    public boolean resetInspectionDecision() {
+        if (status != ViolationStatus.VIOLATION_CONFIRMED
+                && status != ViolationStatus.DISMISSED
+                && status != ViolationStatus.EDIT_REQUESTED) {
+            return false;
+        }
+        status = ViolationStatus.PENDING;
+        return true;
+    }
+
     public boolean isOpen() {
         return status == ViolationStatus.PENDING
                 || status == ViolationStatus.VIOLATION_CONFIRMED
