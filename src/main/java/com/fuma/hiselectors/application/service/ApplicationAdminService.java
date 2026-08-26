@@ -204,9 +204,11 @@ public class ApplicationAdminService {
                 application.getSnsAccountId(),
                 snsDisplayName,
                 application.getProfileUrl(),
+                application.getProfileImageUrl(),
                 application.getFollowerCount(),
                 application.getContentCount(),
                 recentCount,
+                lastPublishedAt(recentContents),
                 application.getEngagementRate(),
                 application.getStatus(),
                 application.getMediaCollectionStatus(),
@@ -236,10 +238,6 @@ public class ApplicationAdminService {
             Application application, List<ApplicationMedia> recentContents) {
         boolean collected = application.getMediaCollectedAt() != null;
         Long recentCount = collected ? (long) recentContents.size() : null;
-        LocalDateTime lastPublishedAt = recentContents.stream()
-                .map(ApplicationMedia::getPublishedAt)
-                .max(LocalDateTime::compareTo)
-                .orElse(null);
 
         MetricAverage averageViewCount = average(recentContents, ApplicationMedia::getViewCount);
         MetricAverage averageLikeCount = average(recentContents, ApplicationMedia::getLikeCount);
@@ -250,7 +248,7 @@ public class ApplicationAdminService {
                 ANALYSIS_WINDOW_DAYS,
                 application.getContentCount(),
                 recentCount,
-                lastPublishedAt,
+                lastPublishedAt(recentContents),
                 cadence(recentContents, collected),
                 averageViewCount,
                 averageLikeCount,
@@ -397,6 +395,13 @@ public class ApplicationAdminService {
         return new MetricAverage(
                 sum.divide(BigDecimal.valueOf(values.size()), DECIMAL_SCALE, RoundingMode.HALF_UP),
                 values.size());
+    }
+
+    private LocalDateTime lastPublishedAt(List<ApplicationMedia> contents) {
+        return contents.stream()
+                .map(ApplicationMedia::getPublishedAt)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
     }
 
     private List<ContentFormatCount> contentFormats(List<ApplicationMedia> contents) {

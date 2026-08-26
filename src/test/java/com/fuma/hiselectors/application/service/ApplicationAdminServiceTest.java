@@ -119,6 +119,10 @@ class ApplicationAdminServiceTest {
             assertThat(summary.engagementRate()).isEqualByComparingTo("15.00");
             assertThat(summary.profileUrl())
                     .isEqualTo("https://www.instagram.com/creator.handle/");
+            assertThat(summary.profileImageUrl())
+                    .isEqualTo("https://cdn.example.com/profile.jpg");
+            assertThat(summary.lastPublishedAt())
+                    .isEqualTo(COLLECTED_AT.minusDays(1));
             assertThat(summary.mediaCollectedAt()).isEqualTo(COLLECTED_AT);
         });
         verify(applicationRepository).searchAdmin(

@@ -77,7 +77,8 @@ class ApplicationAdminControllerTest {
                 1L, 10L, "hi-user", "김지안", "jian@example.com", "01012345678",
                 2L, "2기", SnsPlatform.INSTAGRAM, "creator.handle",
                 "creator.handle", "https://www.instagram.com/creator.handle/",
-                1_000L, 500L, 12L,
+                "https://cdn.example.com/profile.jpg", 1_000L, 500L, 12L,
+                collectedAt.minusDays(1),
                 new BigDecimal("1.50"), ApplicationStatus.PENDING,
                 MediaCollectionStatus.DONE, collectedAt.minusDays(30), collectedAt, collectedAt);
         when(applicationAdminService.search(
@@ -101,8 +102,12 @@ class ApplicationAdminControllerTest {
                         .value("creator.handle"))
                 .andExpect(jsonPath("$.data.content[0].profileUrl")
                         .value("https://www.instagram.com/creator.handle/"))
+                .andExpect(jsonPath("$.data.content[0].profileImageUrl")
+                        .value("https://cdn.example.com/profile.jpg"))
                 .andExpect(jsonPath("$.data.content[0].totalContentCount").value(500))
                 .andExpect(jsonPath("$.data.content[0].recent90DayContentCount").value(12))
+                .andExpect(jsonPath("$.data.content[0].lastPublishedAt")
+                        .value("2026-08-19T12:00:00"))
                 .andExpect(jsonPath("$.data.content[0].engagementRate").value(1.5));
 
         verify(applicationAdminService).search(
