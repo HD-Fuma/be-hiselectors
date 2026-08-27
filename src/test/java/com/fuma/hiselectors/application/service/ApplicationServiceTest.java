@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -54,10 +55,11 @@ class ApplicationServiceTest {
     private final ContentFetcher youtubeFetcher = mock(ContentFetcher.class);
     private final OAuthStateProvider oAuthStateProvider = mock(OAuthStateProvider.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+    private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final ApplicationService service = new ApplicationService(
             applicationRepository, userRepository, generationRepository, selectorsRepository,
             List.of(instagramFetcher, youtubeFetcher),
-            oAuthStateProvider, passwordEncoder, CLOCK);
+            oAuthStateProvider, passwordEncoder, eventPublisher, CLOCK);
 
     private ApplicationCreateRequest request() {
         return new ApplicationCreateRequest("verification-token", true, true);
@@ -97,8 +99,8 @@ class ApplicationServiceTest {
         ArgumentCaptor<Application> application = ArgumentCaptor.forClass(Application.class);
         verify(userRepository).save(user.capture());
         verify(applicationRepository).save(application.capture());
-        assertThat(user.getValue().getHiId()).startsWith("test_").hasSize(20);
-        assertThat(user.getValue().getName()).startsWith("[테스트] ");
+        assertThat(user.getValue().getHiId()).hasSize(20);
+        assertThat(user.getValue().getName()).isEqualTo(accountId);
         assertThat(user.getValue().getAlimtalk()).isEqualTo("N");
         assertThat(application.getValue()).satisfies(saved -> {
             assertThat(saved.getUserId()).isEqualTo(7L);

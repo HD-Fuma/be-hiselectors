@@ -30,6 +30,8 @@ import org.springframework.stereotype.Component;
 public class ContentAnalysisScheduler {
 
     private static final int MAX_RETRY_COUNT = 3;
+    private static final Set<ApplicationStatus> ANALYZABLE_STATUSES = EnumSet.of(
+            ApplicationStatus.PENDING, ApplicationStatus.APPROVED);
 
     /** 일시적 인프라 장애. 재시도 카운트를 소진하지 않는다(복구 시 자동 재개). */
     private static final Set<ErrorCode> TRANSIENT_ERRORS = EnumSet.of(
@@ -63,7 +65,7 @@ public class ContentAnalysisScheduler {
         LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
         List<Application> targets = applicationRepository.findAnalysisTargets(
                 MediaCollectionStatus.DONE,
-                ApplicationStatus.PENDING,
+                ANALYZABLE_STATUSES,
                 EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                 ContentAnalysisStatus.IN_PROGRESS,
                 leaseBefore,
@@ -78,7 +80,7 @@ public class ContentAnalysisScheduler {
             // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
             // 0이면 다른 인스턴스가 이미 처리 중 → skip.
             int claimed = applicationRepository.claimForAnalysis(
-                    id, ApplicationStatus.PENDING, ContentAnalysisStatus.IN_PROGRESS,
+                    id, ANALYZABLE_STATUSES, ContentAnalysisStatus.IN_PROGRESS,
                     EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
                     LocalDateTime.now(), leaseBefore);
             if (claimed != 1) {

@@ -63,7 +63,21 @@ public class YoutubeSttClient {
                         "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
-        return parse(rawText(call(body)));
+        long started = System.nanoTime();
+        GeminiResponse response = call(body);
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        UsageMetadata usage = response == null ? null : response.usageMetadata();
+        String model = response == null ? null : response.modelVersion();
+        if (usage == null) {
+            log.info("YouTube Gemini 영상 분석 완료. videoId={}, model={}, latencyMs={}, tokenUsage=unavailable",
+                    videoId, model, elapsedMs);
+        } else {
+            log.info("YouTube Gemini 영상 분석 완료. videoId={}, model={}, latencyMs={}, promptTokens={}, outputTokens={}, thoughtTokens={}, totalTokens={}",
+                    videoId, model, elapsedMs, usage.promptTokenCount(),
+                    usage.candidatesTokenCount(), usage.thoughtsTokenCount(),
+                    usage.totalTokenCount());
+        }
+        return parse(rawText(response));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
@@ -166,7 +180,8 @@ public class YoutubeSttClient {
         return text.substring(start, end).trim();
     }
 
-    record GeminiResponse(List<Candidate> candidates, PromptFeedback promptFeedback) {
+    record GeminiResponse(List<Candidate> candidates, PromptFeedback promptFeedback,
+                          UsageMetadata usageMetadata, String modelVersion) {
         record Candidate(Content content, String finishReason) { }
 
         record Content(List<Part> parts) { }
@@ -175,4 +190,7 @@ public class YoutubeSttClient {
 
         record PromptFeedback(String blockReason) { }
     }
+
+    record UsageMetadata(Integer promptTokenCount, Integer candidatesTokenCount,
+                         Integer thoughtsTokenCount, Integer totalTokenCount) { }
 }

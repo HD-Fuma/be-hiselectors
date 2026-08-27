@@ -51,6 +51,7 @@ public class ApplicationAdminService {
 
     private static final int ANALYSIS_WINDOW_DAYS = 90;
     private static final int DECIMAL_SCALE = 2;
+    private static final long PEER_AVERAGES_CACHE_NANOS = java.time.Duration.ofMinutes(5).toNanos();
 
     private final ApplicationRepository applicationRepository;
     private final ApplicationMediaRepository mediaRepository;
@@ -62,6 +63,8 @@ public class ApplicationAdminService {
     // 초기화된 final 이라 @RequiredArgsConstructor 생성자엔 안 들어감(주입 아님).
     private final tools.jackson.databind.ObjectMapper objectMapper =
             new tools.jackson.databind.ObjectMapper();
+
+    private volatile CachedPeerAverages cachedPeerAverages;
 
     /** 지원자 상세의 AI 리포트. 없으면 404(아직 미분석). */
     public AdminAiReportResponse findAiReport(Long applicationId) {
@@ -78,7 +81,6 @@ public class ApplicationAdminService {
                 r.getStrength(),
                 r.getCautions(),
                 r.getRisks(),
-                r.getBrandHistory(),
                 r.getRepresentativeContentUrl(),
                 r.getRepresentativeContentType(),
                 r.getRepresentativeViewCount(),
@@ -262,9 +264,28 @@ public class ApplicationAdminService {
 
     /**
      * 정량 지표 백분위 비교 모수. 미디어 수집이 끝난 전체 지원자의 평균 조회·좋아요·댓글을
-     * 한 번에 모아온다(요청당 1회). 지원자 규모가 커지면 캐싱을 고려해야 한다.
+     * 한 번에 모아오되 상세 조회마다 전체 스캔하지 않도록 짧게 재사용한다.
      */
     private PeerAverages peerAverages() {
+        long now = System.nanoTime();
+        CachedPeerAverages cached = cachedPeerAverages;
+        if (cached != null && now < cached.expiresAtNanos()) {
+            return cached.value();
+        }
+        synchronized (this) {
+            cached = cachedPeerAverages;
+            if (cached != null && now < cached.expiresAtNanos()) {
+                return cached.value();
+            }
+            PeerAverages loaded = loadPeerAverages();
+            cachedPeerAverages = new CachedPeerAverages(
+                    loaded, System.nanoTime() + PEER_AVERAGES_CACHE_NANOS);
+            return loaded;
+        }
+    }
+
+    // ponytail: 프로세스 로컬 5분 캐시. 인스턴스 간 정확한 즉시 동기화가 필요해지면 Redis로 교체한다.
+    private PeerAverages loadPeerAverages() {
         List<Application> collected = applicationRepository
                 .findAllByMediaCollectionStatus(MediaCollectionStatus.DONE);
         if (collected.isEmpty()) {
@@ -321,6 +342,9 @@ public class ApplicationAdminService {
             List<BigDecimal> viewAverages,
             List<BigDecimal> likeAverages,
             List<BigDecimal> commentAverages) {
+    }
+
+    private record CachedPeerAverages(PeerAverages value, long expiresAtNanos) {
     }
 
     private List<ApplicationMedia> recentContents(

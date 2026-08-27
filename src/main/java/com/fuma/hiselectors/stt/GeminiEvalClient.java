@@ -77,7 +77,20 @@ public class GeminiEvalClient {
                         "thinkingConfig", Map.of("thinkingLevel", "minimal"),
                         "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
-        return parse(rawText(call(body)));
+        long started = System.nanoTime();
+        GeminiResponse response = call(body);
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        UsageMetadata usage = response == null ? null : response.usageMetadata();
+        String model = response == null ? null : response.modelVersion();
+        if (usage == null) {
+            log.info("Gemini 취합 완료. model={}, latencyMs={}, inputChars={}, tokenUsage=unavailable",
+                    model, elapsedMs, mergedTranscript.length());
+        } else {
+            log.info("Gemini 취합 완료. model={}, latencyMs={}, inputChars={}, promptTokens={}, outputTokens={}, thoughtTokens={}, totalTokens={}",
+                    model, elapsedMs, mergedTranscript.length(), usage.promptTokenCount(),
+                    usage.candidatesTokenCount(), usage.thoughtsTokenCount(), usage.totalTokenCount());
+        }
+        return parse(rawText(response));
     }
 
     private GeminiResponse call(Map<String, Object> body) {
@@ -133,11 +146,15 @@ public class GeminiEvalClient {
         return s.replace("```json", "").replace("```", "").trim();
     }
 
-    record GeminiResponse(List<Candidate> candidates) {
+    record GeminiResponse(List<Candidate> candidates, UsageMetadata usageMetadata,
+                          String modelVersion) {
         record Candidate(Content content, String finishReason) { }
 
         record Content(List<Part> parts) { }
 
         record Part(String text) { }
     }
+
+    record UsageMetadata(Integer promptTokenCount, Integer candidatesTokenCount,
+                         Integer thoughtsTokenCount, Integer totalTokenCount) { }
 }
