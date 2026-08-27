@@ -65,17 +65,33 @@ jobs:
         }
 
         TASK_RUN_MIGRATION_FILE="$(mktemp)"
+        CONTENT_VERSION_MIGRATION_FILE="$(mktemp)"
         cleanup_task_run_migration() {
-          rm -f "$TASK_RUN_MIGRATION_FILE"
+          rm -f "$TASK_RUN_MIGRATION_FILE" "$CONTENT_VERSION_MIGRATION_FILE"
         }
         trap cleanup_task_run_migration EXIT HUP INT TERM
-        printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d > "$TASK_RUN_MIGRATION_FILE"
+        printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d | gzip -d > "$TASK_RUN_MIGRATION_FILE"
         cat "$TASK_RUN_MIGRATION_FILE" | mysql_apply_file
 
         task_run_table_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'task_run'")"
         task_run_unique_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'task_run' AND non_unique = 0 AND index_name IN ('uq_task_run_run_id', 'uq_task_run_concurrency_key', 'uq_task_run_idempotency_key')")"
         test "${task_run_table_count}:${task_run_unique_index_count}" = "1:3"
         echo "task-run-migration=verified"
+
+        content_version_no_unique_columns="$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uq_content_version_content_no' AND non_unique = 0")"
+        assert_eq content-version-no-unique "$content_version_no_unique_columns" content_id,version_no
+        content_version_hash_index_count="$(mysql_query "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uk_content_version_content_hash'")"
+        if [ "$content_version_hash_index_count" = "1" ]; then
+          content_version_hash_index_definition="$(mysql_query "SELECT CONCAT(MIN(non_unique), ':', GROUP_CONCAT(column_name ORDER BY seq_in_index)) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uk_content_version_content_hash'")"
+          assert_eq content-version-hash-index "$content_version_hash_index_definition" 0:content_id,content_hash
+        else
+          assert_eq content-version-hash-index-count "$content_version_hash_index_count" 0
+        fi
+        printf '%s' "$CONTENT_VERSION_MIGRATION_B64" | base64 -d | gzip -d > "$CONTENT_VERSION_MIGRATION_FILE"
+        cat "$CONTENT_VERSION_MIGRATION_FILE" | mysql_apply_file
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uk_content_version_content_hash'")" = "0"
+        test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uq_content_version_content_no' AND non_unique = 0")" = "content_id,version_no"
+        echo "content-version-hash-constraint=verified"
 
         profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
         if [ "$profile_image_column_count" = "0" ]; then
@@ -210,9 +226,11 @@ jobs:
       - name: Expand 008 through SSM
         run: |
           test -n "$EC2_INSTANCE_ID"
-          TASK_RUN_MIGRATION_B64="$(base64 -w0 docs/task-run-migration.sql)"
+          TASK_RUN_MIGRATION_B64="$(gzip -c docs/task-run-migration.sql | base64 -w0)"
+          CONTENT_VERSION_MIGRATION_B64="$(gzip -c src/main/resources/db/015_drop_content_version_hash_unique.sql | base64 -w0)"
           printf -v TASK_RUN_MIGRATION_ASSIGNMENT 'TASK_RUN_MIGRATION_B64=%q\n' "$TASK_RUN_MIGRATION_B64"
-          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
+          printf -v CONTENT_VERSION_MIGRATION_ASSIGNMENT 'CONTENT_VERSION_MIGRATION_B64=%q\n' "$CONTENT_VERSION_MIGRATION_B64"
+          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${CONTENT_VERSION_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
           test "${#REMOTE_COMMAND}" -lt 24000
           PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \

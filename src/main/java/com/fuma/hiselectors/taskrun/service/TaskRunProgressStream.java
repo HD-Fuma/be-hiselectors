@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executors;
@@ -90,6 +91,14 @@ public class TaskRunProgressStream implements AutoCloseable {
         }
         OutboundMessage message = OutboundMessage.event(event);
         fanOut(message, "진행 이벤트");
+    }
+
+    public synchronized void publishChanged(UUID runId) {
+        Objects.requireNonNull(runId, "실행 ID는 필수입니다.");
+        if (closed.get()) {
+            return;
+        }
+        fanOut(OutboundMessage.changed(runId), "상태 변경 이벤트");
     }
 
     void heartbeat() {
@@ -195,6 +204,12 @@ public class TaskRunProgressStream implements AutoCloseable {
                         queue.poll();
                         queue.offer(message);
                     }
+                } else if (message instanceof ChangeMessage) {
+                    queue.removeIf(ChangeMessage.class::isInstance);
+                    if (!queue.offer(message)) {
+                        queue.poll();
+                        queue.offer(message);
+                    }
                 }
             }
         }
@@ -272,7 +287,7 @@ public class TaskRunProgressStream implements AutoCloseable {
         COMPLETE
     }
 
-    private sealed interface OutboundMessage permits CommentMessage, ProgressMessage {
+    private sealed interface OutboundMessage permits CommentMessage, ProgressMessage, ChangeMessage {
 
         void send(SseEmitter emitter) throws IOException;
 
@@ -282,6 +297,10 @@ public class TaskRunProgressStream implements AutoCloseable {
 
         static OutboundMessage event(TaskRunProgressEvent event) {
             return new ProgressMessage(event);
+        }
+
+        static OutboundMessage changed(UUID runId) {
+            return new ChangeMessage(runId);
         }
     }
 
@@ -305,6 +324,16 @@ public class TaskRunProgressStream implements AutoCloseable {
             emitter.send(SseEmitter.event()
                     .name("task-run-progress")
                     .data(event));
+        }
+    }
+
+    private record ChangeMessage(UUID runId) implements OutboundMessage {
+
+        @Override
+        public void send(SseEmitter emitter) throws IOException {
+            emitter.send(SseEmitter.event()
+                    .name("task-run-changed")
+                    .data(runId.toString()));
         }
     }
 }

@@ -55,7 +55,7 @@ public class ViolationReconciliationService {
                 continue;
             }
             if (existing.isOpen()) {
-                existing.detectAgain(newVersion, current.evidence());
+                existing.redetectForReview(newVersion, current.evidence());
             } else {
                 existing.reopen(newVersion, current.evidence());
             }

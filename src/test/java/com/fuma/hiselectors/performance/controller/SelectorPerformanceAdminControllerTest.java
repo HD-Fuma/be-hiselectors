@@ -10,6 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceResponse;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse.Distribution;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse.Kpis;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse.Universe;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse.Watchlist;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse.Bucket;
+import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse.Point;
 import com.fuma.hiselectors.performance.service.SelectorPerformanceAdminService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,11 +45,13 @@ class SelectorPerformanceAdminControllerTest {
     void returnsSelectorPerformanceWithOptionalFilters() throws Exception {
         LocalDate startDate = LocalDate.of(2026, 8, 1);
         LocalDate endDate = LocalDate.of(2026, 8, 31);
-        when(service.getSelectorPerformance("김", startDate, endDate))
+        when(service.getSelectorPerformance("김", null, startDate, endDate))
                 .thenReturn(List.of(new SelectorPerformanceResponse(
-                        7L, "SEL0007", "김셀렉터", "ACTIVE", "5기", "4기",
+                        7L, "SEL0007", "김셀렉터", "ACTIVE", 5L, "5기", "BEAUTY",
+                        "https://cdn.example.com/sel.jpg", "4기",
                         new BigDecimal("14500000"),
-                        new BigDecimal("12500000"), 8L, true,
+                        new BigDecimal("12500000"), 8L, 200L, 3L,
+                        new BigDecimal("375000"), true,
                         "4기 활동 누적 1위 · 누적 매출 1,000만원 이상 달성")));
 
         mockMvc.perform(get("/api/admin/selector-performance")
@@ -59,9 +69,67 @@ class SelectorPerformanceAdminControllerTest {
                 .andExpect(jsonPath("$.data[0].confirmedOrderCount").value(8))
                 .andExpect(jsonPath("$.data[0].isExcellent").value(true))
                 .andExpect(jsonPath("$.data[0].excellentActivityType")
-                        .value("4기 활동 누적 1위 · 누적 매출 1,000만원 이상 달성"));
+                        .value("4기 활동 누적 1위 · 누적 매출 1,000만원 이상 달성"))
+                .andExpect(jsonPath("$.data[0].generationId").value(5))
+                .andExpect(jsonPath("$.data[0].category").value("BEAUTY"))
+                .andExpect(jsonPath("$.data[0].clickCount").value(200))
+                .andExpect(jsonPath("$.data[0].accruedCommissionAmount").value(375000));
 
-        verify(service).getSelectorPerformance("김", startDate, endDate);
+        verify(service).getSelectorPerformance("김", null, startDate, endDate);
+    }
+
+    @Test
+    void returnsTrendForDashboardPeriod() throws Exception {
+        LocalDate startDate = LocalDate.of(2026, 8, 1);
+        LocalDate endDate = LocalDate.of(2026, 8, 3);
+        when(service.getTrend(11L, startDate, endDate))
+                .thenReturn(new SelectorPerformanceTrendResponse(
+                        Bucket.DAY,
+                        startDate,
+                        endDate,
+                        List.of(new Point(startDate, new BigDecimal("150"), 2L))));
+
+        mockMvc.perform(get("/api/admin/selector-performance/trend")
+                        .param("generationId", "11")
+                        .param("startDate", "2026-08-01")
+                        .param("endDate", "2026-08-03"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bucket").value("DAY"))
+                .andExpect(jsonPath("$.data.points[0].confirmedOrderCount").value(2));
+
+        verify(service).getTrend(11L, startDate, endDate);
+    }
+
+    @Test
+    void returnsSummaryForActiveGenerations() throws Exception {
+        LocalDate startDate = LocalDate.of(2026, 8, 1);
+        LocalDate endDate = LocalDate.of(2026, 8, 31);
+        when(service.getSummary(null, startDate, endDate))
+                .thenReturn(new SelectorPerformanceSummaryResponse(
+                        new Universe(1L, List.of(11L), LocalDate.of(2026, 7, 1),
+                                LocalDate.of(2026, 7, 31)),
+                        new Kpis(
+                                new BigDecimal("200000"), 2L, 50L, new BigDecimal("4.00"),
+                                new BigDecimal("6000"), new BigDecimal("200000"),
+                                new BigDecimal("200000"),
+                                new BigDecimal("100000"), 1L, new BigDecimal("3000"),
+                                new BigDecimal("100000"),
+                                new BigDecimal("100.00"), new BigDecimal("100.00"),
+                                new BigDecimal("100.00"), new BigDecimal("100.00")),
+                        new Distribution(1L, 0L, new BigDecimal("100.00"), List.of()),
+                        List.of(),
+                        List.of(),
+                        new Watchlist(0L, 0L, 0L, 0L, 0L, 0L)));
+
+        mockMvc.perform(get("/api/admin/selector-performance/summary")
+                        .param("startDate", "2026-08-01")
+                        .param("endDate", "2026-08-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.universe.selectorCount").value(1))
+                .andExpect(jsonPath("$.data.kpis.totalSales").value(200000))
+                .andExpect(jsonPath("$.data.watchlist.noClicks").value(0));
+
+        verify(service).getSummary(null, startDate, endDate);
     }
 
     @Test

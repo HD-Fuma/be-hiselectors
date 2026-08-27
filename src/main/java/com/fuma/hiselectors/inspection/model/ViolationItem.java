@@ -74,8 +74,10 @@ public class ViolationItem extends BaseTimeEntity {
         return item;
     }
 
-    public void detectAgain(ContentVersion version, ViolationEvidence evidence) {
+    public void redetectForReview(ContentVersion version, ViolationEvidence evidence) {
         requireOpen();
+        status = ViolationStatus.PENDING;
+        resolvedContentVersionId = null;
         applyDetection(version, evidence);
     }
 
@@ -113,6 +115,16 @@ public class ViolationItem extends BaseTimeEntity {
             throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
         }
         status = ViolationStatus.DISMISSED;
+    }
+
+    public boolean resetInspectionDecision() {
+        if (status != ViolationStatus.VIOLATION_CONFIRMED
+                && status != ViolationStatus.DISMISSED
+                && status != ViolationStatus.EDIT_REQUESTED) {
+            return false;
+        }
+        status = ViolationStatus.PENDING;
+        return true;
     }
 
     public boolean isOpen() {

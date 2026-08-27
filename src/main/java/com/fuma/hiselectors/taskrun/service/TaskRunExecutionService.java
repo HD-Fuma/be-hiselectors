@@ -50,11 +50,13 @@ public class TaskRunExecutionService {
         TaskStartResult result = taskRunService.start(command);
         if (result instanceof TaskStartResult.Created created) {
             UUID runId = created.run().getRunId();
+            progressStream.publishChanged(runId);
             try {
                 executor.execute(() -> execute(runId, task));
             } catch (RejectedExecutionException exception) {
                 TaskRunTerminalSnapshot snapshot = taskRunService.failQueued(
                         runId, EXECUTOR_REJECTED, exception.getMessage());
+                progressStream.publishChanged(runId);
                 logFailure(snapshot);
             }
         }
@@ -65,6 +67,7 @@ public class TaskRunExecutionService {
         TaskLease lease;
         try {
             lease = new TaskLease(runId, taskRunService.markRunning(runId));
+            progressStream.publishChanged(runId);
         } catch (BusinessException exception) {
             log.info("Task run {} could not start: {}", runId, exception.getErrorCode());
             return;
@@ -89,6 +92,7 @@ public class TaskRunExecutionService {
         }
 
         if (terminalSnapshot != null) {
+            progressStream.publishChanged(runId);
             logFailure(terminalSnapshot);
             notifyTerminal(task, new TaskTerminalContext(runId, terminalSnapshot.status()));
         }
