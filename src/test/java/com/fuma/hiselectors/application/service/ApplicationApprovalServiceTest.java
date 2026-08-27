@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
@@ -31,6 +32,8 @@ import com.fuma.hiselectors.user.repository.UserRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -64,6 +67,7 @@ class ApplicationApprovalServiceTest {
                 .snsAccountId("UC-approved")
                 .profileUrl("https://www.youtube.com/channel/UC-approved")
                 .followerCount(12_345L)
+                .alarmYn(true)
                 .status(ApplicationStatus.PENDING)
                 .build();
         application.updateProfileImageUrl("https://cdn.example.com/profile.jpg");
@@ -181,6 +185,24 @@ class ApplicationApprovalServiceTest {
         verify(membershipRepository, never()).save(any());
         verify(snsAccountRepository, never()).findBySelectorsId(any());
         verify(snsAccountRepository, never()).save(any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ApplicationStatus.class, names = {"APPROVED", "REJECTED"})
+    void notificationOptOutDoesNotBlockDecision(ApplicationStatus status) {
+        ReflectionTestUtils.setField(application, "alarmYn", false);
+        Selectors selectors = Selectors.builder()
+                .userId(7L)
+                .selectorsRoleId(Selectors.INACTIVE_ROLE)
+                .build();
+        ReflectionTestUtils.setField(selectors, "id", 9L);
+        when(selectorsRepository.findByUserIdForUpdate(7L)).thenReturn(Optional.of(selectors));
+
+        var response = service.updateStatus(
+                31L, new ApplicationStatusUpdateRequest(status), "admin");
+
+        assertThat(response.status()).isEqualTo(status);
+        verifyNoInteractions(notificationService);
     }
 
     @Test
