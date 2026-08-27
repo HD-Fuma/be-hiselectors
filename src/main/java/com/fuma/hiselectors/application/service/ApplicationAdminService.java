@@ -81,7 +81,6 @@ public class ApplicationAdminService {
                 r.getStrength(),
                 r.getCautions(),
                 r.getRisks(),
-                r.getBrandHistory(),
                 r.getRepresentativeContentUrl(),
                 r.getRepresentativeContentType(),
                 r.getRepresentativeViewCount(),

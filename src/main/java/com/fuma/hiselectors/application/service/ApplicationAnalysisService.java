@@ -8,6 +8,7 @@ import com.fuma.hiselectors.application.repository.ApplicationRepository;
 import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.notification.service.NotificationRecorder;
 import com.fuma.hiselectors.stt.ContentAddRequest;
 import com.fuma.hiselectors.stt.CreatorEvaluationService;
 import com.fuma.hiselectors.stt.InstagramSttClient;
@@ -34,11 +35,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ApplicationAnalysisService {
 
     private static final int MAX_YOUTUBE_SHORTS = 3;
+    private static final String QUANT_START = "APP_QUANT_START";
+    private static final String QUAL_START = "APP_QUAL_START";
+    private static final String QUAL_DONE = "APP_QUAL_DONE";
 
     private final ApplicationMediaRepository mediaRepository;
     private final ApplicationRepository applicationRepository;
     private final CreatorEvaluationService evaluationService;
     private final InstagramSttClient instagramSttClient;
+    private final NotificationRecorder notificationRecorder;
     private final TransactionTemplate transactionTemplate;
 
     /** 미디어 전부 분석·적재 → 취합·리포트 저장 → 분석 상태 DONE. */
@@ -56,6 +61,8 @@ public class ApplicationAnalysisService {
         if (hasInstagram && !instagramSttClient.isHealthy()) {
             throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
         }
+
+        notifyAnalysisFlow(QUANT_START, applicationId, "정량 분석을 시작했습니다.");
 
         // 비용이 큰 YouTube 영상 분석은 Shorts 중 조회수 상위 3건만 수행한다.
         Set<String> youtubeTargets = topYoutubeVideoIds(media);
@@ -87,6 +94,7 @@ public class ApplicationAnalysisService {
         }
 
         // 취합 리포트 생성(Gemini) — 트랜잭션 밖.
+        notifyAnalysisFlow(QUAL_START, applicationId, "정성평가를 시작했습니다.");
         ApplicationReport report = evaluationService.buildReport(applicationId);
 
         // 리포트 저장 + 콘텐츠 파기 + 분석완료(DONE)를 한 트랜잭션으로.
@@ -96,6 +104,17 @@ public class ApplicationAnalysisService {
             applicationRepository.findById(applicationId)
                     .ifPresent(a -> a.completeAnalysis(LocalDateTime.now()));
         });
+        notifyAnalysisFlow(QUAL_DONE, applicationId, "정성평가가 완료되었습니다.");
+    }
+
+    private void notifyAnalysisFlow(String purposeCode, Long applicationId, String message) {
+        try {
+            notificationRecorder.recordInAppOnce(
+                    purposeCode, applicationId, "지원자 #" + applicationId + " " + message);
+        } catch (RuntimeException e) {
+            log.warn("지원자 분석 알림 기록 실패: applicationId={}, purposeCode={}",
+                    applicationId, purposeCode, e);
+        }
     }
 
     private Set<String> topYoutubeVideoIds(List<ApplicationMedia> media) {

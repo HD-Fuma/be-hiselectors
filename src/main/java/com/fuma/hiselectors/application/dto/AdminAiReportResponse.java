@@ -13,7 +13,6 @@ public record AdminAiReportResponse(
         String strength,
         String cautions,         // 유의점(브랜드 협업 시 조언)
         String risks,            // 위험요소(정치/광고/건강/선정성/저작권/사행성 + 욕설확정)
-        String brandHistory,     // 언급된 협업/협찬 브랜드
         String representativeContentUrl,   // 대표 콘텐츠(조회수 최고) 링크
         String representativeContentType,  // REELS/VIDEO 등
         Long representativeViewCount,      // 대표 선정 근거(조회수)
