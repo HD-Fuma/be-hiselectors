@@ -21,6 +21,12 @@ _PAGE = Path(__file__).with_name("test.html")
 class AnalyzeRequest(BaseModel):
     text: str
 
+
+class RankRequest(BaseModel):
+    texts: list[str]
+    query: str
+    relevance_weight: float = 0.7
+
 class ReelRequest(BaseModel):
     media_url: str | None = None       # Graph API media_url(공식 API) — CDN 직다운
     thumbnail_url: str | None = None   # media_url 없을 때(저작권 릴스) 폴백
@@ -35,6 +41,11 @@ def health() -> dict:
 @app.post("/analyze")
 def do_analyze(req: AnalyzeRequest) -> dict:
     return engine.analyze(req.text)
+
+
+@app.post("/rank")
+def rank(req: RankRequest) -> dict:
+    return engine.rank_segments(req.texts, req.query, req.relevance_weight)
 
 
 @app.post("/reel")

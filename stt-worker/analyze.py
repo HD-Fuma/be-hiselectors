@@ -99,6 +99,30 @@ def analyze(text: str) -> dict:
     }
 
 
+def rank_segments(texts: list[str], query: str, relevance_weight: float = 0.7) -> dict:
+    """평가 목표 관련도와 선택 문장 간 의미 중복을 함께 반영한 MMR 순서."""
+    if not texts:
+        return {"order": [], "relevance": []}
+    weight = min(1.0, max(0.0, relevance_weight))
+    embeddings = _model().encode(texts, convert_to_tensor=True, normalize_embeddings=True)
+    query_embedding = _model().encode(query, convert_to_tensor=True, normalize_embeddings=True)
+    relevance = util.cos_sim(query_embedding, embeddings)[0]
+    similarities = util.cos_sim(embeddings, embeddings)
+    order: list[int] = []
+    max_redundancy = relevance.new_zeros(len(texts))
+    for _ in texts:
+        scores = weight * relevance - (1.0 - weight) * max_redundancy
+        if order:
+            scores[order] = -float("inf")
+        selected = int(scores.argmax())
+        order.append(selected)
+        max_redundancy = max_redundancy.maximum(similarities[:, selected])
+    return {
+        "order": order,
+        "relevance": [round(float(score), 6) for score in relevance],
+    }
+
+
 def _selfcheck() -> None:
     beauty = analyze("오늘은 신상 쿠션 파운데이션 발색이랑 지속력을 리뷰해볼게요. 언박싱부터 실사용까지.")
     assert beauty["category"]["label"] == "BEAUTY", beauty["category"]
@@ -122,6 +146,12 @@ def _selfcheck() -> None:
     print("noise-filtered:", noise)
     assert not any(c in noise for c in ["ROCKPINK", "CosmeHongKong", "0004", "GV16", "감사"]), noise
     assert "김치말이밥" in noise, noise
+
+    ranked = rank_segments(
+        ["오늘 날씨가 좋습니다", "브랜드 협찬 제품의 부작용을 주의하세요", "평범한 일상입니다"],
+        "브랜드 협찬과 건강 위험을 평가",
+    )
+    assert ranked["order"][0] == 1, ranked
 
     print("ok:", beauty["keywords"])
 
