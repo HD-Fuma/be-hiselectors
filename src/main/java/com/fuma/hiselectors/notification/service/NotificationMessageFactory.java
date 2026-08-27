@@ -9,6 +9,7 @@ public class NotificationMessageFactory {
 
     public MessageText create(NotificationType type, String name, String detail) {
         return switch (type) {
+            case APPLICATION_SUBMITTED -> applicationSubmitted(name);
             case SELECTION_APPROVED -> selectionApproved(name);
             case SELECTION_REJECTED -> selectionRejected(name, detail);
             case CONTENT_EDIT_REQUEST -> contentEditRequest(name, detail);
@@ -30,6 +31,17 @@ public class NotificationMessageFactory {
             case WEEKLY_SALES_GROWTH -> weeklySalesGrowth(name, detail);
             case ACTIVITY_GUIDE -> activityGuide(name, detail);
         };
+    }
+
+    private MessageText applicationSubmitted(String name) {
+        return new MessageText(
+                "[셀렉터스 지원 접수 안내]",
+                name + "님, 셀렉터스 지원이 정상적으로 접수되었습니다.\n\n"
+                        + "제출해 주신 내용을 바탕으로 심사가 진행되며, "
+                        + "결과는 다시 안내드리겠습니다.\n\n"
+                        + "셀렉터스에 지원해 주셔서 감사합니다.",
+                "더현대Hi 바로가기"
+        );
     }
 
     private MessageText selectionApproved(String name) {

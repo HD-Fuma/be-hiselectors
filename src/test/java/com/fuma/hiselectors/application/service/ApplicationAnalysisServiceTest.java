@@ -18,6 +18,7 @@ import com.fuma.hiselectors.content.model.ContentType;
 import com.fuma.hiselectors.stt.ContentAddRequest;
 import com.fuma.hiselectors.stt.CreatorEvaluationService;
 import com.fuma.hiselectors.exception.BusinessException;
+import com.fuma.hiselectors.notification.service.NotificationRecorder;
 import com.fuma.hiselectors.stt.InstagramSttClient;
 import java.util.List;
 import java.util.Optional;
@@ -32,10 +33,11 @@ class ApplicationAnalysisServiceTest {
     private final ApplicationRepository applicationRepository = mock(ApplicationRepository.class);
     private final CreatorEvaluationService evaluationService = mock(CreatorEvaluationService.class);
     private final InstagramSttClient instagramSttClient = mock(InstagramSttClient.class);
+    private final NotificationRecorder notificationRecorder = mock(NotificationRecorder.class);
     private final TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
     private final ApplicationAnalysisService service = new ApplicationAnalysisService(
             mediaRepository, applicationRepository, evaluationService, instagramSttClient,
-            transactionTemplate);
+            notificationRecorder, transactionTemplate);
 
     private ApplicationMedia media(
             SnsPlatform snsCode,
@@ -78,6 +80,12 @@ class ApplicationAnalysisServiceTest {
 
         verify(evaluationService).addYoutubeContent(1L, "vid1");
         verify(evaluationService, never()).addContent(any(), any());
+        verify(notificationRecorder).recordInAppOnce(
+                "APP_QUANT_START", 1L, "지원자 #1 정량 분석을 시작했습니다.");
+        verify(notificationRecorder).recordInAppOnce(
+                "APP_QUAL_START", 1L, "지원자 #1 정성평가를 시작했습니다.");
+        verify(notificationRecorder).recordInAppOnce(
+                "APP_QUAL_DONE", 1L, "지원자 #1 정성평가가 완료되었습니다.");
     }
 
     @Test

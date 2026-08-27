@@ -19,6 +19,25 @@ public class NotificationRecorder {
     private final NotificationRepository notificationRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordInAppOnce(String purposeCode, Long referenceId, String body) {
+        if (notificationRepository.countByNotificationPurposeCodeAndReferenceId(
+                purposeCode, referenceId) > 0) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Notification notification = Notification.builder()
+                .notificationPurposeCode(purposeCode)
+                .referenceId(referenceId)
+                .notificationChannel(NotificationChannel.IN_APP)
+                .receiver("ADMIN")
+                .body(body)
+                .requestAt(now)
+                .build();
+        notification.markSent(now);
+        notificationRepository.save(notification);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long createRequested(String purposeCode, Long referenceId,
                                 String receiver, String body) {
         return createRequested(purposeCode, referenceId, receiver, body,

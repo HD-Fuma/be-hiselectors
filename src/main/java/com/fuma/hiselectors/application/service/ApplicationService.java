@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,7 @@ public class ApplicationService {
     private final List<ContentFetcher> contentFetchers;
     private final OAuthStateProvider oAuthStateProvider;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Transactional
@@ -64,9 +66,9 @@ public class ApplicationService {
 
         String token = UUID.randomUUID().toString().replace("-", "");
         User user = userRepository.save(User.builder()
-                .hiId("test_" + token.substring(0, 15))
+                .hiId(token.substring(0, 20))
                 .hiPassword(passwordEncoder.encode(UUID.randomUUID().toString()))
-                .name(clip("[테스트] " + account.accountId(), 50))
+                .name(clip(account.accountId(), 50))
                 .alimtalk("N")
                 .build());
         Application application = Application.builder()
@@ -135,7 +137,12 @@ public class ApplicationService {
                 .build();
 
         try {
-            return ApplicationResponse.from(applicationRepository.save(application));
+            Application saved = applicationRepository.save(application);
+            if (request.alarmAgreed()) {
+                eventPublisher.publishEvent(new ApplicationSubmittedEvent(
+                        user.getId(), saved.getId(), user.getName()));
+            }
+            return ApplicationResponse.from(saved);
         } catch (DataIntegrityViolationException e) {
             // existsBy 체크와 save 사이 경쟁 상태: 유니크 제약 위반을 409로 변환
             throw new BusinessException(ErrorCode.DUPLICATE_APPLICATION);

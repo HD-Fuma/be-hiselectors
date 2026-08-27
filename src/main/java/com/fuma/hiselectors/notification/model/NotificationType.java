@@ -2,6 +2,7 @@ package com.fuma.hiselectors.notification.model;
 
 public enum NotificationType {
     ACTIVITY_GUIDE,
+    APPLICATION_SUBMITTED,
     CONTENT_EDIT_DONE,
     CONTENT_EDIT_REQUEST,
     DEAD_LINK_NOTICE,
