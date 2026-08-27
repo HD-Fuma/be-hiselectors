@@ -91,6 +91,8 @@ class ContentInspectionConfirmationServiceTest {
         assertThat(response.updatedCount()).isEqualTo(2);
         assertThat(first.getStatus()).isEqualTo(ViolationStatus.VIOLATION_CONFIRMED);
         assertThat(second.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
+        assertThat(fixture.version.getInspectionDecision())
+                .isEqualTo(ContentInspectionDecision.REJECTED);
         verify(fixture.penaltyService).activateIfAbsent(
                 5L, 100L, 121L, "근거", "admin");
         verify(fixture.penaltyService).releaseIfEligible(5L);
@@ -98,7 +100,7 @@ class ContentInspectionConfirmationServiceTest {
                 ArgumentCaptor.forClass(ContentViolationConfirmedEvent.class);
         verify(fixture.eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue()).isEqualTo(
-                new ContentViolationConfirmedEvent("admin", 10L, 5L));
+                new ContentViolationConfirmedEvent("admin", 10L, 5L, List.of(21L)));
     }
 
     @Test
@@ -116,7 +118,7 @@ class ContentInspectionConfirmationServiceTest {
         verify(fixture.penaltyService).activateIfAbsent(
                 5L, 100L, 121L, "근거", "admin");
         verify(fixture.eventPublisher).publishEvent(
-                new ContentViolationConfirmedEvent("admin", 10L, 5L));
+                new ContentViolationConfirmedEvent("admin", 10L, 5L, List.of(21L)));
     }
 
     @Test
@@ -182,6 +184,37 @@ class ContentInspectionConfirmationServiceTest {
     }
 
     @Test
+    void processesRemainingPendingItemsAfterIndividualViolationConfirmation() {
+        ViolationItem confirmed = item(21L);
+        ViolationItem pending = item(22L);
+        Fixture fixture = fixture(List.of(confirmed, pending));
+        confirmed.confirm();
+        fixture.version.confirmInspection(ContentInspectionDecision.REJECTED);
+
+        var response = fixture.service.confirm(10L, 100L,
+                request(ContentInspectionDecision.REJECTED, List.of(
+                        target(22L, ViolationStatus.DISMISSED))), "admin");
+
+        assertThat(response.updatedCount()).isEqualTo(1);
+        assertThat(confirmed.getStatus()).isEqualTo(ViolationStatus.VIOLATION_CONFIRMED);
+        assertThat(pending.getStatus()).isEqualTo(ViolationStatus.DISMISSED);
+        verify(fixture.eventPublisher, never()).publishEvent(
+                org.mockito.ArgumentMatchers.any(ContentViolationConfirmedEvent.class));
+    }
+
+    @Test
+    void rejectsInspectionDecisionForHistoricalVersion() {
+        Fixture fixture = fixture(List.of());
+        ReflectionTestUtils.setField(fixture.content, "lastVersionNo", 2L);
+
+        assertThatThrownBy(() -> fixture.service.confirm(10L, 100L,
+                request(ContentInspectionDecision.APPROVED, List.of()), "admin"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.CONTENT_VERSION_NOT_FOUND));
+    }
+
+    @Test
     void rejectsUnsupportedPendingTargetStatus() {
         Fixture fixture = fixture(List.of(item(21L)));
 
@@ -215,8 +248,8 @@ class ContentInspectionConfirmationServiceTest {
         ContentReport report = ContentReport.create(
                 100L, ContentReportData.empty(), 7L);
 
-        when(contents.findById(10L)).thenReturn(Optional.of(content));
-        when(contents.findById(11L)).thenReturn(Optional.of(content));
+        when(contents.findByIdForUpdate(10L)).thenReturn(Optional.of(content));
+        when(contents.findByIdForUpdate(11L)).thenReturn(Optional.of(content));
         when(versions.findByIdForUpdate(100L)).thenReturn(Optional.of(version));
         when(reports.findFirstByContentVersionIdOrderByIdDesc(100L))
                 .thenReturn(Optional.of(report));
@@ -232,9 +265,10 @@ class ContentInspectionConfirmationServiceTest {
                     .thenReturn(items);
         }
         return new Fixture(new ContentInspectionConfirmationService(
-                contents, versions, reports, histories, violations, penaltyService,
+                contents, versions, reports, histories, violations,
+                new ContentViolationDecisionProcessor(penaltyService), penaltyService,
                 eventPublisher),
-                version, penaltyService, eventPublisher);
+                content, version, penaltyService, eventPublisher);
     }
 
     private ViolationItem item(Long id) {
@@ -268,6 +302,7 @@ class ContentInspectionConfirmationServiceTest {
 
     private record Fixture(
             ContentInspectionConfirmationService service,
+            Content content,
             ContentVersion version,
             PenaltyService penaltyService,
             ApplicationEventPublisher eventPublisher) {

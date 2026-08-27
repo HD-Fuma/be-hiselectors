@@ -11,17 +11,23 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
+import com.fuma.hiselectors.content.dto.ContentInspectionListType;
 import com.fuma.hiselectors.content.dto.ContentInspectionQueryRow;
 import com.fuma.hiselectors.content.model.ContentMedia;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
+import com.fuma.hiselectors.content.model.ContentVersionStatus;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -29,6 +35,11 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 class ContentInspectionQueryServiceTest {
+
+    private static final Set<ViolationStatus> OPEN_STATUSES = Set.of(
+            ViolationStatus.PENDING,
+            ViolationStatus.VIOLATION_CONFIRMED,
+            ViolationStatus.EDIT_REQUESTED);
 
     private GenerationService generationService;
     private ContentRepository contentRepository;
@@ -59,7 +70,11 @@ class ContentInspectionQueryServiceTest {
                 101L, 2L, null, null, null, versionStoredAt,
                 "selectors-account", "https://cdn.example.com/profile.jpg");
         PageRequest pageable = PageRequest.of(0, 20);
-        when(contentRepository.findInspectionRowsByGenerationId(10L, pageable))
+        when(contentRepository.findInspectionRowsByGenerationId(
+                10L, ContentInspectionListType.ALL.name(), OPEN_STATUSES,
+                ContentVersionStatus.COMPLETED, ViolationStatus.PENDING,
+                ContentVersionCreationReason.SOURCE_CHANGE,
+                ContentInspectionDecision.REJECTED, pageable))
                 .thenReturn(new PageImpl<>(List.of(row), pageable, 1));
         when(mediaRepository
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
@@ -72,7 +87,7 @@ class ContentInspectionQueryServiceTest {
                         media(101L, MediaType.VIDEO, null, "video-1", 3, null)));
 
         Page<ContentInspectionListItemResponse> result =
-                service.getCurrentGenerationContents(0, 20);
+                service.getCurrentGenerationContents(0, 20, ContentInspectionListType.ALL);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).singleElement().satisfies(item -> {
@@ -106,7 +121,11 @@ class ContentInspectionQueryServiceTest {
                             tuple(MediaType.VIDEO, null, "video-1", 3));
         });
         verify(generationService).getCurrentActivity();
-        verify(contentRepository).findInspectionRowsByGenerationId(10L, pageable);
+        verify(contentRepository).findInspectionRowsByGenerationId(
+                10L, ContentInspectionListType.ALL.name(), OPEN_STATUSES,
+                ContentVersionStatus.COMPLETED, ViolationStatus.PENDING,
+                ContentVersionCreationReason.SOURCE_CHANGE,
+                ContentInspectionDecision.REJECTED, pageable);
         verify(mediaRepository)
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
                         eq(List.of(101L)));
@@ -119,15 +138,23 @@ class ContentInspectionQueryServiceTest {
         when(generation.getId()).thenReturn(10L);
         when(generationService.getCurrentActivity()).thenReturn(generation);
         PageRequest pageable = PageRequest.of(0, 20);
-        when(contentRepository.findInspectionRowsByGenerationId(10L, pageable))
+        when(contentRepository.findInspectionRowsByGenerationId(
+                10L, ContentInspectionListType.ALL.name(), OPEN_STATUSES,
+                ContentVersionStatus.COMPLETED, ViolationStatus.PENDING,
+                ContentVersionCreationReason.SOURCE_CHANGE,
+                ContentInspectionDecision.REJECTED, pageable))
                 .thenReturn(Page.empty(pageable));
 
         Page<ContentInspectionListItemResponse> result =
-                service.getCurrentGenerationContents(0, 20);
+                service.getCurrentGenerationContents(0, 20, ContentInspectionListType.ALL);
 
         assertThat(result).isEmpty();
         verify(generationService).getCurrentActivity();
-        verify(contentRepository).findInspectionRowsByGenerationId(10L, pageable);
+        verify(contentRepository).findInspectionRowsByGenerationId(
+                10L, ContentInspectionListType.ALL.name(), OPEN_STATUSES,
+                ContentVersionStatus.COMPLETED, ViolationStatus.PENDING,
+                ContentVersionCreationReason.SOURCE_CHANGE,
+                ContentInspectionDecision.REJECTED, pageable);
         verify(mediaRepository, never())
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
                         org.mockito.ArgumentMatchers.anyCollection());

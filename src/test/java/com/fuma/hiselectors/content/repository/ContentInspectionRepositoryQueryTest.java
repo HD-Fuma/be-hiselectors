@@ -4,8 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.content.dto.ContentInspectionQueryRow;
+import com.fuma.hiselectors.content.dto.ContentInspectionListType;
 import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
+import com.fuma.hiselectors.content.model.ContentVersionStatus;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
+import com.fuma.hiselectors.inspection.model.ViolationItem;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
 import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
@@ -52,6 +58,7 @@ class ContentInspectionRepositoryQueryTest {
                         .addAnnotatedClass(SelectorsSnsAccount.class)
                         .addAnnotatedClass(Content.class)
                         .addAnnotatedClass(ContentVersion.class)
+                        .addAnnotatedClass(ViolationItem.class)
                         .buildMetadata()
                         .buildSessionFactory()) {
                     EntityManager sharedEntityManager = SharedEntityManagerCreator
@@ -59,36 +66,58 @@ class ContentInspectionRepositoryQueryTest {
                     ContentRepository repository = new JpaRepositoryFactory(sharedEntityManager)
                             .getRepository(ContentRepository.class);
 
-                    Page<ContentInspectionQueryRow> firstPage = repository
-                            .findInspectionRowsByGenerationId(10L, PageRequest.of(0, 2));
-
+                    Page<ContentInspectionQueryRow> firstPage = find(
+                            repository, ContentInspectionListType.ALL, 0, 2);
                     assertThat(firstPage.getTotalElements()).isEqualTo(3);
                     assertThat(firstPage.getTotalPages()).isEqualTo(2);
                     assertThat(firstPage.getContent())
                             .extracting(ContentInspectionQueryRow::contentId)
-                            .containsExactly(60L, 20L);
-                    assertThat(firstPage.getContent().get(1)).satisfies(row -> {
-                        assertThat(row.latestVersionId()).isEqualTo(202L);
+                            .containsExactly(70L, 60L);
+                    assertThat(firstPage.getContent().getFirst()).satisfies(row -> {
+                        assertThat(row.latestVersionId()).isEqualTo(701L);
                         assertThat(row.latestVersionNo()).isEqualTo(1L);
-                        assertThat(row.accountId()).isEqualTo("active-instagram");
-                        assertThat(row.profileImageUrl())
-                                .isEqualTo("https://cdn.example.com/profile.jpg");
                     });
 
-                    Page<ContentInspectionQueryRow> secondPage = repository
-                            .findInspectionRowsByGenerationId(10L, PageRequest.of(1, 2));
+                    Page<ContentInspectionQueryRow> secondPage = find(
+                            repository, ContentInspectionListType.ALL, 1, 2);
                     assertThat(secondPage.getContent())
                             .extracting(ContentInspectionQueryRow::contentId)
-                            .containsExactly(10L);
-                    assertThat(secondPage.getContent().getFirst().latestVersionId())
-                            .isEqualTo(102L);
-                    assertThat(secondPage.getContent().getFirst().latestVersionNo())
-                            .isEqualTo(2L);
+                            .containsExactly(20L);
+
+                    assertThat(find(repository, ContentInspectionListType.NEW_DETECTED, 0, 20)
+                            .getContent()).extracting(ContentInspectionQueryRow::contentId)
+                            .containsExactly(20L);
+                    assertThat(find(
+                            repository, ContentInspectionListType.MODIFICATION_DETECTED, 0, 20)
+                            .getContent()).extracting(ContentInspectionQueryRow::contentId)
+                            .containsExactly(60L, 10L);
+                    assertThat(find(
+                            repository, ContentInspectionListType.VIOLATION_CONFIRMED, 0, 20)
+                            .getContent()).extracting(ContentInspectionQueryRow::contentId)
+                            .containsExactly(70L, 10L);
                 }
             } finally {
                 StandardServiceRegistryBuilder.destroy(serviceRegistry);
             }
         }
+    }
+
+    private Page<ContentInspectionQueryRow> find(
+            ContentRepository repository,
+            ContentInspectionListType tab,
+            int page,
+            int size) {
+        return repository.findInspectionRowsByGenerationId(
+                10L, tab.name(),
+                java.util.EnumSet.of(
+                        ViolationStatus.PENDING,
+                        ViolationStatus.VIOLATION_CONFIRMED,
+                        ViolationStatus.EDIT_REQUESTED),
+                ContentVersionStatus.COMPLETED,
+                ViolationStatus.PENDING,
+                ContentVersionCreationReason.SOURCE_CHANGE,
+                ContentInspectionDecision.REJECTED,
+                PageRequest.of(page, size));
     }
 
     private void createSchema(Connection connection) throws Exception {
@@ -100,10 +129,12 @@ class ContentInspectionRepositoryQueryTest {
                         generation_id bigint not null,
                         sns_code enum ('YOUTUBE', 'INSTAGRAM') not null,
                         sns_account_id varchar(200) not null,
+                        profile_url varchar(500),
+                        profile_image_url varchar(500),
                         follower_count bigint,
                         content_count bigint,
                         last_content_at timestamp,
-                        engagement_rate numeric(5, 2),
+                        engagement_rate numeric(8, 2),
                         alarm_yn boolean not null,
                         policy_agreed_at timestamp not null,
                         status enum ('PENDING', 'APPROVED', 'REJECTED') not null,
@@ -111,6 +142,10 @@ class ContentInspectionRepositoryQueryTest {
                         media_collection_retry_count integer not null,
                         media_collected_at timestamp,
                         media_collection_error varchar(500),
+                        analysis_status varchar(20) default 'PENDING' not null,
+                        analysis_retry_count integer default 0 not null,
+                        analyzed_at timestamp,
+                        analysis_error varchar(500),
                         created_at timestamp,
                         updated_at timestamp,
                         constraint uq_application_user_generation unique (user_id, generation_id)
@@ -124,6 +159,7 @@ class ContentInspectionRepositoryQueryTest {
                         selectors_role_id varchar(20) not null,
                         selectors_code varchar(20),
                         selectors_nickname varchar(20),
+                        category varchar(20),
                         is_deleted boolean not null,
                         created_at timestamp,
                         updated_at timestamp
@@ -134,6 +170,9 @@ class ContentInspectionRepositoryQueryTest {
                         selectors_generation_id bigint generated by default as identity primary key,
                         selectors_id bigint not null,
                         generation_id bigint not null,
+                        total_sales bigint default 0 not null,
+                        confirmed_purchase_count bigint default 0 not null,
+                        paid_commission_amount bigint default 0 not null,
                         created_at timestamp
                     )
                     """);
@@ -143,6 +182,7 @@ class ContentInspectionRepositoryQueryTest {
                         selectors_id bigint not null,
                         sns_code enum ('YOUTUBE', 'INSTAGRAM'),
                         account_id varchar(100),
+                        profile_url varchar(500),
                         follower_count bigint,
                         is_deleted boolean not null,
                         last_collected_at timestamp,
@@ -158,7 +198,9 @@ class ContentInspectionRepositoryQueryTest {
                         sns_code enum ('YOUTUBE', 'INSTAGRAM') not null,
                         sns_content_id varchar(200) not null,
                         content_url varchar(500) not null,
-                        content_type enum ('SHORT_FORM', 'LONG_FORM', 'SHORTS', 'FEED') not null,
+                        content_type enum (
+                            'SHORT_FORM', 'LONG_FORM', 'SHORTS', 'FEED', 'REELS', 'POST'
+                        ) not null,
                         last_version_no bigint not null,
                         is_deleted boolean not null,
                         created_at timestamp,
@@ -173,10 +215,29 @@ class ContentInspectionRepositoryQueryTest {
                         admin_id bigint,
                         version_no bigint not null,
                         content_hash varchar(64) not null,
+                        creation_reason varchar(30) not null,
                         created_at timestamp not null,
                         status varchar(20),
+                        inspection_decision varchar(20),
                         inspected_at timestamp,
                         constraint uq_content_version_content_no unique (content_id, version_no)
+                    )
+                    """);
+            statement.execute("""
+                    create table violation_item (
+                        violation_item_id bigint generated by default as identity primary key,
+                        content_id bigint not null,
+                        content_version_id bigint not null,
+                        last_detected_content_version_id bigint not null,
+                        resolved_content_version_id bigint,
+                        content_media_id bigint,
+                        violation_type_id bigint not null,
+                        evidence json not null,
+                        status varchar(30) not null,
+                        created_at timestamp,
+                        updated_at timestamp,
+                        constraint uq_violation_item_content_type
+                            unique (content_id, violation_type_id)
                     )
                     """);
         }
@@ -238,28 +299,65 @@ class ContentInspectionRepositoryQueryTest {
                             'https://youtube.com/watch?v=no-live-account', 'LONG_FORM', 1, false,
                             timestamp '2026-08-14 10:00:00'),
                         (60, 101, 'INSTAGRAM', 'tie-breaker',
-                            'https://instagram.com/p/tie-breaker', 'FEED', 1, false,
-                            timestamp '2026-08-11 10:00:00')
+                            'https://instagram.com/p/tie-breaker', 'FEED', 2, false,
+                            timestamp '2026-08-11 10:00:00'),
+                        (70, 101, 'INSTAGRAM', 'inspection-in-progress',
+                            'https://instagram.com/p/inspection-in-progress', 'FEED', 2, false,
+                            timestamp '2026-08-15 10:00:00')
                     """);
             statement.executeUpdate("""
                     insert into content_version (
-                        content_version_id, content_id, version_no, content_hash, created_at,
-                        status, inspected_at
+                        content_version_id, content_id, version_no, content_hash,
+                        creation_reason, created_at, status, inspection_decision, inspected_at
                     ) values
-                        (101, 10, 1, repeat('a', 64), timestamp '2026-08-10 11:00:00',
-                            null, null),
-                        (102, 10, 2, repeat('b', 64), timestamp '2026-08-12 11:00:00',
-                            'COMPLETED', timestamp '2026-08-12 12:00:00'),
-                        (202, 20, 1, repeat('c', 64), timestamp '2026-08-11 11:00:00',
-                            null, null),
-                        (302, 30, 1, repeat('d', 64), timestamp '2026-08-12 11:00:00',
-                            null, null),
-                        (402, 40, 1, repeat('e', 64), timestamp '2026-08-13 11:00:00',
-                            null, null),
-                        (502, 50, 1, repeat('f', 64), timestamp '2026-08-14 11:00:00',
-                            null, null),
-                        (602, 60, 1, repeat('0', 64), timestamp '2026-08-11 11:00:00',
-                            null, null)
+                        (101, 10, 1, repeat('a', 64), 'INITIAL',
+                            timestamp '2026-08-10 11:00:00', 'COMPLETED', 'REJECTED',
+                            timestamp '2026-08-10 12:00:00'),
+                        (102, 10, 2, repeat('b', 64), 'SOURCE_CHANGE',
+                            timestamp '2026-08-12 11:00:00', 'COMPLETED', 'APPROVED',
+                            timestamp '2026-08-12 12:00:00'),
+                        (202, 20, 1, repeat('c', 64), 'INITIAL',
+                            timestamp '2026-08-11 11:00:00', 'COMPLETED', null,
+                            timestamp '2026-08-11 12:00:00'),
+                        (302, 30, 1, repeat('d', 64), 'INITIAL',
+                            timestamp '2026-08-12 11:00:00', 'COMPLETED', null,
+                            timestamp '2026-08-12 12:00:00'),
+                        (402, 40, 1, repeat('e', 64), 'INITIAL',
+                            timestamp '2026-08-13 11:00:00', 'COMPLETED', null,
+                            timestamp '2026-08-13 12:00:00'),
+                        (502, 50, 1, repeat('f', 64), 'INITIAL',
+                            timestamp '2026-08-14 11:00:00', 'COMPLETED', null,
+                            timestamp '2026-08-14 12:00:00'),
+                        (601, 60, 1, repeat('0', 64), 'INITIAL',
+                            timestamp '2026-08-11 09:00:00', 'COMPLETED', 'APPROVED',
+                            timestamp '2026-08-11 09:30:00'),
+                        (602, 60, 2, repeat('1', 64), 'SOURCE_CHANGE',
+                            timestamp '2026-08-11 11:00:00', 'COMPLETED', null,
+                            timestamp '2026-08-11 12:00:00'),
+                        (701, 70, 1, repeat('2', 64), 'INITIAL',
+                            timestamp '2026-08-15 09:00:00', 'COMPLETED', 'REJECTED',
+                            timestamp '2026-08-15 09:30:00'),
+                        (702, 70, 2, repeat('3', 64), 'SOURCE_CHANGE',
+                            timestamp '2026-08-15 11:00:00', 'INSPECTING', null, null)
+                    """);
+            statement.executeUpdate("""
+                    insert into violation_item (
+                        violation_item_id, content_id, content_version_id,
+                        last_detected_content_version_id, resolved_content_version_id,
+                        violation_type_id, evidence, status
+                    ) values
+                        (1001, 10, 101, 101, 102, 1,
+                            json '{"reason":"resolved","confidence":0.9,"locations":[],"source":"AI"}',
+                            'RESOLVED'),
+                        (1002, 20, 202, 202, null, 2,
+                            json '{"reason":"new","confidence":0.9,"locations":[],"source":"AI"}',
+                            'PENDING'),
+                        (1003, 60, 602, 602, null, 3,
+                            json '{"reason":"modified","confidence":0.9,"locations":[],"source":"AI"}',
+                            'PENDING'),
+                        (1004, 70, 701, 701, null, 4,
+                            json '{"reason":"requested","confidence":0.9,"locations":[],"source":"AI"}',
+                            'EDIT_REQUESTED')
                     """);
         }
     }

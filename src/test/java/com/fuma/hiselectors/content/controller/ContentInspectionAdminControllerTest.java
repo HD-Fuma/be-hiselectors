@@ -13,6 +13,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.content.dto.ContentDetailResponse;
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
+import com.fuma.hiselectors.content.dto.ContentInspectionListType;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationResponse;
 import com.fuma.hiselectors.content.dto.ContentInspectionMediaResponse;
 import com.fuma.hiselectors.content.model.ContentType;
@@ -58,7 +59,7 @@ class ContentInspectionAdminControllerTest {
     @Test
     void returnsWrappedPageUsingDefaultPagination() throws Exception {
         ContentInspectionListItemResponse item = response();
-        when(service.getCurrentGenerationContents(0, 20))
+        when(service.getCurrentGenerationContents(0, 20, ContentInspectionListType.ALL))
                 .thenReturn(new PageImpl<>(
                         List.of(item), PageRequest.of(0, 20), 1));
 
@@ -75,12 +76,12 @@ class ContentInspectionAdminControllerTest {
                 .andExpect(jsonPath("$.data.totalElements").value(1))
                 .andExpect(jsonPath("$.data.size").value(20));
 
-        verify(service).getCurrentGenerationContents(0, 20);
+        verify(service).getCurrentGenerationContents(0, 20, ContentInspectionListType.ALL);
     }
 
     @Test
     void acceptsPageAndSizeButDoesNotExposeClientSorting() throws Exception {
-        when(service.getCurrentGenerationContents(2, 5))
+        when(service.getCurrentGenerationContents(2, 5, ContentInspectionListType.ALL))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(2, 5), 0));
 
         mockMvc.perform(get("/api/admin/contents")
@@ -89,7 +90,21 @@ class ContentInspectionAdminControllerTest {
                         .param("sort", "snsCode,asc"))
                 .andExpect(status().isOk());
 
-        verify(service).getCurrentGenerationContents(2, 5);
+        verify(service).getCurrentGenerationContents(2, 5, ContentInspectionListType.ALL);
+    }
+
+    @Test
+    void passesRequestedInspectionTabToQueryService() throws Exception {
+        when(service.getCurrentGenerationContents(
+                0, 20, ContentInspectionListType.MODIFICATION_DETECTED))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/admin/contents")
+                        .param("tab", "MODIFICATION_DETECTED"))
+                .andExpect(status().isOk());
+
+        verify(service).getCurrentGenerationContents(
+                0, 20, ContentInspectionListType.MODIFICATION_DETECTED);
     }
 
     @Test

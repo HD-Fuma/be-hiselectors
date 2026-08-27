@@ -1,6 +1,7 @@
 package com.fuma.hiselectors.content.controller;
 
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
+import com.fuma.hiselectors.content.dto.ContentInspectionListType;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationRequest;
 import com.fuma.hiselectors.content.dto.ContentInspectionConfirmationResponse;
 import com.fuma.hiselectors.content.dto.ContentDetailResponse;
@@ -54,9 +55,10 @@ public class ContentInspectionAdminController {
             @Min(value = 0, message = "page는 0 이상이어야 합니다.") int page,
             @RequestParam(defaultValue = "20")
             @Min(value = 1, message = "size는 1 이상이어야 합니다.")
-            @Max(value = 100, message = "size는 100 이하여야 합니다.") int size) {
+            @Max(value = 100, message = "size는 100 이하여야 합니다.") int size,
+            @RequestParam(defaultValue = "ALL") ContentInspectionListType tab) {
         return ResponseEntity.ok(
-                contentInspectionQueryService.getCurrentGenerationContents(page, size));
+                contentInspectionQueryService.getCurrentGenerationContents(page, size, tab));
     }
 
     @Operation(summary = "콘텐츠 최신 버전 상세 조회",

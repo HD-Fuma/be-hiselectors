@@ -5,6 +5,7 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
@@ -203,6 +204,9 @@ public class ContentInspectionExecutionService {
         reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
+        if (analysis.violations().isEmpty()) {
+            version.confirmInspection(ContentInspectionDecision.APPROVED);
+        }
     }
 
     private InspectionResult toResult(
