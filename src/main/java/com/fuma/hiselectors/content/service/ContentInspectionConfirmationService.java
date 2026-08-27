@@ -41,6 +41,7 @@ public class ContentInspectionConfirmationService {
     private final ContentReportRepository contentReportRepository;
     private final ViolationEvidenceHistoryRepository historyRepository;
     private final ViolationItemRepository violationItemRepository;
+    private final ContentViolationDecisionProcessor decisionProcessor;
     private final PenaltyService penaltyService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -51,8 +52,10 @@ public class ContentInspectionConfirmationService {
             ContentInspectionConfirmationRequest request,
             String adminLoginId) {
         Content content = requireContent(contentId);
-        ContentVersion version = requireOwnedVersionForUpdate(contentId, contentVersionId);
-        if (version.getInspectionDecision() != null) {
+        ContentVersion version = requireCurrentVersionForUpdate(
+                contentId, content, contentVersionId);
+        if (version.getInspectionDecision() != null
+                && version.getInspectionDecision() != request.decision()) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
         }
 
@@ -62,6 +65,9 @@ public class ContentInspectionConfirmationService {
                 .filter(item -> item.getStatus() == ViolationStatus.PENDING)
                 .toList();
 
+        if (version.getInspectionDecision() != null && pendingItems.isEmpty()) {
+            throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
+        }
         if (!versionItems.isEmpty() && pendingItems.isEmpty()) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
         }
@@ -73,38 +79,50 @@ public class ContentInspectionConfirmationService {
         if (!pendingIds.equals(requestedStatuses.keySet())) {
             throw invalid("현재 PENDING 위반 항목 전체를 중복 없이 제출해야 합니다.");
         }
-        validateDecision(request.decision(), requestedStatuses.values());
+        boolean previouslyConfirmed = version.getInspectionDecision()
+                == ContentInspectionDecision.REJECTED
+                || versionItems.stream().anyMatch(item ->
+                        item.getStatus() == ViolationStatus.VIOLATION_CONFIRMED
+                                || item.getStatus() == ViolationStatus.EDIT_REQUESTED);
+        validateDecision(
+                request.decision(), requestedStatuses.values(), previouslyConfirmed);
 
         for (ViolationItem item : pendingItems) {
             ViolationStatus target = requestedStatuses.get(item.getId());
             if (target == ViolationStatus.VIOLATION_CONFIRMED) {
-                item.confirm();
-                penaltyService.activateIfAbsent(
-                        content.getSelectorsId(), contentVersionId,
-                        item.getViolationTypeId(), violationReason(item), adminLoginId);
+                decisionProcessor.confirm(content, version, item, adminLoginId);
             } else {
-                item.dismiss();
+                decisionProcessor.dismiss(item);
             }
         }
-        version.confirmInspection(request.decision());
+        if (request.decision() == ContentInspectionDecision.APPROVED) {
+            decisionProcessor.approve(version);
+        }
         violationItemRepository.flush();
         penaltyService.releaseIfEligible(content.getSelectorsId());
-        if (requestedStatuses.containsValue(ViolationStatus.VIOLATION_CONFIRMED)) {
+        List<Long> confirmedIds = pendingItems.stream()
+                .filter(item -> item.getStatus() == ViolationStatus.VIOLATION_CONFIRMED)
+                .map(ViolationItem::getId)
+                .toList();
+        if (!confirmedIds.isEmpty()) {
             eventPublisher.publishEvent(new ContentViolationConfirmedEvent(
-                    adminLoginId, contentId, content.getSelectorsId()));
+                    adminLoginId, contentId, content.getSelectorsId(), confirmedIds));
         }
         return new ContentInspectionConfirmationResponse(pendingItems.size());
     }
 
     private Content requireContent(Long contentId) {
-        return contentRepository.findById(contentId)
+        return contentRepository.findByIdForUpdate(contentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
     }
 
-    private ContentVersion requireOwnedVersionForUpdate(Long contentId, Long contentVersionId) {
+    private ContentVersion requireCurrentVersionForUpdate(
+            Long requestedContentId, Content content, Long contentVersionId) {
         ContentVersion version = contentVersionRepository.findByIdForUpdate(contentVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        if (!contentId.equals(version.getContentId())) {
+        if (!requestedContentId.equals(content.getId())
+                || !content.getId().equals(version.getContentId())
+                || !content.getLastVersionNo().equals(version.getVersionNo())) {
             throw new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND);
         }
         return version;
@@ -154,22 +172,16 @@ public class ContentInspectionConfirmationService {
 
     private void validateDecision(
             ContentInspectionDecision decision,
-            java.util.Collection<ViolationStatus> statuses) {
-        boolean hasConfirmed = statuses.contains(ViolationStatus.VIOLATION_CONFIRMED);
+            java.util.Collection<ViolationStatus> statuses,
+            boolean previouslyConfirmed) {
+        boolean hasConfirmed = previouslyConfirmed
+                || statuses.contains(ViolationStatus.VIOLATION_CONFIRMED);
         if (decision == ContentInspectionDecision.APPROVED && hasConfirmed) {
             throw invalid("APPROVED는 모든 위반 항목이 DISMISSED여야 합니다.");
         }
         if (decision == ContentInspectionDecision.REJECTED && !hasConfirmed) {
             throw invalid("REJECTED는 VIOLATION_CONFIRMED 항목이 하나 이상 필요합니다.");
         }
-    }
-
-    private String violationReason(ViolationItem item) {
-        if (item.getEvidence() == null || item.getEvidence().reason() == null
-                || item.getEvidence().reason().isBlank()) {
-            return "수정이 필요한 위반 사항";
-        }
-        return item.getEvidence().reason();
     }
 
     private BusinessException invalid(String message) {

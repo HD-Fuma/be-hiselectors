@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.service.NotificationService;
+import com.fuma.hiselectors.inspection.service.ViolationConfirmationWriter;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import java.util.Optional;
@@ -22,6 +23,7 @@ class ContentViolationNotificationListenerTest {
     void sendsContentEditRequestToContentOwner() {
         SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
         NotificationService notificationService = mock(NotificationService.class);
+        ViolationConfirmationWriter confirmationWriter = mock(ViolationConfirmationWriter.class);
         Selectors selectors = Selectors.builder()
                 .userId(7L)
                 .selectorsRoleId(Selectors.ACTIVE_ROLE)
@@ -30,9 +32,11 @@ class ContentViolationNotificationListenerTest {
         ReflectionTestUtils.setField(selectors, "id", 5L);
         when(selectorsRepository.findById(5L)).thenReturn(Optional.of(selectors));
         ContentViolationNotificationListener listener =
-                new ContentViolationNotificationListener(selectorsRepository, notificationService);
+                new ContentViolationNotificationListener(
+                        selectorsRepository, notificationService, confirmationWriter);
 
-        listener.notifyEditRequest(new ContentViolationConfirmedEvent("admin", 10L, 5L));
+        listener.notifyEditRequest(new ContentViolationConfirmedEvent(
+                "admin", 10L, 5L, java.util.List.of(21L)));
 
         ArgumentCaptor<NotificationMessageCommand> commandCaptor =
                 ArgumentCaptor.forClass(NotificationMessageCommand.class);
@@ -42,5 +46,6 @@ class ContentViolationNotificationListenerTest {
         assertThat(command.referenceId()).isEqualTo(10L);
         assertThat(command.receiverName()).isEqualTo("selector");
         assertThat(command.notificationType()).isEqualTo(NotificationType.CONTENT_EDIT_REQUEST);
+        verify(confirmationWriter).markEditRequested(java.util.List.of(21L));
     }
 }

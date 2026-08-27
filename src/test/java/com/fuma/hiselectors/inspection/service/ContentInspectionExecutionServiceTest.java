@@ -20,6 +20,7 @@ import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.content.model.ContentVersionStatus;
 import com.fuma.hiselectors.content.model.MediaType;
@@ -76,6 +77,8 @@ class ContentInspectionExecutionServiceTest {
         assertThat(result.inspectedContentVersionId()).isEqualTo(1L);
         assertThat(result.violationCount()).isZero();
         assertThat(version.getStatus()).isEqualTo(ContentVersionStatus.COMPLETED);
+        assertThat(version.getInspectionDecision())
+                .isEqualTo(ContentInspectionDecision.APPROVED);
         verify(fixture.leaseTransaction, times(1))
                 .execute(eq(lease), eq(1L), eq(0L), eq(0L), any());
         verify(fixture.reports).save(any(ContentReport.class));

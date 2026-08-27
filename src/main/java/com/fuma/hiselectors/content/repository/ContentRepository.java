@@ -5,6 +5,10 @@ import com.fuma.hiselectors.content.dto.ContentInspectionQueryRow;
 import com.fuma.hiselectors.content.dto.ContentFormatCountProjection;
 import com.fuma.hiselectors.content.dto.ContentPerformanceQueryRow;
 import com.fuma.hiselectors.content.model.Content;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
+import com.fuma.hiselectors.content.model.ContentVersionStatus;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -85,7 +89,12 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
             join SelectorsGeneration sg on sg.selectorsId = selectors.id
             join ContentVersion version
               on version.contentId = content.id
-             and version.versionNo = content.lastVersionNo
+             and version.versionNo = (
+                    select max(completedVersion.versionNo)
+                    from ContentVersion completedVersion
+                    where completedVersion.contentId = content.id
+                      and completedVersion.status = :completedStatus
+             )
             join SelectorsSnsAccount account
               on account.selectorsId = content.selectorsId
              and account.snsCode = content.snsCode
@@ -93,6 +102,62 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
             where sg.generationId = :generationId
               and selectors.deleted = false
               and content.deleted = false
+              and (
+                    (:tab = 'ALL'
+                     and exists (
+                            select openViolation.id
+                            from ViolationItem openViolation
+                            where openViolation.contentId = content.id
+                              and openViolation.status in :openStatuses
+                     ))
+                 or (:tab = 'NEW_DETECTED'
+                     and not exists (
+                            select sourceVersion.id
+                            from ContentVersion sourceVersion
+                            where sourceVersion.contentId = content.id
+                              and sourceVersion.versionNo <= version.versionNo
+                              and sourceVersion.creationReason = :sourceChangeReason
+                     )
+                     and exists (
+                            select pendingViolation.id
+                            from ViolationItem pendingViolation
+                            where pendingViolation.contentId = content.id
+                              and pendingViolation.lastDetectedContentVersionId = version.id
+                              and pendingViolation.status = :pendingStatus
+                     ))
+                 or (:tab = 'MODIFICATION_DETECTED'
+                     and exists (
+                            select sourceVersion.id
+                            from ContentVersion sourceVersion
+                            where sourceVersion.contentId = content.id
+                              and sourceVersion.versionNo <= version.versionNo
+                              and sourceVersion.creationReason = :sourceChangeReason
+                     )
+                     and (
+                            exists (
+                                select pendingViolation.id
+                                from ViolationItem pendingViolation
+                                where pendingViolation.contentId = content.id
+                                  and pendingViolation.lastDetectedContentVersionId = version.id
+                                  and pendingViolation.status = :pendingStatus
+                            )
+                         or exists (
+                                select rejectedVersion.id
+                                from ContentVersion rejectedVersion
+                                where rejectedVersion.contentId = content.id
+                                  and rejectedVersion.versionNo <= version.versionNo
+                                  and rejectedVersion.inspectionDecision = :rejectedDecision
+                         )
+                     ))
+                 or (:tab = 'VIOLATION_CONFIRMED'
+                     and exists (
+                            select rejectedVersion.id
+                            from ContentVersion rejectedVersion
+                            where rejectedVersion.contentId = content.id
+                              and rejectedVersion.versionNo <= version.versionNo
+                              and rejectedVersion.inspectionDecision = :rejectedDecision
+                     ))
+              )
             order by content.createdAt desc, content.id desc
             """,
             countQuery = """
@@ -102,7 +167,12 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
             join SelectorsGeneration sg on sg.selectorsId = selectors.id
             join ContentVersion version
               on version.contentId = content.id
-             and version.versionNo = content.lastVersionNo
+             and version.versionNo = (
+                    select max(completedVersion.versionNo)
+                    from ContentVersion completedVersion
+                    where completedVersion.contentId = content.id
+                      and completedVersion.status = :completedStatus
+             )
             join SelectorsSnsAccount account
               on account.selectorsId = content.selectorsId
              and account.snsCode = content.snsCode
@@ -110,9 +180,64 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
             where sg.generationId = :generationId
               and selectors.deleted = false
               and content.deleted = false
+              and (
+                    (:tab = 'ALL'
+                     and exists (
+                            select openViolation.id from ViolationItem openViolation
+                            where openViolation.contentId = content.id
+                              and openViolation.status in :openStatuses
+                     ))
+                 or (:tab = 'NEW_DETECTED'
+                     and not exists (
+                            select sourceVersion.id from ContentVersion sourceVersion
+                            where sourceVersion.contentId = content.id
+                              and sourceVersion.versionNo <= version.versionNo
+                              and sourceVersion.creationReason = :sourceChangeReason
+                     )
+                     and exists (
+                            select pendingViolation.id from ViolationItem pendingViolation
+                            where pendingViolation.contentId = content.id
+                              and pendingViolation.lastDetectedContentVersionId = version.id
+                              and pendingViolation.status = :pendingStatus
+                     ))
+                 or (:tab = 'MODIFICATION_DETECTED'
+                     and exists (
+                            select sourceVersion.id from ContentVersion sourceVersion
+                            where sourceVersion.contentId = content.id
+                              and sourceVersion.versionNo <= version.versionNo
+                              and sourceVersion.creationReason = :sourceChangeReason
+                     )
+                     and (
+                            exists (
+                                select pendingViolation.id from ViolationItem pendingViolation
+                                where pendingViolation.contentId = content.id
+                                  and pendingViolation.lastDetectedContentVersionId = version.id
+                                  and pendingViolation.status = :pendingStatus
+                            )
+                         or exists (
+                                select rejectedVersion.id from ContentVersion rejectedVersion
+                                where rejectedVersion.contentId = content.id
+                                  and rejectedVersion.versionNo <= version.versionNo
+                                  and rejectedVersion.inspectionDecision = :rejectedDecision
+                         )
+                     ))
+                 or (:tab = 'VIOLATION_CONFIRMED'
+                     and exists (
+                            select rejectedVersion.id from ContentVersion rejectedVersion
+                            where rejectedVersion.contentId = content.id
+                              and rejectedVersion.versionNo <= version.versionNo
+                              and rejectedVersion.inspectionDecision = :rejectedDecision
+                     ))
+              )
             """)
     Page<ContentInspectionQueryRow> findInspectionRowsByGenerationId(
             @Param("generationId") Long generationId,
+            @Param("tab") String tab,
+            @Param("openStatuses") Collection<ViolationStatus> openStatuses,
+            @Param("completedStatus") ContentVersionStatus completedStatus,
+            @Param("pendingStatus") ViolationStatus pendingStatus,
+            @Param("sourceChangeReason") ContentVersionCreationReason sourceChangeReason,
+            @Param("rejectedDecision") ContentInspectionDecision rejectedDecision,
             Pageable pageable);
 
     @Query(value = """

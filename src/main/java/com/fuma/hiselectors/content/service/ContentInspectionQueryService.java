@@ -1,14 +1,20 @@
 package com.fuma.hiselectors.content.service;
 
 import com.fuma.hiselectors.content.dto.ContentInspectionListItemResponse;
+import com.fuma.hiselectors.content.dto.ContentInspectionListType;
 import com.fuma.hiselectors.content.dto.ContentInspectionMediaResponse;
 import com.fuma.hiselectors.content.dto.ContentInspectionQueryRow;
 import com.fuma.hiselectors.content.model.ContentMedia;
+import com.fuma.hiselectors.content.model.ContentInspectionDecision;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
+import com.fuma.hiselectors.content.model.ContentVersionStatus;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.service.GenerationService;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,16 +29,27 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ContentInspectionQueryService {
 
+    private static final java.util.Set<ViolationStatus> OPEN_VIOLATION_STATUSES =
+            EnumSet.of(
+                    ViolationStatus.PENDING,
+                    ViolationStatus.VIOLATION_CONFIRMED,
+                    ViolationStatus.EDIT_REQUESTED);
+
     private final GenerationService generationService;
     private final ContentRepository contentRepository;
     private final ContentMediaRepository mediaRepository;
 
     public Page<ContentInspectionListItemResponse> getCurrentGenerationContents(
-            int page, int size) {
+            int page, int size, ContentInspectionListType tab) {
         Generation generation = generationService.getCurrentActivity();
         Page<ContentInspectionQueryRow> rows = contentRepository
                 .findInspectionRowsByGenerationId(
-                        generation.getId(), PageRequest.of(page, size));
+                        generation.getId(), tab.name(), OPEN_VIOLATION_STATUSES,
+                        ContentVersionStatus.COMPLETED,
+                        ViolationStatus.PENDING,
+                        ContentVersionCreationReason.SOURCE_CHANGE,
+                        ContentInspectionDecision.REJECTED,
+                        PageRequest.of(page, size));
         if (rows.isEmpty()) {
             return rows.map(row -> toResponse(row, generation.getGenerationName(), List.of()));
         }

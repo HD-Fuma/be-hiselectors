@@ -3,6 +3,7 @@ package com.fuma.hiselectors.content.service;
 import com.fuma.hiselectors.notification.dto.NotificationMessageCommand;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.service.NotificationService;
+import com.fuma.hiselectors.inspection.service.ViolationConfirmationWriter;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class ContentViolationNotificationListener {
 
     private final SelectorsRepository selectorsRepository;
     private final NotificationService notificationService;
+    private final ViolationConfirmationWriter confirmationWriter;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void notifyEditRequest(ContentViolationConfirmedEvent event) {
@@ -36,6 +38,7 @@ public class ContentViolationNotificationListener {
                             selectors.getSelectorsNickname(),
                             null,
                             NotificationType.CONTENT_EDIT_REQUEST));
+            confirmationWriter.markEditRequested(event.violationItemIds());
         } catch (RuntimeException exception) {
             log.warn("Content violation notification failed: contentId={}, selectorsId={}",
                     event.contentId(), event.selectorsId(), exception);
