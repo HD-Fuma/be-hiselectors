@@ -5,5 +5,5 @@ COPY --chown=app:app build/libs/hiselectors-0.0.1-SNAPSHOT.jar app.jar
 USER app
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=12 \
-  CMD wget -qO- http://127.0.0.1:8080/actuator/health >/dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health/liveness >/dev/null || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]

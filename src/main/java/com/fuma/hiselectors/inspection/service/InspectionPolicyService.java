@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @RequiredArgsConstructor
 public class InspectionPolicyService {
+
+    @Value("${inspection.policy-sync.enabled:true}")
+    private boolean policySyncEnabled = true;
 
     private final InspectionPolicyRepository policyRepository;
     private final ContentInspectionProperties inspectionProperties;
@@ -39,6 +43,9 @@ public class InspectionPolicyService {
     @EventListener(ApplicationReadyEvent.class)
     @Transactional
     public void syncActivePolicies() {
+        if (!policySyncEnabled) {
+            return;
+        }
         sync(SnsPlatform.YOUTUBE);
         sync(SnsPlatform.INSTAGRAM);
     }

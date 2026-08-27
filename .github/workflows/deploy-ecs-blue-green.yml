@@ -1,0 +1,353 @@
+name: Deploy production to ECS (blue-green)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-northeast-2' }}
+  ECS_AWS_ROLE_ARN: ${{ vars.ECS_AWS_ROLE_ARN }}
+  ECR_REPOSITORY: ${{ vars.ECS_ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+  ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+  ECS_DEPLOY_TIMEOUT_SECONDS: ${{ vars.ECS_DEPLOY_TIMEOUT_SECONDS || '2700' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate deployment configuration
+        run: |
+          set -euo pipefail
+          required=(
+            ECS_AWS_ROLE_ARN
+            AWS_REGION
+            ECR_REPOSITORY
+            ECS_CLUSTER
+            ECS_SERVICE
+            ECS_CONTAINER_NAME
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing GitHub variable: $name" >&2
+              exit 1
+            fi
+          done
+          [[ "$ECS_DEPLOY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build application JAR
+        run: |
+          ./gradlew bootJar --no-daemon
+          ! unzip -l build/libs/hiselectors-0.0.1-SNAPSHOT.jar | grep -q application-local.yaml
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ env.ECS_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Register task definition and start deployment
+        id: deploy
+        env:
+          IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/ecs-blue-green"
+          mkdir -p "$work_dir"
+
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --output json > "$work_dir/service.json"
+
+          jq -e '(.failures | length == 0) and (.services | length == 1)' \
+            "$work_dir/service.json" > /dev/null
+          jq -e '
+            .services[0]
+            | (.status == "ACTIVE")
+              and (.deploymentController.type == "ECS")
+              and (.deploymentConfiguration.strategy == "BLUE_GREEN")
+              and ((.loadBalancers // []) | any(
+                (.advancedConfiguration.alternateTargetGroupArn // "") != ""
+                and (.advancedConfiguration.productionListenerRule // "") != ""
+                and (.advancedConfiguration.testListenerRule // "") != ""
+              ))
+              and (((.deploymentConfiguration.lifecycleHooks // []) | map(select(
+                .targetType == "PAUSE"
+                and ((.lifecycleStages // []) | index("POST_TEST_TRAFFIC_SHIFT") != null)
+              ))) | length == 1)
+          ' "$work_dir/service.json" > /dev/null || {
+            echo "ECS service must use native BLUE_GREEN, an ALB test listener, and exactly one POST_TEST_TRAFFIC_SHIFT PAUSE hook." >&2
+            exit 1
+          }
+
+          aws ecs list-service-deployments \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --max-results 100 \
+            --output json > "$work_dir/before-deployments.json"
+          jq -e '[.serviceDeployments[] | select(
+            .status == "PENDING"
+            or .status == "IN_PROGRESS"
+            or .status == "STOP_REQUESTED"
+            or .status == "ROLLBACK_REQUESTED"
+            or .status == "ROLLBACK_IN_PROGRESS"
+          )] | length == 0' "$work_dir/before-deployments.json" > /dev/null || {
+            echo "Another ECS service deployment is still active." >&2
+            exit 1
+          }
+          jq '[.serviceDeployments[].serviceDeploymentArn]' \
+            "$work_dir/before-deployments.json" > "$work_dir/before-arns.json"
+
+          service_task_definition="$(jq -r '.services[0].taskDefinition' "$work_dir/service.json")"
+          aws ecs describe-task-definition \
+            --task-definition "$service_task_definition" \
+            --query taskDefinition \
+            --output json > "$work_dir/current-task-definition.json"
+          jq -e --arg container "$ECS_CONTAINER_NAME" \
+            '[.containerDefinitions[] | select(.name == $container)] | length == 1' \
+            "$work_dir/current-task-definition.json" > /dev/null || {
+            echo "Expected exactly one task-definition container named $ECS_CONTAINER_NAME." >&2
+            exit 1
+          }
+          jq --arg container "$ECS_CONTAINER_NAME" --arg image "$IMAGE_URI" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy,
+              .deregisteredAt
+            )
+            | (.containerDefinitions[] | select(.name == $container) | .image) = $image
+          ' "$work_dir/current-task-definition.json" > "$work_dir/new-task-definition.json"
+
+          task_definition_arn="$(aws ecs register-task-definition \
+            --cli-input-json "file://$work_dir/new-task-definition.json" \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)"
+          deployment_started_epoch="$(date +%s)"
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$task_definition_arn" \
+            --query 'service.{serviceArn:serviceArn,taskDefinition:taskDefinition}'
+
+          deployment_arn=""
+          for _ in {1..24}; do
+            aws ecs list-service-deployments \
+              --cluster "$ECS_CLUSTER" \
+              --service "$ECS_SERVICE" \
+              --max-results 100 \
+              --output json > "$work_dir/after-deployments.json"
+            deployment_arn="$(jq -r --slurpfile before "$work_dir/before-arns.json" '
+              [
+                .serviceDeployments[]
+                | select(.serviceDeploymentArn as $arn | ($before[0] | index($arn)) == null)
+              ]
+              | max_by(.createdAt).serviceDeploymentArn // empty
+            ' "$work_dir/after-deployments.json")"
+            [[ -n "$deployment_arn" ]] && break
+            sleep 5
+          done
+          if [[ -z "$deployment_arn" ]]; then
+            echo "ECS did not create a service deployment." >&2
+            exit 1
+          fi
+
+          echo "task_definition_arn=$task_definition_arn" >> "$GITHUB_OUTPUT"
+          echo "deployment_arn=$deployment_arn" >> "$GITHUB_OUTPUT"
+          echo "deployment_started_epoch=$deployment_started_epoch" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ECS blue-green deployment"
+            echo "- Image: \`$IMAGE_URI\`"
+            echo "- Task definition: \`$task_definition_arn\`"
+            echo "- Service deployment: \`$deployment_arn\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify blue and green ALB readiness and continue
+        env:
+          DEPLOYMENT_ARN: ${{ steps.deploy.outputs.deployment_arn }}
+          DEPLOYMENT_STARTED_EPOCH: ${{ steps.deploy.outputs.deployment_started_epoch }}
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/ecs-blue-green"
+          deadline=$(( DEPLOYMENT_STARTED_EPOCH + ECS_DEPLOY_TIMEOUT_SECONDS ))
+          hook_id=""
+
+          request_rollback() {
+            if [[ -n "$hook_id" ]]; then
+              if aws ecs continue-service-deployment \
+                --service-deployment-arn "$DEPLOYMENT_ARN" \
+                --hook-id "$hook_id" \
+                --action ROLLBACK; then
+                return
+              fi
+            fi
+            aws ecs stop-service-deployment \
+              --service-deployment-arn "$DEPLOYMENT_ARN" \
+              --stop-type ROLLBACK
+          }
+
+          while (( $(date +%s) < deadline )); do
+            aws ecs describe-service-deployments \
+              --service-deployment-arns "$DEPLOYMENT_ARN" \
+              --output json > "$work_dir/deployment.json"
+            status="$(jq -r '.serviceDeployments[0].status // empty' "$work_dir/deployment.json")"
+            stage="$(jq -r '.serviceDeployments[0].lifecycleStage // empty' "$work_dir/deployment.json")"
+            echo "status=$status stage=$stage"
+            case "$status" in
+              STOP_REQUESTED|STOPPED|ROLLBACK_REQUESTED|ROLLBACK_IN_PROGRESS|ROLLBACK_SUCCESSFUL|ROLLBACK_FAILED)
+                jq '.serviceDeployments[0] | {status,statusReason,lifecycleStage}' "$work_dir/deployment.json"
+                exit 1
+                ;;
+            esac
+            if [[ "$stage" == "POST_TEST_TRAFFIC_SHIFT" ]]; then
+              hook_id="$(jq -r '
+                [
+                  .serviceDeployments[0].lifecycleHookDetails[]?
+                  | select(.targetType == "PAUSE" and .status == "AWAITING_ACTION")
+                  | .hookId
+                ][0] // empty
+              ' "$work_dir/deployment.json")"
+              [[ -n "$hook_id" ]] && break
+            fi
+            if [[ "$status" == "SUCCESSFUL" ]]; then
+              echo "Deployment completed without reaching the required smoke-test pause hook." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          if [[ -z "$hook_id" ]]; then
+            echo "Timed out waiting for the green test-traffic pause hook." >&2
+            request_rollback
+            exit 1
+          fi
+
+          desired_count="$(jq -r '.services[0].desiredCount' "$work_dir/service.json")"
+          mapfile -t target_groups < <(jq -r '
+            [
+              .services[0].loadBalancers[]
+              | .targetGroupArn,
+                .advancedConfiguration.alternateTargetGroupArn
+            ]
+            | map(select(type == "string" and length > 0))
+            | unique[]
+          ' "$work_dir/service.json")
+          if [[ ! "$desired_count" =~ ^[1-9][0-9]*$ ]] || (( ${#target_groups[@]} != 2 )); then
+            echo "Expected a positive desired count and exactly two target groups." >&2
+            request_rollback
+            exit 1
+          fi
+          for index in "${!target_groups[@]}"; do
+            health_file="$work_dir/target-health-$index.json"
+            aws elbv2 describe-target-health \
+              --target-group-arn "${target_groups[$index]}" \
+              --output json > "$health_file"
+            if ! jq -e --argjson desired "$desired_count" '
+              [.TargetHealthDescriptions[] | select(.TargetHealth.State == "healthy")]
+              | length >= $desired
+            ' "$health_file" > /dev/null; then
+              jq '[.TargetHealthDescriptions[] | {
+                target: .Target.Id,
+                state: .TargetHealth.State,
+                reason: .TargetHealth.Reason
+              }]' "$health_file"
+              echo "A target group does not have the desired number of healthy targets; requesting rollback." >&2
+              request_rollback
+              exit 1
+            fi
+          done
+
+          if ! aws ecs continue-service-deployment \
+              --service-deployment-arn "$DEPLOYMENT_ARN" \
+              --hook-id "$hook_id" \
+              --action CONTINUE; then
+            echo "Could not continue the paused deployment; requesting rollback." >&2
+            request_rollback
+            exit 1
+          fi
+          echo "Both blue and green target groups passed the ALB readiness check; production traffic shift may continue."
+
+      - name: Wait for deployment completion
+        if: ${{ always() && steps.deploy.outputs.deployment_arn != '' }}
+        env:
+          DEPLOYMENT_ARN: ${{ steps.deploy.outputs.deployment_arn }}
+          DEPLOYMENT_STARTED_EPOCH: ${{ steps.deploy.outputs.deployment_started_epoch }}
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/ecs-blue-green"
+          deadline=$(( DEPLOYMENT_STARTED_EPOCH + ECS_DEPLOY_TIMEOUT_SECONDS ))
+
+          while (( $(date +%s) < deadline )); do
+            aws ecs describe-service-deployments \
+              --service-deployment-arns "$DEPLOYMENT_ARN" \
+              --output json > "$work_dir/deployment-final.json"
+            status="$(jq -r '.serviceDeployments[0].status // empty' "$work_dir/deployment-final.json")"
+            stage="$(jq -r '.serviceDeployments[0].lifecycleStage // empty' "$work_dir/deployment-final.json")"
+            echo "status=$status stage=$stage"
+            case "$status" in
+              SUCCESSFUL)
+                echo "ECS blue-green deployment completed successfully."
+                exit 0
+                ;;
+              STOPPED|ROLLBACK_SUCCESSFUL|ROLLBACK_FAILED)
+                jq '.serviceDeployments[0] | {status,statusReason,lifecycleStage}' \
+                  "$work_dir/deployment-final.json"
+                exit 1
+                ;;
+              PENDING|IN_PROGRESS|STOP_REQUESTED|ROLLBACK_REQUESTED|ROLLBACK_IN_PROGRESS)
+                sleep 15
+                ;;
+              *)
+                echo "Unexpected ECS service deployment status: $status" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "Timed out waiting for ECS deployment completion; requesting rollback." >&2
+          aws ecs stop-service-deployment \
+            --service-deployment-arn "$DEPLOYMENT_ARN" \
+            --stop-type ROLLBACK || true
+          exit 1
