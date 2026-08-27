@@ -2,12 +2,14 @@ package com.fuma.hiselectors.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.application.repository.ApplicationMediaRepository;
 import com.fuma.hiselectors.application.repository.ApplicationReportRepository;
@@ -243,6 +245,28 @@ class ApplicationAdminServiceTest {
         assertThat(metrics.averageViewCount().sampleCount()).isZero();
         assertThat(metrics.engagementRate().value()).isNull();
         assertThat(metrics.engagementRate().sampleCount()).isZero();
+    }
+
+    @Test
+    void detailReusesPeerAveragesWithinCacheWindow() {
+        application.completeMediaCollection(COLLECTED_AT, BigDecimal.ZERO);
+        when(applicationRepository.findById(1L)).thenReturn(Optional.of(application));
+        when(userRepository.findById(10L)).thenReturn(Optional.of(user));
+        when(generationRepository.findById(20L)).thenReturn(Optional.of(generation));
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of());
+        when(applicationRepository.findAllByMediaCollectionStatus(MediaCollectionStatus.DONE))
+                .thenReturn(List.of(application));
+        when(mediaRepository
+                .findAllByApplicationIdInOrderByApplicationIdAscSequenceNoAscMediaSequenceNoAsc(
+                        List.of(1L)))
+                .thenReturn(List.of());
+
+        service.findDetail(1L);
+        service.findDetail(1L);
+
+        verify(applicationRepository, times(1))
+                .findAllByMediaCollectionStatus(MediaCollectionStatus.DONE);
     }
 
     private ApplicationMedia media(

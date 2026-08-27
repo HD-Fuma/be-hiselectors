@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fuma.hiselectors.application.model.Application;
 import com.fuma.hiselectors.application.model.ApplicationMedia;
 import com.fuma.hiselectors.application.model.ApplicationStatus;
+import com.fuma.hiselectors.application.model.ContentAnalysisStatus;
+import com.fuma.hiselectors.application.model.MediaCollectionStatus;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.config.CacheConfig;
 import com.fuma.hiselectors.config.JpaAuditingConfig;
@@ -14,6 +16,7 @@ import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.user.model.User;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -182,6 +185,41 @@ class ApplicationAdminRepositoryTest {
         assertThat(result.getContent())
                 .extracting(Application::getId)
                 .containsExactly(sparse.getId());
+    }
+
+    @Test
+    void analysisTargetsIncludeApprovedButExcludeRejectedApplications() {
+        Application approved = saveApplication("승인", "approved", SnsPlatform.INSTAGRAM,
+                ApplicationStatus.APPROVED, 1_000L, true, 1);
+        Application rejected = saveApplication("반려", "rejected", SnsPlatform.INSTAGRAM,
+                ApplicationStatus.REJECTED, 1_000L, true, 1);
+        em.flush();
+        em.clear();
+
+        var statuses = EnumSet.of(ApplicationStatus.PENDING, ApplicationStatus.APPROVED);
+        var targets = applicationRepository.findAnalysisTargets(
+                MediaCollectionStatus.DONE,
+                statuses,
+                EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                ContentAnalysisStatus.IN_PROGRESS,
+                COLLECTED_AT.minusMinutes(30),
+                3,
+                EnumSet.of(SnsPlatform.INSTAGRAM, SnsPlatform.YOUTUBE),
+                PageRequest.of(0, 20));
+
+        assertThat(targets).extracting(Application::getId)
+                .contains(approved.getId())
+                .doesNotContain(rejected.getId());
+        assertThat(applicationRepository.claimForAnalysis(
+                approved.getId(), statuses, ContentAnalysisStatus.IN_PROGRESS,
+                EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                COLLECTED_AT, COLLECTED_AT.minusMinutes(30)))
+                .isEqualTo(1);
+        assertThat(applicationRepository.claimForAnalysis(
+                rejected.getId(), statuses, ContentAnalysisStatus.IN_PROGRESS,
+                EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                COLLECTED_AT, COLLECTED_AT.minusMinutes(30)))
+                .isZero();
     }
 
     private Application savePendingApplication(String hiId, String accountId) {

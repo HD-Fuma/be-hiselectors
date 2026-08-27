@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -64,6 +65,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
 
     private final YoutubeCollectionProperties properties;
     private final RestClient restClient;
+    private final Map<String, String> channelTitleCache = new ConcurrentHashMap<>();
 
     public YoutubeContentFetcher(
             YoutubeCollectionProperties properties,
@@ -149,7 +151,7 @@ public class YoutubeContentFetcher implements ContentFetcher {
         return results;
     }
 
-    public Map<String, String> fetchChannelTitles(List<String> channelIds) {
+    public synchronized Map<String, String> fetchChannelTitles(List<String> channelIds) {
         if (!properties.hasApiKey() || channelIds == null || channelIds.isEmpty()) {
             return Map.of();
         }
@@ -160,8 +162,18 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 .distinct()
                 .toList();
         Map<String, String> titles = new HashMap<>();
-        for (int start = 0; start < ids.size(); start += PAGE_SIZE) {
-            List<String> batch = ids.subList(start, Math.min(start + PAGE_SIZE, ids.size()));
+        List<String> missing = ids.stream()
+                .filter(id -> !channelTitleCache.containsKey(id))
+                .toList();
+        ids.stream()
+                .filter(channelTitleCache::containsKey)
+                .filter(id -> !channelTitleCache.get(id).isEmpty())
+                .forEach(id -> titles.put(id, channelTitleCache.get(id)));
+
+        // ponytail: 채널명은 거의 바뀌지 않으므로 프로세스 수명 동안 ID별로 보관한다.
+        for (int start = 0; start < missing.size(); start += PAGE_SIZE) {
+            List<String> batch = missing.subList(start, Math.min(start + PAGE_SIZE, missing.size()));
+            boolean successful = false;
             URI uri = UriComponentsBuilder.fromUriString(CHANNELS_URI)
                     .queryParam("part", "snippet")
                     .queryParam("id", String.join(",", batch))
@@ -178,8 +190,12 @@ public class YoutubeContentFetcher implements ContentFetcher {
                                     && StringUtils.hasText(item.snippet().title()))
                             .forEach(item -> titles.put(item.id(), item.snippet().title()));
                 }
+                successful = true;
             } catch (BusinessException e) {
                 log.warn("YouTube 채널명 조회 실패. 채널 수={}", batch.size());
+            }
+            if (successful) {
+                batch.forEach(id -> channelTitleCache.put(id, titles.getOrDefault(id, "")));
             }
         }
         return Map.copyOf(titles);

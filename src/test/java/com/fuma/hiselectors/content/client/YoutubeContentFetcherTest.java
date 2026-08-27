@@ -148,10 +148,13 @@ class YoutubeContentFetcherTest {
 
         Map<String, String> titles = client.fetchChannelTitles(
                 List.of(CHANNEL_ID, secondChannelId));
+        Map<String, String> cachedTitles = client.fetchChannelTitles(
+                List.of(CHANNEL_ID, secondChannelId));
 
         assertThat(titles).containsExactlyInAnyOrderEntriesOf(Map.of(
                 CHANNEL_ID, "채널 하나",
                 secondChannelId, "채널 둘"));
+        assertThat(cachedTitles).isEqualTo(titles);
         server.verify();
     }
 
