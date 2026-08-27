@@ -64,9 +64,9 @@ public class ApplicationService {
 
         String token = UUID.randomUUID().toString().replace("-", "");
         User user = userRepository.save(User.builder()
-                .hiId("test_" + token.substring(0, 15))
+                .hiId(token.substring(0, 20))
                 .hiPassword(passwordEncoder.encode(UUID.randomUUID().toString()))
-                .name(clip("[테스트] " + account.accountId(), 50))
+                .name(clip(account.accountId(), 50))
                 .alimtalk("N")
                 .build());
         Application application = Application.builder()
