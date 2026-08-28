@@ -138,14 +138,14 @@ jobs:
             "$rds_ca_bundle" | sha256sum --check --status
           rds_ca_bundle_b64="$(base64 -w0 "$rds_ca_bundle")"
           migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
-          verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND description = '광고·수수료 안내 문구 확인 필요') OR (code = 'AFFILIATE_LINK_INVALID' AND description = '제휴 링크 확인 필요');"
+          verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94') OR (code = 'AFFILIATE_LINK_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94');"
           jq \
             --arg container "$ECS_CONTAINER_NAME" \
             --arg family "${ECS_SERVICE}-migration" \
             --arg rds_ca_bundle_b64 "$rds_ca_bundle_b64" \
             --arg migration_sql "$migration_sql" \
             --arg verify_sql "$verify_sql" \
-            --arg command 'umask 077; printf "%s" "$RDS_CA_BUNDLE_B64" | base64 -d > /tmp/rds-ca.pem; printf "%s\n" "$MIGRATION_SQL" | mysql --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
+            --arg command 'umask 077; printf "%s" "$RDS_CA_BUNDLE_B64" | base64 -d > /tmp/rds-ca.pem; printf "%s\n" "$MIGRATION_SQL" | mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
             (.containerDefinitions[] | select(.name == $container)) as $api
             | {
                 family: $family,

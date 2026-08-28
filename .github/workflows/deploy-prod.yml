@@ -53,12 +53,12 @@ jobs:
         export MYSQL_PWD="$DB_PASSWORD"
         mysql_query() {
           docker run --rm --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
-            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            mysql --default-character-set=utf8mb4 --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
             -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
         }
         mysql_apply_file() {
           docker run --rm -i --network "container:$API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
-            mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+            mysql --default-character-set=utf8mb4 --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
             -u "$DB_USERNAME" "$DB_NAME"
         }
 
@@ -94,7 +94,7 @@ jobs:
 
         printf '%s' "$VIOLATION_TYPE_MIGRATION_B64" | base64 -d | gzip -d > "$VIOLATION_TYPE_MIGRATION_FILE"
         cat "$VIOLATION_TYPE_MIGRATION_FILE" | mysql_apply_file
-        test "$(mysql_query "SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND description = '광고·수수료 안내 문구 확인 필요') OR (code = 'AFFILIATE_LINK_INVALID' AND description = '제휴 링크 확인 필요')")" = "2"
+        test "$(mysql_query "SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94') OR (code = 'AFFILIATE_LINK_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94')")" = "2"
         echo "violation-type-descriptions=verified"
 
         profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
@@ -329,7 +329,7 @@ jobs:
             export MYSQL_PWD="$DB_PASSWORD"
             mysql_query() {
               docker run --rm --network "container:$OLD_API_CONTAINER" -e MYSQL_PWD mysql:8.4 \
-                mysql --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
+                mysql --default-character-set=utf8mb4 --connect-timeout=10 -h "$DB_HOST" -P "$DB_PORT" \
                 -u "$DB_USERNAME" "$DB_NAME" -Nse "$1"
             }
             if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'task_run' AND column_name = 'step_progress'")" = "0" ]; then
