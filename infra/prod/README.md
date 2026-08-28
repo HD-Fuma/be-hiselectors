@@ -2,7 +2,7 @@
 
 `template.yaml`은 기존 운영 EC2, RDS, 보안 그룹, DNS, `gha-be-deploy` 역할을 수정하지 않는다. 기존 default VPC의 서로 다른 두 public subnet, 기존 ECR image/repository, 기존 GitHub OIDC provider, 원본 RDS snapshot을 참조하고 나머지는 새로 만든다.
 
-현재 listener는 DNS 전환 전 리허설용 HTTP `80`(production) / `8080`(green test)이다. 실제 DNS 전환과 ACM/TLS, 최종 운영 DB 전환은 이 템플릿 범위 밖이다.
+production listener는 HTTPS `443`, HTTP `80`은 HTTPS redirect, green test listener는 HTTP `8080`이다. 템플릿은 ACM 인증서를 참조할 뿐 생성하지 않으며, 실제 DNS와 최종 운영 DB는 수정하지 않는다.
 
 ## 사전 조건
 
@@ -13,6 +13,7 @@
 - snapshot을 바꾸려면 같은 stack을 update하지 말고 리허설 stack을 삭제 후 다시 만든다. 고정 DB identifier의 replacement 충돌을 피하기 위함이다.
 - ECR repository, image와 GitHub OIDC provider는 이 stack과 같은 AWS account/region에 있어야 한다.
 - `RuntimeSecretArn`은 새 리허설 전용 secret이며 기본 AWS Secrets Manager KMS key를 사용한다.
+- `AcmCertificateArn`은 `ap-northeast-2`에서 별도로 발급·DNS 검증한 `api.hiselectors.shop` 인증서 ARN이어야 한다.
 - 배포 주체는 IAM role 생성 권한과 `CAPABILITY_IAM`이 필요하다. 이 stack이 만드는 GitHub role에는 CloudFormation 권한이 없다.
 
 리허설 secret JSON에는 아래 key가 모두 있어야 한다.
@@ -56,6 +57,8 @@ DB/JWT 5개는 시작에 필요한 값이고 Gemini/Meta 5개는 기존 분석 �
        TestDbSubnetGroupName=... ImageUri=ACCOUNT.dkr.ecr.REGION.amazonaws.com/be-hiselectors:SHA \
        RuntimeSecretArn=arn:aws:secretsmanager:... \
        GitHubOidcProviderArn=arn:aws:iam::ACCOUNT:oidc-provider/token.actions.githubusercontent.com \
+       AcmCertificateArn=arn:aws:acm:ap-northeast-2:ACCOUNT:certificate/... \
+       ProductionListenerIngressCidr=YOUR_ADMIN_PUBLIC_IP/32 \
        TestListenerIngressCidr=YOUR_ADMIN_PUBLIC_IP/32
    ```
 
@@ -65,7 +68,9 @@ DB/JWT 5개는 시작에 필요한 값이고 Gemini/Meta 5개는 기존 분석 �
    ALTER TABLE application_report ADD COLUMN warning VARCHAR(500) NULL;
    ```
 4. 같은 stack을 `ApiDesiredCount=2`, `EnableDeploymentPause=false`로 2차 update한다. ALB는 DB를 포함한 `/actuator/health/readiness`, container는 DB 장애와 분리된 `/actuator/health/liveness`를 사용한다.
-5. `ProductionUrl`과 `TestUrl`로 검증한 뒤 `EnableDeploymentPause=true`로 마지막 update한다. 이후 image 배포부터 green smoke 승인 hook이 동작한다. 두 listener 모두 `TestListenerIngressCidr`만 허용한다.
+5. `ProductionUrl`과 `TestUrl`로 검증한 뒤 `EnableDeploymentPause=true`로 마지막 update한다. 이후 image 배포부터 green smoke 승인 hook이 동작한다. 준비 중에는 `ProductionListenerIngressCidr`와 `TestListenerIngressCidr`를 관리자 `/32`로 유지한다.
+
+DNS 전환 직전에 `ProductionListenerIngressCidr=0.0.0.0/0`으로 바꾸고, 가비아의 `api` 레코드만 `LoadBalancerDnsName`으로 교체한다. ACM 검증 CNAME은 인증서 자동 갱신을 위해 유지한다.
 
 `SchedulerDesiredCount`는 리허설 동안 `0`을 유지한다. 나중에 활성화할 때는 기존 EC2를 포함한 다른 모든 scheduler를 먼저 중지한 뒤 `1`로 바꾼다. scheduler rolling 설정은 `MaximumPercent=100`, `MinimumHealthyPercent=0`이라 교체 시 중복 실행 대신 짧은 공백이 생긴다.
 
@@ -86,6 +91,8 @@ API는 측정된 유휴 메모리 사용량을 기준으로 `0.5 vCPU / 1GB`를 
 API 배포는 ECS native `BLUE_GREEN`이다. green이 test listener를 받은 뒤 `POST_TEST_TRAFFIC_SHIFT`에서 최대 30분 pause한다. workflow는 `DescribeServiceDeployments`에서 실제 hook ID를 읽고, 두 target group 모두 desired count만큼 ALB readiness가 `healthy`인지 AWS API로 확인한다. 성공 시 `ContinueServiceDeployment(CONTINUE)`, 실패 시 `ROLLBACK`을 호출하며 미응답이면 자동 rollback한다. GitHub-hosted runner가 ALB에 직접 접속하지 않으므로 listener CIDR을 공개할 필요가 없다.
 
 workflow는 ECS service를 직접 갱신하므로 CloudFormation의 `ImageUri` parameter는 자동으로 바뀌지 않는다. 이후 stack을 update할 때는 현재 service image URI를 `ImageUri`로 함께 넘겨 이전 이미지로 되돌아가지 않게 한다.
+
+HTTPS listener만 적용하는 update에서는 `ImageUri=UsePreviousValue`로 둔다. change set에 `ProductionListener`(Modify, replacement false), `LoadBalancerSecurityGroup`(Modify, replacement false), `HttpRedirectListener`(Add) 외 리소스가 나오면 실행하지 않는다.
 
 API blue-green deployment가 성공하면 workflow는 scheduler task definition도 같은 image SHA로 갱신하고 현재 desired count는 바꾸지 않는다. 리허설 중에는 scheduler가 계속 `0`이며, 나중에 `0`에서 `1`로 전환해도 검증된 API release와 같은 image가 시작된다.
 

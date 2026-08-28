@@ -46,11 +46,20 @@ Parameters:
     AllowedValues:
       - repo:HD-Fuma@310806056/be-hiselectors@1324765193:ref:refs/heads/dev
     Description: Exact repository and branch allowed to assume the new deploy role.
+  AcmCertificateArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of the ap-northeast-2 ACM certificate for api.hiselectors.shop.
+  ProductionListenerIngressCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$'
+    Description: IPv4 CIDR allowed to call the HTTPS production listener and HTTP redirect.
   TestListenerIngressCidr:
     Type: String
     Default: 127.0.0.1/32
     AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$'
-    Description: IPv4 CIDR allowed to call both isolated rehearsal listeners.
+    Description: IPv4 CIDR allowed to call the isolated HTTP 8080 green test listener.
   ApiDesiredCount:
     Type: Number
     Default: 0
@@ -147,7 +156,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: !Ref TestListenerIngressCidr
+          CidrIp: !Ref ProductionListenerIngressCidr
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ProductionListenerIngressCidr
         - IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
@@ -255,12 +268,29 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref LoadBalancer
-      Port: 80
-      Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref AcmCertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
       DefaultActions:
         - Type: fixed-response
           FixedResponseConfig:
             StatusCode: '404'
+
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ProductionListener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
 
   TestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -671,8 +701,8 @@ Outputs:
   LoadBalancerDnsName:
     Value: !GetAtt LoadBalancer.DNSName
   ProductionUrl:
-    Description: Isolated rehearsal URL; no DNS record is created.
-    Value: !Sub 'http://${LoadBalancer.DNSName}'
+    Description: Production API URL after the external DNS record is switched; this stack creates no DNS record.
+    Value: https://api.hiselectors.shop
   TestUrl:
     Description: Manual green listener check; allowed only from TestListenerIngressCidr.
     Value: !Sub 'http://${LoadBalancer.DNSName}:8080/actuator/health/readiness'
