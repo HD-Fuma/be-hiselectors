@@ -3,6 +3,7 @@ package com.fuma.hiselectors.inspection.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
@@ -19,9 +20,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 class InspectionPolicyServiceTest {
+
+    @Test
+    void skipsStartupSyncWhenDisabled() {
+        InspectionPolicyRepository repository = mock(InspectionPolicyRepository.class);
+        InspectionPolicyService service = service(repository, "gemini-test");
+        ReflectionTestUtils.setField(service, "policySyncEnabled", false);
+
+        service.syncActivePolicies();
+
+        verifyNoInteractions(repository);
+    }
 
     @Test
     void createsIndependentPlatformPoliciesWithPromptSnapshots() {
@@ -73,7 +86,15 @@ class InspectionPolicyServiceTest {
             saved.add(policy);
             return policy;
         });
-        InspectionPolicyService service = new InspectionPolicyService(
+        InspectionPolicyService service = service(repository, model);
+
+        service.syncActivePolicies();
+        return saved;
+    }
+
+    private InspectionPolicyService service(
+            InspectionPolicyRepository repository, String model) {
+        return new InspectionPolicyService(
                 repository,
                 new ContentInspectionProperties(
                         List.of("광고"), List.of("example.com"), "ptrsRefCd"),
@@ -85,9 +106,6 @@ class InspectionPolicyServiceTest {
                 new InspectionPromptProvider(),
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), ZoneOffset.UTC));
-
-        service.syncActivePolicies();
-        return saved;
     }
 
     private InspectionPolicy findPolicy(

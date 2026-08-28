@@ -1,9 +1,16 @@
 server:
   port: ${PORT:8080}
+  shutdown: graceful
+
+scheduling:
+  enabled: ${SCHEDULING_ENABLED:true}
 
 spring:
   application:
     name: hiselectors
+
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_PHASE_TIMEOUT:25s}
 
   # 커스텀 JWT 인증을 쓰므로 스프링의 기본 인메모리 유저 자동설정을 끈다.
   # (안 끄면 "Using generated security password..." 경고가 매번 출력됨)
@@ -75,6 +82,15 @@ management:
   health:
     mail:
       enabled: false
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
   endpoints:
     web:
       exposure:
@@ -149,6 +165,10 @@ content-inspection:
       # Instagram 추출 파이프라인은 아직 연결 전이며 정책 버전 기록에만 사용한다.
       stt-model: ${INSTAGRAM_STT_MODEL:not-configured}
       ocr-model: ${INSTAGRAM_OCR_MODEL:not-configured}
+
+inspection:
+  policy-sync:
+    enabled: ${INSPECTION_POLICY_SYNC_ENABLED:true}
 
 instagram:
   oauth:

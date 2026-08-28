@@ -1,0 +1,690 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated HiSelectors ECS/Fargate blue-green rehearsal stack
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing default VPC. The stack only references it.
+  PublicSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with an internet-gateway route in the first AZ.
+  PublicSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with an internet-gateway route in a different AZ.
+  TestDbSnapshotIdentifier:
+    Type: String
+    MinLength: 1
+    Description: ARN or identifier of the source RDS snapshot to restore. The source is not modified.
+  TestDbSubnetGroupName:
+    Type: String
+    MinLength: 1
+    Description: Existing DB subnet group in VpcId used only by the restored test DB.
+  TestDbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedPattern: '^db\.[a-z0-9]+\.[a-z0-9]+$'
+  ImageUri:
+    Type: String
+    MinLength: 1
+    Description: Existing ECR ARM64 image URI pinned to a git SHA or digest.
+  EcrRepositoryName:
+    Type: String
+    Default: be-hiselectors
+    AllowedPattern: '^[a-z0-9]+(?:[._/-][a-z0-9]+)*$'
+    Description: Existing ECR repository. The stack does not modify it.
+  RuntimeSecretArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of a new rehearsal-only Secrets Manager JSON secret. DB host and port come from TestDatabase, not this secret.
+  GitHubOidcProviderArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of the existing GitHub Actions OIDC provider; it is referenced, not modified.
+  GitHubOidcSubject:
+    Type: String
+    Default: repo:HD-Fuma@310806056/be-hiselectors@1324765193:ref:refs/heads/dev
+    AllowedValues:
+      - repo:HD-Fuma@310806056/be-hiselectors@1324765193:ref:refs/heads/dev
+    Description: Exact repository and branch allowed to assume the new deploy role.
+  TestListenerIngressCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$'
+    Description: IPv4 CIDR allowed to call both isolated rehearsal listeners.
+  ApiDesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues:
+      - 0
+      - 2
+    Description: Keep 0 for stack bootstrap; use 2 after the isolated database and stack are ready.
+  SchedulerDesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues:
+      - 0
+      - 1
+    Description: Keep 0 for the isolated rehearsal; enable only after every other scheduler is stopped.
+
+  EnableDeploymentPause:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable the POST_TEST_TRAFFIC_SHIFT approval hook only after the initial API service is healthy.
+
+Conditions:
+  DeploymentPauseEnabled: !Equals [!Ref EnableDeploymentPause, 'true']
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}'
+      RetentionInDays: 30
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: ReadRuntimeSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeSecretArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  EcsLoadBalancerInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers'
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HiSelectors Fargate tasks; ingress is added only from the new ALB
+      VpcId: !Ref VpcId
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HiSelectors rehearsal ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref TestListenerIngressCidr
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref TestListenerIngressCidr
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          DestinationSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId
+
+  TaskIngressFromLoadBalancer:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt TaskSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
+
+  TestDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Isolated snapshot-restored test database
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId
+
+  TestDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-test-db'
+      DBSnapshotIdentifier: !Ref TestDbSnapshotIdentifier
+      DBInstanceClass: !Ref TestDbInstanceClass
+      DBSubnetGroupName: !Ref TestDbSubnetGroupName
+      VPCSecurityGroups:
+        - !GetAtt TestDatabaseSecurityGroup.GroupId
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 0
+      DeletionProtection: false
+      Tags:
+        - Key: Purpose
+          Value: rehearsal-only
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !GetAtt LoadBalancerSecurityGroup.GroupId
+      Subnets:
+        - !Ref PublicSubnetAId
+        - !Ref PublicSubnetBId
+
+  BlueTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8080
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /actuator/health/readiness
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  GreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8080
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /actuator/health/readiness
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  ProductionListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+
+  TestListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+
+  ProductionListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProductionListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/*'
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref BlueTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref GreenTargetGroup
+                Weight: 0
+
+  TestListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref TestListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/*'
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref BlueTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref GreenTargetGroup
+                Weight: 0
+
+  Target5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Roll back a deployment with repeated target 5xx responses
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-api'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ImageUri
+          Essential: true
+          StopTimeout: 60
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: prod
+            - Name: SCHEDULING_ENABLED
+              Value: 'false'
+            - Name: DISCOVERY_DEFAULTS_ENABLED
+              Value: 'false'
+            - Name: INSPECTION_POLICY_SYNC_ENABLED
+              Value: 'false'
+            - Name: SHOW_SQL
+              Value: 'false'
+            - Name: FORMAT_SQL
+              Value: 'false'
+            - Name: DB_POOL_MAX
+              Value: '5'
+            - Name: DB_POOL_MIN_IDLE
+              Value: '1'
+            - Name: DB_HOST
+              Value: !GetAtt TestDatabase.Endpoint.Address
+            - Name: DB_PORT
+              Value: !GetAtt TestDatabase.Endpoint.Port
+          Secrets:
+            - Name: DB_NAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_USERNAME::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_PASSWORD::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:JWT_SECRET::'
+            - Name: INSTAGRAM_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_REDIRECT_URI::'
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEY::'
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEYS::'
+            - Name: META_API_VERSION
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_API_VERSION::'
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:8080/actuator/health/liveness >/dev/null || exit 1
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  SchedulerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-scheduler'
+      Cpu: '1024'
+      Memory: '2048'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: scheduler
+          Image: !Ref ImageUri
+          Essential: true
+          StopTimeout: 60
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: prod
+            - Name: SCHEDULING_ENABLED
+              Value: 'true'
+            - Name: DISCOVERY_DEFAULTS_ENABLED
+              Value: 'true'
+            - Name: INSPECTION_POLICY_SYNC_ENABLED
+              Value: 'true'
+            - Name: SHOW_SQL
+              Value: 'false'
+            - Name: FORMAT_SQL
+              Value: 'false'
+            - Name: DB_POOL_MAX
+              Value: '5'
+            - Name: DB_POOL_MIN_IDLE
+              Value: '1'
+            - Name: DB_HOST
+              Value: !GetAtt TestDatabase.Endpoint.Address
+            - Name: DB_PORT
+              Value: !GetAtt TestDatabase.Endpoint.Port
+          Secrets:
+            - Name: DB_NAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_USERNAME::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_PASSWORD::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:JWT_SECRET::'
+            - Name: INSTAGRAM_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_REDIRECT_URI::'
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEY::'
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEYS::'
+            - Name: META_API_VERSION
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_API_VERSION::'
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:8080/actuator/health/liveness >/dev/null || exit 1
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: scheduler
+
+  ApiService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-api'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref ApiTaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref ApiDesiredCount
+      AvailabilityZoneRebalancing: ENABLED
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      HealthCheckGracePeriodSeconds: 180
+      DeploymentController:
+        Type: ECS
+      DeploymentConfiguration:
+        Strategy: BLUE_GREEN
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        BakeTimeInMinutes: 10
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        Alarms:
+          AlarmNames:
+            - !Ref Target5xxAlarm
+          Enable: true
+          Rollback: true
+        LifecycleHooks: !If
+          - DeploymentPauseEnabled
+          - - TargetType: PAUSE
+              LifecycleStages:
+                - POST_TEST_TRAFFIC_SHIFT
+              TimeoutConfiguration:
+                TimeoutInMinutes: 30
+                Action: ROLLBACK
+          - !Ref AWS::NoValue
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt TaskSecurityGroup.GroupId
+          Subnets:
+            - !Ref PublicSubnetAId
+            - !Ref PublicSubnetBId
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 8080
+          TargetGroupArn: !Ref BlueTargetGroup
+          AdvancedConfiguration:
+            AlternateTargetGroupArn: !Ref GreenTargetGroup
+            ProductionListenerRule: !Ref ProductionListenerRule
+            TestListenerRule: !Ref TestListenerRule
+            RoleArn: !GetAtt EcsLoadBalancerInfrastructureRole.Arn
+
+  SchedulerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-scheduler'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref SchedulerTaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref SchedulerDesiredCount
+      AvailabilityZoneRebalancing: DISABLED
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      DeploymentController:
+        Type: ECS
+      DeploymentConfiguration:
+        Strategy: ROLLING
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt TaskSecurityGroup.GroupId
+          Subnets:
+            - !Ref PublicSubnetAId
+            - !Ref PublicSubnetBId
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubOidcSubject
+      Policies:
+        - PolicyName: PushImage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}'
+        - PolicyName: DeployServices
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:ListServiceDeployments
+                  - ecs:UpdateService
+                Resource: !GetAtt ApiService.ServiceArn
+              - Effect: Allow
+                Action:
+                  - ecs:ContinueServiceDeployment
+                  - ecs:DescribeServiceDeployments
+                  - ecs:StopServiceDeployment
+                Resource:
+                  - !GetAtt ApiService.ServiceArn
+                  - !Sub
+                    - 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service-deployment/${ClusterName}/${ServiceName}/*'
+                    - ClusterName: !Ref Cluster
+                      ServiceName: !GetAtt ApiService.Name
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt TaskRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+
+Outputs:
+  ClusterName:
+    Description: Workflow ECS_CLUSTER value.
+    Value: !Ref Cluster
+  ApiServiceName:
+    Description: Workflow ECS_SERVICE value.
+    Value: !GetAtt ApiService.Name
+  ApiServiceArn:
+    Value: !GetAtt ApiService.ServiceArn
+  SchedulerServiceName:
+    Value: !GetAtt SchedulerService.Name
+  ApiTaskDefinitionArn:
+    Value: !Ref ApiTaskDefinition
+  EcrRepositoryName:
+    Description: Workflow ECS_ECR_REPOSITORY value.
+    Value: !Ref EcrRepositoryName
+  ApiContainerName:
+    Description: Workflow ECS_CONTAINER_NAME value.
+    Value: api
+  SchedulerTaskDefinitionArn:
+    Value: !Ref SchedulerTaskDefinition
+  GitHubDeployRoleArn:
+    Description: Set this output as the GitHub Actions variable ECS_AWS_ROLE_ARN.
+    Value: !GetAtt GitHubDeployRole.Arn
+  LoadBalancerDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+  ProductionUrl:
+    Description: Isolated rehearsal URL; no DNS record is created.
+    Value: !Sub 'http://${LoadBalancer.DNSName}'
+  TestUrl:
+    Description: Manual green listener check; allowed only from TestListenerIngressCidr.
+    Value: !Sub 'http://${LoadBalancer.DNSName}:8080/actuator/health/readiness'
+  ProductionListenerRuleArn:
+    Value: !Ref ProductionListenerRule
+  TestListenerRuleArn:
+    Value: !Ref TestListenerRule
+  BlueTargetGroupArn:
+    Value: !Ref BlueTargetGroup
+  GreenTargetGroupArn:
+    Value: !Ref GreenTargetGroup
+  DeploymentAlarmName:
+    Value: !Ref Target5xxAlarm
+  TaskSecurityGroupId:
+    Value: !GetAtt TaskSecurityGroup.GroupId
+  TestDatabaseSecurityGroupId:
+    Value: !GetAtt TestDatabaseSecurityGroup.GroupId
+  TestDatabaseIdentifier:
+    Value: !Ref TestDatabase
+  TestDatabaseEndpoint:
+    Description: Endpoint injected directly into the isolated ECS task definitions as DB_HOST.
+    Value: !GetAtt TestDatabase.Endpoint.Address
+  TestDatabasePort:
+    Value: !GetAtt TestDatabase.Endpoint.Port

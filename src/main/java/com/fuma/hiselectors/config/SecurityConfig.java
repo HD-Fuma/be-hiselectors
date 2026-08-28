@@ -40,6 +40,8 @@ public class SecurityConfig {
             "/favicon.ico",
             "/css/**", "/js/**", "/images/**",
             "/actuator/health",
+            "/actuator/health/liveness",
+            "/actuator/health/readiness",
             "/error",
             "/api/auth/**",
             "/api/purchases",

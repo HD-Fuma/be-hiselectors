@@ -1,6 +1,9 @@
 # Spring(app) 빌드 컨텍스트 최소화. 워커는 자체 stt-worker/.dockerignore 사용.
 .git
 .gradle
+.env
+**/.env
+src/main/resources/application-local.yaml
 build/*
 !build/libs/
 build/libs/*
