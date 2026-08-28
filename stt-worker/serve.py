@@ -67,6 +67,21 @@ def do_reel(req: ReelRequest) -> dict:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}") from e
 
 
+@app.post("/content/reel")
+def do_content_reel(req: ReelRequest) -> dict:
+    """콘텐츠 검수 전용 타임스탬프 STT/OCR 응답."""
+    try:
+        return pipeline.run_content(
+            media_url=req.media_url, thumbnail_url=req.thumbnail_url)
+    except acquire.CdnExpiredError as e:
+        raise HTTPException(status_code=410, detail=f"CDN_EXPIRED: {e}") from e
+    except acquire.AcquireError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        logging.error("content reel 실패: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}") from e
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(_PAGE)

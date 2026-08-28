@@ -44,11 +44,11 @@ class InspectionPolicyServiceTest {
         InspectionPolicy youtube = findPolicy(saved, SnsPlatform.YOUTUBE);
         InspectionPolicy instagram = findPolicy(saved, SnsPlatform.INSTAGRAM);
         assertThat(youtube.getAiModelName()).isEqualTo("gemini-test");
-        assertThat(youtube.getSttModelName()).isEqualTo("gemini-test");
-        assertThat(youtube.getOcrModelName()).isEqualTo("gemini-test");
+        assertThat(youtube.getSttModelName()).isEqualTo("content-gemini-test");
+        assertThat(youtube.getOcrModelName()).isEqualTo("content-gemini-test");
         assertThat(instagram.getAiModelName()).isEqualTo("gemini-test");
         assertThat(youtube.getAiPrompt()).contains("검수 대상");
-        assertThat(youtube.getExtractionPrompt()).contains("유튜브 Shorts 영상");
+        assertThat(youtube.getExtractionPrompt()).contains("stt.segments", "visual.segments");
         assertThat(instagram.getSttModelName()).isEqualTo("whisper-test");
         assertThat(instagram.getOcrModelName()).isEqualTo("ocr-test");
         assertThat(youtube.getConfigHash()).isNotEqualTo(instagram.getConfigHash());
@@ -100,7 +100,10 @@ class InspectionPolicyServiceTest {
                         List.of("광고"), List.of("example.com"), "ptrsRefCd"),
                 new InspectionExtractionProperties(
                         new InspectionExtractionProperties.Instagram(
-                                "whisper-test", "ocr-test")),
+                                "whisper-test", "ocr-test"),
+                        new InspectionExtractionProperties.Youtube(
+                                "content-key", null, "content-gemini-test",
+                                null, 16384, "v1beta")),
                 new GeminiProperties(
                         "key", null, null, model, MediaResolution.LOW, 8192),
                 new InspectionPromptProvider(),

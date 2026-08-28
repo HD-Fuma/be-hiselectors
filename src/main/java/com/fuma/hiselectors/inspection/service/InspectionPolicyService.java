@@ -100,8 +100,8 @@ public class InspectionPolicyService {
         String extractionPromptVersion;
         String extractionPrompt;
         if (platform == SnsPlatform.YOUTUBE) {
-            sttModel = aiModel;
-            ocrModel = aiModel;
+            sttModel = extractionProperties.youtubeModelOrDefault();
+            ocrModel = extractionProperties.youtubeModelOrDefault();
             extractionPromptVersion =
                     InspectionPromptProvider.YOUTUBE_EXTRACTION_PROMPT_VERSION;
             extractionPrompt = promptProvider.youtubeExtractionPrompt();
@@ -117,9 +117,8 @@ public class InspectionPolicyService {
                 extractionPromptVersion == null ? "" : extractionPromptVersion,
                 extractionPrompt == null ? "" : extractionPrompt,
                 platform == SnsPlatform.YOUTUBE
-                        ? geminiProperties.mediaResolutionApiValue() : "",
-                platform == SnsPlatform.YOUTUBE
-                        ? String.valueOf(geminiProperties.maxOutputTokensOrDefault()) : ""));
+                        ? String.valueOf(
+                                extractionProperties.youtubeMaxOutputTokensOrDefault()) : ""));
         String configHash = sha256(String.join("\n",
                 platform.name(), ruleHash, aiConfigHash, extractionConfigHash));
         String version = platform.name().toLowerCase()
