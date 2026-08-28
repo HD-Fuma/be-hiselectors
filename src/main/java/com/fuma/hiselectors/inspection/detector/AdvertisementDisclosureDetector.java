@@ -6,6 +6,8 @@ import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
+import com.fuma.hiselectors.inspection.model.EvidenceCoordinateSpace;
+import com.fuma.hiselectors.inspection.model.EvidenceTargetKind;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
@@ -67,7 +69,8 @@ public class AdvertisementDisclosureDetector implements RuleViolationDetector {
     private EvidenceLocation marker(ContentMedia media, String excerpt) {
         return new EvidenceLocation(
                 media.getId(), media.getMediaType(),
-                null, null, null, null, null, excerpt);
+                EvidenceTargetKind.MEDIA, EvidenceCoordinateSpace.NONE,
+                null, null, null, excerpt);
     }
 
     private boolean hasDisclosureAtStart(ContentMedia media) {

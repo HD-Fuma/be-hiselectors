@@ -74,8 +74,10 @@ public class ViolationEvidenceHistory extends BaseTimeEntity {
         return history;
     }
 
-    public void overwrite(ViolationEvidence evidence, LocalDateTime detectedAt) {
+    public void overwrite(
+            ViolationEvidence evidence, Long contentReportId, LocalDateTime detectedAt) {
         this.evidence = evidence;
+        this.contentReportId = contentReportId;
         this.detectedAt = detectedAt;
     }
 }

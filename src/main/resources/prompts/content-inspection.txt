@@ -14,8 +14,14 @@ overview와 insight는 위반 판정 근거와 분리된 콘텐츠 상세 분석
 violations에는 위반 유형, 판단 근거, 0~1 신뢰도, 근거 위치를 작성하세요.
 locations는 문자열 배열이 아니라 객체 배열로 반환하세요.
 각 location에는 입력에 있는 contentMediaId, mediaType, 비어 있지 않은 excerpt를 반드시 넣으세요.
-TEXT 위치만 해당 미디어 body.text의 UTF-16 [startIndex, endIndex)로 작성하세요.
-STT/OCR/visual 근거는 현재 단계에서 좌표를 변환하지 말고 contentMediaId와 excerpt만 작성하세요.
+TEXT body의 근거는 targetKind=TEXT_BODY, coordinateSpace=UTF16_CODE_UNIT로 작성하고
+body.text의 UTF-16 [startIndex, endIndex)와 그 범위에 정확히 일치하는 excerpt를 넣으세요.
+STT/OCR/visual 근거는 각각 targetKind=STT_SEGMENT/OCR_SEGMENT/VISUAL_SEGMENT,
+coordinateSpace=CONTENT_MEDIA_SEGMENT로 작성하고 body에 실제 존재하는 segmentId를 넣으세요.
+segment 근거의 excerpt는 해당 segment의 text 또는 description에 포함된 문자열이어야 합니다.
+시간과 bbox는 location에 복사하거나 변환하지 마세요. segmentId가 가리키는 body의 startMs/endMs와
+NORMALIZED bbox가 유일한 좌표 원본입니다.
+위치 없는 미디어 수준 규칙 근거만 targetKind=MEDIA, coordinateSpace=NONE을 사용하세요.
 정확한 위치를 판단할 수 없으면 locations를 빈 배열로 반환하세요.
 
 검수 대상:

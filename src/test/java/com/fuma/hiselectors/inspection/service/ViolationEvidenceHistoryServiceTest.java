@@ -35,7 +35,7 @@ class ViolationEvidenceHistoryServiceTest {
         ViolationEvidenceHistoryService service =
                 new ViolationEvidenceHistoryService(repository, clock);
 
-        service.upsert(item(), version(), 9L);
+        service.upsert(item(), version(), 9L, 77L);
 
         ArgumentCaptor<ViolationEvidenceHistory> captor =
                 ArgumentCaptor.forClass(ViolationEvidenceHistory.class);
@@ -43,13 +43,14 @@ class ViolationEvidenceHistoryServiceTest {
         assertThat(captor.getValue().getViolationItemId()).isEqualTo(20L);
         assertThat(captor.getValue().getContentVersionId()).isEqualTo(2L);
         assertThat(captor.getValue().getInspectionPolicyId()).isEqualTo(9L);
+        assertThat(captor.getValue().getContentReportId()).isEqualTo(77L);
     }
 
     @Test
     void overwritesSnapshotForSameVersionAndPolicy() {
         ViolationEvidenceHistoryRepository repository = mock(ViolationEvidenceHistoryRepository.class);
         ViolationEvidenceHistory existing = ViolationEvidenceHistory.create(
-                20L, 2L, 9L,
+                20L, 2L, 9L, 66L,
                 new ViolationEvidence("이전", 0.4, List.of(), EvidenceSource.AI),
                 LocalDateTime.of(2026, 8, 19, 1, 0));
         when(repository.findByViolationItemIdAndContentVersionIdAndInspectionPolicyId(
@@ -57,11 +58,12 @@ class ViolationEvidenceHistoryServiceTest {
         ViolationEvidenceHistoryService service =
                 new ViolationEvidenceHistoryService(repository, clock);
 
-        service.upsert(item(), version(), 9L);
+        service.upsert(item(), version(), 9L, 77L);
 
         verify(repository, never()).save(any());
         assertThat(existing.getEvidence().reason()).isEqualTo("최신");
         assertThat(existing.getDetectedAt()).isEqualTo(LocalDateTime.of(2026, 8, 20, 3, 0));
+        assertThat(existing.getContentReportId()).isEqualTo(77L);
     }
 
     @Test

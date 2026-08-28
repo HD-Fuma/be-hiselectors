@@ -108,10 +108,20 @@ class GeminiAiInspectionClientTest {
                 .containsEntry("provider", "GEMINI")
                 .containsEntry("requestedModel", "test-model")
                 .containsEntry("responseModel", "gemini-response-model")
-                .containsEntry("promptVersion", "content-inspection-v3");
+                .containsEntry("promptVersion", "content-inspection-v4");
         assertThat(result.executionMetadata().get("tokens"))
                 .isEqualTo(Map.of("input", 10, "output", 20, "total", 30));
         server.verify();
+    }
+
+    @Test
+    void exposesSegmentReferenceSchemaWithoutDuplicatedMediaCoordinates() throws Exception {
+        String schema = new ObjectMapper().writeValueAsString(client.responseJsonSchema());
+
+        assertThat(schema)
+                .contains("targetKind", "coordinateSpace", "segmentId",
+                        "CONTENT_MEDIA_SEGMENT", "UTF16_CODE_UNIT")
+                .doesNotContain("startTime", "endTime", "bbox");
     }
 
     private GeminiProperties properties() {

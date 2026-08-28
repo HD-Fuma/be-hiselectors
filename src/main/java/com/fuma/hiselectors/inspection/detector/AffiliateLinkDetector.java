@@ -3,7 +3,9 @@ package com.fuma.hiselectors.inspection.detector;
 import com.fuma.hiselectors.inspection.detector.MediaBodyTextExtractor.TextSource;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
+import com.fuma.hiselectors.inspection.model.EvidenceCoordinateSpace;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
+import com.fuma.hiselectors.inspection.model.EvidenceTargetKind;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
@@ -41,7 +43,13 @@ public class AffiliateLinkDetector implements RuleViolationDetector {
         List<EvidenceLocation> locations = links.stream()
                 .map(link -> new EvidenceLocation(
                         link.source().contentMediaId(), link.source().mediaType(),
-                        link.startIndex(), link.endIndex(), null, null, null, link.url()))
+                        link.source().targetKind(), coordinateSpace(link.source()),
+                        link.source().segmentId(),
+                        link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
+                                ? link.startIndex() : null,
+                        link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
+                                ? link.endIndex() : null,
+                        link.url()))
                 .toList();
         return List.of(new DetectedViolation(
                 ViolationTypeCode.AFFILIATE_LINK_INVALID,
@@ -62,6 +70,12 @@ public class AffiliateLinkDetector implements RuleViolationDetector {
 
     private String stripTrailingPunctuation(String url) {
         return url.replaceFirst("[.,;:!?)\\]}]+$", "");
+    }
+
+    private EvidenceCoordinateSpace coordinateSpace(TextSource source) {
+        return source.targetKind() == EvidenceTargetKind.TEXT_BODY
+                ? EvidenceCoordinateSpace.UTF16_CODE_UNIT
+                : EvidenceCoordinateSpace.CONTENT_MEDIA_SEGMENT;
     }
 
     private record LinkLocation(TextSource source, String url, int startIndex, int endIndex) {

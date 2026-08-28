@@ -9,6 +9,8 @@ import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
+import com.fuma.hiselectors.inspection.model.EvidenceCoordinateSpace;
+import com.fuma.hiselectors.inspection.model.EvidenceTargetKind;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import java.util.List;
 import java.util.Map;
@@ -39,5 +41,39 @@ class AffiliateLinkDetectorTest {
                                 assertThat(location.endIndex()).isEqualTo(38);
                             });
                 });
+    }
+
+    @Test
+    void referencesStructuredSegmentInsteadOfInventingTextCoordinates() {
+        AffiliateLinkDetector detector = new AffiliateLinkDetector(
+                new MediaBodyTextExtractor(), (url, code) -> false);
+        ContentMedia media = ContentMedia.create(
+                20L, MediaType.VIDEO, null, null, "video-id", 0, Map.of(
+                        "schemaVersion", "1.0",
+                        "stt", Map.of(
+                                "language", "ko",
+                                "segments", List.of(Map.of(
+                                        "segmentId", "stt-001",
+                                        "startMs", 0,
+                                        "endMs", 500,
+                                        "text", "link https://example.com/product"))),
+                        "ocr", Map.of("segments", List.of()),
+                        "visual", Map.of("segments", List.of())));
+        InspectionContext context = new InspectionContext(
+                Content.create(1L, SnsPlatform.YOUTUBE, "https://youtu.be/id", "LONG_FORM"),
+                ContentVersion.create(10L, 1L, "hash"),
+                Selectors.builder().selectorsRoleId("SELECTORS")
+                        .selectorsCode("SEL-1").build(),
+                List.of(media));
+
+        var location = detector.detect(context).getFirst()
+                .evidence().locations().getFirst();
+
+        assertThat(location.targetKind()).isEqualTo(EvidenceTargetKind.STT_SEGMENT);
+        assertThat(location.coordinateSpace())
+                .isEqualTo(EvidenceCoordinateSpace.CONTENT_MEDIA_SEGMENT);
+        assertThat(location.segmentId()).isEqualTo("stt-001");
+        assertThat(location.startIndex()).isNull();
+        assertThat(location.endIndex()).isNull();
     }
 }

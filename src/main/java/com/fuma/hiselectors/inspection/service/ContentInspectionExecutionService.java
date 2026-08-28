@@ -211,7 +211,8 @@ public class ContentInspectionExecutionService {
         report.replaceAnalysis(analysis.report(), analysis.executionMetadata());
         contentReportRepository.save(report);
         boolean correctionReviewPending = reconciliationService.reconcile(
-                content, version, analysis.violations(), preparation.policy().getId());
+                content, version, analysis.violations(), preparation.policy().getId(),
+                report.getId());
         version.completeInspection(LocalDateTime.now(clock));
         if (analysis.violations().isEmpty() && !correctionReviewPending) {
             version.confirmInspection(ContentInspectionDecision.APPROVED);

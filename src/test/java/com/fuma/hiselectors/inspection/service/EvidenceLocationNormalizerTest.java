@@ -7,9 +7,14 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.MediaType;
+import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
+import com.fuma.hiselectors.inspection.extraction.model.CoordinateSpace;
+import com.fuma.hiselectors.inspection.extraction.model.NormalizedBoundingBox;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
+import com.fuma.hiselectors.inspection.model.EvidenceCoordinateSpace;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
+import com.fuma.hiselectors.inspection.model.EvidenceTargetKind;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
@@ -19,16 +24,19 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 class EvidenceLocationNormalizerTest {
 
-    private final EvidenceLocationNormalizer normalizer = new EvidenceLocationNormalizer();
+    private final ContentMediaExtractionBodyMapper bodyMapper =
+            new ContentMediaExtractionBodyMapper(new ObjectMapper());
+    private final EvidenceLocationNormalizer normalizer =
+            new EvidenceLocationNormalizer(bodyMapper);
 
     @Test
     void removesOnlyInvalidAiLocationAndKeepsViolation() {
-        ContentMedia text = media(11L, MediaType.TEXT, 0, "정상 본문");
-        EvidenceLocation invalid = new EvidenceLocation(
-                999L, MediaType.TEXT, 0, 2, null, null, null, "정상");
+        ContentMedia text = textMedia(11L, 0, "normal body");
+        EvidenceLocation invalid = textLocation(999L, 0, 6, "normal");
         DetectedViolation violation = violation(EvidenceSource.AI, List.of(invalid));
 
         List<DetectedViolation> result = normalizer.normalize(
@@ -40,15 +48,22 @@ class EvidenceLocationNormalizerTest {
     }
 
     @Test
-    void sortsLocationsByMediaPriorityAndUsesFirstAsRepresentative() {
-        ContentMedia image = media(13L, MediaType.IMAGE, 0, "화면");
-        ContentMedia video = media(12L, MediaType.VIDEO, 9, "음성");
-        ContentMedia text = media(11L, MediaType.TEXT, 20, "본문 링크");
+    void validatesStoredSegmentsAndSortsByExplicitTargetKind() {
+        ContentMedia image = extractedMedia(13L, MediaType.IMAGE, 0, extraction(
+                null, new ContentMediaExtractionResult.OcrSegment(
+                        "ocr-001", null, null, "screen text",
+                        CoordinateSpace.NORMALIZED,
+                        new NormalizedBoundingBox(0.1, 0.2, 0.3, 0.1)), null));
+        ContentMedia video = extractedMedia(12L, MediaType.VIDEO, 9, extraction(
+                new ContentMediaExtractionResult.SttSegment(
+                        "stt-001", 100L, 900L, "spoken evidence"), null, null));
+        ContentMedia text = textMedia(11L, 20, "body link");
         List<EvidenceLocation> locations = List.of(
-                marker(image, "이미지"),
-                marker(video, "영상"),
-                new EvidenceLocation(11L, MediaType.TEXT, 0, 2,
-                        null, null, null, "본문"));
+                segmentLocation(image, EvidenceTargetKind.OCR_SEGMENT,
+                        "ocr-001", "screen"),
+                segmentLocation(video, EvidenceTargetKind.STT_SEGMENT,
+                        "stt-001", "spoken"),
+                textLocation(11L, 0, 4, "body"));
 
         DetectedViolation normalized = normalizer.normalize(
                 context(List.of(image, video, text)),
@@ -57,39 +72,92 @@ class EvidenceLocationNormalizerTest {
                 context(List.of()).version(), 100L, normalized.evidence());
 
         assertThat(normalized.evidence().locations())
-                .extracting(EvidenceLocation::contentMediaId)
-                .containsExactly(11L, 12L, 13L);
+                .extracting(EvidenceLocation::targetKind)
+                .containsExactly(
+                        EvidenceTargetKind.TEXT_BODY,
+                        EvidenceTargetKind.STT_SEGMENT,
+                        EvidenceTargetKind.OCR_SEGMENT);
         assertThat(item.getContentMediaId()).isEqualTo(11L);
     }
 
     @Test
-    void keepsCoordinateLessRuleMediaMarker() {
-        ContentMedia video = media(12L, MediaType.VIDEO, 0, "영상 본문");
+    void removesAiLocationThatReferencesMissingSegment() {
+        ContentMedia video = extractedMedia(12L, MediaType.VIDEO, 0, extraction(
+                new ContentMediaExtractionResult.SttSegment(
+                        "stt-001", 0L, 500L, "stored speech"), null, null));
+        EvidenceLocation fabricated = segmentLocation(
+                video, EvidenceTargetKind.STT_SEGMENT, "stt-999", "speech");
 
         DetectedViolation normalized = normalizer.normalize(
                 context(List.of(video)),
-                List.of(violation(EvidenceSource.RULE,
-                        List.of(marker(video, "영상 내부 광고 안내 문구")))))
+                List.of(violation(EvidenceSource.AI, List.of(fabricated)))).getFirst();
+
+        assertThat(normalized.evidence().locations()).isEmpty();
+    }
+
+    @Test
+    void keepsCoordinateLessRuleMediaMarker() {
+        ContentMedia video = extractedMedia(
+                12L, MediaType.VIDEO, 0, ContentMediaExtractionResult.empty());
+        EvidenceLocation marker = new EvidenceLocation(
+                12L, MediaType.VIDEO, EvidenceTargetKind.MEDIA,
+                EvidenceCoordinateSpace.NONE, null, null, null,
+                "missing ad disclosure");
+
+        DetectedViolation normalized = normalizer.normalize(
+                context(List.of(video)),
+                List.of(violation(EvidenceSource.RULE, List.of(marker))))
                 .getFirst();
 
         assertThat(normalized.evidence().locations()).singleElement().satisfies(location -> {
-            assertThat(location.contentMediaId()).isEqualTo(12L);
+            assertThat(location.targetKind()).isEqualTo(EvidenceTargetKind.MEDIA);
+            assertThat(location.coordinateSpace()).isEqualTo(EvidenceCoordinateSpace.NONE);
+            assertThat(location.segmentId()).isNull();
             assertThat(location.startIndex()).isNull();
-            assertThat(location.startTime()).isNull();
-            assertThat(location.bbox()).isNull();
         });
+    }
+
+    @Test
+    void readsLegacyEvidenceJsonWithoutFailingHistoricalQueries() throws Exception {
+        EvidenceLocation legacy = new ObjectMapper().readValue("""
+                {
+                  "contentMediaId": 12,
+                  "mediaType": "VIDEO",
+                  "startTime": 1.5,
+                  "endTime": 2.5,
+                  "excerpt": "legacy evidence"
+                }
+                """, EvidenceLocation.class);
+
+        assertThat(legacy.contentMediaId()).isEqualTo(12L);
+        assertThat(legacy.targetKind()).isNull();
+        assertThat(legacy.excerpt()).isEqualTo("legacy evidence");
     }
 
     private DetectedViolation violation(
             EvidenceSource source, List<EvidenceLocation> locations) {
         return new DetectedViolation(
                 ViolationTypeCode.ABUSIVE_LANGUAGE,
-                new ViolationEvidence("근거", 0.9, locations, source));
+                new ViolationEvidence("reason", 0.9, locations, source));
     }
 
-    private EvidenceLocation marker(ContentMedia media, String excerpt) {
-        return new EvidenceLocation(media.getId(), media.getMediaType(),
-                null, null, null, null, null, excerpt);
+    private EvidenceLocation textLocation(
+            Long mediaId, int startIndex, int endIndex, String excerpt) {
+        return new EvidenceLocation(
+                mediaId, MediaType.TEXT, EvidenceTargetKind.TEXT_BODY,
+                EvidenceCoordinateSpace.UTF16_CODE_UNIT, null,
+                startIndex, endIndex, excerpt);
+    }
+
+    private EvidenceLocation segmentLocation(
+            ContentMedia media,
+            EvidenceTargetKind targetKind,
+            String segmentId,
+            String excerpt) {
+        return new EvidenceLocation(
+                media.getId(), media.getMediaType(), targetKind,
+                EvidenceCoordinateSpace.CONTENT_MEDIA_SEGMENT,
+                segmentId, null, null, excerpt);
     }
 
     private InspectionContext context(List<ContentMedia> media) {
@@ -105,10 +173,35 @@ class EvidenceLocationNormalizerTest {
                 media);
     }
 
-    private ContentMedia media(Long id, MediaType type, int sequenceNo, String text) {
+    private ContentMedia textMedia(Long id, int sequenceNo, String text) {
         ContentMedia media = ContentMedia.create(
-                20L, type, null, "sns-" + id, sequenceNo, Map.of("text", text));
+                20L, MediaType.TEXT, null, null, "sns-" + id,
+                sequenceNo, Map.of("text", text));
         ReflectionTestUtils.setField(media, "id", id);
         return media;
+    }
+
+    private ContentMedia extractedMedia(
+            Long id, MediaType type, int sequenceNo,
+            ContentMediaExtractionResult extraction) {
+        ContentMedia media = ContentMedia.create(
+                20L, type, "https://cdn/" + id, null, "sns-" + id,
+                sequenceNo, bodyMapper.toBody(extraction));
+        ReflectionTestUtils.setField(media, "id", id);
+        return media;
+    }
+
+    private ContentMediaExtractionResult extraction(
+            ContentMediaExtractionResult.SttSegment stt,
+            ContentMediaExtractionResult.OcrSegment ocr,
+            ContentMediaExtractionResult.VisualSegment visual) {
+        return new ContentMediaExtractionResult(
+                "1.0",
+                new ContentMediaExtractionResult.SttExtraction(
+                        "ko", stt == null ? List.of() : List.of(stt)),
+                new ContentMediaExtractionResult.OcrExtraction(
+                        ocr == null ? List.of() : List.of(ocr)),
+                new ContentMediaExtractionResult.VisualExtraction(
+                        visual == null ? List.of() : List.of(visual)));
     }
 }

@@ -123,7 +123,7 @@ class ContentInspectionExecutionServiceTest {
     void cleanCorrectionWaitsForAdministratorApproval() {
         Fixture fixture = fixture();
         ContentVersion version = prepareSuccessfulInspection(fixture);
-        when(fixture.reconciliation.reconcile(any(), any(), any(), anyLong()))
+        when(fixture.reconciliation.reconcile(any(), any(), any(), anyLong(), any()))
                 .thenReturn(true);
 
         InspectionResult result = fixture.service.inspect(1L);

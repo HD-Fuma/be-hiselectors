@@ -216,16 +216,6 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     }
 
     Map<String, Object> responseJsonSchema() {
-        Map<String, Object> boundingBox = Map.of(
-                "type", "object",
-                "additionalProperties", false,
-                "properties", Map.of(
-                        "x", Map.of("type", "integer"),
-                        "y", Map.of("type", "integer"),
-                        "width", Map.of("type", "integer"),
-                        "height", Map.of("type", "integer")),
-                "required", List.of("x", "y", "width", "height"));
-
         Map<String, Object> location = Map.of(
                 "type", "object",
                 "additionalProperties", false,
@@ -234,13 +224,22 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "mediaType", Map.of(
                                 "type", "string",
                                 "enum", List.of("TEXT", "IMAGE", "VIDEO")),
+                        "targetKind", Map.of(
+                                "type", "string",
+                                "enum", List.of(
+                                        "TEXT_BODY", "STT_SEGMENT", "OCR_SEGMENT",
+                                        "VISUAL_SEGMENT", "MEDIA")),
+                        "coordinateSpace", Map.of(
+                                "type", "string",
+                                "enum", List.of(
+                                        "UTF16_CODE_UNIT", "CONTENT_MEDIA_SEGMENT", "NONE")),
+                        "segmentId", Map.of("type", "string"),
                         "startIndex", Map.of("type", "integer"),
                         "endIndex", Map.of("type", "integer"),
-                        "startTime", Map.of("type", "number"),
-                        "endTime", Map.of("type", "number"),
-                        "bbox", boundingBox,
                         "excerpt", Map.of("type", "string")),
-                "required", List.of("contentMediaId", "mediaType", "excerpt"));
+                "required", List.of(
+                        "contentMediaId", "mediaType", "targetKind",
+                        "coordinateSpace", "excerpt"));
 
         Map<String, Object> overview = Map.of(
                 "type", "object",
