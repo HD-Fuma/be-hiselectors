@@ -48,7 +48,10 @@ class NotificationModelTest {
     @DisplayName("메시지 유형은 DB 알림 목적 코드와 연결된다")
     void notificationTypeMapsPurposeCode() {
         assertThat(NotificationType.values())
-                .allSatisfy(type -> assertThat(type.getPurposeCode()).isEqualTo(type.name()));
+                .allSatisfy(type -> {
+                    assertThat(type.getPurposeCode()).isEqualTo(type.name());
+                    assertThat(type.getPurposeCode()).hasSizeLessThanOrEqualTo(20);
+                });
     }
 
     private Notification notification(String body, LocalDateTime requestAt) {

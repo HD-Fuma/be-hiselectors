@@ -9,7 +9,7 @@ public class NotificationMessageFactory {
 
     public MessageText create(NotificationType type, String name, String detail) {
         return switch (type) {
-            case APPLICATION_SUBMITTED -> applicationSubmitted(name);
+            case APPLICATION_RECEIVED -> applicationSubmitted(name);
             case SELECTION_APPROVED -> selectionApproved(name);
             case SELECTION_REJECTED -> selectionRejected(name, detail);
             case CONTENT_EDIT_REQUEST -> contentEditRequest(name, detail);
