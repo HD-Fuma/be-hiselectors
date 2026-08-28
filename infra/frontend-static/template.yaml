@@ -85,8 +85,6 @@ Resources:
       DomainValidationOptions:
         - DomainName: !Ref DomainName
           HostedZoneId: !Ref HostedZone
-        - DomainName: !Sub '*.${DomainName}'
-          HostedZoneId: !Ref HostedZone
 
   FrontendOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
