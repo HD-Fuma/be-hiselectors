@@ -22,6 +22,7 @@ class ViolationTypeDescriptionMigrationContractTest {
         String sql = Files.readString(MIGRATION);
 
         assertThat(sql).contains(
+                "SET NAMES utf8mb4;",
                 """
                 UPDATE violation_type
                 SET description = '광고·수수료 안내 문구 확인 필요'
@@ -48,11 +49,21 @@ class ViolationTypeDescriptionMigrationContractTest {
                 "select(.name == \"DB_NAME\")] | length == 1",
                 "select(.name == \"DB_USERNAME\")] | length == 1",
                 "select(.name == \"DB_PASSWORD\")] | length == 1",
+                "HEX(CONVERT(description USING utf8mb4))",
+                "EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94",
+                "ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94",
                 "--ssl-mode=VERIFY_IDENTITY",
                 "https://truststore.pki.rds.amazonaws.com/ap-northeast-2/",
                 "sha256sum --check --status",
                 "aws ecs run-task",
                 "violation-type-descriptions=verified");
-        assertThat(oldWorkflow).doesNotContain("push:\n    branches: [dev]");
+        assertThat(workflow.split("--default-character-set=utf8mb4", -1)).hasSize(3);
+        assertThat(workflow).doesNotContain(
+                "description = '광고·수수료 안내 문구 확인 필요'",
+                "description = '제휴 링크 확인 필요'");
+        assertThat(oldWorkflow.split("--default-character-set=utf8mb4", -1)).hasSize(4);
+        assertThat(oldWorkflow)
+                .contains("HEX(CONVERT(description USING utf8mb4))")
+                .doesNotContain("push:\n    branches: [dev]");
     }
 }
