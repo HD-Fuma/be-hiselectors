@@ -11,7 +11,9 @@ class ViolationTypeDescriptionMigrationContractTest {
 
     private static final Path MIGRATION = Path.of(
             "src/main/resources/db/016_violation_type_descriptions.sql");
-    private static final Path DEPLOY_WORKFLOW = Path.of(".github/workflows/deploy-prod.yml");
+    private static final Path ECS_DEPLOY_WORKFLOW = Path.of(
+            ".github/workflows/deploy-ecs-blue-green.yml");
+    private static final Path EC2_DEPLOY_WORKFLOW = Path.of(".github/workflows/deploy-prod.yml");
 
     @Test
     void migrationDefinesPlainLanguageDescriptions() throws IOException {
@@ -34,14 +36,15 @@ class ViolationTypeDescriptionMigrationContractTest {
 
     @Test
     void productionWorkflowAppliesAndVerifiesDescriptionMigration() throws IOException {
-        String workflow = Files.readString(DEPLOY_WORKFLOW);
+        String workflow = Files.readString(ECS_DEPLOY_WORKFLOW);
+        String oldWorkflow = Files.readString(EC2_DEPLOY_WORKFLOW);
 
         assertThat(workflow).contains(
-                "VIOLATION_TYPE_MIGRATION_B64=\"$(gzip -c "
-                        + "src/main/resources/db/016_violation_type_descriptions.sql | base64 -w0)\"",
-                "printf '%s' \"$VIOLATION_TYPE_MIGRATION_B64\" | base64 -d | gzip -d "
-                        + "> \"$VIOLATION_TYPE_MIGRATION_FILE\"",
-                "cat \"$VIOLATION_TYPE_MIGRATION_FILE\" | mysql_apply_file",
+                "push:\n    branches: [dev]",
+                "migration_sql=\"$(< src/main/resources/db/016_violation_type_descriptions.sql)\"",
+                "mysql:8.4@sha256:",
+                "aws ecs run-task",
                 "violation-type-descriptions=verified");
+        assertThat(oldWorkflow).doesNotContain("push:\n    branches: [dev]");
     }
 }

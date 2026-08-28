@@ -1032,6 +1032,17 @@ Resources:
                   - ecs:RegisterTaskDefinition
                 Resource: '*'
               - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub
+                  - 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${ServiceName}-migration:*'
+                  - ServiceName: !GetAtt ApiService.Name
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !GetAtt Cluster.Arn
+              - Effect: Allow
+                Action: ecs:DescribeTasks
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${Cluster}/*'
+              - Effect: Allow
                 Action:
                   - ecs:DescribeServices
                   - ecs:ListServiceDeployments
