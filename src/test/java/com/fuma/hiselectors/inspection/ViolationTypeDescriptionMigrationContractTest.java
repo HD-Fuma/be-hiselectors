@@ -43,6 +43,14 @@ class ViolationTypeDescriptionMigrationContractTest {
                 "push:\n    branches: [dev]",
                 "migration_sql=\"$(< src/main/resources/db/016_violation_type_descriptions.sql)\"",
                 "mysql:8.4@sha256:",
+                "select(.name == \"DB_HOST\")] | length == 1",
+                "select(.name == \"DB_PORT\")] | length == 1",
+                "select(.name == \"DB_NAME\")] | length == 1",
+                "select(.name == \"DB_USERNAME\")] | length == 1",
+                "select(.name == \"DB_PASSWORD\")] | length == 1",
+                "--ssl-mode=VERIFY_IDENTITY",
+                "https://truststore.pki.rds.amazonaws.com/ap-northeast-2/",
+                "sha256sum --check --status",
                 "aws ecs run-task",
                 "violation-type-descriptions=verified");
         assertThat(oldWorkflow).doesNotContain("push:\n    branches: [dev]");

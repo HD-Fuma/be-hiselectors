@@ -114,23 +114,38 @@ jobs:
           jq -e --arg container "$ECS_CONTAINER_NAME" '
             ([.containerDefinitions[] | select(.name == $container)] | length == 1)
             and ([.containerDefinitions[] | select(.name == $container) | .environment[]?
-              | select(.name == "DB_HOST" or .name == "DB_PORT")] | length == 2)
+              | select(.name == "DB_HOST")] | length == 1)
+            and ([.containerDefinitions[] | select(.name == $container) | .environment[]?
+              | select(.name == "DB_PORT")] | length == 1)
             and ([.containerDefinitions[] | select(.name == $container) | .secrets[]?
-              | select(.name == "DB_NAME" or .name == "DB_USERNAME" or .name == "DB_PASSWORD")]
-              | length == 3)
+              | select(.name == "DB_NAME")] | length == 1)
+            and ([.containerDefinitions[] | select(.name == $container) | .secrets[]?
+              | select(.name == "DB_USERNAME")] | length == 1)
+            and ([.containerDefinitions[] | select(.name == $container) | .secrets[]?
+              | select(.name == "DB_PASSWORD")] | length == 1)
           ' "$work_dir/current-task-definition.json" > /dev/null || {
             echo "The API task definition must expose one complete database configuration." >&2
             exit 1
           }
 
+          rds_ca_bundle="$work_dir/ap-northeast-2-bundle.pem"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --retry 3 \
+            --output "$rds_ca_bundle" \
+            https://truststore.pki.rds.amazonaws.com/ap-northeast-2/ap-northeast-2-bundle.pem
+          # ponytail: update this pin when AWS rotates the Seoul RDS CA bundle.
+          printf '%s  %s\n' \
+            913fb5b814f17af79d4c1622584a8d0ceddf5b0d76fe353d0c7d1186cdd6b229 \
+            "$rds_ca_bundle" | sha256sum --check --status
+          rds_ca_bundle_b64="$(base64 -w0 "$rds_ca_bundle")"
           migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
           verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND description = '광고·수수료 안내 문구 확인 필요') OR (code = 'AFFILIATE_LINK_INVALID' AND description = '제휴 링크 확인 필요');"
           jq \
             --arg container "$ECS_CONTAINER_NAME" \
             --arg family "${ECS_SERVICE}-migration" \
+            --arg rds_ca_bundle_b64 "$rds_ca_bundle_b64" \
             --arg migration_sql "$migration_sql" \
             --arg verify_sql "$verify_sql" \
-            --arg command 'printf "%s\n" "$MIGRATION_SQL" | mysql --protocol=TCP --connect-timeout=10 --ssl-mode=REQUIRED -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --protocol=TCP --connect-timeout=10 --ssl-mode=REQUIRED -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
+            --arg command 'umask 077; printf "%s" "$RDS_CA_BUNDLE_B64" | base64 -d > /tmp/rds-ca.pem; printf "%s\n" "$MIGRATION_SQL" | mysql --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
             (.containerDefinitions[] | select(.name == $container)) as $api
             | {
                 family: $family,
@@ -148,6 +163,7 @@ jobs:
                   environment: (
                     [$api.environment[] | select(.name == "DB_HOST" or .name == "DB_PORT")]
                     + [
+                        {name: "RDS_CA_BUNDLE_B64", value: $rds_ca_bundle_b64},
                         {name: "MIGRATION_SQL", value: $migration_sql},
                         {name: "VERIFY_SQL", value: $verify_sql}
                       ]
