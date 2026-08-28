@@ -14,6 +14,8 @@ production listener는 HTTPS `443`, HTTP `80`은 HTTPS redirect, green test list
 - ECR repository, image와 GitHub OIDC provider는 이 stack과 같은 AWS account/region에 있어야 한다.
 - `RuntimeSecretArn`은 새 리허설 전용 secret이며 기본 AWS Secrets Manager KMS key를 사용한다.
 - `AcmCertificateArn`은 `ap-northeast-2`에서 별도로 발급·DNS 검증한 `api.hiselectors.shop` 인증서 ARN이어야 한다.
+- `AlertTopicArn`은 기존 Amazon Q/Slack 구독이 연결된 standard SNS topic ARN이어야 한다.
+- `BatchLogLambdaArn`은 `BATCH_EVENT`를 검증해 기존 batch alert topic으로 전달하는 Lambda ARN이어야 한다. 이 stack은 새 ECS log group으로 제한된 invoke permission과 subscription filter만 추가한다.
 - 배포 주체는 IAM role 생성 권한과 `CAPABILITY_IAM`이 필요하다. 이 stack이 만드는 GitHub role에는 CloudFormation 권한이 없다.
 
 리허설 secret JSON에는 아래 key가 모두 있어야 한다.
@@ -76,6 +78,34 @@ DNS 전환 직전에 `ProductionListenerIngressCidr=0.0.0.0/0`으로 바꾸고, 
 
 API는 측정된 유휴 메모리 사용량을 기준으로 `0.5 vCPU / 1GB`를 사용한다. 스케줄러는 실제 배치 부하를 측정하기 전까지 `1 vCPU / 2GB`를 유지한다.
 
+## 운영 모니터링 전환
+
+stack은 기존 `AlertTopicArn`으로 다음 상태를 알린다.
+
+- API와 scheduler의 `LiveTaskCount`가 각각 desired count 아래로 3분 중 2분 내려간 경우
+- API와 scheduler의 평균 memory 사용률이 5분 연속 85% 이상인 경우
+- target 또는 ALB가 생성한 5xx가 2분 연속 분당 5건 이상인 경우
+- RDS connection, CPU, free memory, free storage가 기존 운영 임계값을 넘긴 경우
+- RDS `availability`, `failure`, `low storage` event가 발생한 경우
+
+ECS 기본 `AWS/ECS` metric을 사용하므로 Container Insights는 필요 없다. `ApiDesiredCount=0` 또는 `SchedulerDesiredCount=0`이면 해당 service alarm은 만들지 않는다.
+
+RDS audit log는 `/aws/rds/instance/${STACK_NAME}-test-db/audit`에 기록되고 30일 보관된다. 기존 `hi-selectors-audit` option group을 사용하는 DB에 `EnableCloudwatchLogsExports=audit`를 적용하는 in-place update이며 DB replacement가 아니다.
+
+운영 stack의 실제 scheduler는 `desired/running=1/1`이어도 과거 CloudFormation parameter가 `SchedulerDesiredCount=0`일 수 있다. 운영 stack update에는 아래 값을 명시해 scheduler를 끄는 drift 역적용을 막는다. 다른 parameter는 현재 값을 유지하고 `ImageUri`도 현재 service image로 맞춘다.
+
+```bash
+aws cloudformation deploy \
+  --stack-name hiselectors-bg-test \
+  --template-file infra/prod/template.yaml \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides \
+    ApiDesiredCount=2 SchedulerDesiredCount=1 EnableDeploymentPause=true \
+    ImageUri=CURRENT_ECS_IMAGE_URI
+```
+
+새 `/ecs/hiselectors-bg-test` log group의 `batch-events-to-slack` filter와 Lambda invoke permission이 생성된 뒤 실제 `BATCH_EVENT` 전달을 확인한다. 그 전에는 기존 `/hiselectors/app` filter를 제거하지 않는다. 확인 후 기존 filter와 기존 log group으로 제한된 Lambda permission만 제거하며 Lambda와 SNS topics는 유지한다.
+
 ## GitHub workflow 연결
 
 - `GitHubDeployRoleArn` → GitHub variable `ECS_AWS_ROLE_ARN`
@@ -102,6 +132,8 @@ API blue-green deployment가 성공하면 workflow는 scheduler task definition�
 
 롤백은 순서를 바꾸면 안 된다. 먼저 ECS scheduler를 `1`에서 `0`으로 내리고 `desired/running/pending=0/0/0`을 확인한 다음, workflow를 `mode=restore`, 확인값 `SET_EC2_SCHEDULING_restore`로 실행한다. workflow도 ECS scheduler가 완전히 멈추지 않았으면 복원을 거부하며, 성공하면 컷오버 전에 보관한 EC2 설정값을 그대로 복원한다. 이 확인부터 복원 완료까지는 cutover lock 구간으로 취급해 별도 CloudFormation update나 ECS console/CLI 변경을 금지한다.
 
-stack 삭제 시 복원한 `TestDatabase`는 final snapshot 없이 삭제된다. 원본 snapshot과 기존 운영 리소스는 삭제 대상이 아니다.
+stack 삭제 시 `TestDatabase`와 audit log group은 `Retain`되고 DB deletion protection도 유지된다.
+삭제가 필요하면 별도 final snapshot을 만든 뒤 명시적으로 처리한다. 원본 snapshot과 기존 운영
+리소스는 삭제 대상이 아니다.
 
 STT sidecar는 넣지 않았다. 현재 `Dockerfile`은 Spring API만 만들고 `stt-worker`에는 운영 container image 정의가 없으므로, 필요해질 때 별도 worker image/service로 추가한다.
