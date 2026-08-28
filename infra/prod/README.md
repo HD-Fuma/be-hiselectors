@@ -96,6 +96,12 @@ HTTPS listener만 적용하는 update에서는 `ImageUri=UsePreviousValue`로 �
 
 API blue-green deployment가 성공하면 workflow는 scheduler task definition도 같은 image SHA로 갱신하고 현재 desired count는 바꾸지 않는다. 리허설 중에는 scheduler가 계속 `0`이며, 나중에 `0`에서 `1`로 전환해도 검증된 API release와 같은 image가 시작된다.
 
+## 스케줄러 전환
+
+컷오버 직전에 `Set production EC2 scheduling` workflow를 `mode=disable`, 확인값 `SET_EC2_SCHEDULING_disable`로 실행한다. 이 workflow는 기존 값을 별도 보관하고 EC2 API를 네 스케줄러 플래그가 `false`인 상태로 재생성할 뿐, ECS scheduler는 건드리지 않는다. 완료를 확인한 뒤 별도 작업으로 ECS scheduler를 `0`에서 `1`로 올린다.
+
+롤백은 순서를 바꾸면 안 된다. 먼저 ECS scheduler를 `1`에서 `0`으로 내리고 `desired/running/pending=0/0/0`을 확인한 다음, workflow를 `mode=restore`, 확인값 `SET_EC2_SCHEDULING_restore`로 실행한다. workflow도 ECS scheduler가 완전히 멈추지 않았으면 복원을 거부하며, 성공하면 컷오버 전에 보관한 EC2 설정값을 그대로 복원한다.
+
 stack 삭제 시 복원한 `TestDatabase`는 final snapshot 없이 삭제된다. 원본 snapshot과 기존 운영 리소스는 삭제 대상이 아니다.
 
 STT sidecar는 넣지 않았다. 현재 `Dockerfile`은 Spring API만 만들고 `stt-worker`에는 운영 container image 정의가 없으므로, 필요해질 때 별도 worker image/service로 추가한다.
