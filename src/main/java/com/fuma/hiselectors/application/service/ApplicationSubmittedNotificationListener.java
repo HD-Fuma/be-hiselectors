@@ -26,7 +26,7 @@ public class ApplicationSubmittedNotificationListener {
                     event.applicationId(),
                     event.name(),
                     null,
-                    NotificationType.APPLICATION_SUBMITTED));
+                    NotificationType.APPLICATION_RECEIVED));
         } catch (RuntimeException e) {
             log.warn("지원 접수 알림 발송 실패: applicationId={}", event.applicationId(), e);
         }
