@@ -5,7 +5,6 @@ import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -16,27 +15,18 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @RequiredArgsConstructor
 public class ApplicationSubmittedNotificationListener {
 
-    @Value("${application.notification.sender-admin-login-id:}")
-    private String senderAdminLoginId;
-
     private final NotificationService notificationService;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void notifySubmitted(ApplicationSubmittedEvent event) {
-        if (senderAdminLoginId == null || senderAdminLoginId.isBlank()) {
-            log.warn("지원 접수 알림을 건너뜁니다: 발신 관리자 설정 없음, applicationId={}",
-                    event.applicationId());
-            return;
-        }
         try {
-            notificationService.sendToFriendAsSystem(senderAdminLoginId,
-                    new NotificationMessageCommand(
-                            null,
-                            event.userId(),
-                            event.applicationId(),
-                            event.name(),
-                            null,
-                            NotificationType.APPLICATION_SUBMITTED));
+            notificationService.sendToFriendAsSystem(new NotificationMessageCommand(
+                    null,
+                    event.userId(),
+                    event.applicationId(),
+                    event.name(),
+                    null,
+                    NotificationType.APPLICATION_SUBMITTED));
         } catch (RuntimeException e) {
             log.warn("지원 접수 알림 발송 실패: applicationId={}", event.applicationId(), e);
         }
