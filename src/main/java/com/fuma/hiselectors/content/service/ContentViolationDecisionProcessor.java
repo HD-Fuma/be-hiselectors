@@ -56,6 +56,10 @@ public class ContentViolationDecisionProcessor {
         }
     }
 
+    public void resolveCorrection(ViolationItem item, ContentVersion version) {
+        item.confirmCorrection(version);
+    }
+
     private String violationReason(ViolationItem item) {
         if (item.getEvidence() == null || item.getEvidence().reason() == null
                 || item.getEvidence().reason().isBlank()) {

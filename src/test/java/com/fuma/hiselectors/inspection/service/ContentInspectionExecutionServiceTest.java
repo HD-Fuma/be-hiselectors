@@ -86,6 +86,20 @@ class ContentInspectionExecutionServiceTest {
     }
 
     @Test
+    void cleanCorrectionWaitsForAdministratorApproval() {
+        Fixture fixture = fixture();
+        ContentVersion version = prepareSuccessfulInspection(fixture);
+        when(fixture.reconciliation.reconcile(any(), any(), any(), anyLong()))
+                .thenReturn(true);
+
+        InspectionResult result = fixture.service.inspect(1L);
+
+        assertThat(result.violationCount()).isZero();
+        assertThat(version.getStatus()).isEqualTo(ContentVersionStatus.COMPLETED);
+        assertThat(version.getInspectionDecision()).isNull();
+    }
+
+    @Test
     void trackedAnalysisFailureCommitsFailedStatusAndOneFailedDelta() {
         Fixture fixture = fixture();
         ContentVersion version = prepareSuccessfulInspection(fixture);

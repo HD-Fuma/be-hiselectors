@@ -96,6 +96,24 @@ public class ViolationItem extends BaseTimeEntity {
         resolvedContentVersionId = version.getId();
     }
 
+    public void awaitCorrectionReview(ContentVersion version) {
+        if (status != ViolationStatus.VIOLATION_CONFIRMED
+                && status != ViolationStatus.EDIT_REQUESTED
+                && status != ViolationStatus.CORRECTION_REVIEW_PENDING) {
+            throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
+        }
+        status = ViolationStatus.CORRECTION_REVIEW_PENDING;
+        resolvedContentVersionId = version.getId();
+    }
+
+    public void confirmCorrection(ContentVersion version) {
+        if (status != ViolationStatus.CORRECTION_REVIEW_PENDING
+                || !version.getId().equals(resolvedContentVersionId)) {
+            throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
+        }
+        status = ViolationStatus.RESOLVED;
+    }
+
     public void confirm() {
         if (status != ViolationStatus.PENDING) {
             throw new BusinessException(ErrorCode.INVALID_VIOLATION_STATUS_TRANSITION);
@@ -130,7 +148,8 @@ public class ViolationItem extends BaseTimeEntity {
     public boolean isOpen() {
         return status == ViolationStatus.PENDING
                 || status == ViolationStatus.VIOLATION_CONFIRMED
-                || status == ViolationStatus.EDIT_REQUESTED;
+                || status == ViolationStatus.EDIT_REQUESTED
+                || status == ViolationStatus.CORRECTION_REVIEW_PENDING;
     }
 
     private void applyDetection(ContentVersion version, ViolationEvidence evidence) {

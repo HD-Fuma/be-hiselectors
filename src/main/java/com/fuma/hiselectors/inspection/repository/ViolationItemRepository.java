@@ -30,6 +30,21 @@ public interface ViolationItemRepository extends JpaRepository<ViolationItem, Lo
     @Query("select vi from ViolationItem vi where vi.id in :ids order by vi.id")
     List<ViolationItem> findAllByIdInForUpdate(@Param("ids") Collection<Long> ids);
 
+    List<ViolationItem> findAllByResolvedContentVersionIdAndStatusOrderByIdAsc(
+            Long contentVersionId, ViolationStatus status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select vi
+            from ViolationItem vi
+            where vi.resolvedContentVersionId = :contentVersionId
+              and vi.status = :status
+            order by vi.id
+            """)
+    List<ViolationItem> findAllByResolutionCandidateForUpdate(
+            @Param("contentVersionId") Long contentVersionId,
+            @Param("status") ViolationStatus status);
+
     @Query("""
             select case when count(vi) > 0 then true else false end
             from ViolationItem vi, Content c

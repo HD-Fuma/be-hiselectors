@@ -17,6 +17,9 @@ public interface ViolationEvidenceHistoryRepository
     List<ViolationEvidenceHistory> findAllByViolationItemIdOrderByDetectedAtAscIdAsc(
             Long violationItemId);
 
+    Optional<ViolationEvidenceHistory> findFirstByViolationItemIdOrderByDetectedAtDescIdDesc(
+            Long violationItemId);
+
     @Query("""
             select history
             from ViolationEvidenceHistory history

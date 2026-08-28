@@ -162,7 +162,7 @@ class ContentDetailQueryServiceTest {
                 .thenReturn(Optional.of(report));
         when(histories.findAllByContentVersionIdOrderByDetectedAtAscIdAsc(20L))
                 .thenReturn(List.of(historyA, historyB));
-        when(items.findAllById(List.of(50L, 50L))).thenReturn(List.of(item));
+        when(items.findAllById(List.of(50L))).thenReturn(List.of(item));
         when(types.findAllById(List.of(100L))).thenReturn(List.of(type));
 
         var result = service.getVersion(10L, 20L);
@@ -177,5 +177,68 @@ class ContentDetailQueryServiceTest {
         verify(histories).findAllByContentVersionIdOrderByDetectedAtAscIdAsc(20L);
         verify(histories, never())
                 .findAllByContentVersionIdAndInspectionPolicyIdOrderByIdAsc(20L, 9L);
+    }
+
+    @Test
+    void returnsPriorEvidenceForCorrectionWaitingForReview() {
+        ContentRepository contents = mock(ContentRepository.class);
+        ContentVersionRepository versions = mock(ContentVersionRepository.class);
+        ContentMediaRepository mediaRepository = mock(ContentMediaRepository.class);
+        ContentReportRepository reports = mock(ContentReportRepository.class);
+        ViolationItemRepository items = mock(ViolationItemRepository.class);
+        ViolationTypeRepository types = mock(ViolationTypeRepository.class);
+        ViolationEvidenceHistoryRepository histories =
+                mock(ViolationEvidenceHistoryRepository.class);
+        ContentDetailQueryService service = new ContentDetailQueryService(
+                contents, versions, mediaRepository, reports, items, types, histories);
+
+        Content content = Content.create(
+                7L, SnsPlatform.INSTAGRAM, "https://instagram.com/p/corrected", "POST");
+        ReflectionTestUtils.setField(content, "id", 10L);
+        ContentVersion detectedVersion = ContentVersion.create(10L, 1L, "old");
+        ReflectionTestUtils.setField(detectedVersion, "id", 19L);
+        ContentVersion correctedVersion = ContentVersion.create(10L, 2L, "clean");
+        ReflectionTestUtils.setField(correctedVersion, "id", 20L);
+        ContentReport report = ContentReport.create(20L, ContentReportData.empty(), 9L);
+        ViolationEvidence evidence = new ViolationEvidence(
+                "prior violation", 0.9, List.of(), EvidenceSource.AI);
+        ViolationItem item = ViolationItem.pending(detectedVersion, 100L, evidence);
+        ReflectionTestUtils.setField(item, "id", 50L);
+        item.confirm();
+        item.requestEdit();
+        item.awaitCorrectionReview(correctedVersion);
+        ViolationEvidenceHistory history = ViolationEvidenceHistory.create(
+                50L, 19L, 8L, evidence, LocalDateTime.of(2026, 8, 24, 1, 0));
+        ReflectionTestUtils.setField(history, "id", 60L);
+        ViolationType type = ViolationType.create(
+                ViolationTypeCode.ABUSIVE_LANGUAGE, "abusive language");
+        ReflectionTestUtils.setField(type, "id", 100L);
+
+        when(contents.findById(10L)).thenReturn(Optional.of(content));
+        when(versions.findAllByContentIdOrderByVersionNoDesc(10L))
+                .thenReturn(List.of(correctedVersion, detectedVersion));
+        when(mediaRepository.findByContentVersionIdOrderBySequenceNoAsc(20L))
+                .thenReturn(List.of());
+        when(reports.findFirstByContentVersionIdOrderByIdDesc(20L))
+                .thenReturn(Optional.of(report));
+        when(histories.findAllByContentVersionIdAndInspectionPolicyIdOrderByIdAsc(20L, 9L))
+                .thenReturn(List.of());
+        when(items.findAllByResolvedContentVersionIdAndStatusOrderByIdAsc(
+                20L, ViolationStatus.CORRECTION_REVIEW_PENDING))
+                .thenReturn(List.of(item));
+        when(histories.findFirstByViolationItemIdOrderByDetectedAtDescIdDesc(50L))
+                .thenReturn(Optional.of(history));
+        when(items.findAllById(List.of(50L))).thenReturn(List.of(item));
+        when(types.findAllById(List.of(100L))).thenReturn(List.of(type));
+
+        var result = service.getLatest(10L);
+
+        assertThat(result.selectedVersion().inspectionDecision()).isNull();
+        assertThat(result.selectedVersion().violations()).singleElement().satisfies(violation -> {
+            assertThat(violation.currentStatus())
+                    .isEqualTo(ViolationStatus.CORRECTION_REVIEW_PENDING);
+            assertThat(violation.violationEvidenceHistoryId()).isEqualTo(60L);
+            assertThat(violation.evidence()).isEqualTo(evidence);
+        });
     }
 }

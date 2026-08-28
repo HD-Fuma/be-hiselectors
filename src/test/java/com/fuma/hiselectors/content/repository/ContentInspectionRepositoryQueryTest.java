@@ -112,7 +112,8 @@ class ContentInspectionRepositoryQueryTest {
                 java.util.EnumSet.of(
                         ViolationStatus.PENDING,
                         ViolationStatus.VIOLATION_CONFIRMED,
-                        ViolationStatus.EDIT_REQUESTED),
+                        ViolationStatus.EDIT_REQUESTED,
+                        ViolationStatus.CORRECTION_REVIEW_PENDING),
                 ContentVersionStatus.COMPLETED,
                 ViolationStatus.PENDING,
                 ContentVersionCreationReason.SOURCE_CHANGE,

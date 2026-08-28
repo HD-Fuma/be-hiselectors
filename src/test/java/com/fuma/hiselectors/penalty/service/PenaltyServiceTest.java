@@ -3,6 +3,8 @@ package com.fuma.hiselectors.penalty.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,6 +14,7 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationTypeRepository;
 import com.fuma.hiselectors.penalty.dto.PenaltyCreateRequest;
@@ -142,6 +145,19 @@ class PenaltyServiceTest {
         assertThat(active.getStatus()).isEqualTo(PenaltyStatus.RELEASED);
         assertThat(selectors.isBlacklisted()).isFalse();
         verify(penaltyRepository, never()).countBySelectorsId(any());
+    }
+
+    @Test
+    void correctionWaitingForReviewKeepsAutomaticPenaltyActive() {
+        when(violationItemRepository.existsOpenBySelectorsId(
+                eq(9L), argThat(statuses ->
+                        statuses.contains(ViolationStatus.CORRECTION_REVIEW_PENDING))))
+                .thenReturn(true);
+
+        assertThat(service.releaseIfEligible(9L)).isFalse();
+
+        verify(penaltyRepository, never())
+                .findFirstBySelectorsIdAndStatusOrderByIdDesc(any(), any());
     }
 
     @Test

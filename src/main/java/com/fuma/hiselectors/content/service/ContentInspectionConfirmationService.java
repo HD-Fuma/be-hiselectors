@@ -34,7 +34,8 @@ public class ContentInspectionConfirmationService {
 
     private static final Set<ViolationStatus> ALLOWED_TARGET_STATUSES = Set.of(
             ViolationStatus.VIOLATION_CONFIRMED,
-            ViolationStatus.DISMISSED);
+            ViolationStatus.DISMISSED,
+            ViolationStatus.RESOLVED);
 
     private final ContentRepository contentRepository;
     private final ContentVersionRepository contentVersionRepository;
@@ -61,24 +62,26 @@ public class ContentInspectionConfirmationService {
 
         validateRequestStatuses(request);
         List<ViolationItem> versionItems = latestReportItemsForUpdate(contentVersionId);
-        List<ViolationItem> pendingItems = versionItems.stream()
-                .filter(item -> item.getStatus() == ViolationStatus.PENDING)
+        List<ViolationItem> actionableItems = versionItems.stream()
+                .filter(item -> item.getStatus() == ViolationStatus.PENDING
+                        || item.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING)
                 .toList();
 
-        if (version.getInspectionDecision() != null && pendingItems.isEmpty()) {
+        if (version.getInspectionDecision() != null && actionableItems.isEmpty()) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
         }
-        if (!versionItems.isEmpty() && pendingItems.isEmpty()) {
+        if (!versionItems.isEmpty() && actionableItems.isEmpty()) {
             throw new BusinessException(ErrorCode.CONTENT_INSPECTION_ALREADY_CONFIRMED);
         }
 
         Map<Long, ViolationStatus> requestedStatuses = requestedStatuses(request.violations());
-        Set<Long> pendingIds = pendingItems.stream()
+        Set<Long> actionableIds = actionableItems.stream()
                 .map(ViolationItem::getId)
                 .collect(java.util.stream.Collectors.toSet());
-        if (!pendingIds.equals(requestedStatuses.keySet())) {
-            throw invalid("현재 PENDING 위반 항목 전체를 중복 없이 제출해야 합니다.");
+        if (!actionableIds.equals(requestedStatuses.keySet())) {
+            throw invalid("현재 검수 대상 위반 항목 전체를 중복 없이 제출해야 합니다.");
         }
+        validateTransitions(actionableItems, requestedStatuses);
         boolean previouslyConfirmed = version.getInspectionDecision()
                 == ContentInspectionDecision.REJECTED
                 || versionItems.stream().anyMatch(item ->
@@ -87,9 +90,11 @@ public class ContentInspectionConfirmationService {
         validateDecision(
                 request.decision(), requestedStatuses.values(), previouslyConfirmed);
 
-        for (ViolationItem item : pendingItems) {
+        for (ViolationItem item : actionableItems) {
             ViolationStatus target = requestedStatuses.get(item.getId());
-            if (target == ViolationStatus.VIOLATION_CONFIRMED) {
+            if (item.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING) {
+                decisionProcessor.resolveCorrection(item, version);
+            } else if (target == ViolationStatus.VIOLATION_CONFIRMED) {
                 decisionProcessor.confirm(content, version, item, adminLoginId);
             } else {
                 decisionProcessor.dismiss(item);
@@ -100,7 +105,7 @@ public class ContentInspectionConfirmationService {
         }
         violationItemRepository.flush();
         penaltyService.releaseIfEligible(content.getSelectorsId());
-        List<Long> confirmedIds = pendingItems.stream()
+        List<Long> confirmedIds = actionableItems.stream()
                 .filter(item -> item.getStatus() == ViolationStatus.VIOLATION_CONFIRMED)
                 .map(ViolationItem::getId)
                 .toList();
@@ -108,7 +113,7 @@ public class ContentInspectionConfirmationService {
             eventPublisher.publishEvent(new ContentViolationConfirmedEvent(
                     adminLoginId, contentId, content.getSelectorsId(), confirmedIds));
         }
-        return new ContentInspectionConfirmationResponse(pendingItems.size());
+        return new ContentInspectionConfirmationResponse(actionableItems.size());
     }
 
     private Content requireContent(Long contentId) {
@@ -142,8 +147,15 @@ public class ContentInspectionConfirmationService {
                 .map(ViolationEvidenceHistory::getViolationItemId)
                 .distinct()
                 .toList();
-        return itemIds.isEmpty() ? List.of()
-                : violationItemRepository.findAllByIdInForUpdate(itemIds);
+        Map<Long, ViolationItem> itemsById = new java.util.LinkedHashMap<>();
+        if (!itemIds.isEmpty()) {
+            violationItemRepository.findAllByIdInForUpdate(itemIds)
+                    .forEach(item -> itemsById.put(item.getId(), item));
+        }
+        violationItemRepository.findAllByResolutionCandidateForUpdate(
+                        contentVersionId, ViolationStatus.CORRECTION_REVIEW_PENDING)
+                .forEach(item -> itemsById.putIfAbsent(item.getId(), item));
+        return List.copyOf(itemsById.values());
     }
 
     private void validateRequestStatuses(ContentInspectionConfirmationRequest request) {
@@ -151,7 +163,7 @@ public class ContentInspectionConfirmationService {
             if (violation == null || violation.violationItemId() == null
                     || violation.status() == null
                     || !ALLOWED_TARGET_STATUSES.contains(violation.status())) {
-                throw invalid("위반 상태는 VIOLATION_CONFIRMED 또는 DISMISSED만 허용됩니다.");
+                throw invalid("허용되지 않은 위반 상태입니다.");
             }
         }
     }
@@ -168,6 +180,21 @@ public class ContentInspectionConfirmationService {
             throw invalid("중복된 violationItemId는 허용되지 않습니다.");
         }
         return statuses;
+    }
+
+    private void validateTransitions(
+            List<ViolationItem> items, Map<Long, ViolationStatus> requestedStatuses) {
+        for (ViolationItem item : items) {
+            ViolationStatus target = requestedStatuses.get(item.getId());
+            boolean valid = item.getStatus() == ViolationStatus.PENDING
+                    ? target == ViolationStatus.VIOLATION_CONFIRMED
+                            || target == ViolationStatus.DISMISSED
+                    : item.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING
+                            && target == ViolationStatus.RESOLVED;
+            if (!valid) {
+                throw invalid("현재 위반 상태에서 요청한 상태로 변경할 수 없습니다.");
+            }
+        }
     }
 
     private void validateDecision(
