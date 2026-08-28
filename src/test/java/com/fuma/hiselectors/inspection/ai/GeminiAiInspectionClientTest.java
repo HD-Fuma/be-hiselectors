@@ -8,8 +8,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
-import com.fuma.hiselectors.stt.GeminiProperties;
-import com.fuma.hiselectors.stt.GeminiRequestExecutor;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -29,8 +28,9 @@ class GeminiAiInspectionClientTest {
     void setUp() {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        GeminiProperties properties = properties();
-        client = new GeminiAiInspectionClient(properties, new GeminiRequestExecutor(properties),
+        ContentInspectionAnalysisProperties properties = properties();
+        client = new GeminiAiInspectionClient(
+                properties, new ContentInspectionGeminiRequestExecutor(properties),
                 new ObjectMapper(),
                 new InspectionPromptProvider(), builder.build());
     }
@@ -124,8 +124,8 @@ class GeminiAiInspectionClientTest {
                 .doesNotContain("startTime", "endTime", "bbox");
     }
 
-    private GeminiProperties properties() {
-        return new GeminiProperties(
-                "test-key", null, null, "test-model", null, null);
+    private ContentInspectionAnalysisProperties properties() {
+        return new ContentInspectionAnalysisProperties(
+                "test-key", null, null, "test-model", null);
     }
 }

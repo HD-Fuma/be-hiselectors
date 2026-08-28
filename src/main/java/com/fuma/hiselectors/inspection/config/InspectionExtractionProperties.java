@@ -10,14 +10,7 @@ public record InspectionExtractionProperties(
     private static final String DEFAULT_YOUTUBE_MODEL = "gemini-3.6-flash";
     private static final int DEFAULT_YOUTUBE_MAX_OUTPUT_TOKENS = 16_384;
 
-    public InspectionExtractionProperties(Instagram instagram) {
-        this(instagram, null);
-    }
-
     public record Instagram(String sttModel, String ocrModel, String workerBaseUrl) {
-        public Instagram(String sttModel, String ocrModel) {
-            this(sttModel, ocrModel, null);
-        }
     }
 
     public record Youtube(

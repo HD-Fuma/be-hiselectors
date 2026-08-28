@@ -8,11 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.config.InspectionExtractionProperties;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
-import com.fuma.hiselectors.stt.GeminiProperties;
-import com.fuma.hiselectors.stt.MediaResolution;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -100,12 +99,12 @@ class InspectionPolicyServiceTest {
                         List.of("광고"), List.of("example.com"), "ptrsRefCd"),
                 new InspectionExtractionProperties(
                         new InspectionExtractionProperties.Instagram(
-                                "whisper-test", "ocr-test"),
+                                "whisper-test", "ocr-test", null),
                         new InspectionExtractionProperties.Youtube(
                                 "content-key", null, "content-gemini-test",
                                 null, 16384, "v1beta")),
-                new GeminiProperties(
-                        "key", null, null, model, MediaResolution.LOW, 8192),
+                new ContentInspectionAnalysisProperties(
+                        "key", null, null, model, 8192),
                 new InspectionPromptProvider(),
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), ZoneOffset.UTC));

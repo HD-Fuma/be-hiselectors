@@ -160,6 +160,12 @@ stt:
     base-url: ${STT_WORKER_BASE_URL:http://127.0.0.1:8900}
 
 content-inspection:
+  analysis:
+    api-key: ${CONTENT_INSPECTION_GEMINI_API_KEY:${GEMINI_API_KEY:}}
+    api-keys: ${CONTENT_INSPECTION_GEMINI_API_KEYS:${GEMINI_API_KEYS:}}
+    model: ${CONTENT_INSPECTION_ANALYSIS_MODEL:gemini-3.5-flash-lite}
+    fallback-models: ${CONTENT_INSPECTION_ANALYSIS_FALLBACK_MODELS:gemini-3.6-flash}
+    max-output-tokens: ${CONTENT_INSPECTION_ANALYSIS_MAX_OUTPUT_TOKENS:8192}
   extraction:
     youtube:
       api-key: ${CONTENT_INSPECTION_GEMINI_API_KEY:${GEMINI_API_KEY:}}
@@ -171,8 +177,8 @@ content-inspection:
     instagram:
       worker-base-url: ${CONTENT_INSPECTION_STT_WORKER_BASE_URL:${STT_WORKER_BASE_URL:http://127.0.0.1:8900}}
       # 콘텐츠 전용 /content/reel 및 SageMaker 모델 식별자다.
-      stt-model: ${INSTAGRAM_STT_MODEL:not-configured}
-      ocr-model: ${INSTAGRAM_OCR_MODEL:not-configured}
+      stt-model: ${CONTENT_INSPECTION_INSTAGRAM_STT_MODEL:not-configured}
+      ocr-model: ${CONTENT_INSPECTION_INSTAGRAM_OCR_MODEL:not-configured}
 
 inspection:
   policy-sync:

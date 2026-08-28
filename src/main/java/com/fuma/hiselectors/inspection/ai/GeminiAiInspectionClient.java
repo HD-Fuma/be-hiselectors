@@ -11,9 +11,8 @@ import com.fuma.hiselectors.inspection.model.InspectionContext;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
-import com.fuma.hiselectors.stt.GeminiProperties;
-import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,20 +34,23 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
 
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
-    private final GeminiProperties properties;
-    private final GeminiRequestExecutor requestExecutor;
+    private final ContentInspectionAnalysisProperties properties;
+    private final ContentInspectionGeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final InspectionPromptProvider promptProvider;
     private final RestClient restClient;
 
     @Autowired
-    public GeminiAiInspectionClient(GeminiProperties properties,
-                                    GeminiRequestExecutor requestExecutor, ObjectMapper objectMapper,
+    public GeminiAiInspectionClient(ContentInspectionAnalysisProperties properties,
+                                    ContentInspectionGeminiRequestExecutor requestExecutor,
+                                    ObjectMapper objectMapper,
                                     InspectionPromptProvider promptProvider) {
         this(properties, requestExecutor, objectMapper, promptProvider, createRestClient());
     }
 
-    GeminiAiInspectionClient(GeminiProperties properties, GeminiRequestExecutor requestExecutor,
+    GeminiAiInspectionClient(
+                              ContentInspectionAnalysisProperties properties,
+                              ContentInspectionGeminiRequestExecutor requestExecutor,
                               ObjectMapper objectMapper,
                               InspectionPromptProvider promptProvider, RestClient restClient) {
         this.properties = properties;

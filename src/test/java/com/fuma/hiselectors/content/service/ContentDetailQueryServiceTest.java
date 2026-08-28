@@ -10,6 +10,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
@@ -18,7 +19,10 @@ import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentReportRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
 import com.fuma.hiselectors.content.repository.ContentVersionRepository;
+import com.fuma.hiselectors.inspection.model.EvidenceCoordinateSpace;
+import com.fuma.hiselectors.inspection.model.EvidenceLocation;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
+import com.fuma.hiselectors.inspection.model.EvidenceTargetKind;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationEvidenceHistory;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
@@ -61,21 +65,42 @@ class ContentDetailQueryServiceTest {
                 20L, MediaType.TEXT, null, null, 0, Map.of("text", "본문"));
         ReflectionTestUtils.setField(text, "id", 31L);
         ContentMedia video = ContentMedia.create(
-                20L, MediaType.VIDEO, null, "abc123", 1, Map.of("text", "음성\n\n화면"));
+                20L, MediaType.VIDEO, null, "abc123", 1, Map.of(
+                        "schemaVersion", "1.0",
+                        "stt", Map.of(
+                                "language", "ko",
+                                "segments", List.of(Map.of(
+                                        "segmentId", "stt-001",
+                                        "startMs", 100,
+                                        "endMs", 900,
+                                        "text", "spoken evidence"))),
+                        "ocr", Map.of("segments", List.of()),
+                        "visual", Map.of("segments", List.of())));
         ReflectionTestUtils.setField(video, "id", 32L);
 
         ContentReport report = ContentReport.create(
-                20L, new ContentReportData("요약", "목적", "흐름", "평가"), 9L);
+                20L,
+                new ContentReportAnalysis(
+                        new ContentReportAnalysis.Overview(
+                                "summary", "purpose", "flow", "assessment"),
+                        new ContentReportAnalysis.Insight(
+                                "review", "calm", List.of("clear"), List.of(),
+                                List.of(), false, List.of("brand-a"))),
+                9L, Map.of("responseModel", "gemini"));
         ReflectionTestUtils.setField(report, "id", 40L);
         ViolationEvidence evidence = new ViolationEvidence(
-                "과거 근거", 0.9, List.of(), EvidenceSource.AI);
+                "stored evidence", 0.9, List.of(new EvidenceLocation(
+                        32L, MediaType.VIDEO, EvidenceTargetKind.STT_SEGMENT,
+                        EvidenceCoordinateSpace.CONTENT_MEDIA_SEGMENT,
+                        "stt-001", null, null, "spoken")), EvidenceSource.AI);
         ViolationItem item = ViolationItem.pending(version, 100L, evidence);
         ReflectionTestUtils.setField(item, "id", 50L);
         ContentVersion resolvedVersion = ContentVersion.create(10L, 3L, "next");
         ReflectionTestUtils.setField(resolvedVersion, "id", 21L);
         item.resolve(resolvedVersion);
         ViolationEvidenceHistory history = ViolationEvidenceHistory.create(
-                50L, 20L, 9L, evidence, LocalDateTime.of(2026, 8, 24, 1, 5));
+                50L, 20L, 9L, 40L, evidence,
+                LocalDateTime.of(2026, 8, 24, 1, 5));
         ReflectionTestUtils.setField(history, "id", 60L);
         ViolationType type = ViolationType.create(
                 ViolationTypeCode.ABUSIVE_LANGUAGE, "욕설");
@@ -101,12 +126,27 @@ class ContentDetailQueryServiceTest {
                 .extracting(media -> media.contentMediaId(), media -> media.text())
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(31L, "본문"),
-                        org.assertj.core.groups.Tuple.tuple(32L, "음성\n\n화면"));
+                        org.assertj.core.groups.Tuple.tuple(32L, null));
+        assertThat(result.selectedVersion().media().get(1).body())
+                .containsEntry("schemaVersion", "1.0")
+                .containsKeys("stt", "ocr", "visual");
+        assertThat(result.selectedVersion().contentReport().analysis().insight().contentStyle())
+                .isEqualTo("review");
+        assertThat(result.selectedVersion().contentReport().executionMetadata())
+                .containsEntry("responseModel", "gemini");
         assertThat(result.selectedVersion().violations()).singleElement().satisfies(violation -> {
             assertThat(violation.violationEvidenceHistoryId()).isEqualTo(60L);
+            assertThat(violation.contentReportId()).isEqualTo(40L);
             assertThat(violation.inspectionPolicyId()).isEqualTo(9L);
             assertThat(violation.currentStatus()).isEqualTo(ViolationStatus.RESOLVED);
             assertThat(violation.evidence()).isEqualTo(evidence);
+            assertThat(violation.resolvedLocations()).singleElement().satisfies(location -> {
+                assertThat(location.targetKind()).isEqualTo(EvidenceTargetKind.STT_SEGMENT);
+                assertThat(location.segmentId()).isEqualTo("stt-001");
+                assertThat(location.startMs()).isEqualTo(100L);
+                assertThat(location.endMs()).isEqualTo(900L);
+                assertThat(location.bbox()).isNull();
+            });
             assertThat(violation.detectedAt())
                     .isEqualTo(LocalDateTime.of(2026, 8, 24, 1, 5));
         });

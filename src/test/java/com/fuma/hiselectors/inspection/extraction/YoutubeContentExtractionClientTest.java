@@ -21,7 +21,7 @@ class YoutubeContentExtractionClientTest {
     @BeforeEach
     void setUp() {
         InspectionExtractionProperties properties = new InspectionExtractionProperties(
-                new InspectionExtractionProperties.Instagram("stt", "ocr"),
+                new InspectionExtractionProperties.Instagram("stt", "ocr", null),
                 new InspectionExtractionProperties.Youtube(
                         "test-key", null, "gemini-test", null, 2048, "v1beta"));
         RestClient.Builder builder = RestClient.builder();

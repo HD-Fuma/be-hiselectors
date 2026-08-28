@@ -13,6 +13,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.InspectionRuleConfig;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
 import com.fuma.hiselectors.stt.GeminiRequestExecutor;
@@ -36,9 +37,13 @@ class YoutubeIntegratedInspectionClientTest {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         GeminiProperties properties = properties();
+        ContentInspectionAnalysisProperties analysisProperties =
+                new ContentInspectionAnalysisProperties(
+                        "test-key", null, null, "test-model", null);
         ObjectMapper objectMapper = new ObjectMapper();
         GeminiAiInspectionClient inspectionMapper = new GeminiAiInspectionClient(
-                properties, new GeminiRequestExecutor(properties), objectMapper,
+                analysisProperties,
+                new ContentInspectionGeminiRequestExecutor(analysisProperties), objectMapper,
                 new InspectionPromptProvider());
         client = new YoutubeIntegratedInspectionClient(
                 properties, new GeminiRequestExecutor(properties), objectMapper,

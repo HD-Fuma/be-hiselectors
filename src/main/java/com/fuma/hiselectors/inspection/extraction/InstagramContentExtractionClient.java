@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -23,6 +24,7 @@ public class InstagramContentExtractionClient {
     private final InspectionExtractionProperties properties;
     private final RestClient restClient;
 
+    @Autowired
     public InstagramContentExtractionClient(InspectionExtractionProperties properties) {
         this(properties, defaultRestClient());
     }

@@ -19,7 +19,8 @@ class InstagramContentExtractionClientTest {
     void setUp() {
         InspectionExtractionProperties properties = new InspectionExtractionProperties(
                 new InspectionExtractionProperties.Instagram(
-                        "content-whisper", "rapid-ocr", "http://worker"));
+                        "content-whisper", "rapid-ocr", "http://worker"),
+                null);
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         client = new InstagramContentExtractionClient(properties, builder.build());

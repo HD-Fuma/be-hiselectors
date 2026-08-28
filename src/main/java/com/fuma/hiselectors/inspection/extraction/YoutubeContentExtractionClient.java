@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -35,6 +36,7 @@ public class YoutubeContentExtractionClient {
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
 
+    @Autowired
     public YoutubeContentExtractionClient(
             InspectionExtractionProperties properties,
             ContentGeminiRequestExecutor requestExecutor,
