@@ -66,8 +66,9 @@ jobs:
 
         TASK_RUN_MIGRATION_FILE="$(mktemp)"
         CONTENT_VERSION_MIGRATION_FILE="$(mktemp)"
+        VIOLATION_TYPE_MIGRATION_FILE="$(mktemp)"
         cleanup_task_run_migration() {
-          rm -f "$TASK_RUN_MIGRATION_FILE" "$CONTENT_VERSION_MIGRATION_FILE"
+          rm -f "$TASK_RUN_MIGRATION_FILE" "$CONTENT_VERSION_MIGRATION_FILE" "$VIOLATION_TYPE_MIGRATION_FILE"
         }
         trap cleanup_task_run_migration EXIT HUP INT TERM
         printf '%s' "$TASK_RUN_MIGRATION_B64" | base64 -d | gzip -d > "$TASK_RUN_MIGRATION_FILE"
@@ -92,6 +93,11 @@ jobs:
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uk_content_version_content_hash'")" = "0"
         test "$(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'content_version' AND index_name = 'uq_content_version_content_no' AND non_unique = 0")" = "content_id,version_no"
         echo "content-version-hash-constraint=verified"
+
+        printf '%s' "$VIOLATION_TYPE_MIGRATION_B64" | base64 -d | gzip -d > "$VIOLATION_TYPE_MIGRATION_FILE"
+        cat "$VIOLATION_TYPE_MIGRATION_FILE" | mysql_apply_file
+        test "$(mysql_query "SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND description = '광고·수수료 안내 문구 확인 필요') OR (code = 'AFFILIATE_LINK_INVALID' AND description = '제휴 링크 확인 필요')")" = "2"
+        echo "violation-type-descriptions=verified"
 
         profile_image_column_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application' AND column_name = 'profile_image_url'")"
         if [ "$profile_image_column_count" = "0" ]; then
@@ -228,9 +234,11 @@ jobs:
           test -n "$EC2_INSTANCE_ID"
           TASK_RUN_MIGRATION_B64="$(gzip -c docs/task-run-migration.sql | base64 -w0)"
           CONTENT_VERSION_MIGRATION_B64="$(gzip -c src/main/resources/db/015_drop_content_version_hash_unique.sql | base64 -w0)"
+          VIOLATION_TYPE_MIGRATION_B64="$(gzip -c src/main/resources/db/016_violation_type_descriptions.sql | base64 -w0)"
           printf -v TASK_RUN_MIGRATION_ASSIGNMENT 'TASK_RUN_MIGRATION_B64=%q\n' "$TASK_RUN_MIGRATION_B64"
           printf -v CONTENT_VERSION_MIGRATION_ASSIGNMENT 'CONTENT_VERSION_MIGRATION_B64=%q\n' "$CONTENT_VERSION_MIGRATION_B64"
-          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${CONTENT_VERSION_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
+          printf -v VIOLATION_TYPE_MIGRATION_ASSIGNMENT 'VIOLATION_TYPE_MIGRATION_B64=%q\n' "$VIOLATION_TYPE_MIGRATION_B64"
+          REMOTE_COMMAND="${TASK_RUN_MIGRATION_ASSIGNMENT}${CONTENT_VERSION_MIGRATION_ASSIGNMENT}${VIOLATION_TYPE_MIGRATION_ASSIGNMENT}${REMOTE_SCRIPT}"
           test "${#REMOTE_COMMAND}" -lt 24000
           PARAMETERS="$(jq -cn --arg command "$REMOTE_COMMAND" '{commands:[$command],executionTimeout:["600"]}')"
           COMMAND_ID="$(aws ssm send-command \
