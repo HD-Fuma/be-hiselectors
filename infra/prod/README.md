@@ -1,6 +1,6 @@
 # 격리형 ECS Blue/Green 리허설 스택
 
-`template.yaml`은 기존 운영 EC2, RDS, 보안 그룹, DNS, `gha-be-deploy` 역할을 수정하지 않는다. 기존 default VPC의 서로 다른 두 public subnet, 기존 ECR image/repository, 기존 GitHub OIDC provider, 원본 RDS snapshot을 참조하고 나머지는 새로 만든다.
+`template.yaml`은 기존 운영 EC2, RDS, 보안 그룹, DNS, `gha-be-deploy` 역할을 수정하지 않는다. 기존 default VPC의 서로 다른 두 public subnet, 기존 ECR image/repository, 기존 GitHub OIDC provider, 원본 RDS snapshot을 참조하고 나머지는 새로 만든다. API와 scheduler는 `RuntimeDatabase*` 파라미터의 외부 RDS를 사용하고, stack이 만든 `TestDatabase`는 rollback용으로 보존한다.
 
 production listener는 HTTPS `443`, HTTP `80`은 HTTPS redirect, green test listener는 HTTP `8080`이다. 템플릿은 ACM 인증서를 참조할 뿐 생성하지 않으며, 실제 DNS와 최종 운영 DB는 수정하지 않는다.
 
@@ -12,7 +12,8 @@ production listener는 HTTPS `443`, HTTP `80`은 HTTPS redirect, green test list
 - `TestDbSnapshotIdentifier`는 자동 snapshot ARN 또는 수동 snapshot identifier다. 복원본만 삭제되며 원본 snapshot은 유지된다.
 - snapshot을 바꾸려면 같은 stack을 update하지 말고 리허설 stack을 삭제 후 다시 만든다. 고정 DB identifier의 replacement 충돌을 피하기 위함이다.
 - ECR repository, image와 GitHub OIDC provider는 이 stack과 같은 AWS account/region에 있어야 한다.
-- `RuntimeSecretArn`은 새 리허설 전용 secret이며 기본 AWS Secrets Manager KMS key를 사용한다.
+- `RuntimeSecretArn`은 API·scheduler가 외부 runtime DB에 접속할 계정을 담은 Secrets Manager JSON secret이다.
+- `RuntimeDatabaseHost`와 `RuntimeDatabaseIdentifier`는 API·scheduler가 사용하고 알람이 감시할 외부 RDS의 endpoint와 DB instance identifier다.
 - `AcmCertificateArn`은 `ap-northeast-2`에서 별도로 발급·DNS 검증한 `api.hiselectors.shop` 인증서 ARN이어야 한다.
 - `AlertTopicArn`은 기존 Amazon Q/Slack 구독이 연결된 standard SNS topic ARN이어야 한다.
 - `BatchLogLambdaArn`은 `BATCH_EVENT`를 검증해 기존 batch alert topic으로 전달하는 Lambda ARN이어야 한다. 이 stack은 새 ECS log group으로 제한된 invoke permission과 subscription filter만 추가한다.
@@ -58,13 +59,15 @@ DB/JWT 5개는 시작에 필요한 값이고 Gemini/Meta 5개는 기존 분석 �
        TestDbSnapshotIdentifier=arn:aws:rds:... \
        TestDbSubnetGroupName=... ImageUri=ACCOUNT.dkr.ecr.REGION.amazonaws.com/be-hiselectors:SHA \
        RuntimeSecretArn=arn:aws:secretsmanager:... \
+       RuntimeDatabaseHost=RUNTIME_RDS_ENDPOINT RuntimeDatabasePort=3306 \
+       RuntimeDatabaseIdentifier=RUNTIME_RDS_IDENTIFIER \
        GitHubOidcProviderArn=arn:aws:iam::ACCOUNT:oidc-provider/token.actions.githubusercontent.com \
        AcmCertificateArn=arn:aws:acm:ap-northeast-2:ACCOUNT:certificate/... \
        ProductionListenerIngressCidr=YOUR_ADMIN_PUBLIC_IP/32 \
        TestListenerIngressCidr=YOUR_ADMIN_PUBLIC_IP/32
    ```
 
-3. 복원 snapshot의 DB 이름/계정과 secret의 `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`가 일치하는지 확인한다. `DB_HOST`와 `DB_PORT`는 새 RDS endpoint에서 task definition으로 직접 주입되어 운영 DB 주소를 잘못 넣을 수 없다. 현재 branch와 `2026-08-26` snapshot 조합은 새 복제 DB에 아래 호환 컬럼을 한 번 추가해야 JPA validation을 통과한다.
+3. 외부 runtime DB의 이름/계정과 secret의 `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`가 일치하는지 확인하고, DB 보안 그룹에 `TaskSecurityGroupId` output의 3306 ingress를 허용한다. `infra/analysis-fargate` stack의 `RuntimeSecretArn` secret에 있는 `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`도 같은 runtime DB로 함께 바꿔야 한다. `TestDatabase`는 rollback용이므로 이 전환에서 수정하지 않는다. 현재 branch와 `2026-08-26` snapshot 조합은 rollback DB에 아래 호환 컬럼을 한 번 추가해야 JPA validation을 통과한다.
 
    ```sql
    ALTER TABLE application_report ADD COLUMN warning VARCHAR(500) NULL;
@@ -90,9 +93,9 @@ stack은 기존 `AlertTopicArn`으로 다음 상태를 알린다.
 
 ECS 기본 `AWS/ECS` metric을 사용하므로 Container Insights는 필요 없다. `ApiDesiredCount=0` 또는 `SchedulerDesiredCount=0`이면 해당 service alarm은 만들지 않는다.
 
-RDS audit log는 `/aws/rds/instance/${STACK_NAME}-test-db/audit`에 기록되고 30일 보관된다. 기존 `hi-selectors-audit` option group을 사용하는 DB에 `EnableCloudwatchLogsExports=audit`를 적용하는 in-place update이며 DB replacement가 아니다.
+RDS alarm과 event subscription은 `RuntimeDatabaseIdentifier`의 외부 runtime DB를 감시한다. rollback용 `TestDatabase`의 audit log는 `/aws/rds/instance/${STACK_NAME}-test-db/audit`에 기록되고 30일 보관된다.
 
-운영 stack의 실제 scheduler는 `desired/running=1/1`이어도 과거 CloudFormation parameter가 `SchedulerDesiredCount=0`일 수 있다. 운영 stack update에는 아래 값을 명시해 scheduler를 끄는 drift 역적용을 막는다. 다른 parameter는 현재 값을 유지하고 `ImageUri`도 현재 service image로 맞춘다.
+운영 stack의 실제 scheduler는 `desired/running=1/1`이어도 과거 CloudFormation parameter가 `SchedulerDesiredCount=0`일 수 있다. 일반 운영 stack update에는 아래 값을 명시해 scheduler를 끄는 drift 역적용을 막는다. 다른 parameter는 현재 값을 유지하고 `ImageUri`도 현재 service image로 맞춘다.
 
 ```bash
 aws cloudformation deploy \
@@ -101,8 +104,12 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     ApiDesiredCount=2 SchedulerDesiredCount=1 EnableDeploymentPause=true \
+    RuntimeDatabaseHost=RUNTIME_RDS_ENDPOINT RuntimeDatabasePort=3306 \
+    RuntimeDatabaseIdentifier=RUNTIME_RDS_IDENTIFIER \
     ImageUri=CURRENT_ECS_IMAGE_URI
 ```
+
+runtime DB cutover는 위 일반 update와 다르게 진행한다. API 쓰기를 잠그고 scheduler와 analysis schedule을 먼저 중지한 뒤 최종 데이터를 동기화한다. 첫 update는 `SchedulerDesiredCount=0 EnableDeploymentPause=false`로 실행해 API green task가 별도 GitHub 승인 없이 새 DB에 붙어 traffic을 전환하게 한다. API readiness를 확인한 뒤 두 번째 update에서 `SchedulerDesiredCount=1 EnableDeploymentPause=true`로 복원하고 analysis secret과 schedule도 같은 DB로 전환한다. 이 순서를 섞으면 두 DB에 쓰기가 갈리는 split-brain이 발생한다.
 
 새 `/ecs/hiselectors-bg-test` log group의 `batch-events-to-slack` filter와 Lambda invoke permission이 생성된 뒤 실제 `BATCH_EVENT` 전달을 확인한다. 그 전에는 기존 `/hiselectors/app` filter를 제거하지 않는다. 확인 후 기존 filter와 기존 log group으로 제한된 Lambda permission만 제거하며 Lambda와 SNS topics는 유지한다.
 
@@ -132,7 +139,7 @@ API blue-green deployment가 성공하면 workflow는 scheduler task definition�
 
 롤백은 순서를 바꾸면 안 된다. 먼저 ECS scheduler를 `1`에서 `0`으로 내리고 `desired/running/pending=0/0/0`을 확인한 다음, workflow를 `mode=restore`, 확인값 `SET_EC2_SCHEDULING_restore`로 실행한다. workflow도 ECS scheduler가 완전히 멈추지 않았으면 복원을 거부하며, 성공하면 컷오버 전에 보관한 EC2 설정값을 그대로 복원한다. 이 확인부터 복원 완료까지는 cutover lock 구간으로 취급해 별도 CloudFormation update나 ECS console/CLI 변경을 금지한다.
 
-stack 삭제 시 `TestDatabase`와 audit log group은 `Retain`되고 DB deletion protection도 유지된다.
+stack 삭제 시 rollback용 `TestDatabase`와 audit log group은 `Retain`되고 DB deletion protection도 유지된다.
 삭제가 필요하면 별도 final snapshot을 만든 뒤 명시적으로 처리한다. 원본 snapshot과 기존 운영
 리소스는 삭제 대상이 아니다.
 

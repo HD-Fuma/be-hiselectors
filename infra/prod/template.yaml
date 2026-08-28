@@ -35,7 +35,21 @@ Parameters:
   RuntimeSecretArn:
     Type: String
     MinLength: 1
-    Description: ARN of a new rehearsal-only Secrets Manager JSON secret. DB host and port come from TestDatabase, not this secret.
+    Description: ARN of the Secrets Manager JSON secret containing credentials for the runtime database.
+  RuntimeDatabaseHost:
+    Type: String
+    MinLength: 1
+    Description: Endpoint hostname of the external database used by the API and scheduler tasks.
+  RuntimeDatabasePort:
+    Type: Number
+    Default: 3306
+    MinValue: 1
+    MaxValue: 65535
+    Description: Port of the external database used by the API and scheduler tasks.
+  RuntimeDatabaseIdentifier:
+    Type: String
+    MinLength: 1
+    Description: Existing RDS DB instance identifier monitored as the runtime database.
   GitHubOidcProviderArn:
     Type: String
     MinLength: 1
@@ -270,7 +284,7 @@ Resources:
       MetricName: DatabaseConnections
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: !Ref TestDatabase
+          Value: !Ref RuntimeDatabaseIdentifier
       Statistic: Average
       Period: 60
       EvaluationPeriods: 5
@@ -291,7 +305,7 @@ Resources:
       MetricName: CPUUtilization
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: !Ref TestDatabase
+          Value: !Ref RuntimeDatabaseIdentifier
       Statistic: Average
       Period: 60
       EvaluationPeriods: 5
@@ -312,7 +326,7 @@ Resources:
       MetricName: FreeableMemory
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: !Ref TestDatabase
+          Value: !Ref RuntimeDatabaseIdentifier
       Statistic: Average
       Period: 60
       EvaluationPeriods: 15
@@ -333,7 +347,7 @@ Resources:
       MetricName: FreeStorageSpace
       Dimensions:
         - Name: DBInstanceIdentifier
-          Value: !Ref TestDatabase
+          Value: !Ref RuntimeDatabaseIdentifier
       Statistic: Minimum
       Period: 60
       EvaluationPeriods: 5
@@ -356,7 +370,7 @@ Resources:
         - low storage
       SnsTopicArn: !Ref AlertTopicArn
       SourceIds:
-        - !Ref TestDatabase
+        - !Ref RuntimeDatabaseIdentifier
       SourceType: db-instance
 
   LoadBalancer:
@@ -570,9 +584,9 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: '1'
             - Name: DB_HOST
-              Value: !GetAtt TestDatabase.Endpoint.Address
+              Value: !Ref RuntimeDatabaseHost
             - Name: DB_PORT
-              Value: !GetAtt TestDatabase.Endpoint.Port
+              Value: !Ref RuntimeDatabasePort
             - Name: TZ
               Value: Asia/Seoul
             - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
@@ -700,9 +714,9 @@ Resources:
             - Name: DB_POOL_MIN_IDLE
               Value: '1'
             - Name: DB_HOST
-              Value: !GetAtt TestDatabase.Endpoint.Address
+              Value: !Ref RuntimeDatabaseHost
             - Name: DB_PORT
-              Value: !GetAtt TestDatabase.Endpoint.Port
+              Value: !Ref RuntimeDatabasePort
             - Name: TZ
               Value: Asia/Seoul
             - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
@@ -1096,12 +1110,21 @@ Outputs:
     Value: !Ref Target5xxAlarm
   TaskSecurityGroupId:
     Value: !GetAtt TaskSecurityGroup.GroupId
+  RuntimeDatabaseHost:
+    Description: Endpoint injected into the API and scheduler task definitions as DB_HOST.
+    Value: !Ref RuntimeDatabaseHost
+  RuntimeDatabaseIdentifier:
+    Description: External RDS DB instance monitored as the active runtime database.
+    Value: !Ref RuntimeDatabaseIdentifier
   TestDatabaseSecurityGroupId:
+    Description: Security group of the retained rollback database; it is not on the active runtime path.
     Value: !GetAtt TestDatabaseSecurityGroup.GroupId
   TestDatabaseIdentifier:
+    Description: Retained rollback database identifier; it is not on the active runtime path.
     Value: !Ref TestDatabase
   TestDatabaseEndpoint:
-    Description: Endpoint injected directly into the isolated ECS task definitions as DB_HOST.
+    Description: Retained rollback database endpoint; it is not on the active runtime path.
     Value: !GetAtt TestDatabase.Endpoint.Address
   TestDatabasePort:
+    Description: Retained rollback database port; it is not on the active runtime path.
     Value: !GetAtt TestDatabase.Endpoint.Port
