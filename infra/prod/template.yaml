@@ -124,6 +124,17 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RuntimeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:hiselectors-analysis.fifo'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: arn:aws:s3:::hiselectors-media/campaigns/*
 
   EcsLoadBalancerInfrastructureRole:
     Type: AWS::IAM::Role
@@ -193,8 +204,8 @@ Resources:
 
   TestDatabase:
     Type: AWS::RDS::DBInstance
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DBInstanceIdentifier: !Sub '${AWS::StackName}-test-db'
       DBSnapshotIdentifier: !Ref TestDbSnapshotIdentifier
@@ -204,11 +215,12 @@ Resources:
         - !GetAtt TestDatabaseSecurityGroup.GroupId
       PubliclyAccessible: false
       MultiAZ: false
-      BackupRetentionPeriod: 0
-      DeletionProtection: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      MaxAllocatedStorage: 1000
       Tags:
         - Key: Purpose
-          Value: rehearsal-only
+          Value: production-blue-green
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -399,6 +411,12 @@ Resources:
               Value: !GetAtt TestDatabase.Endpoint.Address
             - Name: DB_PORT
               Value: !GetAtt TestDatabase.Endpoint.Port
+            - Name: TZ
+              Value: Asia/Seoul
+            - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
+              Value: 'false'
           Secrets:
             - Name: DB_NAME
               ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
@@ -420,6 +438,54 @@ Resources:
               ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
             - Name: META_LONG_LIVED_ACCESS_TOKEN
               ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+            - Name: APPLICATION_CONTENT_ANALYSIS_QUEUE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:APPLICATION_CONTENT_ANALYSIS_QUEUE_URL::'
+            - Name: GEMINI_FALLBACK_MODELS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_FALLBACK_MODELS::'
+            - Name: GEMINI_MODEL
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_MODEL::'
+            - Name: GOOGLE_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_ID::'
+            - Name: GOOGLE_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_SECRET::'
+            - Name: INSTAGRAM_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_ID::'
+            - Name: INSTAGRAM_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_SECRET::'
+            - Name: KAKAO_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_CLIENT_SECRET::'
+            - Name: KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID::'
+            - Name: KAKAO_MESSAGE_MOBILE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_MOBILE_WEB_URL::'
+            - Name: KAKAO_MESSAGE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_WEB_URL::'
+            - Name: KAKAO_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REDIRECT_URI::'
+            - Name: KAKAO_REST_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REST_API_KEY::'
+            - Name: KAKAO_TOKEN_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_TOKEN_ENCRYPTION_KEY::'
+            - Name: MEDIA_PUBLIC_BASE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_PUBLIC_BASE_URL::'
+            - Name: MEDIA_S3_BUCKET
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_S3_BUCKET::'
+            - Name: SETTLEMENT_ACCOUNT_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ACCOUNT_ENCRYPTION_KEY::'
+            - Name: SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID::'
+            - Name: SETTLEMENT_ZONE
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ZONE::'
+            - Name: YOUTUBE_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_API_KEY::'
+            - Name: YOUTUBE_DISCOVERY_DAILY_QUOTA
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_DAILY_QUOTA::'
+            - Name: YOUTUBE_DISCOVERY_MAX_KEYWORDS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_KEYWORDS::'
+            - Name: YOUTUBE_DISCOVERY_MAX_RESULTS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_RESULTS::'
+            - Name: YOUTUBE_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_REDIRECT_URI::'
           HealthCheck:
             Command:
               - CMD-SHELL
@@ -475,6 +541,12 @@ Resources:
               Value: !GetAtt TestDatabase.Endpoint.Address
             - Name: DB_PORT
               Value: !GetAtt TestDatabase.Endpoint.Port
+            - Name: TZ
+              Value: Asia/Seoul
+            - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
+              Value: 'false'
           Secrets:
             - Name: DB_NAME
               ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
@@ -496,6 +568,54 @@ Resources:
               ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
             - Name: META_LONG_LIVED_ACCESS_TOKEN
               ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+            - Name: APPLICATION_CONTENT_ANALYSIS_QUEUE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:APPLICATION_CONTENT_ANALYSIS_QUEUE_URL::'
+            - Name: GEMINI_FALLBACK_MODELS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_FALLBACK_MODELS::'
+            - Name: GEMINI_MODEL
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_MODEL::'
+            - Name: GOOGLE_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_ID::'
+            - Name: GOOGLE_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_SECRET::'
+            - Name: INSTAGRAM_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_ID::'
+            - Name: INSTAGRAM_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_SECRET::'
+            - Name: KAKAO_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_CLIENT_SECRET::'
+            - Name: KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID::'
+            - Name: KAKAO_MESSAGE_MOBILE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_MOBILE_WEB_URL::'
+            - Name: KAKAO_MESSAGE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_WEB_URL::'
+            - Name: KAKAO_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REDIRECT_URI::'
+            - Name: KAKAO_REST_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REST_API_KEY::'
+            - Name: KAKAO_TOKEN_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_TOKEN_ENCRYPTION_KEY::'
+            - Name: MEDIA_PUBLIC_BASE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_PUBLIC_BASE_URL::'
+            - Name: MEDIA_S3_BUCKET
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_S3_BUCKET::'
+            - Name: SETTLEMENT_ACCOUNT_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ACCOUNT_ENCRYPTION_KEY::'
+            - Name: SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID::'
+            - Name: SETTLEMENT_ZONE
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ZONE::'
+            - Name: YOUTUBE_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_API_KEY::'
+            - Name: YOUTUBE_DISCOVERY_DAILY_QUOTA
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_DAILY_QUOTA::'
+            - Name: YOUTUBE_DISCOVERY_MAX_KEYWORDS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_KEYWORDS::'
+            - Name: YOUTUBE_DISCOVERY_MAX_RESULTS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_RESULTS::'
+            - Name: YOUTUBE_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_REDIRECT_URI::'
           HealthCheck:
             Command:
               - CMD-SHELL
