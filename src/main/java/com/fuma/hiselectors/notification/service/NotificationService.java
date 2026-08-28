@@ -62,6 +62,13 @@ public class NotificationService {
         return sendToFriend(admin, command, NotificationInitiatorType.SYSTEM, null);
     }
 
+    public NotificationSendResponse sendToFriendAsSystem(NotificationMessageCommand command) {
+        Admin admin = adminRepository
+                .findFirstByKakaoSenderConnectionIdIsNotNullOrderByIdAsc()
+                .orElseThrow(() -> new BusinessException(ErrorCode.KAKAO_SENDER_NOT_CONNECTED));
+        return sendToFriend(admin, command, NotificationInitiatorType.SYSTEM, null);
+    }
+
     @Transactional
     public NotificationSendResponse resendFailed(String adminLoginId, Long notificationId) {
         Admin admin = adminRepository.findByLoginId(adminLoginId)

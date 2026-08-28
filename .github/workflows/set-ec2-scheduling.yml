@@ -1,0 +1,186 @@
+name: Set production EC2 scheduling
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Disable scheduling for cutover or restore the exact previous values
+        required: true
+        type: choice
+        default: disable
+        options:
+          - disable
+          - restore
+      confirm:
+        description: Type SET_EC2_SCHEDULING_disable or SET_EC2_SCHEDULING_restore
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+  ECS_AWS_ROLE_ARN: ${{ vars.ECS_AWS_ROLE_ARN }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SCHEDULER_SERVICE: ${{ vars.ECS_SCHEDULER_SERVICE }}
+
+jobs:
+  set-scheduling:
+    runs-on: ubuntu-latest
+    env:
+      MODE: ${{ inputs.mode }}
+      CONFIRM: ${{ inputs.confirm }}
+      REMOTE_SCRIPT: |
+        set -eu
+        case "$MODE" in disable|restore) ;; *) exit 1 ;; esac
+        cd /srv/hiselectors
+        test -f .env
+
+        SCHEDULER_STATE=.scheduler-env.before-ecs-cutover
+        ENV_BACKUP="$(mktemp)"
+        chmod 600 "$ENV_BACKUP"
+        cp .env "$ENV_BACKUP"
+        STATE_CREATED=false
+        STATE_TEMP=
+        ROLLBACK_REQUIRED=true
+        rollback() {
+          status=$?
+          trap - EXIT HUP INT TERM
+          if [ "$ROLLBACK_REQUIRED" = true ]; then
+            cp "$ENV_BACKUP" .env
+            docker compose up -d --force-recreate --wait --wait-timeout 180 api || true
+          fi
+          if [ "$STATE_CREATED" = true ]; then
+            rm -f "$SCHEDULER_STATE"
+          fi
+          rm -f "$ENV_BACKUP"
+          if [ -n "$STATE_TEMP" ]; then
+            rm -f "$STATE_TEMP"
+          fi
+          exit "$status"
+        }
+        trap rollback EXIT
+        trap 'exit 129' HUP
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+
+        SCHEDULER_KEYS="SCHEDULING_ENABLED DISCOVERY_DEFAULTS_ENABLED INSPECTION_POLICY_SYNC_ENABLED APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED"
+        if [ "$MODE" = disable ]; then
+          if [ ! -e "$SCHEDULER_STATE" ]; then
+            STATE_TEMP="$(mktemp)"
+            chmod 600 "$STATE_TEMP"
+            for KEY in $SCHEDULER_KEYS; do
+              sed -n "/^$KEY=/p" .env >> "$STATE_TEMP"
+            done
+            STATE_CREATED=true
+            mv "$STATE_TEMP" "$SCHEDULER_STATE"
+            STATE_TEMP=
+          fi
+          for KEY in $SCHEDULER_KEYS; do
+            sed -i "/^$KEY=/d" .env
+            printf '%s=false\n' "$KEY" >> .env
+          done
+        else
+          test -f "$SCHEDULER_STATE"
+          for KEY in $SCHEDULER_KEYS; do
+            sed -i "/^$KEY=/d" .env
+          done
+          cat "$SCHEDULER_STATE" >> .env
+        fi
+
+        docker compose stop -t 30 api
+        docker compose up -d --force-recreate --wait --wait-timeout 180 api
+        API_CONTAINER="$(docker compose ps -q api)"
+        test -n "$API_CONTAINER"
+        container_env() {
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$API_CONTAINER" |
+            sed -n "s/^$1=//p" |
+            head -n 1
+        }
+        for KEY in $SCHEDULER_KEYS; do
+          if [ "$MODE" = disable ]; then
+            EXPECTED=false
+          else
+            EXPECTED="$(sed -n "s/^$KEY=//p" "$SCHEDULER_STATE" | tail -n 1)"
+          fi
+          test "$(container_env "$KEY")" = "$EXPECTED"
+        done
+
+        ROLLBACK_REQUIRED=false
+        if [ "$MODE" = restore ]; then
+          rm -f "$SCHEDULER_STATE"
+        fi
+        rm -f "$ENV_BACKUP"
+        trap - EXIT HUP INT TERM
+        echo "ec2-scheduling=$MODE verified"
+
+    steps:
+      - name: Confirm requested mode
+        run: |
+          test "$CONFIRM" = "SET_EC2_SCHEDULING_$MODE"
+          test -n "$EC2_INSTANCE_ID"
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        if: inputs.mode == 'restore'
+        with:
+          role-to-assume: ${{ env.ECS_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Require ECS scheduler stopped before restore
+        if: inputs.mode == 'restore'
+        run: |
+          test -n "$ECS_AWS_ROLE_ARN"
+          test -n "$ECS_CLUSTER"
+          test -n "$ECS_SCHEDULER_SERVICE"
+          COUNTS="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SCHEDULER_SERVICE" \
+            --query 'services[0].[desiredCount,runningCount,pendingCount]' \
+            --output text | tr '\t' ':')"
+          test "$COUNTS" = "0:0:0"
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set and verify EC2 scheduling through SSM
+        run: |
+          PARAMETERS="$(jq -cn \
+            --arg mode "$MODE" \
+            --arg command "$REMOTE_SCRIPT" \
+            '{commands:[("export MODE=" + ($mode | @sh) + "\n" + $command)],executionTimeout:["480"]}')"
+          COMMAND_ID="$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --timeout-seconds 60 \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)"
+          STATUS=
+          for _ in {1..120}; do
+            STATUS="$(aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$STATUS" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID"
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          if [ "$STATUS" != Success ]; then
+            aws ssm get-command-invocation --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" || true
+            exit 1
+          fi
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$EC2_INSTANCE_ID" \
+            --query '{Status:Status,Output:StandardOutputContent}'

@@ -118,6 +118,24 @@ class NotificationServiceTest {
     }
 
     @Test
+    void systemMessageUsesConnectedAdminWithoutExtraConfiguration() {
+        Admin admin = mock(Admin.class);
+        when(adminRepository.findFirstByKakaoSenderConnectionIdIsNotNullOrderByIdAsc())
+                .thenReturn(Optional.of(admin));
+        when(admin.getKakaoSenderConnectionId()).thenReturn(1L);
+        when(recorder.createRequested("SELECTION_APPROVED", 3L, "uuid", "본문",
+                NotificationInitiatorType.SYSTEM, null))
+                .thenReturn(8L);
+
+        var response = service.sendToFriendAsSystem(command);
+
+        assertThat(response.notificationId()).isEqualTo(8L);
+        assertThat(response.status()).isEqualTo(NotificationStatus.SENT);
+        verify(notificationSender).sendToFriend(1L, "uuid", template);
+        verify(recorder).markSent(8L);
+    }
+
+    @Test
     void rejectsMissingRecipientWhenDefaultUuidIsNotConfigured() {
         when(recipientRepository.findByUserId(2L)).thenReturn(Optional.empty());
         NotificationService serviceWithoutDefault = new NotificationService(

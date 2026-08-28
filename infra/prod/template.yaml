@@ -1,0 +1,1130 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated HiSelectors ECS/Fargate blue-green rehearsal stack
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Existing default VPC. The stack only references it.
+  PublicSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with an internet-gateway route in the first AZ.
+  PublicSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet with an internet-gateway route in a different AZ.
+  TestDbSnapshotIdentifier:
+    Type: String
+    MinLength: 1
+    Description: ARN or identifier of the source RDS snapshot to restore. The source is not modified.
+  TestDbSubnetGroupName:
+    Type: String
+    MinLength: 1
+    Description: Existing DB subnet group in VpcId used only by the restored test DB.
+  TestDbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedPattern: '^db\.[a-z0-9]+\.[a-z0-9]+$'
+  ImageUri:
+    Type: String
+    MinLength: 1
+    Description: Existing ECR ARM64 image URI pinned to a git SHA or digest.
+  EcrRepositoryName:
+    Type: String
+    Default: be-hiselectors
+    AllowedPattern: '^[a-z0-9]+(?:[._/-][a-z0-9]+)*$'
+    Description: Existing ECR repository. The stack does not modify it.
+  RuntimeSecretArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of the Secrets Manager JSON secret containing credentials for the runtime database.
+  RuntimeDatabaseHost:
+    Type: String
+    MinLength: 1
+    Description: Endpoint hostname of the external database used by the API and scheduler tasks.
+  RuntimeDatabasePort:
+    Type: Number
+    Default: 3306
+    MinValue: 1
+    MaxValue: 65535
+    Description: Port of the external database used by the API and scheduler tasks.
+  RuntimeDatabaseIdentifier:
+    Type: String
+    MinLength: 1
+    Description: Existing RDS DB instance identifier monitored as the runtime database.
+  GitHubOidcProviderArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of the existing GitHub Actions OIDC provider; it is referenced, not modified.
+  GitHubOidcSubject:
+    Type: String
+    Default: repo:HD-Fuma@310806056/be-hiselectors@1324765193:ref:refs/heads/dev
+    AllowedValues:
+      - repo:HD-Fuma@310806056/be-hiselectors@1324765193:ref:refs/heads/dev
+    Description: Exact repository and branch allowed to assume the new deploy role.
+  AcmCertificateArn:
+    Type: String
+    MinLength: 1
+    Description: ARN of the ap-northeast-2 ACM certificate for api.hiselectors.shop.
+  AlertTopicArn:
+    Type: String
+    Default: arn:aws:sns:ap-northeast-2:167595589232:ec2-down-alerts
+    Description: Existing SNS topic connected to the production Slack alert channel.
+  BatchLogLambdaArn:
+    Type: String
+    Default: arn:aws:lambda:ap-northeast-2:167595589232:function:hiselectors-batch-log-to-slack
+    Description: Existing Lambda that validates BATCH_EVENT application logs and publishes batch alerts.
+  ProductionListenerIngressCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$'
+    Description: IPv4 CIDR allowed to call the HTTPS production listener and HTTP redirect.
+  TestListenerIngressCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    AllowedPattern: '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}/(?:[0-9]|[12][0-9]|3[0-2])$'
+    Description: IPv4 CIDR allowed to call the isolated HTTP 8080 green test listener.
+  ApiDesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues:
+      - 0
+      - 2
+    Description: Keep 0 for stack bootstrap; use 2 after the isolated database and stack are ready.
+  SchedulerDesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues:
+      - 0
+      - 1
+    Description: Keep 0 for the isolated rehearsal; enable only after every other scheduler is stopped.
+
+  EnableDeploymentPause:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable the POST_TEST_TRAFFIC_SHIFT approval hook only after the initial API service is healthy.
+
+Conditions:
+  DeploymentPauseEnabled: !Equals [!Ref EnableDeploymentPause, 'true']
+  ApiServiceEnabled: !Equals [!Ref ApiDesiredCount, 2]
+  SchedulerServiceEnabled: !Equals [!Ref SchedulerDesiredCount, 1]
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}'
+      RetentionInDays: 30
+
+  BatchLogInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BatchLogLambdaArn
+      Action: lambda:InvokeFunction
+      Principal: logs.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !GetAtt LogGroup.Arn
+
+  BatchLogSubscription:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: BatchLogInvokePermission
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterName: batch-events-to-slack
+      FilterPattern: '"BATCH_EVENT"'
+      DestinationArn: !Ref BatchLogLambdaArn
+      Distribution: ByLogStream
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+      Policies:
+        - PolicyName: ReadRuntimeSecret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeSecretArn
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RuntimeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:hiselectors-analysis.fifo'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: arn:aws:s3:::hiselectors-media/campaigns/*
+
+  EcsLoadBalancerInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers'
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HiSelectors Fargate tasks; ingress is added only from the new ALB
+      VpcId: !Ref VpcId
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HiSelectors rehearsal ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ProductionListenerIngressCidr
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ProductionListenerIngressCidr
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref TestListenerIngressCidr
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          DestinationSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId
+
+  TaskIngressFromLoadBalancer:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt TaskSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
+
+  TestDatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Isolated snapshot-restored test database
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId
+
+  AuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/aws/rds/instance/${AWS::StackName}-test-db/audit'
+      RetentionInDays: 30
+
+  TestDatabase:
+    Type: AWS::RDS::DBInstance
+    DependsOn: AuditLogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-test-db'
+      DBSnapshotIdentifier: !Ref TestDbSnapshotIdentifier
+      DBInstanceClass: !Ref TestDbInstanceClass
+      DBSubnetGroupName: !Ref TestDbSubnetGroupName
+      VPCSecurityGroups:
+        - !GetAtt TestDatabaseSecurityGroup.GroupId
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 7
+      EnableCloudwatchLogsExports:
+        - audit
+      DeletionProtection: true
+      MaxAllocatedStorage: 1000
+      Tags:
+        - Key: Purpose
+          Value: production-blue-green
+
+  DatabaseConnectionsHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS connections above 75 for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RuntimeDatabaseIdentifier
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 75
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS CPU average above 90 percent for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RuntimeDatabaseIdentifier
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseMemoryLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS freeable memory below 50 MiB for 15 minutes
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RuntimeDatabaseIdentifier
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 15
+      DatapointsToAlarm: 15
+      Threshold: 52428800
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseStorageLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS free storage below 2 GiB for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RuntimeDatabaseIdentifier
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseCriticalEventSubscription:
+    Type: AWS::RDS::EventSubscription
+    Properties:
+      Enabled: true
+      EventCategories:
+        - availability
+        - failure
+        - low storage
+      SnsTopicArn: !Ref AlertTopicArn
+      SourceIds:
+        - !Ref RuntimeDatabaseIdentifier
+      SourceType: db-instance
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !GetAtt LoadBalancerSecurityGroup.GroupId
+      Subnets:
+        - !Ref PublicSubnetAId
+        - !Ref PublicSubnetBId
+
+  BlueTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8080
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /actuator/health/readiness
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  GreenTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Protocol: HTTP
+      Port: 8080
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /actuator/health/readiness
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  ProductionListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref AcmCertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: ProductionListener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  TestListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+
+  ProductionListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref ProductionListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/*'
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref BlueTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref GreenTargetGroup
+                Weight: 0
+
+  TestListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref TestListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - '/*'
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref BlueTargetGroup
+                Weight: 1
+              - TargetGroupArn: !Ref GreenTargetGroup
+                Weight: 0
+
+  Target5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Roll back a deployment with repeated target 5xx responses
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  LoadBalancer5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alert on repeated 5xx responses generated by the load balancer
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-api'
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ImageUri
+          Essential: true
+          StopTimeout: 60
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: prod
+            - Name: SCHEDULING_ENABLED
+              Value: 'false'
+            - Name: DISCOVERY_DEFAULTS_ENABLED
+              Value: 'false'
+            - Name: INSPECTION_POLICY_SYNC_ENABLED
+              Value: 'false'
+            - Name: SHOW_SQL
+              Value: 'false'
+            - Name: FORMAT_SQL
+              Value: 'false'
+            - Name: DB_POOL_MAX
+              Value: '5'
+            - Name: DB_POOL_MIN_IDLE
+              Value: '1'
+            - Name: DB_HOST
+              Value: !Ref RuntimeDatabaseHost
+            - Name: DB_PORT
+              Value: !Ref RuntimeDatabasePort
+            - Name: TZ
+              Value: Asia/Seoul
+            - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
+              Value: 'false'
+          Secrets:
+            - Name: DB_NAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_USERNAME::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_PASSWORD::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:JWT_SECRET::'
+            - Name: INSTAGRAM_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_REDIRECT_URI::'
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEY::'
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEYS::'
+            - Name: META_API_VERSION
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_API_VERSION::'
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+            - Name: APPLICATION_CONTENT_ANALYSIS_QUEUE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:APPLICATION_CONTENT_ANALYSIS_QUEUE_URL::'
+            - Name: GEMINI_FALLBACK_MODELS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_FALLBACK_MODELS::'
+            - Name: GEMINI_MODEL
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_MODEL::'
+            - Name: GOOGLE_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_ID::'
+            - Name: GOOGLE_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_SECRET::'
+            - Name: INSTAGRAM_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_ID::'
+            - Name: INSTAGRAM_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_SECRET::'
+            - Name: KAKAO_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_CLIENT_SECRET::'
+            - Name: KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID::'
+            - Name: KAKAO_MESSAGE_MOBILE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_MOBILE_WEB_URL::'
+            - Name: KAKAO_MESSAGE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_WEB_URL::'
+            - Name: KAKAO_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REDIRECT_URI::'
+            - Name: KAKAO_REST_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REST_API_KEY::'
+            - Name: KAKAO_TOKEN_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_TOKEN_ENCRYPTION_KEY::'
+            - Name: MEDIA_PUBLIC_BASE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_PUBLIC_BASE_URL::'
+            - Name: MEDIA_S3_BUCKET
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_S3_BUCKET::'
+            - Name: SETTLEMENT_ACCOUNT_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ACCOUNT_ENCRYPTION_KEY::'
+            - Name: SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID::'
+            - Name: SETTLEMENT_ZONE
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ZONE::'
+            - Name: YOUTUBE_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_API_KEY::'
+            - Name: YOUTUBE_DISCOVERY_DAILY_QUOTA
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_DAILY_QUOTA::'
+            - Name: YOUTUBE_DISCOVERY_MAX_KEYWORDS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_KEYWORDS::'
+            - Name: YOUTUBE_DISCOVERY_MAX_RESULTS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_RESULTS::'
+            - Name: YOUTUBE_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_REDIRECT_URI::'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:8080/actuator/health/liveness >/dev/null || exit 1
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  SchedulerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-scheduler'
+      Cpu: '1024'
+      Memory: '2048'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: scheduler
+          Image: !Ref ImageUri
+          Essential: true
+          StopTimeout: 60
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: prod
+            - Name: SCHEDULING_ENABLED
+              Value: 'true'
+            - Name: DISCOVERY_DEFAULTS_ENABLED
+              Value: 'true'
+            - Name: INSPECTION_POLICY_SYNC_ENABLED
+              Value: 'true'
+            - Name: SHOW_SQL
+              Value: 'false'
+            - Name: FORMAT_SQL
+              Value: 'false'
+            - Name: DB_POOL_MAX
+              Value: '5'
+            - Name: DB_POOL_MIN_IDLE
+              Value: '1'
+            - Name: DB_HOST
+              Value: !Ref RuntimeDatabaseHost
+            - Name: DB_PORT
+              Value: !Ref RuntimeDatabasePort
+            - Name: TZ
+              Value: Asia/Seoul
+            - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
+              Value: 'false'
+          Secrets:
+            - Name: DB_NAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_USERNAME::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_PASSWORD::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:JWT_SECRET::'
+            - Name: INSTAGRAM_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_REDIRECT_URI::'
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEY::'
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEYS::'
+            - Name: META_API_VERSION
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_API_VERSION::'
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+            - Name: APPLICATION_CONTENT_ANALYSIS_QUEUE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:APPLICATION_CONTENT_ANALYSIS_QUEUE_URL::'
+            - Name: GEMINI_FALLBACK_MODELS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_FALLBACK_MODELS::'
+            - Name: GEMINI_MODEL
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_MODEL::'
+            - Name: GOOGLE_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_ID::'
+            - Name: GOOGLE_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:GOOGLE_CLIENT_SECRET::'
+            - Name: INSTAGRAM_CLIENT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_ID::'
+            - Name: INSTAGRAM_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_CLIENT_SECRET::'
+            - Name: KAKAO_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_CLIENT_SECRET::'
+            - Name: KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID::'
+            - Name: KAKAO_MESSAGE_MOBILE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_MOBILE_WEB_URL::'
+            - Name: KAKAO_MESSAGE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_WEB_URL::'
+            - Name: KAKAO_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REDIRECT_URI::'
+            - Name: KAKAO_REST_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REST_API_KEY::'
+            - Name: KAKAO_TOKEN_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_TOKEN_ENCRYPTION_KEY::'
+            - Name: MEDIA_PUBLIC_BASE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_PUBLIC_BASE_URL::'
+            - Name: MEDIA_S3_BUCKET
+              ValueFrom: !Sub '${RuntimeSecretArn}:MEDIA_S3_BUCKET::'
+            - Name: SETTLEMENT_ACCOUNT_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ACCOUNT_ENCRYPTION_KEY::'
+            - Name: SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID::'
+            - Name: SETTLEMENT_ZONE
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ZONE::'
+            - Name: YOUTUBE_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_API_KEY::'
+            - Name: YOUTUBE_DISCOVERY_DAILY_QUOTA
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_DAILY_QUOTA::'
+            - Name: YOUTUBE_DISCOVERY_MAX_KEYWORDS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_KEYWORDS::'
+            - Name: YOUTUBE_DISCOVERY_MAX_RESULTS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_RESULTS::'
+            - Name: YOUTUBE_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_REDIRECT_URI::'
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:8080/actuator/health/liveness >/dev/null || exit 1
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: scheduler
+
+  ApiService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-api'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref ApiTaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref ApiDesiredCount
+      AvailabilityZoneRebalancing: ENABLED
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      HealthCheckGracePeriodSeconds: 180
+      DeploymentController:
+        Type: ECS
+      DeploymentConfiguration:
+        Strategy: BLUE_GREEN
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        BakeTimeInMinutes: 10
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+        Alarms:
+          AlarmNames:
+            - !Ref Target5xxAlarm
+          Enable: true
+          Rollback: true
+        LifecycleHooks: !If
+          - DeploymentPauseEnabled
+          - - TargetType: PAUSE
+              LifecycleStages:
+                - POST_TEST_TRAFFIC_SHIFT
+              TimeoutConfiguration:
+                TimeoutInMinutes: 30
+                Action: ROLLBACK
+          - !Ref AWS::NoValue
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt TaskSecurityGroup.GroupId
+          Subnets:
+            - !Ref PublicSubnetAId
+            - !Ref PublicSubnetBId
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 8080
+          TargetGroupArn: !Ref BlueTargetGroup
+          AdvancedConfiguration:
+            AlternateTargetGroupArn: !Ref GreenTargetGroup
+            ProductionListenerRule: !Ref ProductionListenerRule
+            TestListenerRule: !Ref TestListenerRule
+            RoleArn: !GetAtt EcsLoadBalancerInfrastructureRole.Arn
+
+  SchedulerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-scheduler'
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref SchedulerTaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref SchedulerDesiredCount
+      AvailabilityZoneRebalancing: DISABLED
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      DeploymentController:
+        Type: ECS
+      DeploymentConfiguration:
+        Strategy: ROLLING
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt TaskSecurityGroup.GroupId
+          Subnets:
+            - !Ref PublicSubnetAId
+            - !Ref PublicSubnetBId
+
+  ApiLiveTaskCountLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ApiServiceEnabled
+    Properties:
+      AlarmDescription: API live task count stayed below its desired count
+      Namespace: AWS/ECS
+      MetricName: LiveTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt ApiService.Name
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref ApiDesiredCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  ApiMemoryHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ApiServiceEnabled
+    Properties:
+      AlarmDescription: API memory utilization above 85 percent for 5 minutes
+      Namespace: AWS/ECS
+      MetricName: MemoryUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt ApiService.Name
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  SchedulerLiveTaskCountLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: SchedulerServiceEnabled
+    Properties:
+      AlarmDescription: Scheduler live task count stayed below its desired count
+      Namespace: AWS/ECS
+      MetricName: LiveTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt SchedulerService.Name
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref SchedulerDesiredCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  SchedulerMemoryHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: SchedulerServiceEnabled
+    Properties:
+      AlarmDescription: Scheduler memory utilization above 85 percent for 5 minutes
+      Namespace: AWS/ECS
+      MetricName: MemoryUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt SchedulerService.Name
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Ref GitHubOidcSubject
+      Policies:
+        - PolicyName: PushImage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}'
+        - PolicyName: DeployServices
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:ListServiceDeployments
+                  - ecs:UpdateService
+                Resource: !GetAtt ApiService.ServiceArn
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                Resource: !GetAtt SchedulerService.ServiceArn
+              - Effect: Allow
+                Action:
+                  - ecs:ContinueServiceDeployment
+                  - ecs:DescribeServiceDeployments
+                  - ecs:StopServiceDeployment
+                Resource:
+                  - !GetAtt ApiService.ServiceArn
+                  - !Sub
+                    - 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service-deployment/${ClusterName}/${ServiceName}/*'
+                    - ClusterName: !Ref Cluster
+                      ServiceName: !GetAtt ApiService.Name
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt TaskExecutionRole.Arn
+                  - !GetAtt TaskRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+
+Outputs:
+  ClusterName:
+    Description: Workflow ECS_CLUSTER value.
+    Value: !Ref Cluster
+  ApiServiceName:
+    Description: Workflow ECS_SERVICE value.
+    Value: !GetAtt ApiService.Name
+  ApiServiceArn:
+    Value: !GetAtt ApiService.ServiceArn
+  SchedulerServiceName:
+    Description: Workflow ECS_SCHEDULER_SERVICE value.
+    Value: !GetAtt SchedulerService.Name
+  ApiTaskDefinitionArn:
+    Value: !Ref ApiTaskDefinition
+  EcrRepositoryName:
+    Description: Workflow ECS_ECR_REPOSITORY value.
+    Value: !Ref EcrRepositoryName
+  ApiContainerName:
+    Description: Workflow ECS_CONTAINER_NAME value.
+    Value: api
+  SchedulerContainerName:
+    Description: Workflow ECS_SCHEDULER_CONTAINER_NAME value.
+    Value: scheduler
+  SchedulerTaskDefinitionArn:
+    Value: !Ref SchedulerTaskDefinition
+  GitHubDeployRoleArn:
+    Description: Set this output as the GitHub Actions variable ECS_AWS_ROLE_ARN.
+    Value: !GetAtt GitHubDeployRole.Arn
+  LoadBalancerDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+  ProductionUrl:
+    Description: Production API URL after the external DNS record is switched; this stack creates no DNS record.
+    Value: https://api.hiselectors.shop
+  TestUrl:
+    Description: Manual green listener check; allowed only from TestListenerIngressCidr.
+    Value: !Sub 'http://${LoadBalancer.DNSName}:8080/actuator/health/readiness'
+  ProductionListenerRuleArn:
+    Value: !Ref ProductionListenerRule
+  TestListenerRuleArn:
+    Value: !Ref TestListenerRule
+  BlueTargetGroupArn:
+    Value: !Ref BlueTargetGroup
+  GreenTargetGroupArn:
+    Value: !Ref GreenTargetGroup
+  DeploymentAlarmName:
+    Value: !Ref Target5xxAlarm
+  TaskSecurityGroupId:
+    Value: !GetAtt TaskSecurityGroup.GroupId
+  RuntimeDatabaseHost:
+    Description: Endpoint injected into the API and scheduler task definitions as DB_HOST.
+    Value: !Ref RuntimeDatabaseHost
+  RuntimeDatabaseIdentifier:
+    Description: External RDS DB instance monitored as the active runtime database.
+    Value: !Ref RuntimeDatabaseIdentifier
+  TestDatabaseSecurityGroupId:
+    Description: Security group of the retained rollback database; it is not on the active runtime path.
+    Value: !GetAtt TestDatabaseSecurityGroup.GroupId
+  TestDatabaseIdentifier:
+    Description: Retained rollback database identifier; it is not on the active runtime path.
+    Value: !Ref TestDatabase
+  TestDatabaseEndpoint:
+    Description: Retained rollback database endpoint; it is not on the active runtime path.
+    Value: !GetAtt TestDatabase.Endpoint.Address
+  TestDatabasePort:
+    Description: Retained rollback database port; it is not on the active runtime path.
+    Value: !GetAtt TestDatabase.Endpoint.Port
