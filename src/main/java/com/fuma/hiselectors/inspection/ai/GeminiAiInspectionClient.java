@@ -2,7 +2,7 @@ package com.fuma.hiselectors.inspection.ai;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
-import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
@@ -15,6 +15,7 @@ import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.stt.GeminiProperties;
 import com.fuma.hiselectors.stt.GeminiRequestExecutor;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -73,7 +74,9 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "contentMediaId", media.getId(),
                         "mediaType", media.getMediaType(),
                         "body", media.bodyOrEmpty())).toList());
-        return inspectInput(input, policy.getAiModelName(), policy.getAiPrompt());
+        return inspectInput(
+                input, policy.getAiModelName(), policy.getAiPrompt(),
+                policy.getAiPromptVersion(), policy.getId());
     }
 
     @Override
@@ -85,14 +88,21 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "contentMediaId", 0,
                         "mediaType", "TEXT",
                         "body", Map.of("text", text))));
-        return inspectInput(input, properties.modelOrDefault(), promptProvider.aiPrompt());
+        return inspectInput(
+                input, properties.modelOrDefault(), promptProvider.aiPrompt(),
+                InspectionPromptProvider.AI_PROMPT_VERSION, null);
     }
 
-    private AiInspectionResponse inspectInput(Map<String, Object> inputData, String modelName,
-                                            String prompt) {
+    private AiInspectionResponse inspectInput(
+            Map<String, Object> inputData,
+            String modelName,
+            String prompt,
+            String promptVersion,
+            Long inspectionPolicyId) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
+        long started = System.nanoTime();
         try {
             String input = objectMapper.writeValueAsString(inputData);
             Map<String, Object> body = Map.of(
@@ -110,7 +120,11 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                             .body(body)
                             .retrieve()
                             .body(GeminiResponse.class));
-            return mapResponse(extractText(response));
+            AiInspectionResponse parsed = mapResponse(extractText(response));
+            return new AiInspectionResponse(
+                    parsed.report(), parsed.violations(), executionMetadata(
+                            modelName, promptVersion, inspectionPolicyId, response,
+                            Duration.ofNanos(System.nanoTime() - started).toMillis()));
         } catch (RestClientResponseException e) {
             log.warn("Gemini 콘텐츠 검수 오류 응답. status={}", e.getStatusCode());
             if (e.getStatusCode().value() == 429) {
@@ -125,16 +139,68 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
 
     AiInspectionResponse mapResponse(String json) throws JacksonException {
         RawInspection raw = objectMapper.readValue(json, RawInspection.class);
-        ContentReportData report = raw.report() == null
-                ? ContentReportData.empty()
-                : new ContentReportData(raw.report().summary(), raw.report().purpose(),
-                        raw.report().flow(), raw.report().overallAssessment());
+        ContentReportAnalysis report = toReport(raw.report());
         List<DetectedViolation> violations = raw.violations() == null ? List.of()
                 : raw.violations().stream().map(violation -> new DetectedViolation(
                         ViolationTypeCode.valueOf(violation.violationType()),
                         new ViolationEvidence(violation.reason(), violation.confidence(),
                                 violation.locations(), EvidenceSource.AI))).toList();
         return new AiInspectionResponse(report, violations);
+    }
+
+    private ContentReportAnalysis toReport(RawReport raw) {
+        if (raw == null) {
+            return ContentReportAnalysis.empty();
+        }
+        RawOverview overview = raw.overview();
+        RawInsight insight = raw.insight();
+        return new ContentReportAnalysis(
+                overview == null ? ContentReportAnalysis.Overview.empty()
+                        : new ContentReportAnalysis.Overview(
+                                overview.summary(), overview.purpose(), overview.flow(),
+                                overview.overallAssessment()),
+                insight == null ? ContentReportAnalysis.Insight.empty()
+                        : new ContentReportAnalysis.Insight(
+                                insight.contentStyle(), insight.tone(), insight.strengths(),
+                                insight.cautions(), insight.risks(), insight.hateConfirmed(),
+                                insight.collabBrands()));
+    }
+
+    private Map<String, Object> executionMetadata(
+            String requestedModel,
+            String promptVersion,
+            Long inspectionPolicyId,
+            GeminiResponse response,
+            long latencyMs) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("provider", "GEMINI");
+        metadata.put("requestedModel", requestedModel);
+        metadata.put("promptVersion", promptVersion);
+        if (inspectionPolicyId != null) {
+            metadata.put("inspectionPolicyId", inspectionPolicyId);
+        }
+        metadata.put("latencyMs", latencyMs);
+        if (response != null && response.modelVersion() != null) {
+            metadata.put("responseModel", response.modelVersion());
+        }
+        if (response != null && response.usageMetadata() != null) {
+            UsageMetadata usage = response.usageMetadata();
+            Map<String, Object> tokens = new LinkedHashMap<>();
+            putIfPresent(tokens, "input", usage.promptTokenCount());
+            putIfPresent(tokens, "output", usage.candidatesTokenCount());
+            putIfPresent(tokens, "thought", usage.thoughtsTokenCount());
+            putIfPresent(tokens, "total", usage.totalTokenCount());
+            if (!tokens.isEmpty()) {
+                metadata.put("tokens", tokens);
+            }
+        }
+        return metadata;
+    }
+
+    private void putIfPresent(Map<String, Object> target, String key, Object value) {
+        if (value != null) {
+            target.put(key, value);
+        }
     }
 
     private String extractText(GeminiResponse response) {
@@ -176,7 +242,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "excerpt", Map.of("type", "string")),
                 "required", List.of("contentMediaId", "mediaType", "excerpt"));
 
-        Map<String, Object> report = Map.of(
+        Map<String, Object> overview = Map.of(
                 "type", "object",
                 "additionalProperties", false,
                 "properties", Map.of(
@@ -185,6 +251,28 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "flow", Map.of("type", "string"),
                         "overallAssessment", Map.of("type", "string")),
                 "required", List.of("summary", "purpose", "flow", "overallAssessment"));
+
+        Map<String, Object> stringArray = Map.of(
+                "type", "array", "items", Map.of("type", "string"));
+        Map<String, Object> insight = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of(
+                        "contentStyle", Map.of("type", "string"),
+                        "tone", Map.of("type", "string"),
+                        "strengths", stringArray,
+                        "cautions", stringArray,
+                        "risks", stringArray,
+                        "hateConfirmed", Map.of("type", "boolean"),
+                        "collabBrands", stringArray),
+                "required", List.of(
+                        "contentStyle", "tone", "strengths", "cautions", "risks",
+                        "hateConfirmed", "collabBrands"));
+        Map<String, Object> report = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of("overview", overview, "insight", insight),
+                "required", List.of("overview", "insight"));
 
         Map<String, Object> violation = Map.of(
                 "type", "object",
@@ -225,13 +313,33 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
 
     private record RawInspection(RawReport report, List<RawViolation> violations) { }
 
-    private record RawReport(String summary, String purpose, String flow,
-                             String overallAssessment) { }
+    private record RawReport(RawOverview overview, RawInsight insight) { }
+
+    private record RawOverview(
+            String summary, String purpose, String flow, String overallAssessment) { }
+
+    private record RawInsight(
+            String contentStyle,
+            String tone,
+            List<String> strengths,
+            List<String> cautions,
+            List<String> risks,
+            boolean hateConfirmed,
+            List<String> collabBrands) { }
 
     private record RawViolation(String violationType, String reason, Double confidence,
                                 List<EvidenceLocation> locations) { }
 
-    private record GeminiResponse(List<Candidate> candidates) { }
+    private record GeminiResponse(
+            List<Candidate> candidates,
+            String modelVersion,
+            UsageMetadata usageMetadata) { }
+
+    private record UsageMetadata(
+            Integer promptTokenCount,
+            Integer candidatesTokenCount,
+            Integer thoughtsTokenCount,
+            Integer totalTokenCount) { }
 
     private record Candidate(ResponseContent content) { }
 

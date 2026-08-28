@@ -19,6 +19,7 @@ import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
 import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
@@ -48,6 +49,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallback;
@@ -83,6 +85,38 @@ class ContentInspectionExecutionServiceTest {
                 .execute(eq(lease), eq(1L), eq(0L), eq(0L), any());
         verify(fixture.reports).save(any(ContentReport.class));
         verify(fixture.transactions, times(1)).execute(any());
+    }
+
+    @Test
+    void updatesExistingReportForSameVersionAndPolicy() {
+        Fixture fixture = fixture();
+        prepareSuccessfulInspection(fixture);
+        ContentReport existing = ContentReport.create(
+                1L, new ContentReportData("old", "", "", ""), 9L);
+        ReflectionTestUtils.setField(existing, "id", 77L);
+        when(fixture.reports.findByContentVersionIdAndInspectionPolicyId(1L, 9L))
+                .thenReturn(Optional.of(existing));
+        ContentReportAnalysis analysis = new ContentReportAnalysis(
+                new ContentReportAnalysis.Overview(
+                        "new", "purpose", "flow", "assessment"),
+                new ContentReportAnalysis.Insight(
+                        "review", "calm", List.of("clear"), List.of(),
+                        List.of(), false, List.of("brand-a")));
+        when(fixture.preprocessing.preprocess(any(), any(), any())).thenReturn(
+                new PreprocessingResult(Optional.of(new AiInspectionResponse(
+                        analysis, List.of(), Map.of("responseModel", "gemini"))),
+                        Optional.empty()));
+
+        fixture.service.inspect(1L);
+
+        ArgumentCaptor<ContentReport> captor = ArgumentCaptor.forClass(ContentReport.class);
+        verify(fixture.reports).save(captor.capture());
+        assertThat(captor.getValue()).isSameAs(existing);
+        assertThat(existing.getId()).isEqualTo(77L);
+        assertThat(existing.getSummary()).isEqualTo("new");
+        assertThat(existing.getAnalysis().insight().contentStyle()).isEqualTo("review");
+        assertThat(existing.getExecutionMetadata())
+                .containsEntry("responseModel", "gemini");
     }
 
     @Test

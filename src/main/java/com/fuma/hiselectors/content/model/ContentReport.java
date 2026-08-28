@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.AccessLevel;
@@ -16,7 +17,9 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "content_report")
+@Table(name = "content_report", uniqueConstraints = @UniqueConstraint(
+        name = "uq_content_report_version_policy",
+        columnNames = {"content_version_id", "inspection_policy_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ContentReport extends BaseTimeEntity {
@@ -60,15 +63,19 @@ public class ContentReport extends BaseTimeEntity {
 
     public static ContentReport create(Long contentVersionId, ContentReportData data,
                                        Long inspectionPolicyId) {
+        return create(contentVersionId, ContentReportAnalysis.fromLegacy(data),
+                inspectionPolicyId, Map.of());
+    }
+
+    public static ContentReport create(
+            Long contentVersionId,
+            ContentReportAnalysis analysis,
+            Long inspectionPolicyId,
+            Map<String, Object> executionMetadata) {
         ContentReport report = new ContentReport();
         report.contentVersionId = contentVersionId;
-        report.summary = data.summary();
-        report.purpose = data.purpose();
-        report.flow = data.flow();
-        report.overallAssessment = data.overallAssessment();
         report.inspectionPolicyId = inspectionPolicyId;
-        report.reportSchemaVersion = CURRENT_SCHEMA_VERSION;
-        report.analysis = ContentReportAnalysis.fromLegacy(data);
+        report.replaceAnalysis(analysis, executionMetadata);
         return report;
     }
 

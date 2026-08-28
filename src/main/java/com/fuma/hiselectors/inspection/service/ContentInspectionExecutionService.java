@@ -3,7 +3,7 @@ package com.fuma.hiselectors.inspection.service;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
-import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
@@ -188,7 +188,8 @@ public class ContentInspectionExecutionService {
                 rules, aiResponse.violations());
         merged = evidenceLocationNormalizer.normalize(context, merged);
         return new InspectionAnalysis(
-                aiResponse.report(), merged, preprocessing.extractionUpdates());
+                aiResponse.report(), aiResponse.executionMetadata(), merged,
+                preprocessing.extractionUpdates());
     }
 
     private void persist(
@@ -201,8 +202,14 @@ public class ContentInspectionExecutionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
         analysis.extractionUpdates()
                 .forEach(update -> applyExtraction(contentVersionId, update));
-        contentReportRepository.save(ContentReport.create(
-                contentVersionId, analysis.report(), preparation.policy().getId()));
+        ContentReport report = contentReportRepository
+                .findByContentVersionIdAndInspectionPolicyId(
+                        contentVersionId, preparation.policy().getId())
+                .orElseGet(() -> ContentReport.create(
+                        contentVersionId, analysis.report(), preparation.policy().getId(),
+                        analysis.executionMetadata()));
+        report.replaceAnalysis(analysis.report(), analysis.executionMetadata());
+        contentReportRepository.save(report);
         boolean correctionReviewPending = reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
@@ -255,7 +262,8 @@ public class ContentInspectionExecutionService {
     }
 
     private record InspectionAnalysis(
-            ContentReportData report,
+            ContentReportAnalysis report,
+            Map<String, Object> executionMetadata,
             List<DetectedViolation> violations,
             List<MediaExtractionUpdate> extractionUpdates) {
     }

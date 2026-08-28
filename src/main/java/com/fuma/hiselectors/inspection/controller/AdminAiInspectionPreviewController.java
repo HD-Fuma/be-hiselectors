@@ -1,7 +1,7 @@
 package com.fuma.hiselectors.inspection.controller;
 
 import com.fuma.hiselectors.inspection.detector.AiViolationDetector;
-import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.inspection.dto.ReinspectStaleResponse;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
@@ -52,7 +52,7 @@ public class AdminAiInspectionPreviewController {
     ) { }
 
     public record PreviewResponse(
-            ContentReportData report,
+            ContentReportAnalysis report,
             List<PreviewViolation> violations
     ) {
         static PreviewResponse from(AiInspectionResponse result) {
