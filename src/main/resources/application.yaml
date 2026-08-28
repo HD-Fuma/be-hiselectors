@@ -221,9 +221,6 @@ application:
   content-analysis:
     scheduler-enabled: ${APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED:true}
     run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
-  notification:
-    sender-admin-login-id: ${APPLICATION_NOTIFICATION_SENDER_ADMIN_LOGIN_ID:}
-
 settlement:
   account-encryption-key: ${SETTLEMENT_ACCOUNT_ENCRYPTION_KEY:}
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}

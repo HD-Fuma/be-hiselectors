@@ -12,6 +12,8 @@ public interface AdminRepository extends JpaRepository<Admin, Long> {
 
     Optional<Admin> findByLoginId(String loginId);
 
+    Optional<Admin> findFirstByKakaoSenderConnectionIdIsNotNullOrderByIdAsc();
+
     @Query("select admin.id as id, admin.name as name from Admin admin where admin.id in :ids")
     List<AdminNameProjection> findNamesByIdIn(@Param("ids") Collection<Long> ids);
 
