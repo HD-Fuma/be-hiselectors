@@ -78,12 +78,16 @@ API는 측정된 유휴 메모리 사용량을 기준으로 `0.5 vCPU / 1GB`를 
 - `ClusterName` → `ECS_CLUSTER`
 - `ApiServiceName` → `ECS_SERVICE`
 - `ApiContainerName` → `ECS_CONTAINER_NAME`
+- `SchedulerServiceName` → `ECS_SCHEDULER_SERVICE`
+- `SchedulerContainerName` → `ECS_SCHEDULER_CONTAINER_NAME`
 
-새 role trust는 지정된 `dev` ref 하나로 고정되고, 기존 ECR push, 이 stack의 API service deployment, 새 task/execution role의 `PassRole`만 허용한다. scheduler 배포 권한은 아직 주지 않는다.
+새 role trust는 지정된 `dev` ref 하나로 고정되고, 기존 ECR push, 이 stack의 API와 scheduler service deployment, 새 task/execution role의 `PassRole`만 허용한다.
 
 API 배포는 ECS native `BLUE_GREEN`이다. green이 test listener를 받은 뒤 `POST_TEST_TRAFFIC_SHIFT`에서 최대 30분 pause한다. workflow는 `DescribeServiceDeployments`에서 실제 hook ID를 읽고, 두 target group 모두 desired count만큼 ALB readiness가 `healthy`인지 AWS API로 확인한다. 성공 시 `ContinueServiceDeployment(CONTINUE)`, 실패 시 `ROLLBACK`을 호출하며 미응답이면 자동 rollback한다. GitHub-hosted runner가 ALB에 직접 접속하지 않으므로 listener CIDR을 공개할 필요가 없다.
 
 workflow는 ECS service를 직접 갱신하므로 CloudFormation의 `ImageUri` parameter는 자동으로 바뀌지 않는다. 이후 stack을 update할 때는 현재 service image URI를 `ImageUri`로 함께 넘겨 이전 이미지로 되돌아가지 않게 한다.
+
+API blue-green deployment가 성공하면 workflow는 scheduler task definition도 같은 image SHA로 갱신하고 현재 desired count는 바꾸지 않는다. 리허설 중에는 scheduler가 계속 `0`이며, 나중에 `0`에서 `1`로 전환해도 검증된 API release와 같은 image가 시작된다.
 
 stack 삭제 시 복원한 `TestDatabase`는 final snapshot 없이 삭제된다. 원본 snapshot과 기존 운영 리소스는 삭제 대상이 아니다.
 

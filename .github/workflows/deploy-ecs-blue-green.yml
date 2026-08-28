@@ -18,6 +18,8 @@ env:
   ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
   ECS_SERVICE: ${{ vars.ECS_SERVICE }}
   ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+  ECS_SCHEDULER_SERVICE: ${{ vars.ECS_SCHEDULER_SERVICE }}
+  ECS_SCHEDULER_CONTAINER_NAME: ${{ vars.ECS_SCHEDULER_CONTAINER_NAME }}
   ECS_DEPLOY_TIMEOUT_SECONDS: ${{ vars.ECS_DEPLOY_TIMEOUT_SECONDS || '2700' }}
 
 defaults:
@@ -39,6 +41,8 @@ jobs:
             ECS_CLUSTER
             ECS_SERVICE
             ECS_CONTAINER_NAME
+            ECS_SCHEDULER_SERVICE
+            ECS_SCHEDULER_CONTAINER_NAME
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -351,3 +355,87 @@ jobs:
             --service-deployment-arn "$DEPLOYMENT_ARN" \
             --stop-type ROLLBACK || true
           exit 1
+
+      - name: Keep scheduler image aligned
+        env:
+          IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/ecs-blue-green"
+
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SCHEDULER_SERVICE" \
+            --output json > "$work_dir/scheduler-service.json"
+          jq -e '
+            (.failures | length == 0)
+            and (.services | length == 1)
+            and (.services[0].status == "ACTIVE")
+            and (.services[0].deploymentController.type == "ECS")
+            and (.services[0].deploymentConfiguration.strategy == "ROLLING")
+            and (.services[0].pendingCount == 0)
+            and (.services[0].runningCount == .services[0].desiredCount)
+            and (.services[0].deployments | length == 1)
+          ' "$work_dir/scheduler-service.json" > /dev/null
+
+          scheduler_task_definition="$(jq -r '.services[0].taskDefinition' "$work_dir/scheduler-service.json")"
+          aws ecs describe-task-definition \
+            --task-definition "$scheduler_task_definition" \
+            --query taskDefinition \
+            --output json > "$work_dir/current-scheduler-task-definition.json"
+          jq -e --arg container "$ECS_SCHEDULER_CONTAINER_NAME" '
+            ([.containerDefinitions[] | select(.name == $container)] | length == 1)
+            and ([
+              .containerDefinitions[]
+              | select(.name == $container)
+              | .environment[]?
+              | select(.name == "SCHEDULING_ENABLED" and .value == "true")
+            ] | length == 1)
+          ' "$work_dir/current-scheduler-task-definition.json" > /dev/null || {
+            echo "Expected one scheduler container with SCHEDULING_ENABLED=true." >&2
+            exit 1
+          }
+          jq --arg container "$ECS_SCHEDULER_CONTAINER_NAME" --arg image "$IMAGE_URI" '
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy,
+              .deregisteredAt
+            )
+            | (.containerDefinitions[] | select(.name == $container) | .image) = $image
+          ' "$work_dir/current-scheduler-task-definition.json" \
+            > "$work_dir/new-scheduler-task-definition.json"
+
+          new_scheduler_task_definition="$(aws ecs register-task-definition \
+            --cli-input-json "file://$work_dir/new-scheduler-task-definition.json" \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)"
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SCHEDULER_SERVICE" \
+            --task-definition "$new_scheduler_task_definition" \
+            --query 'service.{serviceArn:serviceArn,desiredCount:desiredCount,taskDefinition:taskDefinition}'
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SCHEDULER_SERVICE"
+
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SCHEDULER_SERVICE" \
+            --output json > "$work_dir/scheduler-service-final.json"
+          jq -e --arg task_definition "$new_scheduler_task_definition" '
+            .services[0]
+            | (.taskDefinition == $task_definition)
+              and (.pendingCount == 0)
+              and (.runningCount == .desiredCount)
+          ' "$work_dir/scheduler-service-final.json" > /dev/null
+          {
+            echo "### Scheduler release"
+            echo "- Image: \`$IMAGE_URI\`"
+            echo "- Task definition: \`$new_scheduler_task_definition\`"
+            echo "- Desired count remains unchanged."
+          } >> "$GITHUB_STEP_SUMMARY"
