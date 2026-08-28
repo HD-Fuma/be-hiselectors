@@ -1,6 +1,8 @@
 name: Deploy production to ECS (blue-green)
 
 on:
+  push:
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -86,6 +88,117 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Apply and verify database migration 016
+        run: |
+          set -euo pipefail
+          work_dir="$RUNNER_TEMP/ecs-migration"
+          mkdir -p "$work_dir"
+
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --output json > "$work_dir/service.json"
+          jq -e '
+            (.failures | length == 0)
+            and (.services | length == 1)
+            and (.services[0].status == "ACTIVE")
+            and (.services[0].networkConfiguration.awsvpcConfiguration.assignPublicIp == "ENABLED")
+          ' "$work_dir/service.json" > /dev/null
+
+          service_task_definition="$(jq -r '.services[0].taskDefinition' "$work_dir/service.json")"
+          aws ecs describe-task-definition \
+            --task-definition "$service_task_definition" \
+            --query taskDefinition \
+            --output json > "$work_dir/current-task-definition.json"
+          jq -e --arg container "$ECS_CONTAINER_NAME" '
+            ([.containerDefinitions[] | select(.name == $container)] | length == 1)
+            and ([.containerDefinitions[] | select(.name == $container) | .environment[]?
+              | select(.name == "DB_HOST" or .name == "DB_PORT")] | length == 2)
+            and ([.containerDefinitions[] | select(.name == $container) | .secrets[]?
+              | select(.name == "DB_NAME" or .name == "DB_USERNAME" or .name == "DB_PASSWORD")]
+              | length == 3)
+          ' "$work_dir/current-task-definition.json" > /dev/null || {
+            echo "The API task definition must expose one complete database configuration." >&2
+            exit 1
+          }
+
+          migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
+          verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND description = '광고·수수료 안내 문구 확인 필요') OR (code = 'AFFILIATE_LINK_INVALID' AND description = '제휴 링크 확인 필요');"
+          jq \
+            --arg container "$ECS_CONTAINER_NAME" \
+            --arg family "${ECS_SERVICE}-migration" \
+            --arg migration_sql "$migration_sql" \
+            --arg verify_sql "$verify_sql" \
+            --arg command 'printf "%s\n" "$MIGRATION_SQL" | mysql --protocol=TCP --connect-timeout=10 --ssl-mode=REQUIRED -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --protocol=TCP --connect-timeout=10 --ssl-mode=REQUIRED -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
+            (.containerDefinitions[] | select(.name == $container)) as $api
+            | {
+                family: $family,
+                executionRoleArn,
+                networkMode: "awsvpc",
+                requiresCompatibilities: ["FARGATE"],
+                cpu: "256",
+                memory: "512",
+                runtimePlatform,
+                containerDefinitions: [{
+                  name: "migration",
+                  image: "mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb",
+                  essential: true,
+                  command: ["sh", "-ec", $command],
+                  environment: (
+                    [$api.environment[] | select(.name == "DB_HOST" or .name == "DB_PORT")]
+                    + [
+                        {name: "MIGRATION_SQL", value: $migration_sql},
+                        {name: "VERIFY_SQL", value: $verify_sql}
+                      ]
+                  ),
+                  secrets: [$api.secrets[]
+                    | select(.name == "DB_NAME" or .name == "DB_USERNAME" or .name == "DB_PASSWORD")
+                    | if .name == "DB_PASSWORD" then .name = "MYSQL_PWD" else . end
+                  ],
+                  logConfiguration: ($api.logConfiguration
+                    | .options["awslogs-stream-prefix"] = "migration")
+                }]
+              }
+          ' "$work_dir/current-task-definition.json" > "$work_dir/migration-task-definition.json"
+          jq '.services[0].networkConfiguration' "$work_dir/service.json" \
+            > "$work_dir/network-configuration.json"
+
+          migration_task_definition="$(aws ecs register-task-definition \
+            --cli-input-json "file://$work_dir/migration-task-definition.json" \
+            --query taskDefinition.taskDefinitionArn \
+            --output text)"
+          aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --launch-type FARGATE \
+            --task-definition "$migration_task_definition" \
+            --network-configuration "file://$work_dir/network-configuration.json" \
+            --started-by "github-${GITHUB_RUN_ID}" \
+            --output json > "$work_dir/run-task.json"
+          jq -e '(.failures | length == 0) and (.tasks | length == 1)' \
+            "$work_dir/run-task.json" > /dev/null
+          migration_task_arn="$(jq -r '.tasks[0].taskArn' "$work_dir/run-task.json")"
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$migration_task_arn"
+          aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$migration_task_arn" \
+            --output json > "$work_dir/migration-result.json"
+
+          jq -e '
+            (.failures | length == 0)
+            and (.tasks | length == 1)
+            and (.tasks[0].lastStatus == "STOPPED")
+            and ([.tasks[0].containers[]
+              | select(.name == "migration" and .exitCode == 0)] | length == 1)
+          ' "$work_dir/migration-result.json" > /dev/null || {
+            jq '.tasks[0] | {
+              stopCode,
+              stoppedReason,
+              containers: [.containers[] | {name, exitCode, reason}]
+            }' "$work_dir/migration-result.json"
+            exit 1
+          }
+          echo "Database migration 016 applied and verified."
 
       - name: Register task definition and start deployment
         id: deploy
