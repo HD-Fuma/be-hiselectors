@@ -617,6 +617,11 @@ Resources:
                 Resource: !GetAtt ApiService.ServiceArn
               - Effect: Allow
                 Action:
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                Resource: !GetAtt SchedulerService.ServiceArn
+              - Effect: Allow
+                Action:
                   - ecs:ContinueServiceDeployment
                   - ecs:DescribeServiceDeployments
                   - ecs:StopServiceDeployment
@@ -645,6 +650,7 @@ Outputs:
   ApiServiceArn:
     Value: !GetAtt ApiService.ServiceArn
   SchedulerServiceName:
+    Description: Workflow ECS_SCHEDULER_SERVICE value.
     Value: !GetAtt SchedulerService.Name
   ApiTaskDefinitionArn:
     Value: !Ref ApiTaskDefinition
@@ -654,6 +660,9 @@ Outputs:
   ApiContainerName:
     Description: Workflow ECS_CONTAINER_NAME value.
     Value: api
+  SchedulerContainerName:
+    Description: Workflow ECS_SCHEDULER_CONTAINER_NAME value.
+    Value: scheduler
   SchedulerTaskDefinitionArn:
     Value: !Ref SchedulerTaskDefinition
   GitHubDeployRoleArn:
