@@ -50,6 +50,14 @@ Parameters:
     Type: String
     MinLength: 1
     Description: ARN of the ap-northeast-2 ACM certificate for api.hiselectors.shop.
+  AlertTopicArn:
+    Type: String
+    Default: arn:aws:sns:ap-northeast-2:167595589232:ec2-down-alerts
+    Description: Existing SNS topic connected to the production Slack alert channel.
+  BatchLogLambdaArn:
+    Type: String
+    Default: arn:aws:lambda:ap-northeast-2:167595589232:function:hiselectors-batch-log-to-slack
+    Description: Existing Lambda that validates BATCH_EVENT application logs and publishes batch alerts.
   ProductionListenerIngressCidr:
     Type: String
     Default: 127.0.0.1/32
@@ -85,6 +93,8 @@ Parameters:
 
 Conditions:
   DeploymentPauseEnabled: !Equals [!Ref EnableDeploymentPause, 'true']
+  ApiServiceEnabled: !Equals [!Ref ApiDesiredCount, 2]
+  SchedulerServiceEnabled: !Equals [!Ref SchedulerDesiredCount, 1]
 
 Resources:
   LogGroup:
@@ -92,6 +102,25 @@ Resources:
     Properties:
       LogGroupName: !Sub '/ecs/${AWS::StackName}'
       RetentionInDays: 30
+
+  BatchLogInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BatchLogLambdaArn
+      Action: lambda:InvokeFunction
+      Principal: logs.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !GetAtt LogGroup.Arn
+
+  BatchLogSubscription:
+    Type: AWS::Logs::SubscriptionFilter
+    DependsOn: BatchLogInvokePermission
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterName: batch-events-to-slack
+      FilterPattern: '"BATCH_EVENT"'
+      DestinationArn: !Ref BatchLogLambdaArn
+      Distribution: ByLogStream
 
   TaskExecutionRole:
     Type: AWS::IAM::Role
@@ -202,8 +231,17 @@ Resources:
           ToPort: 3306
           SourceSecurityGroupId: !GetAtt TaskSecurityGroup.GroupId
 
+  AuditLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub '/aws/rds/instance/${AWS::StackName}-test-db/audit'
+      RetentionInDays: 30
+
   TestDatabase:
     Type: AWS::RDS::DBInstance
+    DependsOn: AuditLogGroup
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -216,11 +254,110 @@ Resources:
       PubliclyAccessible: false
       MultiAZ: false
       BackupRetentionPeriod: 7
+      EnableCloudwatchLogsExports:
+        - audit
       DeletionProtection: true
       MaxAllocatedStorage: 1000
       Tags:
         - Key: Purpose
           Value: production-blue-green
+
+  DatabaseConnectionsHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS connections above 75 for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref TestDatabase
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 75
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS CPU average above 90 percent for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref TestDatabase
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseMemoryLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS freeable memory below 50 MiB for 15 minutes
+      Namespace: AWS/RDS
+      MetricName: FreeableMemory
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref TestDatabase
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 15
+      DatapointsToAlarm: 15
+      Threshold: 52428800
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseStorageLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: RDS free storage below 2 GiB for 5 minutes
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref TestDatabase
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  DatabaseCriticalEventSubscription:
+    Type: AWS::RDS::EventSubscription
+    Properties:
+      Enabled: true
+      EventCategories:
+        - availability
+        - failure
+        - low storage
+      SnsTopicArn: !Ref AlertTopicArn
+      SourceIds:
+        - !Ref TestDatabase
+      SourceType: db-instance
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -367,6 +504,31 @@ Resources:
       Threshold: 5
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  LoadBalancer5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alert on repeated 5xx responses generated by the load balancer
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
 
   ApiTaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -715,6 +877,102 @@ Resources:
           Subnets:
             - !Ref PublicSubnetAId
             - !Ref PublicSubnetBId
+
+  ApiLiveTaskCountLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ApiServiceEnabled
+    Properties:
+      AlarmDescription: API live task count stayed below its desired count
+      Namespace: AWS/ECS
+      MetricName: LiveTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt ApiService.Name
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref ApiDesiredCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  ApiMemoryHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: ApiServiceEnabled
+    Properties:
+      AlarmDescription: API memory utilization above 85 percent for 5 minutes
+      Namespace: AWS/ECS
+      MetricName: MemoryUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt ApiService.Name
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  SchedulerLiveTaskCountLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: SchedulerServiceEnabled
+    Properties:
+      AlarmDescription: Scheduler live task count stayed below its desired count
+      Namespace: AWS/ECS
+      MetricName: LiveTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt SchedulerService.Name
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref SchedulerDesiredCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
+
+  SchedulerMemoryHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: SchedulerServiceEnabled
+    Properties:
+      AlarmDescription: Scheduler memory utilization above 85 percent for 5 minutes
+      Namespace: AWS/ECS
+      MetricName: MemoryUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref Cluster
+        - Name: ServiceName
+          Value: !GetAtt SchedulerService.Name
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 5
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+      OKActions:
+        - !Ref AlertTopicArn
 
   GitHubDeployRole:
     Type: AWS::IAM::Role

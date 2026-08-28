@@ -13,9 +13,6 @@ Parameters:
   RuntimeSecretArn:
     Type: String
     Description: Secrets Manager JSON with DB, JWT, Gemini, and Meta values
-  ApiInstanceRoleName:
-    Type: String
-    Default: hiselectors-ec2-role
   AssignPublicIp:
     Type: String
     Default: DISABLED
@@ -88,20 +85,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions:
         - !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${AlertTopicName}"
-
-  AnalysisQueuePolicy:
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - !Ref AnalysisQueue
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiInstanceRoleName}"
-            Action: sqs:SendMessage
-            Resource: !GetAtt AnalysisQueue.Arn
 
   TaskExecutionRole:
     Type: AWS::IAM::Role

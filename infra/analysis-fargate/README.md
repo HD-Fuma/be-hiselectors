@@ -21,9 +21,8 @@ Secrets Manager 런타임 시크릿과 아래 GitHub 값을 등록한다.
 
 - Secret `ANALYSIS_RUNTIME_SECRET_ARN`
 - Variable `ANALYSIS_SUBNET_IDS`
-- Variable `ANALYSIS_SECURITY_GROUP_IDS`
+- Variable `ANALYSIS_SECURITY_GROUP_IDS` (production stack의 `TaskSecurityGroupId` 하나)
 - Variable `ANALYSIS_ASSIGN_PUBLIC_IP`
-- Variable `EC2_INSTANCE_ID`
 
 GitHub 배포 역할에는 기존 권한과 함께 아래 작업이 필요하다.
 
@@ -55,17 +54,16 @@ GitHub 배포 역할에는 기존 권한과 함께 아래 작업이 필요하다
 CloudWatch 권한의 리소스는
 `arn:aws:cloudwatch:ap-northeast-2:167595589232:alarm:hiselectors-analysis-dlq`로 제한한다.
 
-큐 정책이 `hiselectors-ec2-role`에 `sqs:SendMessage`를 허용하므로 EC2 역할에 별도 인라인
-정책은 필요 없다. 역할 이름이 다르면 CloudFormation의 `ApiInstanceRoleName` 값을 바꾼다.
+analysis task는 운영 ECS task security group을 재사용한다. 이 security group은 이미 운영
+RDS 3306 접근이 허용돼 있다. 운영 ECS API와 scheduler는 자신의 task role에 있는
+`sqs:SendMessage` 권한으로 queue에 발행한다.
 
 ## 배포 순서
 
 1. `Deploy analysis worker`를 실행해 SQS/Lambda/Fargate 스택을 배포한다.
-2. 변경 코드가 `dev`에 반영되면 `Deploy production`이 API 이미지를 배포한다.
-3. Production 워크플로가 스택의 `AnalysisQueueUrl`을 `/srv/hiselectors/.env`의
-   `APPLICATION_CONTENT_ANALYSIS_QUEUE_URL`에 자동으로 넣는다.
-4. EC2 API에는 `APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED=false`를 유지한다.
-5. 검증 후 `Deploy analysis worker`를 `schedule_state=ENABLED`로 실행한다.
+2. 운영 ECS runtime secret의 `APPLICATION_CONTENT_ANALYSIS_QUEUE_URL`이 stack output과
+   같은지 확인한다.
+3. 검증 후 `Deploy analysis worker`를 `schedule_state=ENABLED`로 실행한다.
 
 ## 확인
 

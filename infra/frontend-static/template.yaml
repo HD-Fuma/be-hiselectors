@@ -1,0 +1,406 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: HiSelectors static frontends on private S3 and CloudFront
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: hiselectors.shop
+  DeployBucketName:
+    Type: String
+    Default: hiselectors-deploy
+  FrontendDeployRoleName:
+    Type: String
+    Default: gha-fe-deploy
+  LegacyFrontendIp:
+    Type: String
+    Default: 52.79.101.136
+  ApiAlbDnsName:
+    Type: String
+    Default: hisele-LoadB-7NMNbYa4VXKm-1082298427.ap-northeast-2.elb.amazonaws.com
+  ApiCertificateValidationName:
+    Type: String
+    Default: _26e4c3d1044494344392c6a7615eaf78.api.hiselectors.shop
+  ApiCertificateValidationValue:
+    Type: String
+    Default: _618f925de9d5fb3c696e6149aa16e115.jkddzztszm.acm-validations.aws
+  EnableFrontendCdn:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  RouteFrontendToCdn:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+Conditions:
+  FrontendCdnEnabled: !Equals [!Ref EnableFrontendCdn, 'true']
+  FrontendDnsOnCdn: !And
+    - !Condition FrontendCdnEnabled
+    - !Equals [!Ref RouteFrontendToCdn, 'true']
+
+Resources:
+  HostedZone:
+    Type: AWS::Route53::HostedZone
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: Authoritative DNS for HiSelectors production
+
+  ApiRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'api.${DomainName}'
+      Type: CNAME
+      TTL: 600
+      ResourceRecords:
+        - !Ref ApiAlbDnsName
+
+  ApiCertificateValidationRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Ref ApiCertificateValidationName
+      Type: CNAME
+      TTL: 600
+      ResourceRecords:
+        - !Ref ApiCertificateValidationValue
+
+  FrontendCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: FrontendCdnEnabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DomainName: !Ref DomainName
+      SubjectAlternativeNames:
+        - !Sub '*.${DomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZone
+        - DomainName: !Sub '*.${DomainName}'
+          HostedZoneId: !Ref HostedZone
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: FrontendCdnEnabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OriginAccessControlConfig:
+        Name: hiselectors-static-s3
+        Description: Signed CloudFront access to the private frontend bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ClientDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: FrontendCdnEnabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DistributionConfig:
+        Comment: HiSelectors client SPA
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_200
+        DefaultRootObject: index.html
+        Aliases:
+          - !Ref DomainName
+          - !Sub 'www.${DomainName}'
+          - !Sub 'app.${DomainName}'
+        Origins:
+          - Id: client-s3
+            DomainName: !Sub '${DeployBucketName}.s3.ap-northeast-2.amazonaws.com'
+            OriginPath: /client
+            OriginAccessControlId: !Ref FrontendOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: client-s3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+        ViewerCertificate:
+          AcmCertificateArn: !Ref FrontendCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  AdminDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: FrontendCdnEnabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DistributionConfig:
+        Comment: HiSelectors admin SPA
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_200
+        DefaultRootObject: index.html
+        Aliases:
+          - !Sub 'admin.${DomainName}'
+        Origins:
+          - Id: admin-s3
+            DomainName: !Sub '${DeployBucketName}.s3.ap-northeast-2.amazonaws.com'
+            OriginPath: /admin
+            OriginAccessControlId: !Ref FrontendOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: admin-s3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+        ViewerCertificate:
+          AcmCertificateArn: !Ref FrontendCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  DeployBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: FrontendCdnEnabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Bucket: !Ref DeployBucketName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowClientCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${DeployBucketName}/client/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ClientDistribution}'
+          - Sid: AllowAdminCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${DeployBucketName}/admin/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${AdminDistribution}'
+
+  FrontendDeployPolicy:
+    Type: AWS::IAM::Policy
+    Condition: FrontendCdnEnabled
+    Properties:
+      PolicyName: hiselectors-cloudfront-deploy
+      Roles:
+        - !Ref FrontendDeployRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ListFrontendPrefixes
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${DeployBucketName}'
+            Condition:
+              StringLike:
+                s3:prefix:
+                  - client
+                  - client/*
+                  - admin
+                  - admin/*
+          - Sid: DeployFrontendObjects
+            Effect: Allow
+            Action:
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:GetObject
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${DeployBucketName}/client/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${DeployBucketName}/admin/*'
+          - Sid: InvalidateFrontendDistributions
+            Effect: Allow
+            Action:
+              - cloudfront:CreateInvalidation
+              - cloudfront:GetInvalidation
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ClientDistribution}'
+              - !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${AdminDistribution}'
+
+  RootRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Ref DomainName
+      Type: A
+      TTL: !If [FrontendDnsOnCdn, !Ref 'AWS::NoValue', 600]
+      ResourceRecords: !If
+        - FrontendDnsOnCdn
+        - !Ref 'AWS::NoValue'
+        - - !Ref LegacyFrontendIp
+      AliasTarget: !If
+        - FrontendDnsOnCdn
+        - DNSName: !GetAtt ClientDistribution.DomainName
+          HostedZoneId: Z2FDTNDATAQYW2
+          EvaluateTargetHealth: false
+        - !Ref 'AWS::NoValue'
+
+  WwwRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'www.${DomainName}'
+      Type: A
+      TTL: !If [FrontendDnsOnCdn, !Ref 'AWS::NoValue', 600]
+      ResourceRecords: !If
+        - FrontendDnsOnCdn
+        - !Ref 'AWS::NoValue'
+        - - !Ref LegacyFrontendIp
+      AliasTarget: !If
+        - FrontendDnsOnCdn
+        - DNSName: !GetAtt ClientDistribution.DomainName
+          HostedZoneId: Z2FDTNDATAQYW2
+          EvaluateTargetHealth: false
+        - !Ref 'AWS::NoValue'
+
+  AppRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'app.${DomainName}'
+      Type: A
+      TTL: !If [FrontendDnsOnCdn, !Ref 'AWS::NoValue', 600]
+      ResourceRecords: !If
+        - FrontendDnsOnCdn
+        - !Ref 'AWS::NoValue'
+        - - !Ref LegacyFrontendIp
+      AliasTarget: !If
+        - FrontendDnsOnCdn
+        - DNSName: !GetAtt ClientDistribution.DomainName
+          HostedZoneId: Z2FDTNDATAQYW2
+          EvaluateTargetHealth: false
+        - !Ref 'AWS::NoValue'
+
+  AdminRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'admin.${DomainName}'
+      Type: A
+      TTL: !If [FrontendDnsOnCdn, !Ref 'AWS::NoValue', 600]
+      ResourceRecords: !If
+        - FrontendDnsOnCdn
+        - !Ref 'AWS::NoValue'
+        - - !Ref LegacyFrontendIp
+      AliasTarget: !If
+        - FrontendDnsOnCdn
+        - DNSName: !GetAtt AdminDistribution.DomainName
+          HostedZoneId: Z2FDTNDATAQYW2
+          EvaluateTargetHealth: false
+        - !Ref 'AWS::NoValue'
+
+  RootIpv6Record:
+    Type: AWS::Route53::RecordSet
+    Condition: FrontendDnsOnCdn
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt ClientDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  WwwIpv6Record:
+    Type: AWS::Route53::RecordSet
+    Condition: FrontendDnsOnCdn
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'www.${DomainName}'
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt ClientDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  AppIpv6Record:
+    Type: AWS::Route53::RecordSet
+    Condition: FrontendDnsOnCdn
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'app.${DomainName}'
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt ClientDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  AdminIpv6Record:
+    Type: AWS::Route53::RecordSet
+    Condition: FrontendDnsOnCdn
+    Properties:
+      HostedZoneId: !Ref HostedZone
+      Name: !Sub 'admin.${DomainName}'
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt AdminDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+Outputs:
+  HostedZoneId:
+    Value: !Ref HostedZone
+  NameServers:
+    Value: !Join [',', !GetAtt HostedZone.NameServers]
+  ClientDistributionId:
+    Condition: FrontendCdnEnabled
+    Value: !Ref ClientDistribution
+  ClientDistributionDomainName:
+    Condition: FrontendCdnEnabled
+    Value: !GetAtt ClientDistribution.DomainName
+  AdminDistributionId:
+    Condition: FrontendCdnEnabled
+    Value: !Ref AdminDistribution
+  AdminDistributionDomainName:
+    Condition: FrontendCdnEnabled
+    Value: !GetAtt AdminDistribution.DomainName
