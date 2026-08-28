@@ -188,7 +188,7 @@ public class ContentInspectionExecutionService {
                 rules, aiResponse.violations());
         merged = evidenceLocationNormalizer.normalize(context, merged);
         return new InspectionAnalysis(
-                aiResponse.report(), merged, preprocessing.extractionUpdate());
+                aiResponse.report(), merged, preprocessing.extractionUpdates());
     }
 
     private void persist(
@@ -199,7 +199,8 @@ public class ContentInspectionExecutionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         ContentVersion version = contentVersionRepository.findByIdForUpdate(contentVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        analysis.extractionUpdate().ifPresent(update -> applyExtraction(contentVersionId, update));
+        analysis.extractionUpdates()
+                .forEach(update -> applyExtraction(contentVersionId, update));
         contentReportRepository.save(ContentReport.create(
                 contentVersionId, analysis.report(), preparation.policy().getId()));
         boolean correctionReviewPending = reconciliationService.reconcile(
@@ -256,6 +257,6 @@ public class ContentInspectionExecutionService {
     private record InspectionAnalysis(
             ContentReportData report,
             List<DetectedViolation> violations,
-            java.util.Optional<MediaExtractionUpdate> extractionUpdate) {
+            List<MediaExtractionUpdate> extractionUpdates) {
     }
 }
