@@ -124,7 +124,7 @@ class ViolationReconciliationServiceTest {
     }
 
     @Test
-    void resolvesEditRequestedViolationWhenItIsNotDetectedAfterEdit() {
+    void waitsForCorrectionReviewWhenEditRequestedViolationIsNotDetectedAfterEdit() {
         Fixture fixture = fixture();
         ViolationItem existing = item(fixture.v1, 100L, "욕설");
         existing.confirm();
@@ -136,10 +136,32 @@ class ViolationReconciliationServiceTest {
 
         fixture.service.reconcile(fixture.content, fixture.v2, List.of(), POLICY_ID);
 
-        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.RESOLVED);
+        assertThat(existing.getStatus())
+                .isEqualTo(ViolationStatus.CORRECTION_REVIEW_PENDING);
         assertThat(existing.getResolvedContentVersionId()).isEqualTo(2L);
+        assertThat(existing.isOpen()).isTrue();
         verify(fixture.historyService, never()).upsert(any(), any(), any());
         verify(fixture.penaltyService).releaseIfEligible(7L);
+    }
+
+    @Test
+    void updatesCorrectionCandidateWhenAnotherCleanRevisionIsInspected() {
+        Fixture fixture = fixture();
+        ViolationItem existing = item(fixture.v1, 100L, "confirmed");
+        existing.confirm();
+        existing.awaitCorrectionReview(fixture.v2);
+        when(fixture.itemRepository.findAllByContentIdForUpdate(10L))
+                .thenReturn(List.of(existing));
+        when(fixture.typeRepository.findAllById(any()))
+                .thenReturn(List.of(type(100L, ViolationTypeCode.ABUSIVE_LANGUAGE)));
+
+        boolean correctionReviewPending = fixture.service.reconcile(
+                fixture.content, fixture.v3, List.of(), POLICY_ID);
+
+        assertThat(correctionReviewPending).isTrue();
+        assertThat(existing.getStatus())
+                .isEqualTo(ViolationStatus.CORRECTION_REVIEW_PENDING);
+        assertThat(existing.getResolvedContentVersionId()).isEqualTo(3L);
     }
 
     @Test

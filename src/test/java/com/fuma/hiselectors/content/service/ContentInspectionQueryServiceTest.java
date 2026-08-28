@@ -39,7 +39,8 @@ class ContentInspectionQueryServiceTest {
     private static final Set<ViolationStatus> OPEN_STATUSES = Set.of(
             ViolationStatus.PENDING,
             ViolationStatus.VIOLATION_CONFIRMED,
-            ViolationStatus.EDIT_REQUESTED);
+            ViolationStatus.EDIT_REQUESTED,
+            ViolationStatus.CORRECTION_REVIEW_PENDING);
 
     private GenerationService generationService;
     private ContentRepository contentRepository;

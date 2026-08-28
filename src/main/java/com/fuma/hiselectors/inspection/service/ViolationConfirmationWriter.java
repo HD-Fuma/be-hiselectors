@@ -29,7 +29,8 @@ public class ViolationConfirmationWriter {
     private static final Set<ViolationStatus> OPEN_STATUSES = EnumSet.of(
             ViolationStatus.PENDING,
             ViolationStatus.VIOLATION_CONFIRMED,
-            ViolationStatus.EDIT_REQUESTED);
+            ViolationStatus.EDIT_REQUESTED,
+            ViolationStatus.CORRECTION_REVIEW_PENDING);
 
     private final ViolationItemRepository violationItemRepository;
     private final ContentRepository contentRepository;

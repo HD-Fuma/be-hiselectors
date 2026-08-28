@@ -19,6 +19,7 @@ import com.fuma.hiselectors.inspection.dto.ContentViolationResponse;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationEvidenceHistory;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.model.ViolationType;
 import com.fuma.hiselectors.inspection.repository.ViolationEvidenceHistoryRepository;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
@@ -125,21 +126,39 @@ public class ContentDetailQueryService {
         if (!historicalVersion && inspectionPolicyId == null) {
             return List.of();
         }
-        List<ViolationEvidenceHistory> histories = historicalVersion
+        List<ViolationEvidenceHistory> histories = new java.util.ArrayList<>(historicalVersion
                 ? evidenceHistoryRepository
                         .findAllByContentVersionIdOrderByDetectedAtAscIdAsc(contentVersionId)
                 : evidenceHistoryRepository
                         .findAllByContentVersionIdAndInspectionPolicyIdOrderByIdAsc(
-                                contentVersionId, inspectionPolicyId);
-        if (histories.isEmpty()) {
+                                contentVersionId, inspectionPolicyId));
+        List<ViolationItem> correctionCandidates = historicalVersion
+                ? List.of()
+                : violationItemRepository
+                        .findAllByResolvedContentVersionIdAndStatusOrderByIdAsc(
+                                contentVersionId,
+                                ViolationStatus.CORRECTION_REVIEW_PENDING);
+        java.util.Set<Long> historyItemIds = histories.stream()
+                .map(ViolationEvidenceHistory::getViolationItemId)
+                .collect(java.util.stream.Collectors.toSet());
+        correctionCandidates.stream()
+                .filter(item -> !historyItemIds.contains(item.getId()))
+                .map(item -> evidenceHistoryRepository
+                        .findFirstByViolationItemIdOrderByDetectedAtDescIdDesc(item.getId()))
+                .flatMap(java.util.Optional::stream)
+                .forEach(histories::add);
+        if (histories.isEmpty() && correctionCandidates.isEmpty()) {
             return List.of();
         }
-        Map<Long, ViolationItem> itemById = violationItemRepository
-                .findAllById(histories.stream()
-                        .map(ViolationEvidenceHistory::getViolationItemId).toList())
+        Map<Long, ViolationItem> itemById = new java.util.LinkedHashMap<>();
+        correctionCandidates.stream()
+                .filter(item -> contentId.equals(item.getContentId()))
+                .forEach(item -> itemById.put(item.getId(), item));
+        violationItemRepository.findAllById(histories.stream()
+                        .map(ViolationEvidenceHistory::getViolationItemId).distinct().toList())
                 .stream()
                 .filter(item -> contentId.equals(item.getContentId()))
-                .collect(java.util.stream.Collectors.toMap(ViolationItem::getId, item -> item));
+                .forEach(item -> itemById.put(item.getId(), item));
         Map<Long, ViolationType> typeById = violationTypeRepository.findAllById(
                         itemById.values().stream()
                                 .map(ViolationItem::getViolationTypeId).toList())

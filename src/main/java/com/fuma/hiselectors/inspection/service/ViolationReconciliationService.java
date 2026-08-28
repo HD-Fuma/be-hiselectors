@@ -6,6 +6,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
+import com.fuma.hiselectors.inspection.model.ViolationStatus;
 import com.fuma.hiselectors.inspection.model.ViolationType;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
 import com.fuma.hiselectors.inspection.repository.ViolationItemRepository;
@@ -30,9 +31,9 @@ public class ViolationReconciliationService {
     private final PenaltyService penaltyService;
 
     @Transactional
-    public void reconcile(Content content, ContentVersion newVersion,
-                          List<DetectedViolation> detectedViolations,
-                          Long inspectionPolicyId) {
+    public boolean reconcile(Content content, ContentVersion newVersion,
+                             List<DetectedViolation> detectedViolations,
+                             Long inspectionPolicyId) {
         Map<ViolationTypeCode, DetectedViolation> detectedByType = detectedViolations.stream()
                 .collect(Collectors.toMap(DetectedViolation::type, Function.identity()));
         List<ViolationItem> existingItems = violationItemRepository
@@ -49,7 +50,11 @@ public class ViolationReconciliationService {
             }
             DetectedViolation current = detectedByType.remove(code);
             if (current == null) {
-                if (existing.isOpen()) {
+                if (existing.getStatus() == ViolationStatus.VIOLATION_CONFIRMED
+                        || existing.getStatus() == ViolationStatus.EDIT_REQUESTED
+                        || existing.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING) {
+                    existing.awaitCorrectionReview(newVersion);
+                } else if (existing.isOpen()) {
                     existing.resolve(newVersion);
                 }
                 continue;
@@ -80,5 +85,7 @@ public class ViolationReconciliationService {
 
         violationItemRepository.flush();
         penaltyService.releaseIfEligible(content.getSelectorsId());
+        return existingItems.stream().anyMatch(item ->
+                item.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING);
     }
 }

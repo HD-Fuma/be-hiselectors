@@ -78,6 +78,28 @@ class ContentInspectionConfirmationServiceTest {
     }
 
     @Test
+    void administratorApprovesCleanCorrectionAndResolvesViolation() {
+        Fixture fixture = fixture(List.of());
+        ViolationItem correction = item(21L);
+        correction.confirm();
+        correction.requestEdit();
+        correction.awaitCorrectionReview(fixture.version);
+        when(fixture.violationRepository.findAllByResolutionCandidateForUpdate(
+                100L, ViolationStatus.CORRECTION_REVIEW_PENDING))
+                .thenReturn(List.of(correction));
+
+        var response = fixture.service.confirm(10L, 100L,
+                request(ContentInspectionDecision.APPROVED, List.of(
+                        target(21L, ViolationStatus.RESOLVED))), "admin");
+
+        assertThat(response.updatedCount()).isEqualTo(1);
+        assertThat(correction.getStatus()).isEqualTo(ViolationStatus.RESOLVED);
+        assertThat(fixture.version.getInspectionDecision())
+                .isEqualTo(ContentInspectionDecision.APPROVED);
+        verify(fixture.penaltyService).releaseIfEligible(5L);
+    }
+
+    @Test
     void rejectsWhenAtLeastOneItemIsConfirmed() {
         ViolationItem first = item(21L);
         ViolationItem second = item(22L);
@@ -268,7 +290,7 @@ class ContentInspectionConfirmationServiceTest {
                 contents, versions, reports, histories, violations,
                 new ContentViolationDecisionProcessor(penaltyService), penaltyService,
                 eventPublisher),
-                content, version, penaltyService, eventPublisher);
+                content, version, violations, penaltyService, eventPublisher);
     }
 
     private ViolationItem item(Long id) {
@@ -304,6 +326,7 @@ class ContentInspectionConfirmationServiceTest {
             ContentInspectionConfirmationService service,
             Content content,
             ContentVersion version,
+            ViolationItemRepository violationRepository,
             PenaltyService penaltyService,
             ApplicationEventPublisher eventPublisher) {
     }

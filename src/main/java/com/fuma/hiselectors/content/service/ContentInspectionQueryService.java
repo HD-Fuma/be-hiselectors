@@ -33,7 +33,8 @@ public class ContentInspectionQueryService {
             EnumSet.of(
                     ViolationStatus.PENDING,
                     ViolationStatus.VIOLATION_CONFIRMED,
-                    ViolationStatus.EDIT_REQUESTED);
+                    ViolationStatus.EDIT_REQUESTED,
+                    ViolationStatus.CORRECTION_REVIEW_PENDING);
 
     private final GenerationService generationService;
     private final ContentRepository contentRepository;

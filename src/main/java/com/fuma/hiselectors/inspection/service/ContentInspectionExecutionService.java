@@ -201,10 +201,10 @@ public class ContentInspectionExecutionService {
         analysis.extractionUpdate().ifPresent(update -> applyExtraction(contentVersionId, update));
         contentReportRepository.save(ContentReport.create(
                 contentVersionId, analysis.report(), preparation.policy().getId()));
-        reconciliationService.reconcile(
+        boolean correctionReviewPending = reconciliationService.reconcile(
                 content, version, analysis.violations(), preparation.policy().getId());
         version.completeInspection(LocalDateTime.now(clock));
-        if (analysis.violations().isEmpty()) {
+        if (analysis.violations().isEmpty() && !correctionReviewPending) {
             version.confirmInspection(ContentInspectionDecision.APPROVED);
         }
     }
