@@ -42,6 +42,9 @@ public class ViolationEvidenceHistory extends BaseTimeEntity {
     @Column(name = "inspection_policy_id", nullable = false)
     private Long inspectionPolicyId;
 
+    @Column(name = "content_report_id")
+    private Long contentReportId;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "evidence", nullable = false, columnDefinition = "json")
     private ViolationEvidence evidence;
@@ -53,10 +56,19 @@ public class ViolationEvidenceHistory extends BaseTimeEntity {
                                                   Long inspectionPolicyId,
                                                   ViolationEvidence evidence,
                                                   LocalDateTime detectedAt) {
+        return create(violationItemId, contentVersionId, inspectionPolicyId, null,
+                evidence, detectedAt);
+    }
+
+    public static ViolationEvidenceHistory create(Long violationItemId, Long contentVersionId,
+                                                  Long inspectionPolicyId, Long contentReportId,
+                                                  ViolationEvidence evidence,
+                                                  LocalDateTime detectedAt) {
         ViolationEvidenceHistory history = new ViolationEvidenceHistory();
         history.violationItemId = violationItemId;
         history.contentVersionId = contentVersionId;
         history.inspectionPolicyId = inspectionPolicyId;
+        history.contentReportId = contentReportId;
         history.evidence = evidence;
         history.detectedAt = detectedAt;
         return history;

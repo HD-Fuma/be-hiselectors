@@ -47,6 +47,8 @@ public class ContentSnapshotFactory {
                     versionId,
                     MediaType.valueOf(rawMedia.mediaType().name()),
                     rawMedia.mediaUrl(),
+                    rawMedia.thumbnailUrls().isEmpty()
+                            ? null : rawMedia.thumbnailUrls().getLast(),
                     rawMedia.snsMediaId(),
                     sequenceNo++,
                     Map.of()));

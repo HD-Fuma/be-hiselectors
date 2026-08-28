@@ -165,6 +165,7 @@ public class ContentInspectionExecutionService {
                         targetVersionId,
                         media.getMediaType(),
                         media.getMediaUrl(),
+                        media.getThumbnailUrl(),
                         media.getSnsMediaId(),
                         media.getSequenceNo(),
                         media.getMediaType() == MediaType.TEXT
