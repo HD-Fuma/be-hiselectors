@@ -131,6 +131,7 @@ Resources:
                 Action:
                   - s3:GetObject
                   - s3:PutObject
+                  - s3:DeleteObject
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*"
 
   TaskDefinition:
@@ -189,6 +190,9 @@ Resources:
           Environment:
             - Name: SPRING_PROFILES_ACTIVE
               Value: analysis
+            # run-once 태스크 1개가 순차 처리할 지원자 수. 백로그 드레인 시 상향(기본 1).
+            - Name: APPLICATION_CONTENT_ANALYSIS_BATCH_SIZE
+              Value: "10"
             - Name: STT_WORKER_BASE_URL
               Value: http://127.0.0.1:8900
             - Name: DDL_AUTO
