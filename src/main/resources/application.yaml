@@ -241,6 +241,8 @@ application:
   content-analysis:
     scheduler-enabled: ${APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED:true}
     run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
+    # run-once Fargate 태스크 1개가 이 수만큼 순차 처리하고 종료. 대량 백로그(테스트 볼륨 등) 드레인 시 상향.
+    batch-size: ${APPLICATION_CONTENT_ANALYSIS_BATCH_SIZE:1}
 settlement:
   account-encryption-key: ${SETTLEMENT_ACCOUNT_ENCRYPTION_KEY:}
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}
