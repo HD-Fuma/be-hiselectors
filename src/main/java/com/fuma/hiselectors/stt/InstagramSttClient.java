@@ -29,8 +29,8 @@ public class InstagramSttClient {
         this.properties = properties;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
-        // 취득 + STT(수십 초~분) + OCR 을 워커가 동기로 처리하므로 응답 제한을 넉넉히 둔다.
-        factory.setReadTimeout(Duration.ofMinutes(10));
+        // SageMaker STT 자체가 최대 580초 대기하므로 미디어 취득·OCR까지 포함할 여유를 둔다.
+        factory.setReadTimeout(Duration.ofMinutes(15));
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
