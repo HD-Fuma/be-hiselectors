@@ -19,6 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 public class YoutubeSttClient {
 
     private static final int MAX_OUTPUT_TOKENS = 1024;
+    // 영상 분석 앞부분 상한(초). Shorts(≤3분)엔 무영향, 롱폼 fallback 의 토큰·비용 폭발 방지.
+    private static final int MAX_ANALYZE_SECONDS = 300;
 
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
@@ -56,7 +58,8 @@ public class YoutubeSttClient {
         String url = "https://www.youtube.com/watch?v=" + videoId;
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("parts", List.of(
-                        Map.of("fileData", Map.of("fileUri", url)),
+                        Map.of("fileData", Map.of("fileUri", url),
+                                "videoMetadata", Map.of("endOffset", MAX_ANALYZE_SECONDS + "s")),
                         Map.of("text", promptProvider.youtubeSttPrompt())))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),

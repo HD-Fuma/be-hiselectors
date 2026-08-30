@@ -12,6 +12,12 @@ on:
         default: DISABLED
         type: choice
         options: [DISABLED, ENABLED]
+  # 메인 배포(Deploy production)가 API 이미지(:$sha)를 올린 뒤 자동으로 워커도 배포한다.
+  # 병렬 push 트리거는 이미지가 아직 없는 상태로 워커가 먼저 돌 수 있어, workflow_run 으로 체이닝.
+  workflow_run:
+    workflows: ["Deploy production"]
+    types: [completed]
+    branches: [dev]
 
 permissions:
   contents: read
@@ -22,14 +28,19 @@ env:
   ECR_REGISTRY: 167595589232.dkr.ecr.ap-northeast-2.amazonaws.com
   ECR_REPOSITORY: be-hiselectors
   STACK_NAME: hiselectors-analysis
-  IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+  # 수동 실행: inputs.image_tag(비면 이 커밋). 자동(workflow_run): 방금 배포된 커밋 SHA.
+  IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 수동 실행이거나, 메인 배포(Deploy production)가 성공한 경우에만.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          # 배포된 이미지와 같은 커밋의 템플릿을 쓰도록 SHA 를 명시적으로 체크아웃.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
@@ -70,8 +81,8 @@ jobs:
               "SecurityGroupIds=$SECURITY_GROUP_IDS" \
               "RuntimeSecretArn=$RUNTIME_SECRET_ARN" \
               "AssignPublicIp=$ASSIGN_PUBLIC_IP" \
-              "ScheduleState=${{ inputs.schedule_state }}" \
-              "ScheduleExpression=rate(1 hour)"
+              "ScheduleState=${{ inputs.schedule_state || 'ENABLED' }}" \
+              "ScheduleExpression=rate(10 minutes)"
 
       - name: Show stack outputs
         run: |
