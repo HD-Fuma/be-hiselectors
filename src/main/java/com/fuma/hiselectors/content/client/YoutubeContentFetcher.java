@@ -236,16 +236,19 @@ public class YoutubeContentFetcher implements ContentFetcher {
             if (snippet == null || !StringUtils.hasText(snippet.publishedAt())) {
                 return new FetchResult(id, FetchStatus.FAILED, null, null);
             }
+            Long durationSeconds = parseDurationSeconds(item.contentDetails() == null
+                    ? null : item.contentDetails().duration());
             RawContent content = new RawContent(
                     SnsPlatform.YOUTUBE,
                     id,
                     VIDEO_URL + id,
-                    classifyByDuration(item.contentDetails() == null
-                            ? null : item.contentDetails().duration()),
+                    durationSeconds != null && durationSeconds <= SHORTS_MAX_SECONDS
+                            ? ContentType.SHORTS : ContentType.LONG_FORM,
                     texts(item),
                     parseCreatedAt(snippet.publishedAt()),
                     List.of(new RawContentMedia(
-                            id, MediaType.VIDEO, null, thumbnailUrls(snippet))));
+                            id, MediaType.VIDEO, null, thumbnailUrls(snippet))))
+                    .withDurationSeconds(durationSeconds);
             YoutubeContentResponse.Statistics statistics = item.statistics();
             Engagement engagement = new Engagement(
                     count(statistics == null ? null : statistics.viewCount()),
@@ -487,12 +490,18 @@ public class YoutubeContentFetcher implements ContentFetcher {
             }
             // playlistItems 응답엔 길이가 없어 LONG_FORM 으로 왔으므로 여기서 Shorts 여부를 반영한다.
             String isoDuration = item.contentDetails() == null ? null : item.contentDetails().duration();
-            ContentType contentType = classifyByDuration(isoDuration);
+            Long durationSeconds = parseDurationSeconds(isoDuration);
+            ContentType contentType = durationSeconds != null
+                    && durationSeconds <= SHORTS_MAX_SECONDS
+                    ? ContentType.SHORTS : ContentType.LONG_FORM;
             // 길이 분포 집계용: CloudWatch Logs Insights 에서 파싱. (API contentDetails.duration)
             log.info("youtube video duration={}s videoId={} type={}",
-                    durationSeconds(isoDuration), content.snsContentId(), contentType);
-            RawContent typed = content.contentType() == contentType
-                    ? content : content.withContentType(contentType);
+                    durationSeconds == null ? -1 : durationSeconds,
+                    content.snsContentId(), contentType);
+            RawContent typed = content.withDurationSeconds(durationSeconds);
+            if (typed.contentType() != contentType) {
+                typed = typed.withContentType(contentType);
+            }
             Statistics statistics = item.statistics();
             return statistics == null ? typed : typed.withMetrics(
                     parseCount(statistics.viewCount()),
@@ -540,27 +549,14 @@ public class YoutubeContentFetcher implements ContentFetcher {
 
     // ponytail: duration 휴리스틱. YouTube 가 Shorts 여부 플래그를 안 줘서 영상 길이로 추정한다.
     // 정확히 하려면 youtube.com/shorts/{id} 리다이렉트 확인이 필요(요청 1회 추가).
-    private ContentType classifyByDuration(String isoDuration) {
+    private Long parseDurationSeconds(String isoDuration) {
         if (!StringUtils.hasText(isoDuration)) {
-            return ContentType.LONG_FORM;
-        }
-        try {
-            return Duration.parse(isoDuration).getSeconds() <= SHORTS_MAX_SECONDS
-                    ? ContentType.SHORTS : ContentType.LONG_FORM;
-        } catch (DateTimeParseException e) {
-            return ContentType.LONG_FORM;
-        }
-    }
-
-    /** 길이 분포 집계용: ISO-8601 → 초. 없음/파싱불가면 -1. */
-    private long durationSeconds(String isoDuration) {
-        if (!StringUtils.hasText(isoDuration)) {
-            return -1;
+            return null;
         }
         try {
             return Duration.parse(isoDuration).getSeconds();
         } catch (DateTimeParseException e) {
-            return -1;
+            return null;
         }
     }
 

@@ -36,7 +36,7 @@ public class ApplicationAnalysisService {
 
     private static final int MAX_YOUTUBE_SHORTS = 3;
     // Shorts 가 없는 롱폼-only 크리에이터의 신호 공백 방지용 fallback 개수.
-    // 롱폼은 길어서 비쌈 → YoutubeSttClient 에서 앞부분만(endOffset) 잘라 분석해 비용을 묶는다.
+    // 롱폼은 길어서 비쌈 → YoutubeSttClient 에서 전체 타임라인의 총 5분만 분산 분석한다.
     private static final int MAX_YOUTUBE_LONGFORM_FALLBACK = 2;
     private static final String QUANT_START = "APP_QUANT_START";
     private static final String QUAL_START = "APP_QUAL_START";
@@ -79,7 +79,8 @@ public class ApplicationAnalysisService {
                     if (!youtubeTargets.remove(m.getSnsContentId())) {
                         continue;
                     }
-                    evaluationService.addYoutubeContent(applicationId, m.getSnsContentId());
+                    evaluationService.addYoutubeContent(
+                            applicationId, m.getSnsContentId(), m.getDurationSeconds());
                 } else {
                     // 인스타는 media_url(CDN) 필요. 없는 건 취득 불가라 skip.
                     if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {

@@ -17,6 +17,8 @@ public class InspectionPromptProvider {
     private final String youtubeExtractionPrompt = read("prompts/youtube-extraction.txt");
     private final String youtubeReportExtractionPrompt =
             read("prompts/youtube-report-extraction.txt");
+    private final String youtubeLongFormExtractionPrompt =
+            read("prompts/youtube-longform-extraction.txt");
 
     public String aiPrompt() {
         return aiPrompt;
@@ -39,6 +41,10 @@ public class InspectionPromptProvider {
 
     public String youtubeSttPrompt() {
         return youtubeReportExtractionPrompt;
+    }
+
+    public String youtubeLongFormSttPrompt() {
+        return youtubeLongFormExtractionPrompt;
     }
 
     private String read(String path) {

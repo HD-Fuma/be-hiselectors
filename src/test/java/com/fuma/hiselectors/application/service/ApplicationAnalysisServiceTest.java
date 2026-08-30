@@ -2,6 +2,7 @@ package com.fuma.hiselectors.application.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -54,6 +55,7 @@ class ApplicationAnalysisServiceTest {
                 .mediaUrl(mediaUrl)
                 .thumbnailUrl(thumbnailUrl)
                 .contentType(snsCode == SnsPlatform.YOUTUBE ? ContentType.SHORTS : null)
+                .durationSeconds(snsCode == SnsPlatform.YOUTUBE ? 120L : null)
                 .sequenceNo(0)
                 .mediaSequenceNo(mediaSequenceNo)
                 .build();
@@ -78,7 +80,7 @@ class ApplicationAnalysisServiceTest {
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService).addYoutubeContent(1L, "vid1");
+        verify(evaluationService).addYoutubeContent(1L, "vid1", 120L);
         verify(evaluationService, never()).addContent(any(), any());
         verify(notificationRecorder).recordInAppOnce(
                 "APP_QUANT_START", 1L, "지원자 #1 정량 분석을 시작했습니다.");
@@ -107,7 +109,7 @@ class ApplicationAnalysisServiceTest {
                 1L, new ContentAddRequest("media1", "https://cdn/1.mp4", "https://cdn/1.jpg"));
         verify(evaluationService).addContent(
                 1L, new ContentAddRequest("media2", "https://cdn/2.jpg", null));
-        verify(evaluationService, never()).addYoutubeContent(any(), any());
+        verify(evaluationService, never()).addYoutubeContent(any(), any(), any());
     }
 
     @Test
@@ -135,7 +137,7 @@ class ApplicationAnalysisServiceTest {
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService, never()).addYoutubeContent(any(), any());
+        verify(evaluationService, never()).addYoutubeContent(any(), any(), any());
         verify(evaluationService, never()).addContent(any(), any());
     }
 
@@ -154,12 +156,12 @@ class ApplicationAnalysisServiceTest {
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService).addYoutubeContent(1L, "top");
-        verify(evaluationService).addYoutubeContent(1L, "second");
-        verify(evaluationService).addYoutubeContent(1L, "middle");
-        verify(evaluationService, never()).addYoutubeContent(1L, "low");
-        verify(evaluationService, never()).addYoutubeContent(1L, "unknown");
-        verify(evaluationService, times(3)).addYoutubeContent(any(), any());
+        verify(evaluationService).addYoutubeContent(1L, "top", 120L);
+        verify(evaluationService).addYoutubeContent(1L, "second", 120L);
+        verify(evaluationService).addYoutubeContent(1L, "middle", 120L);
+        verify(evaluationService, never()).addYoutubeContent(eq(1L), eq("low"), any());
+        verify(evaluationService, never()).addYoutubeContent(eq(1L), eq("unknown"), any());
+        verify(evaluationService, times(3)).addYoutubeContent(any(), any(), any());
     }
 
     @Test
@@ -174,8 +176,8 @@ class ApplicationAnalysisServiceTest {
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService).addYoutubeContent(1L, "short");
-        verify(evaluationService, never()).addYoutubeContent(1L, "long");
+        verify(evaluationService).addYoutubeContent(1L, "short", 120L);
+        verify(evaluationService, never()).addYoutubeContent(eq(1L), eq("long"), any());
     }
 
     @Test
@@ -192,10 +194,10 @@ class ApplicationAnalysisServiceTest {
         service.analyzeAndReport(1L);
 
         // 롱폼-only 지원자: 조회수 상위 2건만 fallback 분석(신호 공백 방지).
-        verify(evaluationService).addYoutubeContent(1L, "lf-top");
-        verify(evaluationService).addYoutubeContent(1L, "lf-mid");
-        verify(evaluationService, never()).addYoutubeContent(1L, "lf-low");
-        verify(evaluationService, times(2)).addYoutubeContent(any(), any());
+        verify(evaluationService).addYoutubeContent(1L, "lf-top", 1_200L);
+        verify(evaluationService).addYoutubeContent(1L, "lf-mid", 1_200L);
+        verify(evaluationService, never()).addYoutubeContent(eq(1L), eq("lf-low"), any());
+        verify(evaluationService, times(2)).addYoutubeContent(any(), any(), any());
     }
 
     private ApplicationMedia youtube(String videoId, Long viewCount, int sequenceNo) {
@@ -213,6 +215,7 @@ class ApplicationAnalysisServiceTest {
                 .snsContentId(videoId)
                 .snsMediaId(videoId)
                 .contentType(type)
+                .durationSeconds(type == ContentType.SHORTS ? 120L : 1_200L)
                 .sequenceNo(sequenceNo)
                 .mediaSequenceNo(0)
                 .viewCount(viewCount)

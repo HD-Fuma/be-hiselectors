@@ -4,6 +4,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +20,10 @@ import tools.jackson.databind.ObjectMapper;
 public class YoutubeSttClient {
 
     private static final int MAX_OUTPUT_TOKENS = 1024;
-    // 영상 분석 앞부분 상한(초). Shorts(≤3분)엔 무영향, 롱폼 fallback 의 토큰·비용 폭발 방지.
+    private static final int SHORTS_MAX_SECONDS = 180;
     private static final int MAX_ANALYZE_SECONDS = 300;
+    private static final int LONG_FORM_WINDOW_SECONDS = 60;
+    private static final int LONG_FORM_WINDOW_COUNT = 5;
 
     private static final String ENDPOINT =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
@@ -54,18 +57,58 @@ public class YoutubeSttClient {
         return transcribeMeasured(videoId).result();
     }
 
-    /** 테스트·관측용. 한 번의 Gemini 호출로 전사 결과와 시간·토큰·재시도 횟수를 반환한다. */
+    /** 테스트·관측용. 전사 결과와 전체 구간의 시간·토큰·재시도 횟수 합계를 반환한다. */
     public YoutubeSttExecutionResult transcribeMeasured(String videoId) {
+        return transcribeMeasured(videoId, null);
+    }
+
+    /** 롱폼은 전체 타임라인에서 총 5분을 균등 분산해 앞부분 편향을 줄인다. */
+    public SttResult transcribe(String videoId, Long durationSeconds) {
+        return transcribeMeasured(videoId, durationSeconds).result();
+    }
+
+    /** 롱폼 분산 구간의 성공한 호출 결과와 측정값을 합산한다. */
+    public YoutubeSttExecutionResult transcribeMeasured(String videoId, Long durationSeconds) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
 
         String url = "https://www.youtube.com/watch?v=" + videoId;
+        List<VideoWindow> windows = windows(durationSeconds);
+        boolean longForm = durationSeconds != null && durationSeconds > SHORTS_MAX_SECONDS;
+        String prompt = longForm
+                ? promptProvider.youtubeLongFormSttPrompt()
+                : promptProvider.youtubeSttPrompt();
+        List<WindowResult> results = new ArrayList<>();
+        RuntimeException lastFailure = null;
+        long started = System.nanoTime();
+        for (VideoWindow window : windows) {
+            try {
+                results.add(new WindowResult(window,
+                        transcribeWindow(videoId, url, window, prompt)));
+            } catch (RuntimeException e) {
+                lastFailure = e;
+                log.warn("YouTube 롱폼 구간 분석 skip. videoId={}, window={}s-{}s, reason={}",
+                        videoId, window.startSeconds(), window.endSeconds(), e.getMessage());
+            }
+        }
+        if (results.isEmpty()) {
+            throw lastFailure == null
+                    ? new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED) : lastFailure;
+        }
+        long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        return aggregate(results, elapsedMs);
+    }
+
+    private YoutubeSttExecutionResult transcribeWindow(
+            String videoId, String url, VideoWindow window, String prompt) {
         Map<String, Object> body = Map.of(
                 "contents", List.of(Map.of("parts", List.of(
                         Map.of("fileData", Map.of("fileUri", url),
-                                "videoMetadata", Map.of("endOffset", MAX_ANALYZE_SECONDS + "s")),
-                        Map.of("text", promptProvider.youtubeSttPrompt())))),
+                                "videoMetadata", Map.of(
+                                        "startOffset", window.startSeconds() + "s",
+                                        "endOffset", window.endSeconds() + "s")),
+                        Map.of("text", prompt)))),
                 "generationConfig", Map.of(
                         "mediaResolution", properties.mediaResolutionApiValue(),
                         "thinkingConfig", Map.of("thinkingLevel", "minimal"),
@@ -78,11 +121,12 @@ public class YoutubeSttClient {
         UsageMetadata usage = response == null ? null : response.usageMetadata();
         String model = response == null ? null : response.modelVersion();
         if (usage == null) {
-            log.info("YouTube Gemini 영상 분석 완료. videoId={}, model={}, latencyMs={}, tokenUsage=unavailable",
-                    videoId, model, elapsedMs);
+            log.info("YouTube Gemini 영상 분석 완료. videoId={}, window={}s-{}s, model={}, latencyMs={}, tokenUsage=unavailable",
+                    videoId, window.startSeconds(), window.endSeconds(), model, elapsedMs);
         } else {
-            log.info("YouTube Gemini 영상 분석 완료. videoId={}, model={}, latencyMs={}, promptTokens={}, outputTokens={}, thoughtTokens={}, totalTokens={}",
-                    videoId, model, elapsedMs, usage.promptTokenCount(),
+            log.info("YouTube Gemini 영상 분석 완료. videoId={}, window={}s-{}s, model={}, latencyMs={}, promptTokens={}, outputTokens={}, thoughtTokens={}, totalTokens={}",
+                    videoId, window.startSeconds(), window.endSeconds(), model, elapsedMs,
+                    usage.promptTokenCount(),
                     usage.candidatesTokenCount(), usage.thoughtsTokenCount(),
                     usage.totalTokenCount());
         }
@@ -100,6 +144,72 @@ public class YoutubeSttClient {
                 usage == null ? null : usage.candidatesTokenCount(),
                 usage == null ? null : usage.thoughtsTokenCount(),
                 usage == null ? null : usage.totalTokenCount());
+    }
+
+    static List<VideoWindow> windows(Long durationSeconds) {
+        if (durationSeconds == null || durationSeconds <= 0) {
+            return List.of(new VideoWindow(0, MAX_ANALYZE_SECONDS));
+        }
+        if (durationSeconds <= MAX_ANALYZE_SECONDS) {
+            return List.of(new VideoWindow(0, durationSeconds));
+        }
+        long maxStart = durationSeconds - LONG_FORM_WINDOW_SECONDS;
+        List<VideoWindow> result = new ArrayList<>(LONG_FORM_WINDOW_COUNT);
+        for (int i = 0; i < LONG_FORM_WINDOW_COUNT; i++) {
+            long start = maxStart * i / (LONG_FORM_WINDOW_COUNT - 1);
+            result.add(new VideoWindow(start, start + LONG_FORM_WINDOW_SECONDS));
+        }
+        return List.copyOf(result);
+    }
+
+    private SttResult merge(List<WindowResult> results) {
+        return new SttResult(
+                joinWindows(results, result -> result.execution().result().summary()),
+                joinWindows(results, result -> result.execution().result().stt()),
+                joinWindows(results, result -> result.execution().result().ocr()),
+                ContentInsight.empty());
+    }
+
+    private String joinWindows(List<WindowResult> results,
+                               java.util.function.Function<WindowResult, String> getter) {
+        return String.join("\n", results.stream()
+                .filter(result -> getter.apply(result) != null && !getter.apply(result).isBlank())
+                .map(result -> "[" + timestamp(result.window().startSeconds()) + "-"
+                        + timestamp(result.window().endSeconds()) + "] " + getter.apply(result).trim())
+                .toList());
+    }
+
+    private String timestamp(long seconds) {
+        return "%02d:%02d:%02d".formatted(seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    }
+
+    private YoutubeSttExecutionResult aggregate(List<WindowResult> results, long elapsedMs) {
+        YoutubeSttExecutionResult last = results.getLast().execution();
+        SttResult result = results.size() == 1 ? last.result() : merge(results);
+        return new YoutubeSttExecutionResult(
+                result,
+                properties.modelOrDefault(),
+                last.selectedModel(),
+                last.responseModel(),
+                properties.mediaResolutionApiValue(),
+                elapsedMs,
+                results.stream().mapToInt(value -> value.execution().attemptCount()).sum(),
+                results.stream().mapToInt(value -> value.execution().retryCount()).sum(),
+                sumTokens(results, YoutubeSttExecutionResult::promptTokens),
+                sumTokens(results, YoutubeSttExecutionResult::outputTokens),
+                sumTokens(results, YoutubeSttExecutionResult::thoughtTokens),
+                sumTokens(results, YoutubeSttExecutionResult::totalTokens));
+    }
+
+    private Integer sumTokens(
+            List<WindowResult> results,
+            java.util.function.Function<YoutubeSttExecutionResult, Integer> getter) {
+        List<Integer> values = results.stream()
+                .map(WindowResult::execution)
+                .map(getter)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        return values.isEmpty() ? null : values.stream().mapToInt(Integer::intValue).sum();
     }
 
     private GeminiRequestExecutor.Execution<GeminiResponse> callMeasured(Map<String, Object> body) {
@@ -215,4 +325,8 @@ public class YoutubeSttClient {
 
     record UsageMetadata(Integer promptTokenCount, Integer candidatesTokenCount,
                          Integer thoughtsTokenCount, Integer totalTokenCount) { }
+
+    record VideoWindow(long startSeconds, long endSeconds) { }
+
+    private record WindowResult(VideoWindow window, YoutubeSttExecutionResult execution) { }
 }

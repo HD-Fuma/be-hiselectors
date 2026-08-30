@@ -34,7 +34,8 @@ public record RawContent(
 
         Long viewCount,
         Long likeCount,
-        Long commentCount
+        Long commentCount,
+        Long durationSeconds
 ) {
     public RawContent {
         texts = texts == null ? List.of() : texts.stream()
@@ -52,7 +53,7 @@ public record RawContent(
             LocalDateTime createdAt,
             List<RawContentMedia> media) {
         this(snsCode, snsContentId, contentUrl, contentType, texts, createdAt, media,
-                null, null, null);
+                null, null, null, null);
     }
 
     public RawContent(
@@ -65,17 +66,37 @@ public record RawContent(
             List<RawContentMedia> media) {
         this(snsCode, snsContentId, contentUrl, contentType,
                 caption == null ? List.of() : List.of(caption),
-                createdAt, media, null, null, null);
+                createdAt, media, null, null, null, null);
+    }
+
+    public RawContent(
+            SnsPlatform snsCode,
+            String snsContentId,
+            String contentUrl,
+            ContentType contentType,
+            List<String> texts,
+            LocalDateTime createdAt,
+            List<RawContentMedia> media,
+            Long viewCount,
+            Long likeCount,
+            Long commentCount) {
+        this(snsCode, snsContentId, contentUrl, contentType, texts, createdAt, media,
+                viewCount, likeCount, commentCount, null);
     }
 
     public RawContent withMetrics(Long viewCount, Long likeCount, Long commentCount) {
         return new RawContent(snsCode, snsContentId, contentUrl, contentType, texts, createdAt,
-                media, viewCount, likeCount, commentCount);
+                media, viewCount, likeCount, commentCount, durationSeconds);
     }
 
     public RawContent withContentType(ContentType contentType) {
         return new RawContent(snsCode, snsContentId, contentUrl, contentType, texts, createdAt,
-                media, viewCount, likeCount, commentCount);
+                media, viewCount, likeCount, commentCount, durationSeconds);
+    }
+
+    public RawContent withDurationSeconds(Long durationSeconds) {
+        return new RawContent(snsCode, snsContentId, contentUrl, contentType, texts, createdAt,
+                media, viewCount, likeCount, commentCount, durationSeconds);
     }
 
     /** 셀렉터스 콘텐츠 판별용 전체 TEXT 결합 */
