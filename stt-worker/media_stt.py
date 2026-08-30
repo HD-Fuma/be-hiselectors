@@ -119,11 +119,24 @@ def ocr_image(path: str) -> str:
     return " ".join(_dedupe(_ocr_lines(path)))
 
 
+def _media_seconds(path: str) -> float | None:
+    """미디어 길이(초). av container.duration 은 AV_TIME_BASE(마이크로초). 실패 시 None."""
+    import av
+    try:
+        with av.open(path) as c:
+            return c.duration / 1_000_000 if c.duration else None
+    except Exception:
+        return None
+
+
 def transcribe(path: str) -> dict:
     """영상 → {stt, ocr}. 이미지(썸네일 폴백) → {stt:'', ocr}. analyze 입력용."""
     ext = os.path.splitext(path)[1].lower()
     if ext in IMAGE_EXT:
+        logging.info("media duration=image path=%s", path)
         return {"stt": "", "ocr": ocr_image(path)}
+    # 길이 분포 집계용: CloudWatch Logs Insights 에서 이 라인 파싱. (지금부터 누적)
+    logging.info("media duration=%.1fs path=%s", _media_seconds(path) or -1.0, path)
     return {"stt": stt(path), "ocr": ocr_video(path)}
 
 

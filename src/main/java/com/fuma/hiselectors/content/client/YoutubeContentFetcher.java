@@ -486,8 +486,11 @@ public class YoutubeContentFetcher implements ContentFetcher {
                 return content;
             }
             // playlistItems 응답엔 길이가 없어 LONG_FORM 으로 왔으므로 여기서 Shorts 여부를 반영한다.
-            ContentType contentType = classifyByDuration(item.contentDetails() == null
-                    ? null : item.contentDetails().duration());
+            String isoDuration = item.contentDetails() == null ? null : item.contentDetails().duration();
+            ContentType contentType = classifyByDuration(isoDuration);
+            // 길이 분포 집계용: CloudWatch Logs Insights 에서 파싱. (API contentDetails.duration)
+            log.info("youtube video duration={}s videoId={} type={}",
+                    durationSeconds(isoDuration), content.snsContentId(), contentType);
             RawContent typed = content.contentType() == contentType
                     ? content : content.withContentType(contentType);
             Statistics statistics = item.statistics();
@@ -509,6 +512,18 @@ public class YoutubeContentFetcher implements ContentFetcher {
                     ? ContentType.SHORTS : ContentType.LONG_FORM;
         } catch (DateTimeParseException e) {
             return ContentType.LONG_FORM;
+        }
+    }
+
+    /** 길이 분포 집계용: ISO-8601 → 초. 없음/파싱불가면 -1. */
+    private long durationSeconds(String isoDuration) {
+        if (!StringUtils.hasText(isoDuration)) {
+            return -1;
+        }
+        try {
+            return Duration.parse(isoDuration).getSeconds();
+        } catch (DateTimeParseException e) {
+            return -1;
         }
     }
 
