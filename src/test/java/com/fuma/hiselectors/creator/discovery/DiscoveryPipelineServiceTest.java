@@ -119,7 +119,7 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
-    @DisplayName("신규 YouTube 채널과 발굴 정보 및 출처를 저장한다")
+    @DisplayName("발굴 비중은 검색 결과가 아니라 채널 전체 조회수로 계산한다")
     void saveNewCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 1, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
@@ -180,7 +180,7 @@ class DiscoveryPipelineServiceTest {
         ArgumentCaptor<CreatorDiscoverySource> sourceCaptor =
                 ArgumentCaptor.forClass(CreatorDiscoverySource.class);
         verify(discoverySourceRepository).save(sourceCaptor.capture());
-        assertThat(sourceCaptor.getValue().getViewShare()).isEqualByComparingTo("1.00000");
+        assertThat(sourceCaptor.getValue().getViewShare()).isEqualByComparingTo("0.00033");
         assertThat(sourceCaptor.getValue().getDiscoveredAt()).isNotNull();
         verify(creatorDiscoveryService).refreshRepresentativeCategory(101L);
     }
@@ -260,7 +260,7 @@ class DiscoveryPipelineServiceTest {
         verify(existingInfo).refresh(2, "공식", null, null);
         verify(existingInfo).updateRecent90DayContentCount(7);
         verify(existingInfo).updateProfileImageUrl("https://yt.example/refreshed.jpg");
-        verify(existingSource).refresh(new BigDecimal("1.00000"));
+        verify(existingSource).refresh(new BigDecimal("0.00020"));
         verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
         verify(creatorDiscoveryService).refreshRepresentativeCategory(102L);
     }
