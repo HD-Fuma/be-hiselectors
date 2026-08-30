@@ -83,18 +83,14 @@ public class DiscoveryPipelineService {
                 youtubeClient.discoverByKeyword(keywordText, maxResults);
         int consumedQuota = youtubeClient.consumedQuota();
 
-        long totalViews = channels.stream()
-                .mapToLong(DiscoveredChannel::matchedVideoViews)
-                .sum();
-
         return Objects.requireNonNull(transactionTemplate.execute(status ->
-                persistDiscoveryResult(keywordId, channels, totalViews, consumedQuota)));
+                persistDiscoveryResult(keywordId, channels, consumedQuota)));
     }
 
     /** 외부 API 호출이 끝난 뒤 DB 변경 작업만 하나의 트랜잭션으로 처리한다. */
     private DiscoveryRunResult persistDiscoveryResult(
             Long keywordId, List<DiscoveredChannel> channels,
-            long totalViews, int consumedQuota) {
+            int consumedQuota) {
         DiscoveryKeyword keyword = keywordRepository.findById(keywordId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.KEYWORD_NOT_FOUND));
 
@@ -102,7 +98,7 @@ public class DiscoveryPipelineService {
         int updated = 0;
         Set<Long> creatorIds = new LinkedHashSet<>();
         for (DiscoveredChannel channel : channels) {
-            SaveOutcome outcome = save(channel, keyword, totalViews);
+            SaveOutcome outcome = save(channel, keyword);
             switch (outcome.result()) {
                 case CREATED -> created++;
                 case UPDATED -> updated++;
@@ -130,8 +126,7 @@ public class DiscoveryPipelineService {
      *
      * @return 신규 저장, 기존 갱신 또는 이메일 누락으로 건너뜀
      */
-    private SaveOutcome save(
-            DiscoveredChannel channel, DiscoveryKeyword keyword, long totalViews) {
+    private SaveOutcome save(DiscoveredChannel channel, DiscoveryKeyword keyword) {
         // 소프트 삭제된 계정도 찾아야 중복 행이 생기지 않는다
         CreatorPool creator = creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
@@ -174,7 +169,7 @@ public class DiscoveryPipelineService {
 
         saveDiscoveryInfo(creator, igHandle, brandScore,
                 channel.recent90DayContentCount(), channel.profileImageUrl());
-        saveDiscoverySource(creator, keyword, channel, totalViews);
+        saveDiscoverySource(creator, keyword, channel);
 
         // 발굴 출처가 쌓인 뒤에 대표 카테고리를 다시 정한다.
         // 여러 카테고리에 걸린 채널은 조회수 비중이 큰 쪽으로 잡힌다.
@@ -208,8 +203,9 @@ public class DiscoveryPipelineService {
     }
 
     private void saveDiscoverySource(CreatorPool creator, DiscoveryKeyword keyword,
-                                     DiscoveredChannel channel, long totalViews) {
-        BigDecimal viewShare = viewShare(channel.matchedVideoViews(), totalViews);
+                                     DiscoveredChannel channel) {
+        BigDecimal viewShare = viewShare(
+                channel.matchedVideoViews(), channel.totalViewCount());
 
         discoverySourceRepository
                 .findByCreatorPoolIdAndKeywordId(creator.getId(), keyword.getId())
@@ -223,17 +219,18 @@ public class DiscoveryPipelineService {
     }
 
     /**
-     * 이 채널이 이번 검색 결과 전체 조회수에서 차지하는 비중.
+     * 이 키워드로 걸린 영상이 채널 전체 조회수에서 차지하는 비중.
      *
-     * <p>영상 개수가 아니라 조회수로 보는 이유: 뷰티 크리에이터가 홈트 영상 하나로
-     * 피트니스에 걸려도 그 영상의 조회수 비중이 낮으면 뷰티로 남는다.
+     * <p>검색 결과 전체를 분모로 쓰면 관련 없는 바이럴 영상 한 편이
+     * 대표 카테고리를 뒤집을 수 있다. 채널 전체 조회수로 나누어야
+     * 해당 주제가 채널 전체에서 얼마나 대표적인지 비교할 수 있다.
      */
-    private BigDecimal viewShare(long channelViews, long totalViews) {
-        if (totalViews <= 0) {
+    private BigDecimal viewShare(long matchedVideoViews, Long channelTotalViews) {
+        if (channelTotalViews == null || channelTotalViews <= 0) {
             return BigDecimal.ZERO;
         }
-        return BigDecimal.valueOf(channelViews)
-                .divide(BigDecimal.valueOf(totalViews), 5, RoundingMode.HALF_UP);
+        return BigDecimal.valueOf(matchedVideoViews)
+                .divide(BigDecimal.valueOf(channelTotalViews), 5, RoundingMode.HALF_UP);
     }
 
     /** creator_pool.engagement_rate 는 decimal(5,2) 이라 소수점 둘째 자리까지다. */
