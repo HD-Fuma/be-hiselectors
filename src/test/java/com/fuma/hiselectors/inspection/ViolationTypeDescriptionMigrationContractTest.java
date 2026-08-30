@@ -14,6 +14,7 @@ class ViolationTypeDescriptionMigrationContractTest {
     private static final Path ECS_DEPLOY_WORKFLOW = Path.of(
             ".github/workflows/deploy-ecs-blue-green.yml");
     private static final Path EC2_DEPLOY_WORKFLOW = Path.of(".github/workflows/deploy-prod.yml");
+    private static final Path ECS_TEMPLATE = Path.of("infra/prod/template.yaml");
 
     @Test
     void migrationDefinesPlainLanguageDescriptions() throws IOException {
@@ -42,6 +43,12 @@ class ViolationTypeDescriptionMigrationContractTest {
 
         assertThat(workflow).contains(
                 "push:\n    branches: [dev]",
+                "fetch-depth: 0",
+                "BEFORE_SHA: ${{ github.event.before }}",
+                "[[ \"$GITHUB_EVENT_NAME\" == \"workflow_dispatch\" ]]",
+                "! git diff --quiet \"$BEFORE_SHA\" \"$GITHUB_SHA\"",
+                "should_run=true",
+                "if: steps.migration.outputs.should_run == 'true'",
                 "migration_sql=\"$(< src/main/resources/db/016_violation_type_descriptions.sql)\"",
                 "mysql:8.4@sha256:",
                 "select(.name == \"DB_HOST\")] | length == 1",
@@ -65,5 +72,27 @@ class ViolationTypeDescriptionMigrationContractTest {
         assertThat(oldWorkflow)
                 .contains("HEX(CONVERT(description USING utf8mb4))")
                 .doesNotContain("push:\n    branches: [dev]");
+    }
+
+    @Test
+    void ecsBlueGreenKeepsRollbackSafetyWhileFinishingFaster() throws IOException {
+        String workflow = Files.readString(ECS_DEPLOY_WORKFLOW);
+        String template = Files.readString(ECS_TEMPLATE);
+
+        assertThat(workflow).contains(
+                "cancel-in-progress: false",
+                "./gradlew test --tests '*ContractTest' bootJar --no-daemon",
+                "--action ROLLBACK",
+                "--stop-type ROLLBACK",
+                "--action CONTINUE");
+        assertThat(template).contains(
+                "Strategy: BLUE_GREEN",
+                "BakeTimeInMinutes: 5",
+                "HealthCheckIntervalSeconds: 10",
+                "DeploymentCircuitBreaker:",
+                "Rollback: true",
+                "TargetType: PAUSE",
+                "LifecycleStages:\n                - POST_TEST_TRAFFIC_SHIFT");
+        assertThat(template).doesNotContain("BakeTimeInMinutes: 10");
     }
 }

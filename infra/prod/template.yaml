@@ -396,7 +396,7 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckPort: traffic-port
       HealthCheckPath: /actuator/health/readiness
-      HealthCheckIntervalSeconds: 15
+      HealthCheckIntervalSeconds: 10
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
@@ -417,7 +417,7 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckPort: traffic-port
       HealthCheckPath: /actuator/health/readiness
-      HealthCheckIntervalSeconds: 15
+      HealthCheckIntervalSeconds: 10
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
@@ -826,7 +826,7 @@ Resources:
         Strategy: BLUE_GREEN
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-        BakeTimeInMinutes: 10
+        BakeTimeInMinutes: 5
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true

@@ -56,7 +56,22 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Detect database migration 016 change
+        id: migration
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] ||
+              ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- \
+                src/main/resources/db/016_violation_type_descriptions.sql; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
@@ -66,7 +81,7 @@ jobs:
 
       - name: Build application JAR
         run: |
-          ./gradlew bootJar --no-daemon
+          ./gradlew test --tests '*ContractTest' bootJar --no-daemon
           ! unzip -l build/libs/hiselectors-0.0.1-SNAPSHOT.jar | grep -q application-local.yaml
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
@@ -90,6 +105,7 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
       - name: Apply and verify database migration 016
+        if: steps.migration.outputs.should_run == 'true'
         run: |
           set -euo pipefail
           work_dir="$RUNNER_TEMP/ecs-migration"
@@ -388,7 +404,7 @@ jobs:
               echo "Deployment completed without reaching the required smoke-test pause hook." >&2
               exit 1
             fi
-            sleep 10
+            sleep 5
           done
 
           if [[ -z "$hook_id" ]]; then
