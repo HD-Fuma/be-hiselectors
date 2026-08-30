@@ -166,6 +166,31 @@ public class InstagramContentFetcher implements ContentFetcher {
         return snsContentIds.stream().map(this::fetchById).toList();
     }
 
+    /**
+     * 만료된 CDN URL을 Business Discovery에서 다시 찾는다.
+     * 타 계정 미디어는 {@code GET /{mediaId}}가 권한 오류가 나므로 계정 게시물 목록에서 고른다.
+     */
+    public MediaUrls fetchMediaUrls(String username, String snsContentId, String snsMediaId) {
+        if (snsContentId == null || snsContentId.isBlank()
+                || snsMediaId == null || snsMediaId.isBlank()) {
+            throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
+        }
+        FetchResult result = fetchByAccountContentIds(
+                username, List.of(snsContentId.strip())).getFirst();
+        if (result.status() != FetchStatus.FOUND || result.content() == null) {
+            throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
+        }
+        String wanted = snsMediaId.strip();
+        return result.content().media().stream()
+                .filter(item -> wanted.equals(item.snsMediaId()))
+                .findFirst()
+                .map(item -> new MediaUrls(
+                        item.mediaUrl(),
+                        item.thumbnailUrls().isEmpty() ? null : item.thumbnailUrls().getFirst()))
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE));
+    }
+
     /** 타 계정 게시물은 ID 직접 조회 대신 Business Discovery 안에서 조회한다. */
     @Override
     public List<FetchResult> fetchByAccountContentIds(
@@ -230,8 +255,15 @@ public class InstagramContentFetcher implements ContentFetcher {
             if (e.getStatusCode().value() == 404) {
                 return new FetchResult(snsContentId, FetchStatus.NOT_FOUND, null, null);
             }
-            log.warn("Instagram 게시물 조회 실패. ID={} HTTP상태={}",
-                    snsContentId, e.getStatusCode().value());
+            InstagramGraphApiError.Classified error = InstagramGraphApiError.classify(
+                    e.getStatusCode().value(), e.getResponseBodyAsString());
+            log.warn("Instagram 게시물 조회 실패. ID={} cause={} HTTP상태={} code={} subcode={} message={}",
+                    snsContentId,
+                    error.kind(),
+                    error.httpStatus(),
+                    blankToDash(error.graphCode()),
+                    blankToDash(error.graphSubcode()),
+                    error.message());
             return failed(snsContentId);
         } catch (RestClientException | IllegalArgumentException | BusinessException e) {
             log.warn("Instagram 게시물 조회 실패. ID={} 원인={}",
@@ -338,12 +370,17 @@ public class InstagramContentFetcher implements ContentFetcher {
             }
             return response;
         } catch (RestClientResponseException e) {
-            log.warn("Instagram Graph API 호출 실패. HTTP상태={} 응답={}",
-                    e.getStatusCode().value(),
-                    e.getResponseBodyAsString().replaceAll("[\\r\\n]+", " "));
-            throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
+            InstagramGraphApiError.Classified error = InstagramGraphApiError.classify(
+                    e.getStatusCode().value(), e.getResponseBodyAsString());
+            log.warn("Instagram Graph API 호출 실패. cause={} HTTP상태={} code={} subcode={} message={}",
+                    error.kind(),
+                    error.httpStatus(),
+                    blankToDash(error.graphCode()),
+                    blankToDash(error.graphSubcode()),
+                    error.message());
+            throw new BusinessException(error.errorCode());
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("Instagram Graph API 호출 실패. 원인={}",
+            log.warn("Instagram Graph API 호출 실패. cause=OTHER 원인={}",
                     e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
         }
@@ -454,5 +491,13 @@ public class InstagramContentFetcher implements ContentFetcher {
                 throw new BusinessException(ErrorCode.INSTAGRAM_API_CALL_FAILED);
             }
         }
+    }
+
+    private static String blankToDash(String value) {
+        return value == null || value.isBlank() ? "-" : value;
+    }
+
+    /** Business Discovery로 다시 받은 미디어 URL 쌍. */
+    public record MediaUrls(String mediaUrl, String thumbnailUrl) {
     }
 }

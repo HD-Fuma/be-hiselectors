@@ -49,6 +49,11 @@ public class YoutubeSttClient {
 
     /** @return 음성·자막을 구분한 결과. 둘 다 없으면 빈 값. 저장하지 않는다. */
     public SttResult transcribe(String videoId) {
+        return transcribeMeasured(videoId).result();
+    }
+
+    /** 테스트·관측용. 한 번의 Gemini 호출로 전사 결과와 시간·토큰·재시도 횟수를 반환한다. */
+    public YoutubeSttExecutionResult transcribeMeasured(String videoId) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
@@ -64,8 +69,9 @@ public class YoutubeSttClient {
                         "maxOutputTokens", MAX_OUTPUT_TOKENS));
 
         long started = System.nanoTime();
-        GeminiResponse response = call(body);
+        GeminiRequestExecutor.Execution<GeminiResponse> execution = callMeasured(body);
         long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
+        GeminiResponse response = execution.value();
         UsageMetadata usage = response == null ? null : response.usageMetadata();
         String model = response == null ? null : response.modelVersion();
         if (usage == null) {
@@ -77,12 +83,25 @@ public class YoutubeSttClient {
                     usage.candidatesTokenCount(), usage.thoughtsTokenCount(),
                     usage.totalTokenCount());
         }
-        return parse(rawText(response));
+        SttResult result = parse(rawText(response));
+        return new YoutubeSttExecutionResult(
+                result,
+                properties.modelOrDefault(),
+                execution.selectedModel(),
+                model,
+                properties.mediaResolutionApiValue(),
+                elapsedMs,
+                execution.attemptCount(),
+                execution.retryCount(),
+                usage == null ? null : usage.promptTokenCount(),
+                usage == null ? null : usage.candidatesTokenCount(),
+                usage == null ? null : usage.thoughtsTokenCount(),
+                usage == null ? null : usage.totalTokenCount());
     }
 
-    private GeminiResponse call(Map<String, Object> body) {
+    private GeminiRequestExecutor.Execution<GeminiResponse> callMeasured(Map<String, Object> body) {
         try {
-            return requestExecutor.execute(properties.modelOrDefault(), attempt ->
+            return requestExecutor.executeMeasured(properties.modelOrDefault(), attempt ->
                     restClient.post()
                             .uri(ENDPOINT.formatted(attempt.model()))
                             .header("x-goog-api-key", attempt.apiKey())

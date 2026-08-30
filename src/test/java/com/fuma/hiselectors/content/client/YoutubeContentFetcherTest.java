@@ -460,6 +460,25 @@ class YoutubeContentFetcherTest {
     }
 
     @Test
+    @DisplayName("YouTube Data API 길이를 밀리초로 반환한다")
+    void returnsDurationInMilliseconds() {
+        server.expect(request -> assertThat(decodedQuery(request.getURI().getRawQuery()))
+                        .contains("part=contentDetails")
+                        .contains("id=long-1"))
+                .andRespond(withSuccess("""
+                        {
+                          "items": [{
+                            "id": "long-1",
+                            "contentDetails": {"duration": "PT10M18S"}
+                          }]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.durationMs("long-1")).isEqualTo(618_000L);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("YouTube 영상 ID는 API 제한에 맞춰 50개씩 조회한다")
     void fetchContentsByIdsInBatchesOfFifty() {
         List<String> ids = java.util.stream.IntStream.rangeClosed(1, 51)

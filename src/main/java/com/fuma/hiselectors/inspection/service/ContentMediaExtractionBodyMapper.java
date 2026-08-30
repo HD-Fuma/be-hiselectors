@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.inspection.service;
 
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,8 +38,42 @@ public class ContentMediaExtractionBodyMapper {
         }
     }
 
+    /**
+     * 검수 모델에는 판정에 필요한 segmentId와 text만 넘긴다.
+     * 시간·bbox는 content_media.body에 남겨 두고 location에서 해석한다.
+     */
+    public Map<String, Object> toInspectionBody(Map<String, Object> body) {
+        if (body == null || body.isEmpty() || !isCurrentExtraction(body)) {
+            return body == null ? Map.of() : body;
+        }
+        ContentMediaExtractionResult extraction = fromBody(body);
+        Map<String, Object> inspectionBody = new LinkedHashMap<>();
+        inspectionBody.put("schemaVersion", extraction.schemaVersion());
+        inspectionBody.put("stt", Map.of(
+                "language", extraction.stt().language(),
+                "segments", extraction.stt().segments().stream()
+                        .map(segment -> Map.<String, Object>of(
+                                "segmentId", segment.segmentId(),
+                                "text", segment.text()))
+                        .toList()));
+        inspectionBody.put("ocr", Map.of(
+                "segments", extraction.ocr().segments().stream()
+                        .map(segment -> Map.<String, Object>of(
+                                "segmentId", segment.segmentId(),
+                                "text", segment.text()))
+                        .toList()));
+        return inspectionBody;
+    }
+
+    public ContentReportAnalysis reportFrom(Map<String, Object> body) {
+        if (body == null || body.isEmpty() || !isCurrentExtraction(body)) {
+            return ContentReportAnalysis.empty();
+        }
+        return fromBody(body).report();
+    }
+
     public boolean isCurrentExtraction(Map<String, Object> body) {
-        if (body == null || !ContentMediaExtractionResult.CURRENT_SCHEMA_VERSION.equals(
+        if (body == null || !ContentMediaExtractionResult.supportsSchemaVersion(
                 body.get("schemaVersion"))) {
             return false;
         }

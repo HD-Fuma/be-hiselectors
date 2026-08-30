@@ -55,6 +55,7 @@ public class ContentInspectionExecutionService {
     private final ViolationReconciliationService reconciliationService;
     private final TaskLeaseTransaction taskLeaseTransaction;
     private final TransactionTemplate transactionTemplate;
+    private final ContentMediaExtractionBodyMapper bodyMapper;
     private final Clock clock;
 
     public InspectionResult inspect(Long contentVersionId) {
@@ -182,14 +183,27 @@ public class ContentInspectionExecutionService {
                 preparation.selectors(), preparation.media());
         List<DetectedViolation> rules = new ArrayList<>();
         ruleDetectors.forEach(detector -> rules.addAll(detector.detect(context)));
-        AiInspectionResponse aiResponse = preprocessing.integratedAiResult()
-                .orElseGet(() -> aiViolationDetector.inspect(context, preparation.policy()));
+        AiInspectionResponse aiResponse = aiViolationDetector.inspect(
+                context, preparation.policy());
         List<DetectedViolation> merged = resultMerger.mergeRuleFirst(
                 rules, aiResponse.violations());
         merged = evidenceLocationNormalizer.normalize(context, merged);
         return new InspectionAnalysis(
-                aiResponse.report(), aiResponse.executionMetadata(), merged,
+                resolveReport(preparation.media(), context),
+                aiResponse.executionMetadata(), merged,
                 preprocessing.extractionUpdates());
+
+    }
+
+    private ContentReportAnalysis resolveReport(
+            List<ContentMedia> media, InspectionContext context) {
+        for (ContentMedia item : media) {
+            ContentReportAnalysis report = bodyMapper.reportFrom(item.bodyOrEmpty());
+            if (!report.hasNoContent()) {
+                return report;
+            }
+        }
+        return aiViolationDetector.generateReport(context);
     }
 
     private void persist(
@@ -233,6 +247,7 @@ public class ContentInspectionExecutionService {
         ContentMedia media = contentMediaRepository.findById(update.contentMediaId())
                 .filter(candidate -> contentVersionId.equals(candidate.getContentVersionId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        media.replaceUrls(update.mediaUrl(), update.thumbnailUrl());
         media.replaceBody(update.body());
         media.markExtracted(
                 update.inspectionPolicyId(), update.inputHash(), update.extractedAt());

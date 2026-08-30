@@ -37,7 +37,7 @@ public class ContentReport extends BaseTimeEntity {
     @Column(name = "summary", columnDefinition = "text")
     private String summary;
 
-    @Column(name = "purpose", length = 100)
+    @Column(name = "purpose", columnDefinition = "text")
     private String purpose;
 
     @Column(name = "flow", columnDefinition = "text")

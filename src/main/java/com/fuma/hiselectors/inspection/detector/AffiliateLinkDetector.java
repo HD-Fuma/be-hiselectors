@@ -32,25 +32,26 @@ public class AffiliateLinkDetector implements RuleViolationDetector {
     @Override
     public List<DetectedViolation> detect(InspectionContext context) {
         List<LinkLocation> links = extractLinks(textExtractor.extract(context.media()));
-        if (links.stream().anyMatch(link -> linkValidator.isValid(
-                link.url(), context.selectors().getSelectorsCode()))) {
+        if (links.stream().anyMatch(link -> linkValidator.isValid(link.url()))) {
             return List.of();
         }
 
         String reason = links.isEmpty()
                 ? "콘텐츠에서 셀렉터스 제휴 링크를 확인할 수 없습니다."
-                : "콘텐츠의 링크가 발급 형식 또는 셀렉터스 소유자와 일치하지 않습니다.";
-        List<EvidenceLocation> locations = links.stream()
-                .map(link -> new EvidenceLocation(
-                        link.source().contentMediaId(), link.source().mediaType(),
-                        link.source().targetKind(), coordinateSpace(link.source()),
-                        link.source().segmentId(),
-                        link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
-                                ? link.startIndex() : null,
-                        link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
-                                ? link.endIndex() : null,
-                        link.url()))
-                .toList();
+                : "콘텐츠의 링크 형식 또는 도메인이 허용되지 않습니다.";
+        List<EvidenceLocation> locations = links.isEmpty()
+                ? AbsenceEvidenceMarker.forContent(context, "제휴 링크")
+                : links.stream()
+                        .map(link -> new EvidenceLocation(
+                                link.source().contentMediaId(), link.source().mediaType(),
+                                link.source().targetKind(), coordinateSpace(link.source()),
+                                link.source().segmentId(),
+                                link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
+                                        ? link.startIndex() : null,
+                                link.source().targetKind() == EvidenceTargetKind.TEXT_BODY
+                                        ? link.endIndex() : null,
+                                link.url()))
+                        .toList();
         return List.of(new DetectedViolation(
                 ViolationTypeCode.AFFILIATE_LINK_INVALID,
                 new ViolationEvidence(reason, 1.0, locations, EvidenceSource.RULE)));

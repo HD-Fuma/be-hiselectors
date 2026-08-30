@@ -2,7 +2,9 @@ package com.fuma.hiselectors.inspection.ai;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReportAnalysis;
+import com.fuma.hiselectors.content.model.ContentReportTextLimits;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceLocation;
@@ -12,6 +14,7 @@ import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationTypeCode;
 import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
+import com.fuma.hiselectors.inspection.service.ContentMediaExtractionBodyMapper;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -38,25 +41,31 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
     private final ContentInspectionGeminiRequestExecutor requestExecutor;
     private final ObjectMapper objectMapper;
     private final InspectionPromptProvider promptProvider;
+    private final ContentMediaExtractionBodyMapper bodyMapper;
     private final RestClient restClient;
 
     @Autowired
     public GeminiAiInspectionClient(ContentInspectionAnalysisProperties properties,
                                     ContentInspectionGeminiRequestExecutor requestExecutor,
                                     ObjectMapper objectMapper,
-                                    InspectionPromptProvider promptProvider) {
-        this(properties, requestExecutor, objectMapper, promptProvider, createRestClient());
+                                    InspectionPromptProvider promptProvider,
+                                    ContentMediaExtractionBodyMapper bodyMapper) {
+        this(properties, requestExecutor, objectMapper, promptProvider, bodyMapper,
+                createRestClient());
     }
 
     GeminiAiInspectionClient(
                               ContentInspectionAnalysisProperties properties,
                               ContentInspectionGeminiRequestExecutor requestExecutor,
                               ObjectMapper objectMapper,
-                              InspectionPromptProvider promptProvider, RestClient restClient) {
+                              InspectionPromptProvider promptProvider,
+                              ContentMediaExtractionBodyMapper bodyMapper,
+                              RestClient restClient) {
         this.properties = properties;
         this.requestExecutor = requestExecutor;
         this.objectMapper = objectMapper;
         this.promptProvider = promptProvider;
+        this.bodyMapper = bodyMapper;
         this.restClient = restClient;
     }
 
@@ -69,30 +78,52 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
 
     @Override
     public AiInspectionResponse inspect(InspectionContext context, InspectionPolicy policy) {
-        Map<String, Object> input = Map.of(
-                "sns", context.content().getSnsCode(),
-                "contentUrl", context.content().getContentUrl(),
-                "media", context.media().stream().map(media -> Map.of(
-                        "contentMediaId", media.getId(),
-                        "mediaType", media.getMediaType(),
-                        "body", media.bodyOrEmpty())).toList());
         return inspectInput(
-                input, policy.getAiModelName(), policy.getAiPrompt(),
+                mediaInput(context), policy.getAiModelName(), policy.getAiPrompt(),
                 policy.getAiPromptVersion(), policy.getId());
+    }
+
+    private Map<String, Object> inspectionMedia(ContentMedia media) {
+        return Map.of(
+                "contentMediaId", media.getId(),
+                "mediaType", media.getMediaType(),
+                "body", bodyMapper.toInspectionBody(media.bodyOrEmpty()));
     }
 
     @Override
     public AiInspectionResponse inspectText(String text) {
-        Map<String, Object> input = Map.of(
+        return inspectInput(
+                textInput(text), properties.modelOrDefault(), promptProvider.aiPrompt(),
+                InspectionPromptProvider.AI_PROMPT_VERSION, null);
+    }
+
+    @Override
+    public ContentReportAnalysis generateReport(InspectionContext context) {
+        return generateReportInput(mediaInput(context));
+    }
+
+    @Override
+    public ContentReportAnalysis generateReportFromText(String text) {
+        return generateReportInput(textInput(text));
+    }
+
+    private Map<String, Object> mediaInput(InspectionContext context) {
+        return Map.of(
+                "sns", context.content().getSnsCode(),
+                "contentUrl", context.content().getContentUrl(),
+                "media", context.media().stream()
+                        .map(this::inspectionMedia)
+                        .toList());
+    }
+
+    private Map<String, Object> textInput(String text) {
+        return Map.of(
                 "sns", "PREVIEW",
                 "contentUrl", "",
                 "media", List.of(Map.of(
                         "contentMediaId", 0,
                         "mediaType", "TEXT",
                         "body", Map.of("text", text))));
-        return inspectInput(
-                input, properties.modelOrDefault(), promptProvider.aiPrompt(),
-                InspectionPromptProvider.AI_PROMPT_VERSION, null);
     }
 
     private AiInspectionResponse inspectInput(
@@ -106,22 +137,9 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
         }
         long started = System.nanoTime();
         try {
-            String input = objectMapper.writeValueAsString(inputData);
-            Map<String, Object> body = Map.of(
-                    "contents", List.of(Map.of("parts", List.of(
-                            Map.of("text", prompt.formatted(input))))),
-                    "generationConfig", Map.of(
-                            "responseMimeType", "application/json",
-                            "responseJsonSchema", responseJsonSchema(),
-                            "maxOutputTokens", properties.maxOutputTokensOrDefault()));
-            GeminiResponse response = requestExecutor.execute(modelName, attempt ->
-                    restClient.post()
-                            .uri(ENDPOINT.formatted(attempt.model()))
-                            .header("x-goog-api-key", attempt.apiKey())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .body(body)
-                            .retrieve()
-                            .body(GeminiResponse.class));
+            GeminiResponse response = execute(
+                    modelName, prompt.formatted(objectMapper.writeValueAsString(inputData)),
+                    responseJsonSchema());
             AiInspectionResponse parsed = mapResponse(extractText(response));
             return new AiInspectionResponse(
                     parsed.report(), parsed.violations(), executionMetadata(
@@ -139,13 +157,59 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
         }
     }
 
+    private ContentReportAnalysis generateReportInput(Map<String, Object> inputData) {
+        if (!properties.hasApiKey()) {
+            throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
+        }
+        try {
+            GeminiResponse response = execute(
+                    properties.modelOrDefault(),
+                    promptProvider.contentReportPrompt()
+                            .formatted(objectMapper.writeValueAsString(inputData)),
+                    reportResponseSchema());
+            return toReport(objectMapper.readValue(
+                    extractText(response), RawGeneratedReport.class).report());
+        } catch (RestClientResponseException e) {
+            log.warn("Gemini 콘텐츠 리포트 오류 응답. status={}", e.getStatusCode());
+            if (e.getStatusCode().value() == 429) {
+                throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_QUOTA_EXCEEDED);
+            }
+            throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);
+        } catch (RestClientException | JacksonException | IllegalArgumentException e) {
+            log.warn("Gemini 콘텐츠 리포트 실패", e);
+            throw new BusinessException(ErrorCode.AI_CONTENT_INSPECTION_FAILED);
+        }
+    }
+
+    private GeminiResponse execute(
+            String modelName, String prompt, Map<String, Object> schema) {
+        Map<String, Object> body = Map.of(
+                "contents", List.of(Map.of("parts", List.of(
+                        Map.of("text", prompt)))),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "responseJsonSchema", schema,
+                        "maxOutputTokens", properties.maxOutputTokensOrDefault()));
+        return requestExecutor.execute(modelName, attempt ->
+                restClient.post()
+                        .uri(ENDPOINT.formatted(attempt.model()))
+                        .header("x-goog-api-key", attempt.apiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(GeminiResponse.class));
+    }
+
     AiInspectionResponse mapResponse(String json) throws JacksonException {
         RawInspection raw = objectMapper.readValue(json, RawInspection.class);
-        ContentReportAnalysis report = toReport(raw.report());
+        ContentReportAnalysis report = ContentReportAnalysis.empty();
         List<DetectedViolation> violations = raw.violations() == null ? List.of()
                 : raw.violations().stream().map(violation -> new DetectedViolation(
                         ViolationTypeCode.valueOf(violation.violationType()),
-                        new ViolationEvidence(violation.reason(), violation.confidence(),
+                        new ViolationEvidence(
+                                ContentReportTextLimits.clip(
+                                        violation.reason(), ContentReportTextLimits.REASON),
+                                violation.confidence(),
                                 violation.locations(), EvidenceSource.AI))).toList();
         return new AiInspectionResponse(report, violations);
     }
@@ -229,8 +293,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                         "targetKind", Map.of(
                                 "type", "string",
                                 "enum", List.of(
-                                        "TEXT_BODY", "STT_SEGMENT", "OCR_SEGMENT",
-                                        "VISUAL_SEGMENT", "MEDIA")),
+                                        "TEXT_BODY", "STT_SEGMENT", "OCR_SEGMENT", "MEDIA")),
                         "coordinateSpace", Map.of(
                                 "type", "string",
                                 "enum", List.of(
@@ -242,38 +305,6 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                 "required", List.of(
                         "contentMediaId", "mediaType", "targetKind",
                         "coordinateSpace", "excerpt"));
-
-        Map<String, Object> overview = Map.of(
-                "type", "object",
-                "additionalProperties", false,
-                "properties", Map.of(
-                        "summary", Map.of("type", "string"),
-                        "purpose", Map.of("type", "string"),
-                        "flow", Map.of("type", "string"),
-                        "overallAssessment", Map.of("type", "string")),
-                "required", List.of("summary", "purpose", "flow", "overallAssessment"));
-
-        Map<String, Object> stringArray = Map.of(
-                "type", "array", "items", Map.of("type", "string"));
-        Map<String, Object> insight = Map.of(
-                "type", "object",
-                "additionalProperties", false,
-                "properties", Map.of(
-                        "contentStyle", Map.of("type", "string"),
-                        "tone", Map.of("type", "string"),
-                        "strengths", stringArray,
-                        "cautions", stringArray,
-                        "risks", stringArray,
-                        "hateConfirmed", Map.of("type", "boolean"),
-                        "collabBrands", stringArray),
-                "required", List.of(
-                        "contentStyle", "tone", "strengths", "cautions", "risks",
-                        "hateConfirmed", "collabBrands"));
-        Map<String, Object> report = Map.of(
-                "type", "object",
-                "additionalProperties", false,
-                "properties", Map.of("overview", overview, "insight", insight),
-                "required", List.of("overview", "insight"));
 
         Map<String, Object> violation = Map.of(
                 "type", "object",
@@ -290,7 +321,7 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                                         "SOCIAL_CONTROVERSY",
                                         "FALSE_EXAGGERATED_CLAIM",
                                         "BRAND_REPUTATION_DAMAGE")),
-                        "reason", Map.of("type", "string"),
+                        "reason", limitedString(ContentReportTextLimits.REASON),
                         "confidence", Map.of(
                                 "type", "number",
                                 "minimum", 0,
@@ -305,14 +336,59 @@ public class GeminiAiInspectionClient implements AiInspectionClient {
                 "type", "object",
                 "additionalProperties", false,
                 "properties", Map.of(
-                        "report", report,
                         "violations", Map.of(
                                 "type", "array",
                                 "items", violation)),
-                "required", List.of("report", "violations"));
+                "required", List.of("violations"));
     }
 
-    private record RawInspection(RawReport report, List<RawViolation> violations) { }
+    private Map<String, Object> reportResponseSchema() {
+        Map<String, Object> overview = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of(
+                        "summary", limitedString(ContentReportTextLimits.SUMMARY),
+                        "purpose", limitedString(ContentReportTextLimits.PURPOSE),
+                        "flow", limitedString(ContentReportTextLimits.FLOW),
+                        "overallAssessment", limitedString(
+                                ContentReportTextLimits.OVERALL_ASSESSMENT)),
+                "required", List.of("summary", "purpose", "flow", "overallAssessment"));
+        Map<String, Object> stringArray = Map.of(
+                "type", "array",
+                "items", limitedString(ContentReportTextLimits.INSIGHT_ITEM));
+        Map<String, Object> insight = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of(
+                        "contentStyle", limitedString(ContentReportTextLimits.CONTENT_STYLE),
+                        "tone", limitedString(ContentReportTextLimits.TONE),
+                        "strengths", stringArray,
+                        "cautions", stringArray,
+                        "risks", stringArray,
+                        "hateConfirmed", Map.of("type", "boolean"),
+                        "collabBrands", stringArray),
+                "required", List.of(
+                        "contentStyle", "tone", "strengths", "cautions", "risks",
+                        "hateConfirmed", "collabBrands"));
+        Map<String, Object> report = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of("overview", overview, "insight", insight),
+                "required", List.of("overview", "insight"));
+        return Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of("report", report),
+                "required", List.of("report"));
+    }
+
+    private static Map<String, Object> limitedString(int maxLength) {
+        return Map.of("type", "string", "maxLength", maxLength);
+    }
+
+    private record RawInspection(List<RawViolation> violations) { }
+
+    private record RawGeneratedReport(RawReport report) { }
 
     private record RawReport(RawOverview overview, RawInsight insight) { }
 

@@ -2,10 +2,13 @@ package com.fuma.hiselectors.inspection.extraction;
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.config.InspectionExtractionProperties;
+import com.fuma.hiselectors.stt.GeminiProperties;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -15,9 +18,21 @@ import org.springframework.web.client.RestClientResponseException;
 public class ContentGeminiRequestExecutor {
 
     private final InspectionExtractionProperties properties;
+    private final ContentInspectionAnalysisProperties analysisProperties;
+    private final GeminiProperties geminiProperties;
 
     public ContentGeminiRequestExecutor(InspectionExtractionProperties properties) {
+        this(properties, null, null);
+    }
+
+    @Autowired
+    public ContentGeminiRequestExecutor(
+            InspectionExtractionProperties properties,
+            ContentInspectionAnalysisProperties analysisProperties,
+            GeminiProperties geminiProperties) {
         this.properties = properties;
+        this.analysisProperties = analysisProperties;
+        this.geminiProperties = geminiProperties;
     }
 
     public <T> Execution<T> execute(Function<Attempt, T> request) {
@@ -43,12 +58,18 @@ public class ContentGeminiRequestExecutor {
 
     private List<Attempt> attempts() {
         InspectionExtractionProperties.Youtube youtube = properties.youtube();
-        if (youtube == null) {
-            return List.of();
+        LinkedHashSet<String> keys = youtube == null
+                ? new LinkedHashSet<>()
+                : values(youtube.apiKey(), youtube.apiKeys());
+        if (keys.isEmpty() && analysisProperties != null) {
+            keys = values(analysisProperties.apiKey(), analysisProperties.apiKeys());
         }
-        LinkedHashSet<String> keys = values(youtube.apiKey(), youtube.apiKeys());
+        if (keys.isEmpty() && geminiProperties != null) {
+            keys = values(geminiProperties.apiKey(), geminiProperties.apiKeys());
+        }
         LinkedHashSet<String> models = values(
-                properties.youtubeModelOrDefault(), youtube.fallbackModels());
+                properties.youtubeModelOrDefault(),
+                youtube == null ? null : youtube.fallbackModels());
         return keys.stream()
                 .flatMap(key -> models.stream().map(model -> new Attempt(model, key)))
                 .toList();

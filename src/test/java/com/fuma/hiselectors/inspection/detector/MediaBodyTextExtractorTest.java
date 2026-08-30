@@ -16,7 +16,7 @@ class MediaBodyTextExtractorTest {
     void extractsOnlyEvidenceTextWithItsSegmentIdentity() {
         ContentMedia video = ContentMedia.create(
                 20L, MediaType.VIDEO, null, null, "video-id", 0, Map.of(
-                        "schemaVersion", "1.0",
+                        "schemaVersion", "1.2",
                         "stt", Map.of(
                                 "language", "ko",
                                 "segments", List.of(Map.of(
@@ -26,10 +26,7 @@ class MediaBodyTextExtractorTest {
                                         "text", "spoken evidence"))),
                         "ocr", Map.of("segments", List.of(Map.of(
                                 "segmentId", "ocr-001",
-                                "text", "screen evidence"))),
-                        "visual", Map.of("segments", List.of(Map.of(
-                                "segmentId", "visual-001",
-                                "description", "visible product")))));
+                                "text", "screen evidence")))));
         ReflectionTestUtils.setField(video, "id", 30L);
 
         var sources = new MediaBodyTextExtractor().extract(List.of(video));
@@ -38,10 +35,9 @@ class MediaBodyTextExtractorTest {
                 .extracting(source -> source.targetKind() + ":" + source.segmentId())
                 .containsExactly(
                         EvidenceTargetKind.STT_SEGMENT + ":stt-001",
-                        EvidenceTargetKind.OCR_SEGMENT + ":ocr-001",
-                        EvidenceTargetKind.VISUAL_SEGMENT + ":visual-001");
+                        EvidenceTargetKind.OCR_SEGMENT + ":ocr-001");
         assertThat(sources).extracting(MediaBodyTextExtractor.TextSource::text)
-                .containsExactly("spoken evidence", "screen evidence", "visible product")
+                .containsExactly("spoken evidence", "screen evidence")
                 .doesNotContain("ko", "stt-001", "NORMALIZED");
     }
 }

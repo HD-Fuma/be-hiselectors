@@ -53,10 +53,10 @@ class EvidenceLocationNormalizerTest {
                 null, new ContentMediaExtractionResult.OcrSegment(
                         "ocr-001", null, null, "screen text",
                         CoordinateSpace.NORMALIZED,
-                        new NormalizedBoundingBox(0.1, 0.2, 0.3, 0.1)), null));
+                        new NormalizedBoundingBox(0.1, 0.2, 0.3, 0.1))));
         ContentMedia video = extractedMedia(12L, MediaType.VIDEO, 9, extraction(
                 new ContentMediaExtractionResult.SttSegment(
-                        "stt-001", 100L, 900L, "spoken evidence"), null, null));
+                        "stt-001", 100L, 900L, "spoken evidence"), null));
         ContentMedia text = textMedia(11L, 20, "body link");
         List<EvidenceLocation> locations = List.of(
                 segmentLocation(image, EvidenceTargetKind.OCR_SEGMENT,
@@ -84,13 +84,27 @@ class EvidenceLocationNormalizerTest {
     void removesAiLocationThatReferencesMissingSegment() {
         ContentMedia video = extractedMedia(12L, MediaType.VIDEO, 0, extraction(
                 new ContentMediaExtractionResult.SttSegment(
-                        "stt-001", 0L, 500L, "stored speech"), null, null));
+                        "stt-001", 0L, 500L, "stored speech"), null));
         EvidenceLocation fabricated = segmentLocation(
                 video, EvidenceTargetKind.STT_SEGMENT, "stt-999", "speech");
 
         DetectedViolation normalized = normalizer.normalize(
                 context(List.of(video)),
                 List.of(violation(EvidenceSource.AI, List.of(fabricated)))).getFirst();
+
+        assertThat(normalized.evidence().locations()).isEmpty();
+    }
+
+    @Test
+    void dropsLegacyVisualSegmentFromAiEvidence() {
+        ContentMedia video = extractedMedia(
+                12L, MediaType.VIDEO, 0, ContentMediaExtractionResult.empty());
+        EvidenceLocation visual = segmentLocation(
+                video, EvidenceTargetKind.VISUAL_SEGMENT, "visual-001", "장면");
+
+        DetectedViolation normalized = normalizer.normalize(
+                context(List.of(video)),
+                List.of(violation(EvidenceSource.AI, List.of(visual)))).getFirst();
 
         assertThat(normalized.evidence().locations()).isEmpty();
     }
@@ -193,15 +207,12 @@ class EvidenceLocationNormalizerTest {
 
     private ContentMediaExtractionResult extraction(
             ContentMediaExtractionResult.SttSegment stt,
-            ContentMediaExtractionResult.OcrSegment ocr,
-            ContentMediaExtractionResult.VisualSegment visual) {
+            ContentMediaExtractionResult.OcrSegment ocr) {
         return new ContentMediaExtractionResult(
-                "1.0",
+                "1.2",
                 new ContentMediaExtractionResult.SttExtraction(
                         "ko", stt == null ? List.of() : List.of(stt)),
                 new ContentMediaExtractionResult.OcrExtraction(
-                        ocr == null ? List.of() : List.of(ocr)),
-                new ContentMediaExtractionResult.VisualExtraction(
-                        visual == null ? List.of() : List.of(visual)));
+                        ocr == null ? List.of() : List.of(ocr)));
     }
 }

@@ -78,10 +78,14 @@ public record EvidenceLocationResponse(
         if (x == null || y == null || width == null || height == null) {
             return new SegmentCoordinates(startMs, endMs, null, null);
         }
-        NormalizedBoundingBox bbox = new NormalizedBoundingBox(x, y, width, height);
-        CoordinateSpace coordinateSpace = "NORMALIZED".equals(segment.get("coordinateSpace"))
-                ? CoordinateSpace.NORMALIZED : null;
-        return new SegmentCoordinates(startMs, endMs, coordinateSpace, bbox);
+        try {
+            NormalizedBoundingBox bbox = new NormalizedBoundingBox(x, y, width, height);
+            CoordinateSpace coordinateSpace = "NORMALIZED".equals(segment.get("coordinateSpace"))
+                    ? CoordinateSpace.NORMALIZED : null;
+            return new SegmentCoordinates(startMs, endMs, coordinateSpace, bbox);
+        } catch (IllegalArgumentException ignored) {
+            return new SegmentCoordinates(startMs, endMs, null, null);
+        }
     }
 
     private static Long longValue(Object value) {

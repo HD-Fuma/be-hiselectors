@@ -7,6 +7,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.inspection.service.ContentMediaExtractionBodyMapper;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,10 +30,12 @@ class GeminiAiInspectionClientTest {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         ContentInspectionAnalysisProperties properties = properties();
+        ObjectMapper objectMapper = new ObjectMapper();
         client = new GeminiAiInspectionClient(
                 properties, new ContentInspectionGeminiRequestExecutor(properties),
-                new ObjectMapper(),
-                new InspectionPromptProvider(), builder.build());
+                objectMapper,
+                new InspectionPromptProvider(),
+                new ContentMediaExtractionBodyMapper(objectMapper), builder.build());
     }
 
     @Test
@@ -71,20 +74,6 @@ class GeminiAiInspectionClientTest {
     void mapsDetailedReportAndExecutionMetadata() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         String inspectionJson = objectMapper.writeValueAsString(Map.of(
-                "report", Map.of(
-                        "overview", Map.of(
-                                "summary", "summary",
-                                "purpose", "purpose",
-                                "flow", "flow",
-                                "overallAssessment", "assessment"),
-                        "insight", Map.of(
-                                "contentStyle", "review",
-                                "tone", "calm",
-                                "strengths", List.of("clear"),
-                                "cautions", List.of("sponsorship"),
-                                "risks", List.of("overclaim"),
-                                "hateConfirmed", false,
-                                "collabBrands", List.of("brand-a"))),
                 "violations", List.of()));
         String geminiResponse = objectMapper.writeValueAsString(Map.of(
                 "candidates", List.of(Map.of(
@@ -101,16 +90,47 @@ class GeminiAiInspectionClientTest {
 
         var result = client.inspectText("content");
 
-        assertThat(result.report().overview().summary()).isEqualTo("summary");
-        assertThat(result.report().insight().contentStyle()).isEqualTo("review");
-        assertThat(result.report().insight().strengths()).containsExactly("clear");
+        assertThat(result.report().hasNoContent()).isTrue();
         assertThat(result.executionMetadata())
                 .containsEntry("provider", "GEMINI")
                 .containsEntry("requestedModel", "test-model")
                 .containsEntry("responseModel", "gemini-response-model")
-                .containsEntry("promptVersion", "content-inspection-v4");
+                .containsEntry("promptVersion", "content-inspection-v8");
         assertThat(result.executionMetadata().get("tokens"))
                 .isEqualTo(Map.of("input", 10, "output", 20, "total", 30));
+        server.verify();
+    }
+
+    @Test
+    void generateReportFromText는_overview와_insight만_매핑한다() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        String reportJson = objectMapper.writeValueAsString(Map.of(
+                "report", Map.of(
+                        "overview", Map.of(
+                                "summary", "summary",
+                                "purpose", "purpose",
+                                "flow", "flow",
+                                "overallAssessment", "assessment"),
+                        "insight", Map.of(
+                                "contentStyle", "review",
+                                "tone", "calm",
+                                "strengths", List.of("clear"),
+                                "cautions", List.of("sponsorship"),
+                                "risks", List.of("overclaim"),
+                                "hateConfirmed", false,
+                                "collabBrands", List.of("brand-a")))));
+        String geminiResponse = objectMapper.writeValueAsString(Map.of(
+                "candidates", List.of(Map.of(
+                        "content", Map.of(
+                                "parts", List.of(Map.of("text", reportJson)))))));
+        server.expect(request -> assertThat(request.getURI().getPath())
+                        .endsWith("/models/test-model:generateContent"))
+                .andRespond(withSuccess(geminiResponse, MediaType.APPLICATION_JSON));
+
+        var report = client.generateReportFromText("content");
+
+        assertThat(report.overview().summary()).isEqualTo("summary");
+        assertThat(report.insight().contentStyle()).isEqualTo("review");
         server.verify();
     }
 
@@ -121,7 +141,9 @@ class GeminiAiInspectionClientTest {
         assertThat(schema)
                 .contains("targetKind", "coordinateSpace", "segmentId",
                         "CONTENT_MEDIA_SEGMENT", "UTF16_CODE_UNIT")
-                .doesNotContain("startTime", "endTime", "bbox");
+                .contains("\"maxLength\":400")
+                .doesNotContain("startTime", "endTime", "bbox", "VISUAL_SEGMENT")
+                .doesNotContain("\"report\"");
     }
 
     private ContentInspectionAnalysisProperties properties() {

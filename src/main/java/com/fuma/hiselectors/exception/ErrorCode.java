@@ -61,6 +61,18 @@ public enum ErrorCode {
             HttpStatus.BAD_GATEWAY,
             "Instagram 콘텐츠 조회에 실패했습니다."
     ),
+    INSTAGRAM_TOKEN_OR_PERMISSION_DENIED(
+            HttpStatus.UNAUTHORIZED,
+            "Instagram 토큰 또는 권한이 유효하지 않습니다."
+    ),
+    INSTAGRAM_ACCOUNT_UNAVAILABLE(
+            HttpStatus.NOT_FOUND,
+            "Instagram 계정을 조회할 수 없습니다. 사용자명 변경·비공개·개인 계정일 수 있습니다."
+    ),
+    INSTAGRAM_API_RATE_LIMITED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "Instagram API 호출 한도를 초과했습니다."
+    ),
 
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),

@@ -3,7 +3,7 @@
 ## 적용 결과
 
 - `TEXT` 미디어의 `body.text`는 플랫폼 제목·설명·캡션 원문으로 유지한다.
-- `IMAGE`와 `VIDEO`의 `body`에는 `schemaVersion=1.0`과 `stt/ocr/visual.segments`를 저장한다.
+- `IMAGE`와 `VIDEO`의 `body`에는 `schemaVersion=1.2`와 `stt/ocr.segments`를 저장한다.
 - 검수 상세 분석은 `content_report.analysis`의 `overview/insight`에 저장한다.
 - 같은 `(content_version_id, inspection_policy_id)` 재검수는 리포트를 추가하지 않고 갱신한다.
 - 근거는 TEXT의 UTF-16 범위 또는 미디어 추출 `segmentId`를 저장한다. 시간과 bbox는 조회 시 `content_media.body`에서 해석한다.
@@ -36,7 +36,7 @@ CONTENT_INSPECTION_STT_WORKER_BASE_URL
 전용 키를 아직 발급하지 않았다면 콘텐츠 Gemini 키 설정은 기존 `GEMINI_API_KEY(S)`로 폴백한다. 분석 모델과 추출 모델은 별도 설정이므로 동일하게 지정하더라도 정책 해시와 실행 경로는 분리된다.
 
 7. Instagram 콘텐츠 전용 SageMaker endpoint와 모델 아티팩트를 배포하고 `/content/reel` 상태를 확인한다.
-8. 애플리케이션을 시작해 `InspectionPolicyService`가 `content-inspection-v4` 정책을 활성화했는지 확인한다.
+8. 애플리케이션을 시작해 `InspectionPolicyService`가 `content-inspection-v8` 정책을 활성화했는지 확인한다.
 9. YouTube 1건, Instagram 단일 이미지 1건, 캐러셀 1건으로 스모크 검수를 실행한다.
 10. 검수 요청을 재개한다.
 
@@ -80,12 +80,12 @@ ORDER BY cm.content_media_id DESC
 LIMIT 20;
 ```
 
-검수 완료 미디어는 schema version `1.0`과 추출 정책/시각이 있어야 한다.
+검수 완료 미디어는 schema version `1.2`와 추출 정책/시각이 있어야 한다.
 
 ## 실패 및 재처리
 
 - 원본 URL 또는 YouTube video ID가 없으면 `CONTENT_MEDIA_SOURCE_UNAVAILABLE`로 실패한다.
-- Instagram CDN 만료는 `MEDIA_URL_EXPIRED`, 워커/endpoint 실패는 `STT_WORKER_CALL_FAILED`로 실패한다.
+- Instagram CDN 만료는 Business Discovery로 URL을 한 번 갱신한 뒤 재시도한다. 갱신 실패는 `CONTENT_MEDIA_SOURCE_UNAVAILABLE`, 워커/endpoint 실패는 `STT_WORKER_CALL_FAILED`로 실패한다.
 - 한 캐러셀에서 일부 미디어만 성공해도 DB에는 어느 미디어도 반영하지 않는다.
 - 기존 `body.text` 기반 IMAGE/VIDEO는 직접 덮어쓰지 않는다. 다음 검수에서 `EXTRACTION_CHANGE` 새 콘텐츠 버전을 만들고 구조화 추출한다.
 - 실패한 새 버전은 원인을 해결한 뒤 최신 버전 ID로 검수를 다시 실행한다. SQL로 body나 검수 상태를 직접 수정하지 않는다.

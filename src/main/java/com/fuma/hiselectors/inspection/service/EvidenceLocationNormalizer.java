@@ -81,7 +81,7 @@ public class EvidenceLocationNormalizer {
             case TEXT_BODY -> validateText(location, media);
             case STT_SEGMENT -> validateSegment(location, media, MediaType.VIDEO);
             case OCR_SEGMENT -> validateSegment(location, media, null);
-            case VISUAL_SEGMENT -> validateSegment(location, media, null);
+            case VISUAL_SEGMENT -> "VISUAL_SEGMENT는 더 이상 사용하지 않습니다";
             case MEDIA -> validateMediaMarker(location);
         };
     }
@@ -145,10 +145,6 @@ public class EvidenceLocationNormalizer {
             case OCR_SEGMENT -> extraction.ocr().segments().stream()
                     .filter(segment -> segment.segmentId().equals(segmentId))
                     .map(ContentMediaExtractionResult.OcrSegment::text)
-                    .findFirst().orElse(null);
-            case VISUAL_SEGMENT -> extraction.visual().segments().stream()
-                    .filter(segment -> segment.segmentId().equals(segmentId))
-                    .map(ContentMediaExtractionResult.VisualSegment::description)
                     .findFirst().orElse(null);
             default -> null;
         };

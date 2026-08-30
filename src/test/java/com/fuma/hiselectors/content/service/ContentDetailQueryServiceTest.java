@@ -66,7 +66,7 @@ class ContentDetailQueryServiceTest {
         ReflectionTestUtils.setField(text, "id", 31L);
         ContentMedia video = ContentMedia.create(
                 20L, MediaType.VIDEO, null, "abc123", 1, Map.of(
-                        "schemaVersion", "1.0",
+                        "schemaVersion", "1.2",
                         "stt", Map.of(
                                 "language", "ko",
                                 "segments", List.of(Map.of(
@@ -74,8 +74,7 @@ class ContentDetailQueryServiceTest {
                                         "startMs", 100,
                                         "endMs", 900,
                                         "text", "spoken evidence"))),
-                        "ocr", Map.of("segments", List.of()),
-                        "visual", Map.of("segments", List.of())));
+                        "ocr", Map.of("segments", List.of())));
         ReflectionTestUtils.setField(video, "id", 32L);
 
         ContentReport report = ContentReport.create(
@@ -128,8 +127,10 @@ class ContentDetailQueryServiceTest {
                         org.assertj.core.groups.Tuple.tuple(31L, "본문"),
                         org.assertj.core.groups.Tuple.tuple(32L, null));
         assertThat(result.selectedVersion().media().get(1).body())
-                .containsEntry("schemaVersion", "1.0")
-                .containsKeys("stt", "ocr", "visual");
+                .containsEntry("schemaVersion", "1.2")
+                .containsKeys("stt", "ocr")
+                .doesNotContainKey("visual")
+                .doesNotContainKey("report");
         assertThat(result.selectedVersion().contentReport().analysis().insight().contentStyle())
                 .isEqualTo("review");
         assertThat(result.selectedVersion().contentReport().executionMetadata())

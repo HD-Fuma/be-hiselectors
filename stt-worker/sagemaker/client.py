@@ -1,7 +1,9 @@
-"""워커(CPU)에서 SageMaker Async 엔드포인트로 STT 요청. media_stt.stt() 가 이걸 호출하도록 교체한다.
-흐름: 영상에서 오디오만 추출(작음) → S3 업로드 → invoke_endpoint_async → 출력 S3 폴링 → transcript.
-영상 통째 전송은 컨테이너 요청 한도(413)를 넘으므로 오디오만 보낸다. STT엔 오디오면 충분.
-콜드스타트(0→1)+최초 모델 다운로드 시 첫 요청은 수 분 걸릴 수 있음(이후 빠름)."""
+"""지원서와 콘텐츠 검수가 공유하는 SageMaker Async STT 클라이언트.
+
+영상에서 오디오만 추출해 전송하고 공통 구조화 응답을 그대로 반환한다. 지원서용
+문자열 평탄화는 media_stt가, 콘텐츠 검수용 정규화는 content_media_extraction이
+각각 담당한다.
+"""
 import json
 import os
 import tempfile
@@ -9,6 +11,8 @@ import time
 import uuid
 
 import boto3
+
+from stt_contract import SCHEMA_VERSION
 
 REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
 BUCKET = os.environ.get("STT_S3_BUCKET", "hi-selectors-stt")
@@ -38,10 +42,15 @@ def _extract_audio(media_path: str) -> str:
     return out_path
 
 
-def stt(media_path: str, timeout: int = 580, poll: float = 3.0) -> str:
+def stt(media_path: str, timeout: int = 580, poll: float = 3.0) -> dict:
     audio_path = _extract_audio(media_path)
     if audio_path is None:
-        return ""  # 오디오 없음(무음 영상 등)
+        return {
+            "schemaVersion": SCHEMA_VERSION,
+            "language": "",
+            "audio": {"durationMs": None, "durationAfterVadMs": None},
+            "segments": [],
+        }
 
     try:
         key = f"whisper/input/{uuid.uuid4().hex}.m4a"
@@ -63,7 +72,7 @@ def stt(media_path: str, timeout: int = 580, poll: float = 3.0) -> str:
     while time.time() < deadline:
         try:
             body = _s3.get_object(Bucket=BUCKET, Key=out_key)["Body"].read()
-            return json.loads(body).get("stt", "")
+            return json.loads(body)
         except _s3.exceptions.NoSuchKey:
             pass  # 아직 처리 중(콜드스타트 포함)
         if fail_key:

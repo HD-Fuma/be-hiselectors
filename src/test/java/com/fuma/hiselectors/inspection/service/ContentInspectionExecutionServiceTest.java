@@ -36,6 +36,7 @@ import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService.InspectionResult;
 import com.fuma.hiselectors.inspection.service.MediaPreprocessingService.PreprocessingResult;
+import tools.jackson.databind.ObjectMapper;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.taskrun.service.TaskLease;
@@ -102,10 +103,9 @@ class ContentInspectionExecutionServiceTest {
                 new ContentReportAnalysis.Insight(
                         "review", "calm", List.of("clear"), List.of(),
                         List.of(), false, List.of("brand-a")));
-        when(fixture.preprocessing.preprocess(any(), any(), any())).thenReturn(
-                new PreprocessingResult(Optional.of(new AiInspectionResponse(
-                        analysis, List.of(), Map.of("responseModel", "gemini"))),
-                        Optional.empty()));
+        when(fixture.ai.inspect(any(), any())).thenReturn(new AiInspectionResponse(
+                ContentReportAnalysis.empty(), List.of(), Map.of("responseModel", "gemini")));
+        when(fixture.ai.generateReport(any())).thenReturn(analysis);
 
         fixture.service.inspect(1L);
 
@@ -361,9 +361,7 @@ class ContentInspectionExecutionServiceTest {
     }
 
     private PreprocessingResult successfulPreprocessing() {
-        return new PreprocessingResult(
-                Optional.of(new AiInspectionResponse(ContentReportData.empty(), List.of())),
-                Optional.empty());
+        return new PreprocessingResult(List.of());
     }
 
     private Fixture fixture() {
@@ -375,6 +373,9 @@ class ContentInspectionExecutionServiceTest {
         InspectionPolicyService policies = mock(InspectionPolicyService.class);
         MediaPreprocessingService preprocessing = mock(MediaPreprocessingService.class);
         AiViolationDetector ai = mock(AiViolationDetector.class);
+        when(ai.inspect(any(), any())).thenReturn(
+                new AiInspectionResponse(ContentReportData.empty(), List.of()));
+        when(ai.generateReport(any())).thenReturn(ContentReportAnalysis.empty());
         ViolationResultMerger merger = mock(ViolationResultMerger.class);
         EvidenceLocationNormalizer normalizer = mock(EvidenceLocationNormalizer.class);
         ViolationReconciliationService reconciliation =
@@ -399,10 +400,10 @@ class ContentInspectionExecutionServiceTest {
         ContentInspectionExecutionService service = new ContentInspectionExecutionService(
                 versions, contents, media, reports, selectors, policies, preprocessing,
                 List.of(), ai, merger, normalizer, reconciliation, leaseTransaction,
-                transactions, CLOCK);
+                transactions, new ContentMediaExtractionBodyMapper(new ObjectMapper()), CLOCK);
         return new Fixture(
                 versions, contents, media, reports, policies, selectors, preprocessing,
-                merger, normalizer, reconciliation, leaseTransaction, transactions, service);
+                ai, merger, normalizer, reconciliation, leaseTransaction, transactions, service);
     }
 
     private Content content(Long lastVersionNo) {
@@ -447,6 +448,7 @@ class ContentInspectionExecutionServiceTest {
         private final InspectionPolicyService policies;
         private final SelectorsRepository selectors;
         private final MediaPreprocessingService preprocessing;
+        private final AiViolationDetector ai;
         private final ViolationResultMerger merger;
         private final EvidenceLocationNormalizer normalizer;
         private final ViolationReconciliationService reconciliation;
@@ -463,6 +465,7 @@ class ContentInspectionExecutionServiceTest {
                 InspectionPolicyService policies,
                 SelectorsRepository selectors,
                 MediaPreprocessingService preprocessing,
+                AiViolationDetector ai,
                 ViolationResultMerger merger,
                 EvidenceLocationNormalizer normalizer,
                 ViolationReconciliationService reconciliation,
@@ -476,6 +479,7 @@ class ContentInspectionExecutionServiceTest {
             this.policies = policies;
             this.selectors = selectors;
             this.preprocessing = preprocessing;
+            this.ai = ai;
             this.merger = merger;
             this.normalizer = normalizer;
             this.reconciliation = reconciliation;

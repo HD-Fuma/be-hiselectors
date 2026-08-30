@@ -498,6 +498,43 @@ public class YoutubeContentFetcher implements ContentFetcher {
         }).toList();
     }
 
+    public Long durationMs(String videoId) {
+        if (!properties.hasApiKey() || !StringUtils.hasText(videoId)) {
+            return null;
+        }
+        URI uri = UriComponentsBuilder.fromUriString(VIDEOS_URI)
+                .queryParam("part", "contentDetails")
+                .queryParam("id", videoId.strip())
+                .queryParam("key", properties.apiKey())
+                .build()
+                .encode()
+                .toUri();
+        try {
+            YoutubeContentResponse response = request(uri, YoutubeContentResponse.class);
+            if (response.items() == null || response.items().isEmpty()
+                    || response.items().getFirst() == null
+                    || response.items().getFirst().contentDetails() == null) {
+                return null;
+            }
+            return parseDurationMs(response.items().getFirst().contentDetails().duration());
+        } catch (BusinessException exception) {
+            log.warn("YouTube 영상 길이 조회 실패. videoId={}", videoId.strip());
+            return null;
+        }
+    }
+
+    private Long parseDurationMs(String isoDuration) {
+        if (!StringUtils.hasText(isoDuration)) {
+            return null;
+        }
+        try {
+            long millis = Duration.parse(isoDuration).toMillis();
+            return millis <= 0 ? null : millis;
+        } catch (DateTimeParseException exception) {
+            return null;
+        }
+    }
+
     // ponytail: duration 휴리스틱. YouTube 가 Shorts 여부 플래그를 안 줘서 영상 길이로 추정한다.
     // 정확히 하려면 youtube.com/shorts/{id} 리다이렉트 확인이 필요(요청 1회 추가).
     private ContentType classifyByDuration(String isoDuration) {

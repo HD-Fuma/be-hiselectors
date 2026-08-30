@@ -48,7 +48,7 @@ flowchart TD
     J --> K[임시 분석 행 저장]
 ```
 
-Instagram은 Gemini로 콘텐츠별 분석을 하지 않는다. 음성은 `faster-whisper large-v3`, 화면 글자는 RapidOCR PP-OCRv4 한국어 모바일 모델을 사용한다. 운영에서는 Whisper만 `whisper-large-v3-async` SageMaker GPU 엔드포인트로 오프로드하고, 미디어 취득·프레임 추출·OCR·로컬 분류는 사이드카가 수행한다.
+Instagram은 Gemini로 콘텐츠별 분석을 하지 않는다. 음성은 `faster-whisper large-v3`, 화면 글자는 RapidOCR PP-OCRv4 한국어 모바일 모델을 사용한다. 운영에서는 Whisper만 `whisper-large-v3-async` SageMaker GPU 엔드포인트로 오프로드하고, 미디어 취득·프레임 추출·OCR·로컬 분류는 사이드카가 수행한다. 같은 구조화 STT 세그먼트를 지원서와 콘텐츠 검수가 공유하며 지원서는 세그먼트 텍스트를 단일 문자열로 평탄화한다.
 
 `/reel` 응답에는 STT, OCR, 키워드, 카테고리가 함께 들어오므로 Java가 같은 콘텐츠에 `/analyze`를 한 번 더 호출하지 않는다.
 

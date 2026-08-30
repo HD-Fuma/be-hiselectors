@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.dto;
 
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record ContentVersionMediaResponse(
@@ -15,7 +16,7 @@ public record ContentVersionMediaResponse(
         String text
 ) {
     public ContentVersionMediaResponse {
-        body = body == null ? Map.of() : Map.copyOf(body);
+        body = copyPublicBody(body);
     }
 
     public static ContentVersionMediaResponse from(ContentMedia media) {
@@ -29,5 +30,18 @@ public record ContentVersionMediaResponse(
                 media.getSequenceNo(),
                 media.bodyOrEmpty(),
                 bodyText instanceof String value ? value : null);
+    }
+
+    private static Map<String, Object> copyPublicBody(Map<String, Object> body) {
+        if (body == null || body.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> publicBody = new LinkedHashMap<>();
+        body.forEach((key, value) -> {
+            if (key != null && value != null && !"report".equals(key)) {
+                publicBody.put(key, value);
+            }
+        });
+        return Map.copyOf(publicBody);
     }
 }

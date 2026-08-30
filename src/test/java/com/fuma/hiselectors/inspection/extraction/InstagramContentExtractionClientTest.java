@@ -32,19 +32,26 @@ class InstagramContentExtractionClientTest {
                         .isEqualTo("http://worker/content/reel"))
                 .andRespond(withSuccess("""
                         {
-                          "schemaVersion":"1.0",
-                          "stt":{"language":"ko","segments":[
-                            {"segmentId":"stt-001","startMs":0,"endMs":500,"text":"발화"}
+                          "schemaVersion":"1.1",
+                          "stt":{"language":"ko",
+                          "audio":{"durationMs":1000,"durationAfterVadMs":800},
+                          "segments":[
+                            {"segmentId":"stt-001","startMs":0,"endMs":500,"text":"발화",
+                             "avgLogProb":-0.24,"noSpeechProbability":0.03}
                           ]},
-                          "ocr":{"segments":[]},
-                          "visual":{"segments":[]}
+                          "ocr":{"segments":[]}
                         }
                         """, MediaType.APPLICATION_JSON));
 
         ContentExtractionExecutionResult result = client.extract(
                 "https://cdn.example.com/reel.mp4", null);
 
+        assertThat(result.extraction().schemaVersion()).isEqualTo("1.2");
         assertThat(result.extraction().stt().segments()).hasSize(1);
+        assertThat(result.extraction().stt().segments().getFirst().avgLogProb())
+                .isEqualTo(-0.24);
+        assertThat(result.extraction().stt().audio().durationAfterVadMs())
+                .isEqualTo(800L);
         assertThat(result.selectedModel()).isEqualTo("content-whisper");
         server.verify();
     }

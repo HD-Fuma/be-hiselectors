@@ -19,8 +19,6 @@ public class MediaBodyTextExtractor {
             } else {
                 addSegments(item, "stt", "text", EvidenceTargetKind.STT_SEGMENT, sources);
                 addSegments(item, "ocr", "text", EvidenceTargetKind.OCR_SEGMENT, sources);
-                addSegments(item, "visual", "description",
-                        EvidenceTargetKind.VISUAL_SEGMENT, sources);
             }
         }
         return List.copyOf(sources);

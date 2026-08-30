@@ -65,4 +65,24 @@ class GeminiRequestExecutorTest {
 
         assertThat(tried).containsExactly(new GeminiProperties.Attempt("primary", "key-1"));
     }
+
+    @Test
+    void 측정_실행은_실제_시도와_재시도_횟수를_반환한다() {
+        GeminiProperties properties = new GeminiProperties(
+                "key-1", null, "fallback", "main", null, null);
+        GeminiRequestExecutor executor = new GeminiRequestExecutor(properties);
+
+        GeminiRequestExecutor.Execution<String> execution =
+                executor.executeMeasured("primary", attempt -> {
+                    if (attempt.model().equals("primary")) {
+                        throw new HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS);
+                    }
+                    return "success";
+                });
+
+        assertThat(execution.value()).isEqualTo("success");
+        assertThat(execution.attemptCount()).isEqualTo(2);
+        assertThat(execution.retryCount()).isEqualTo(1);
+        assertThat(execution.selectedModel()).isEqualTo("fallback");
+    }
 }

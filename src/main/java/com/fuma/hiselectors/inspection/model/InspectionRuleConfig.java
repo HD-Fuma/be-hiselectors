@@ -17,7 +17,7 @@ public record InspectionRuleConfig(
     public static InspectionRuleConfig from(ContentInspectionProperties properties) {
         return new InspectionRuleConfig(
                 properties.disclosurePhrasesOrDefault(),
-                properties.affiliateAllowedHostsOrEmpty(),
+                properties.affiliateAllowedHostsOrDefault(),
                 properties.affiliateCodeParameterOrDefault());
     }
 }

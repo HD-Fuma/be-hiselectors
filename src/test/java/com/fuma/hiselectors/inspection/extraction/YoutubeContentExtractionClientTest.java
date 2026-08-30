@@ -38,7 +38,7 @@ class YoutubeContentExtractionClientTest {
     void extractsStructuredEvidenceWithStatelessInteraction() throws Exception {
         String output = """
                 {
-                  "schemaVersion":"1.0",
+                  "schemaVersion":"1.2",
                   "stt":{"language":"ko","segments":[
                     {"segmentId":"stt-001","startMs":100,"endMs":900,"text":"발화"}
                   ]},
@@ -46,10 +46,6 @@ class YoutubeContentExtractionClientTest {
                     {"segmentId":"ocr-001","startMs":200,"endMs":800,
                      "text":"화면 글자","coordinateSpace":"NORMALIZED",
                      "bbox":{"x":0.1,"y":0.2,"width":0.3,"height":0.1}}
-                  ]},
-                  "visual":{"segments":[
-                    {"segmentId":"visual-001","startMs":0,"endMs":1000,
-                     "description":"사람이 제품을 들어 보인다."}
                   ]}
                 }
                 """;
@@ -76,16 +72,18 @@ class YoutubeContentExtractionClientTest {
                     assertThat(body).contains("\"store\":false")
                             .contains("https://www.youtube.com/watch?v=video-1")
                             .contains("\"response_format\"")
-                            .contains("\"NORMALIZED\"");
+                            .contains("\"NORMALIZED\"")
+                            .contains("한 segment로 합칩니다")
+                            .contains("durationMs=618000")
+                            .contains("\"report\"");
                 })
                 .andRespond(withSuccess(response, MediaType.APPLICATION_JSON));
 
-        ContentExtractionExecutionResult result = client.extract("video-1");
+        ContentExtractionExecutionResult result = client.extract("video-1", 618_000L);
 
         assertThat(result.providerRequestId()).isEqualTo("interaction-1");
         assertThat(result.extraction().stt().segments()).hasSize(1);
         assertThat(result.extraction().ocr().segments()).hasSize(1);
-        assertThat(result.extraction().visual().segments()).hasSize(1);
         assertThat(result.totalTokens()).isEqualTo(33);
         server.verify();
     }

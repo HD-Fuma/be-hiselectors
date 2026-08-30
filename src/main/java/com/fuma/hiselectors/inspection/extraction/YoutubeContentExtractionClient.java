@@ -3,11 +3,11 @@ package com.fuma.hiselectors.inspection.extraction;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import com.fuma.hiselectors.content.model.ContentReportTextLimits;
 import com.fuma.hiselectors.inspection.config.InspectionExtractionProperties;
 import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
 import com.fuma.hiselectors.inspection.service.InspectionPromptProvider;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +22,7 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
-/** 공개 YouTube URL에서 정책 판단 없이 STT/OCR/시각 근거만 추출한다. */
+/** 공개 YouTube URL에서 STT/OCR 근거와 콘텐츠 리포트를 추출한다. 위반 판단은 하지 않는다. */
 @Slf4j
 @Component
 public class YoutubeContentExtractionClient {
@@ -59,6 +59,10 @@ public class YoutubeContentExtractionClient {
     }
 
     public ContentExtractionExecutionResult extract(String videoId) {
+        return extract(videoId, null);
+    }
+
+    public ContentExtractionExecutionResult extract(String videoId, Long durationMs) {
         if (videoId == null || videoId.isBlank()) {
             throw new IllegalArgumentException("YouTube videoId는 필수입니다.");
         }
@@ -67,7 +71,7 @@ public class YoutubeContentExtractionClient {
         try {
             ContentGeminiRequestExecutor.Execution<InteractionResponse> execution =
                     requestExecutor.execute(attempt -> call(attempt, requestBody(
-                            attempt.model(), videoUrl)));
+                            attempt.model(), videoUrl, durationMs)));
             long elapsedMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             InteractionResponse response = execution.value();
             String json = extractOutputText(response);
@@ -110,12 +114,13 @@ public class YoutubeContentExtractionClient {
                 .body(InteractionResponse.class);
     }
 
-    private Map<String, Object> requestBody(String model, String videoUrl) {
+    private Map<String, Object> requestBody(String model, String videoUrl, Long durationMs) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("input", List.of(
                 Map.of("type", "video", "uri", videoUrl),
-                Map.of("type", "text", "text", promptProvider.youtubeExtractionPrompt())));
+                Map.of("type", "text", "text",
+                        promptProvider.youtubeExtractionPrompt(durationMs))));
         body.put("response_format", Map.of(
                 "type", "text",
                 "mime_type", "application/json",
@@ -188,31 +193,62 @@ public class YoutubeContentExtractionClient {
         ocrSegment.put("required", List.of(
                 "segmentId", "startMs", "endMs", "text", "coordinateSpace", "bbox"));
 
-        Map<String, Object> visualSegment = Map.of(
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("schemaVersion", Map.of(
+                "type", "string", "enum", List.of(
+                        ContentMediaExtractionResult.CURRENT_SCHEMA_VERSION)));
+        properties.put("stt", sectionSchema(Map.of(
+                "language", Map.of("type", "string"),
+                "segments", arrayOf(timeSegment)),
+                List.of("language", "segments")));
+        properties.put("ocr", sectionSchema(Map.of(
+                "segments", arrayOf(ocrSegment)), List.of("segments")));
+        properties.put("report", reportSchema());
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("additionalProperties", false);
+        schema.put("properties", properties);
+        schema.put("required", List.of("schemaVersion", "stt", "ocr", "report"));
+        return schema;
+    }
+
+    private Map<String, Object> reportSchema() {
+        Map<String, Object> overview = Map.of(
                 "type", "object",
                 "additionalProperties", false,
                 "properties", Map.of(
-                        "segmentId", Map.of("type", "string"),
-                        "startMs", Map.of("type", "integer", "minimum", 0),
-                        "endMs", Map.of("type", "integer", "minimum", 1),
-                        "description", Map.of("type", "string")),
-                "required", List.of("segmentId", "startMs", "endMs", "description"));
-
+                        "summary", limitedString(ContentReportTextLimits.SUMMARY),
+                        "purpose", limitedString(ContentReportTextLimits.PURPOSE),
+                        "flow", limitedString(ContentReportTextLimits.FLOW),
+                        "overallAssessment", limitedString(
+                                ContentReportTextLimits.OVERALL_ASSESSMENT)),
+                "required", List.of("summary", "purpose", "flow", "overallAssessment"));
+        Map<String, Object> stringArray = Map.of(
+                "type", "array",
+                "items", limitedString(ContentReportTextLimits.INSIGHT_ITEM));
+        Map<String, Object> insight = Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "properties", Map.of(
+                        "contentStyle", limitedString(ContentReportTextLimits.CONTENT_STYLE),
+                        "tone", limitedString(ContentReportTextLimits.TONE),
+                        "strengths", stringArray,
+                        "cautions", stringArray,
+                        "risks", stringArray,
+                        "hateConfirmed", Map.of("type", "boolean"),
+                        "collabBrands", stringArray),
+                "required", List.of(
+                        "contentStyle", "tone", "strengths", "cautions", "risks",
+                        "hateConfirmed", "collabBrands"));
         return Map.of(
                 "type", "object",
                 "additionalProperties", false,
-                "properties", Map.of(
-                        "schemaVersion", Map.of(
-                                "type", "string", "enum", List.of("1.0")),
-                        "stt", sectionSchema(Map.of(
-                                "language", Map.of("type", "string"),
-                                "segments", arrayOf(timeSegment)),
-                                List.of("language", "segments")),
-                        "ocr", sectionSchema(Map.of(
-                                "segments", arrayOf(ocrSegment)), List.of("segments")),
-                        "visual", sectionSchema(Map.of(
-                                "segments", arrayOf(visualSegment)), List.of("segments"))),
-                "required", List.of("schemaVersion", "stt", "ocr", "visual"));
+                "properties", Map.of("overview", overview, "insight", insight),
+                "required", List.of("overview", "insight"));
+    }
+
+    private static Map<String, Object> limitedString(int maxLength) {
+        return Map.of("type", "string", "maxLength", maxLength);
     }
 
     private Map<String, Object> normalizedNumber(boolean positive) {

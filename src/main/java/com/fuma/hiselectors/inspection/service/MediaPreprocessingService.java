@@ -1,6 +1,8 @@
 package com.fuma.hiselectors.inspection.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.InstagramContentFetcher;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
@@ -9,9 +11,10 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.extraction.ContentExtractionExecutionResult;
 import com.fuma.hiselectors.inspection.extraction.InstagramContentExtractionClient;
 import com.fuma.hiselectors.inspection.extraction.YoutubeContentExtractionClient;
-import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -25,16 +28,20 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MediaPreprocessingService {
 
     private final YoutubeContentExtractionClient youtubeClient;
     private final InstagramContentExtractionClient instagramClient;
+    private final YoutubeContentFetcher youtubeContentFetcher;
+    private final InstagramContentFetcher instagramContentFetcher;
+    private final SelectorsSnsAccountRepository snsAccountRepository;
     private final ContentMediaExtractionBodyMapper bodyMapper;
     private final InspectionPolicyRepository policyRepository;
     private final Clock clock;
@@ -52,7 +59,7 @@ public class MediaPreprocessingService {
 
         List<MediaExtractionUpdate> updates = new ArrayList<>(pendingExtractions.size());
         pendingExtractions.forEach(pending -> updates.add(applyExtraction(pending)));
-        return new PreprocessingResult(Optional.empty(), updates);
+        return new PreprocessingResult(updates);
     }
 
     /** 추출 결과를 덮어써야 한다면 원본 스냅샷을 복제한 새 콘텐츠 버전을 요구한다. */
@@ -100,7 +107,7 @@ public class MediaPreprocessingService {
 
         ContentExtractionExecutionResult execution = switch (content.getSnsCode()) {
             case YOUTUBE -> extractYoutube(content, media);
-            case INSTAGRAM -> extractInstagram(media);
+            case INSTAGRAM -> extractInstagram(content, media);
         };
         Map<String, Object> body = bodyMapper.toBody(execution.extraction());
         return new PendingExtraction(
@@ -114,7 +121,8 @@ public class MediaPreprocessingService {
                 pending.inspectionPolicyId(), pending.inputHash(), pending.extractedAt());
         return new MediaExtractionUpdate(
                 media.getId(), Map.copyOf(pending.body()), pending.inspectionPolicyId(),
-                pending.inputHash(), pending.extractedAt());
+                pending.inputHash(), pending.extractedAt(),
+                media.getMediaUrl(), media.getThumbnailUrl());
     }
 
     private ContentExtractionExecutionResult extractYoutube(
@@ -126,20 +134,62 @@ public class MediaPreprocessingService {
         if (videoId == null) {
             throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
         }
-        return youtubeClient.extract(videoId);
+        return youtubeClient.extract(videoId, youtubeContentFetcher.durationMs(videoId));
     }
 
-    private ContentExtractionExecutionResult extractInstagram(ContentMedia media) {
+    private ContentExtractionExecutionResult extractInstagram(
+            Content content, ContentMedia media) {
+        if (!hasUsableInstagramSource(media)) {
+            if (media.getSnsMediaId() == null || media.getSnsMediaId().isBlank()) {
+                throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
+            }
+            refreshInstagramUrls(content, media);
+        }
+        try {
+            return instagramClient.extract(media.getMediaUrl(), media.getThumbnailUrl());
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() != ErrorCode.MEDIA_URL_EXPIRED) {
+                throw exception;
+            }
+            refreshInstagramUrls(content, media);
+            return instagramClient.extract(media.getMediaUrl(), media.getThumbnailUrl());
+        }
+    }
+
+    private boolean hasUsableInstagramSource(ContentMedia media) {
         if (media.getMediaType() == MediaType.VIDEO
                 && (media.getMediaUrl() == null || media.getMediaUrl().isBlank())) {
-            // 썸네일 OCR만으로 영상을 검수하면 음성·영상 근거가 빠지므로 실패시킨다.
+            return false;
+        }
+        return (media.getMediaUrl() != null && !media.getMediaUrl().isBlank())
+                || (media.getThumbnailUrl() != null && !media.getThumbnailUrl().isBlank());
+    }
+
+    private void refreshInstagramUrls(Content content, ContentMedia media) {
+        if (media.getSnsMediaId() == null || media.getSnsMediaId().isBlank()) {
+            throw new BusinessException(ErrorCode.MEDIA_URL_EXPIRED);
+        }
+        String username = instagramUsername(content);
+        if (username == null) {
             throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
         }
-        if ((media.getMediaUrl() == null || media.getMediaUrl().isBlank())
-                && (media.getThumbnailUrl() == null || media.getThumbnailUrl().isBlank())) {
+        InstagramContentFetcher.MediaUrls fresh = instagramContentFetcher.fetchMediaUrls(
+                username, content.getSnsContentId(), media.getSnsMediaId().strip());
+        media.replaceUrls(fresh.mediaUrl(), fresh.thumbnailUrl());
+        log.info("만료된 Instagram CDN URL을 갱신했습니다. contentMediaId={}, snsMediaId={}",
+                media.getId(), media.getSnsMediaId());
+        if (!hasUsableInstagramSource(media)) {
             throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
         }
-        return instagramClient.extract(media.getMediaUrl(), media.getThumbnailUrl());
+    }
+
+    private String instagramUsername(Content content) {
+        return snsAccountRepository.findBySelectorsIdAndDeletedFalse(content.getSelectorsId())
+                .filter(account -> account.getSnsCode() == SnsPlatform.INSTAGRAM)
+                .map(SelectorsSnsAccount::getAccountId)
+                .filter(accountId -> accountId != null && !accountId.isBlank())
+                .map(String::strip)
+                .orElse(null);
     }
 
     private String extractionInputHash(Content content, ContentMedia media) {
@@ -205,26 +255,11 @@ public class MediaPreprocessingService {
         }
     }
 
-    public record PreprocessingResult(
-            Optional<AiInspectionResponse> integratedAiResult,
-            List<MediaExtractionUpdate> extractionUpdates) {
+    public record PreprocessingResult(List<MediaExtractionUpdate> extractionUpdates) {
 
         public PreprocessingResult {
-            integratedAiResult = integratedAiResult == null
-                    ? Optional.empty() : integratedAiResult;
             extractionUpdates = extractionUpdates == null
                     ? List.of() : List.copyOf(extractionUpdates);
-        }
-
-        public PreprocessingResult(
-                Optional<AiInspectionResponse> integratedAiResult,
-                Optional<MediaExtractionUpdate> extractionUpdate) {
-            this(integratedAiResult,
-                    extractionUpdate == null ? List.of() : extractionUpdate.stream().toList());
-        }
-
-        public static PreprocessingResult reused() {
-            return new PreprocessingResult(Optional.empty(), List.of());
         }
     }
 
@@ -233,7 +268,9 @@ public class MediaPreprocessingService {
             Map<String, Object> body,
             Long inspectionPolicyId,
             String inputHash,
-            LocalDateTime extractedAt) {
+            LocalDateTime extractedAt,
+            String mediaUrl,
+            String thumbnailUrl) {
     }
 
     private record PendingExtraction(

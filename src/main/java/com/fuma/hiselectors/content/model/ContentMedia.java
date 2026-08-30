@@ -110,6 +110,12 @@ public class ContentMedia extends BaseTimeEntity {
         this.body = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
     }
 
+    /** 만료된 Instagram CDN 주소만 같은 버전에서 교체한다. 해시·추출 키는 바꾸지 않는다. */
+    public void replaceUrls(String mediaUrl, String thumbnailUrl) {
+        this.mediaUrl = mediaUrl;
+        this.thumbnailUrl = thumbnailUrl;
+    }
+
     public void markExtracted(Long policyId, String inputHash, LocalDateTime extractedAt) {
         this.extractedWithPolicyId = policyId;
         this.extractionInputHash = inputHash;

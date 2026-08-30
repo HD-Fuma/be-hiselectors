@@ -507,6 +507,60 @@ class InstagramContentFetcherTest {
     }
 
     @Test
+    @DisplayName("토큰 오류는 INSTAGRAM_TOKEN_OR_PERMISSION_DENIED로 변환한다")
+    void convertTokenFailure() {
+        server.expect(request -> assertThat(request.getURI().getHost())
+                        .isEqualTo("graph.facebook.com"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {"error":{"message":"Invalid OAuth access token.","code":190}}
+                                """));
+
+        assertThatThrownBy(() -> fetchByAccount("pharrell", LocalDateTime.now()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INSTAGRAM_TOKEN_OR_PERMISSION_DENIED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("조회 불가 계정은 INSTAGRAM_ACCOUNT_UNAVAILABLE로 변환한다")
+    void convertUnavailableAccount() {
+        server.expect(request -> assertThat(request.getURI().getHost())
+                        .isEqualTo("graph.facebook.com"))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {"error":{"message":"Invalid user id","code":110,"error_subcode":2207013}}
+                                """));
+
+        assertThatThrownBy(() -> fetchByAccount("pharrell", LocalDateTime.now()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INSTAGRAM_ACCOUNT_UNAVAILABLE);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("호출 한도 초과는 INSTAGRAM_API_RATE_LIMITED로 변환한다")
+    void convertRateLimit() {
+        server.expect(request -> assertThat(request.getURI().getHost())
+                        .isEqualTo("graph.facebook.com"))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {"error":{"message":"Application request limit reached","code":4}}
+                                """));
+
+        assertThatThrownBy(() -> fetchByAccount("pharrell", LocalDateTime.now()))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.INSTAGRAM_API_RATE_LIMITED);
+        server.verify();
+    }
+
+    @Test
     @DisplayName("기존 Instagram 콘텐츠를 계정별 Business Discovery 응답에서 찾는다")
     void fetchStoredContentsByAccount() {
         String nextUrl = nextUrl("stored-next");
@@ -536,6 +590,62 @@ class InstagramContentFetcherTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple("stored", FetchStatus.FOUND),
                         org.assertj.core.groups.Tuple.tuple("missing", FetchStatus.NOT_FOUND));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("만료 URL은 Business Discovery에서 게시물 미디어 URL을 다시 찾는다")
+    void fetchMediaUrlsFromDiscovery() {
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query).contains("business_discovery.username(selector.insta)");
+                    assertThat(request.getURI().getPath())
+                            .isEqualTo("/v24.0/" + BUSINESS_ACCOUNT_ID);
+                })
+                .andRespond(withSuccess(firstPageJson(
+                        List.of(mediaJson("post-1", "2026-08-12T05:00:00+0000")),
+                        null), MediaType.APPLICATION_JSON));
+
+        InstagramContentFetcher.MediaUrls urls =
+                client.fetchMediaUrls("selector.insta", "post-1", "post-1");
+
+        assertThat(urls.mediaUrl()).isEqualTo("https://cdn.example.com/post-1.jpg");
+        assertThat(urls.thumbnailUrl()).isNull();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("캐러셀 자식 미디어 URL도 Business Discovery에서 다시 찾는다")
+    void fetchCarouselChildMediaUrlsFromDiscovery() {
+        server.expect(request -> {
+                    String query = URLDecoder.decode(
+                            request.getURI().getRawQuery(), StandardCharsets.UTF_8);
+                    assertThat(query).contains("business_discovery.username(selector.insta)");
+                })
+                .andRespond(withSuccess(firstPageJson(
+                        List.of(carouselJson("album-1", "2026-08-12T05:00:00+0000")),
+                        null), MediaType.APPLICATION_JSON));
+
+        InstagramContentFetcher.MediaUrls urls =
+                client.fetchMediaUrls("selector.insta", "album-1", "album-1-video");
+
+        assertThat(urls.mediaUrl()).isEqualTo("https://cdn.example.com/album-1-video.mp4");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Discovery에 없는 미디어는 원본 확보 실패로 본다")
+    void fetchMediaUrlsMissingInDiscovery() {
+        server.expect(request -> { })
+                .andRespond(withSuccess(firstPageJson(
+                        List.of(mediaJson("other", "2026-08-12T05:00:00+0000")),
+                        null), MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.fetchMediaUrls("selector.insta", "post-1", "post-1"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
         server.verify();
     }
 

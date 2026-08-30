@@ -21,6 +21,15 @@ public class GeminiRequestExecutor {
     }
 
     public <T> T execute(String primaryModel, Function<GeminiProperties.Attempt, T> request) {
+        return executeMeasured(primaryModel, request).value();
+    }
+
+    /**
+     * 기존 재시도 정책을 실행하면서 실제 요청 횟수와 최종 선택 모델을 함께 반환한다.
+     * 인증 실패 후 건너뛴 후보는 실제 요청이 아니므로 attemptCount 에 포함하지 않는다.
+     */
+    public <T> Execution<T> executeMeasured(
+            String primaryModel, Function<GeminiProperties.Attempt, T> request) {
         if (!properties.hasApiKey()) {
             throw new BusinessException(ErrorCode.GEMINI_API_KEY_MISSING);
         }
@@ -34,7 +43,7 @@ public class GeminiRequestExecutor {
             }
             attemptNumber++;
             try {
-                return request.apply(attempt);
+                return new Execution<>(request.apply(attempt), attemptNumber, attempt.model());
             } catch (RestClientException exception) {
                 last = exception;
                 if (isAuthenticationFailure(exception)) {
@@ -51,6 +60,13 @@ public class GeminiRequestExecutor {
             }
         }
         throw last == null ? new BusinessException(ErrorCode.GEMINI_API_CALL_FAILED) : last;
+    }
+
+    public record Execution<T>(T value, int attemptCount, String selectedModel) {
+
+        public int retryCount() {
+            return Math.max(0, attemptCount - 1);
+        }
     }
 
     private boolean isAuthenticationFailure(RestClientException exception) {

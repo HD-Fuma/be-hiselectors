@@ -2,6 +2,7 @@ package com.fuma.hiselectors.inspection.service;
 
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
@@ -71,9 +72,13 @@ public class ViolationReconciliationService {
             }
             DetectedViolation current = detectedByType.remove(code);
             if (current == null) {
-                if (existing.getStatus() == ViolationStatus.VIOLATION_CONFIRMED
+                boolean creatorEdited = newVersion.getCreationReason()
+                        == ContentVersionCreationReason.SOURCE_CHANGE;
+                if (creatorEdited
+                        && (existing.getStatus() == ViolationStatus.VIOLATION_CONFIRMED
                         || existing.getStatus() == ViolationStatus.EDIT_REQUESTED
-                        || existing.getStatus() == ViolationStatus.CORRECTION_REVIEW_PENDING) {
+                        || existing.getStatus()
+                        == ViolationStatus.CORRECTION_REVIEW_PENDING)) {
                     existing.awaitCorrectionReview(newVersion);
                 } else if (existing.isOpen()) {
                     existing.resolve(newVersion);

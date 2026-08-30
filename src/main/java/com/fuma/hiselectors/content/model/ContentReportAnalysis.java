@@ -1,8 +1,11 @@
 package com.fuma.hiselectors.content.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /** 콘텐츠 검수 리포트의 버전화된 JSON 계약이다. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ContentReportAnalysis(
         Overview overview,
         Insight insight
@@ -15,6 +18,11 @@ public record ContentReportAnalysis(
 
     public static ContentReportAnalysis empty() {
         return new ContentReportAnalysis(Overview.empty(), Insight.empty());
+    }
+
+    @JsonIgnore
+    public boolean hasNoContent() {
+        return overview.summary().isBlank() && insight.contentStyle().isBlank();
     }
 
     public static ContentReportAnalysis fromLegacy(ContentReportData data) {
@@ -35,10 +43,11 @@ public record ContentReportAnalysis(
     ) {
 
         public Overview {
-            summary = valueOrEmpty(summary);
-            purpose = valueOrEmpty(purpose);
-            flow = valueOrEmpty(flow);
-            overallAssessment = valueOrEmpty(overallAssessment);
+            summary = ContentReportTextLimits.clip(summary, ContentReportTextLimits.SUMMARY);
+            purpose = ContentReportTextLimits.clip(purpose, ContentReportTextLimits.PURPOSE);
+            flow = ContentReportTextLimits.clip(flow, ContentReportTextLimits.FLOW);
+            overallAssessment = ContentReportTextLimits.clip(
+                    overallAssessment, ContentReportTextLimits.OVERALL_ASSESSMENT);
         }
 
         public static Overview empty() {
@@ -57,12 +66,17 @@ public record ContentReportAnalysis(
     ) {
 
         public Insight {
-            contentStyle = valueOrEmpty(contentStyle);
-            tone = valueOrEmpty(tone);
-            strengths = immutable(strengths);
-            cautions = immutable(cautions);
-            risks = immutable(risks);
-            collabBrands = immutable(collabBrands);
+            contentStyle = ContentReportTextLimits.clip(
+                    contentStyle, ContentReportTextLimits.CONTENT_STYLE);
+            tone = ContentReportTextLimits.clip(tone, ContentReportTextLimits.TONE);
+            strengths = ContentReportTextLimits.clipItems(
+                    strengths, ContentReportTextLimits.INSIGHT_ITEM);
+            cautions = ContentReportTextLimits.clipItems(
+                    cautions, ContentReportTextLimits.INSIGHT_ITEM);
+            risks = ContentReportTextLimits.clipItems(
+                    risks, ContentReportTextLimits.INSIGHT_ITEM);
+            collabBrands = ContentReportTextLimits.clipItems(
+                    collabBrands, ContentReportTextLimits.INSIGHT_ITEM);
         }
 
         public static Insight empty() {
@@ -70,11 +84,4 @@ public record ContentReportAnalysis(
         }
     }
 
-    private static String valueOrEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
-    private static List<String> immutable(List<String> values) {
-        return values == null ? List.of() : List.copyOf(values);
-    }
 }

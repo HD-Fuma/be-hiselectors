@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.content.client.InstagramContentFetcher;
+import com.fuma.hiselectors.content.client.YoutubeContentFetcher;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.MediaType;
@@ -20,6 +22,8 @@ import com.fuma.hiselectors.inspection.extraction.YoutubeContentExtractionClient
 import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -44,6 +48,10 @@ class MediaPreprocessingServiceTest {
             mock(YoutubeContentExtractionClient.class);
     private final InstagramContentExtractionClient instagram =
             mock(InstagramContentExtractionClient.class);
+    private final YoutubeContentFetcher youtubeFetcher = mock(YoutubeContentFetcher.class);
+    private final InstagramContentFetcher instagramFetcher = mock(InstagramContentFetcher.class);
+    private final SelectorsSnsAccountRepository accounts =
+            mock(SelectorsSnsAccountRepository.class);
     private final InspectionPolicyRepository policies = mock(InspectionPolicyRepository.class);
     private final ContentMediaExtractionBodyMapper bodyMapper =
             new ContentMediaExtractionBodyMapper(new ObjectMapper());
@@ -62,21 +70,24 @@ class MediaPreprocessingServiceTest {
                 youtubeContent(), List.of(video), active);
 
         assertThat(result.extractionUpdates()).isEmpty();
-        verify(youtube, never()).extract(org.mockito.ArgumentMatchers.anyString());
+        verify(youtube, never()).extract(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         assertThat(video.getExtractedWithPolicyId()).isEqualTo(1L);
-        assertThat(video.getBody()).containsEntry("schemaVersion", "1.0");
+        assertThat(video.getBody()).containsEntry("schemaVersion", "1.2");
     }
 
     @Test
     void savesStructuredYoutubeExtractionInMediaBody() {
         ContentMedia video = video(0, Map.of());
-        when(youtube.extract("abc123")).thenReturn(execution(extraction("stt-001")));
+        when(youtubeFetcher.durationMs("abc123")).thenReturn(618_000L);
+        when(youtube.extract("abc123", 618_000L)).thenReturn(execution(extraction("stt-001")));
 
         MediaPreprocessingService.PreprocessingResult result = service().preprocess(
                 youtubeContent(), List.of(video), policy(2L, "new-extraction"));
 
         assertThat(result.extractionUpdates()).hasSize(1);
-        assertThat(video.getBody()).containsKeys("schemaVersion", "stt", "ocr", "visual");
+        assertThat(video.getBody()).containsKeys("schemaVersion", "stt", "ocr")
+                .doesNotContainKey("visual");
         assertThat(video.getBody()).doesNotContainKey("text");
         assertThat(video.getExtractedWithPolicyId()).isEqualTo(2L);
         assertThat(video.getExtractionInputHash())
@@ -110,8 +121,8 @@ class MediaPreprocessingServiceTest {
         InOrder order = inOrder(instagram);
         order.verify(instagram).extract("https://cdn/first.jpg", null);
         order.verify(instagram).extract("https://cdn/second.mp4", "https://cdn/thumb.jpg");
-        assertThat(first.getBody()).containsEntry("schemaVersion", "1.0");
-        assertThat(second.getBody()).containsEntry("schemaVersion", "1.0");
+        assertThat(first.getBody()).containsEntry("schemaVersion", "1.2");
+        assertThat(second.getBody()).containsEntry("schemaVersion", "1.2");
     }
 
     @Test
@@ -127,6 +138,10 @@ class MediaPreprocessingServiceTest {
         assertThat(video.getBody()).isEmpty();
         verify(instagram, never()).extract(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(instagramFetcher, never()).fetchMediaUrls(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -149,9 +164,81 @@ class MediaPreprocessingServiceTest {
         assertThat(second.getExtractedWithPolicyId()).isNull();
     }
 
+    @Test
+    void refreshesExpiredInstagramUrlOnceAndRetriesExtraction() {
+        stubInstagramAccount();
+        ContentMedia video = instagramMedia(
+                MediaType.VIDEO, 0, "https://cdn/expired.mp4", "https://cdn/old.jpg");
+        when(instagram.extract("https://cdn/expired.mp4", "https://cdn/old.jpg"))
+                .thenThrow(new BusinessException(ErrorCode.MEDIA_URL_EXPIRED));
+        when(instagramFetcher.fetchMediaUrls("selector.insta", "post-1", "media-0"))
+                .thenReturn(new InstagramContentFetcher.MediaUrls(
+                        "https://cdn/fresh.mp4", "https://cdn/fresh.jpg"));
+        when(instagram.extract("https://cdn/fresh.mp4", "https://cdn/fresh.jpg"))
+                .thenReturn(execution(extraction("stt-001")));
+
+        MediaPreprocessingService.PreprocessingResult result = service().preprocess(
+                instagramContent(), List.of(video), policy(3L, "instagram-v1"));
+
+        assertThat(result.extractionUpdates()).hasSize(1);
+        assertThat(video.getMediaUrl()).isEqualTo("https://cdn/fresh.mp4");
+        assertThat(video.getThumbnailUrl()).isEqualTo("https://cdn/fresh.jpg");
+        assertThat(result.extractionUpdates().getFirst().mediaUrl())
+                .isEqualTo("https://cdn/fresh.mp4");
+        verify(instagramFetcher).fetchMediaUrls("selector.insta", "post-1", "media-0");
+    }
+
+    @Test
+    void refreshesMissingInstagramVideoUrlBeforeExtraction() {
+        stubInstagramAccount();
+        ContentMedia video = instagramMedia(
+                MediaType.VIDEO, 0, null, "https://cdn/thumb.jpg");
+        when(instagramFetcher.fetchMediaUrls("selector.insta", "post-1", "media-0"))
+                .thenReturn(new InstagramContentFetcher.MediaUrls(
+                        "https://cdn/fresh.mp4", "https://cdn/fresh.jpg"));
+        when(instagram.extract("https://cdn/fresh.mp4", "https://cdn/fresh.jpg"))
+                .thenReturn(execution(extraction("stt-001")));
+
+        MediaPreprocessingService.PreprocessingResult result = service().preprocess(
+                instagramContent(), List.of(video), policy(3L, "instagram-v1"));
+
+        assertThat(result.extractionUpdates()).hasSize(1);
+        assertThat(video.getMediaUrl()).isEqualTo("https://cdn/fresh.mp4");
+        verify(instagramFetcher).fetchMediaUrls("selector.insta", "post-1", "media-0");
+    }
+
+    @Test
+    void doesNotRefreshWhenExpiredMediaHasNoSnsId() {
+        ContentMedia image = ContentMedia.create(
+                20L, MediaType.IMAGE, "https://cdn/expired.jpg", null, null, 0, Map.of());
+        ReflectionTestUtils.setField(image, "id", 41L);
+        when(instagram.extract("https://cdn/expired.jpg", null))
+                .thenThrow(new BusinessException(ErrorCode.MEDIA_URL_EXPIRED));
+
+        assertThatThrownBy(() -> service().preprocess(
+                instagramContent(), List.of(image), policy(3L, "instagram-v1")))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode())
+                                .isEqualTo(ErrorCode.MEDIA_URL_EXPIRED));
+        verify(instagramFetcher, never()).fetchMediaUrls(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     private MediaPreprocessingService service() {
         return new MediaPreprocessingService(
-                youtube, instagram, bodyMapper, policies, CLOCK);
+                youtube, instagram, youtubeFetcher, instagramFetcher,
+                accounts, bodyMapper, policies, CLOCK);
+    }
+
+    private void stubInstagramAccount() {
+        when(accounts.findBySelectorsIdAndDeletedFalse(1L))
+                .thenReturn(Optional.of(SelectorsSnsAccount.builder()
+                        .selectorsId(1L)
+                        .snsCode(SnsPlatform.INSTAGRAM)
+                        .accountId("selector.insta")
+                        .build()));
     }
 
     private Content youtubeContent() {
@@ -159,7 +246,9 @@ class MediaPreprocessingServiceTest {
     }
 
     private Content instagramContent() {
-        return content(SnsPlatform.INSTAGRAM, "https://instagram.com/p/post-id");
+        Content content = content(SnsPlatform.INSTAGRAM, "https://instagram.com/p/post-id");
+        ReflectionTestUtils.setField(content, "snsContentId", "post-1");
+        return content;
     }
 
     private Content content(SnsPlatform platform, String url) {
@@ -186,12 +275,11 @@ class MediaPreprocessingServiceTest {
 
     private ContentMediaExtractionResult extraction(String segmentId) {
         return new ContentMediaExtractionResult(
-                "1.0",
+                "1.2",
                 new ContentMediaExtractionResult.SttExtraction("ko", List.of(
                         new ContentMediaExtractionResult.SttSegment(
                                 segmentId, 0L, 1_000L, "sample"))),
-                ContentMediaExtractionResult.OcrExtraction.empty(),
-                ContentMediaExtractionResult.VisualExtraction.empty());
+                ContentMediaExtractionResult.OcrExtraction.empty());
     }
 
     private ContentExtractionExecutionResult execution(

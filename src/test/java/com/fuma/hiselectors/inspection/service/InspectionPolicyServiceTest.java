@@ -47,7 +47,9 @@ class InspectionPolicyServiceTest {
         assertThat(youtube.getOcrModelName()).isEqualTo("content-gemini-test");
         assertThat(instagram.getAiModelName()).isEqualTo("gemini-test");
         assertThat(youtube.getAiPrompt()).contains("검수 대상");
-        assertThat(youtube.getExtractionPrompt()).contains("stt.segments", "visual.segments");
+        assertThat(youtube.getExtractionPrompt())
+                .contains("stt.segments", "ocr.segments")
+                .doesNotContain("visual.segments");
         assertThat(instagram.getSttModelName()).isEqualTo("whisper-test");
         assertThat(instagram.getOcrModelName()).isEqualTo("ocr-test");
         assertThat(youtube.getConfigHash()).isNotEqualTo(instagram.getConfigHash());

@@ -8,7 +8,7 @@ public record InspectionExtractionProperties(
         Youtube youtube
 ) {
     private static final String DEFAULT_YOUTUBE_MODEL = "gemini-3.6-flash";
-    private static final int DEFAULT_YOUTUBE_MAX_OUTPUT_TOKENS = 16_384;
+    private static final int DEFAULT_YOUTUBE_MAX_OUTPUT_TOKENS = 32_768;
 
     public record Instagram(String sttModel, String ocrModel, String workerBaseUrl) {
     }

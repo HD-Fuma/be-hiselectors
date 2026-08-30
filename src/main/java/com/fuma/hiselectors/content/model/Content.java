@@ -93,6 +93,14 @@ public class Content extends BaseTimeEntity {
         deleted = false;
     }
 
+    public boolean updateContentType(ContentType contentType) {
+        if (contentType == null || this.contentType == contentType) {
+            return false;
+        }
+        this.contentType = contentType;
+        return true;
+    }
+
     private static ContentType parseContentType(String contentType) {
         if ("POST".equalsIgnoreCase(contentType)) {
             return ContentType.FEED;

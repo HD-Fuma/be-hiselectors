@@ -20,7 +20,7 @@ class EvidenceLocationResponseTest {
     void resolvesOcrTimestampAndNormalizedBoundingBoxFromMediaBody() {
         ContentMedia image = ContentMedia.create(
                 20L, MediaType.IMAGE, "https://cdn/image.jpg", "image-id", 0, Map.of(
-                        "schemaVersion", "1.0",
+                        "schemaVersion", "1.2",
                         "stt", Map.of("language", "", "segments", List.of()),
                         "ocr", Map.of("segments", List.of(Map.of(
                                 "segmentId", "ocr-001",
@@ -32,8 +32,7 @@ class EvidenceLocationResponseTest {
                                         "x", 0.1,
                                         "y", 0.2,
                                         "width", 0.3,
-                                        "height", 0.1)))),
-                        "visual", Map.of("segments", List.of())));
+                                        "height", 0.1))))));
         ReflectionTestUtils.setField(image, "id", 30L);
         EvidenceLocation location = new EvidenceLocation(
                 30L, MediaType.IMAGE, EvidenceTargetKind.OCR_SEGMENT,

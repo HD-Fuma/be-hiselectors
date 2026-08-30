@@ -161,6 +161,44 @@ class NewContentServiceTest {
         assertThat(selection.candidateCount()).isEqualTo(3);
         assertThat(selection.selectorsContents()).containsExactly(duplicate, selected);
         verify(fetcher).fetchByAccount("instagram-account", since);
+        verify(fetcher).addStatistics(List.of(duplicate, rejected, selected));
+    }
+
+    @Test
+    void classifiesYoutubeShortsWithAddStatisticsBeforeSave() {
+        LocalDateTime since = LocalDateTime.of(2026, 8, 20, 10, 0);
+        SelectorsSnsAccount account = SelectorsSnsAccount.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("youtube-account")
+                .build();
+        NewContentService.CollectionTarget target =
+                new NewContentService.CollectionTarget(account, since);
+        RawContent playlistItem = new RawContent(
+                SnsPlatform.YOUTUBE,
+                "short-1",
+                "https://www.youtube.com/watch?v=short-1",
+                ContentType.LONG_FORM,
+                List.of("셀렉터스 콘텐츠"),
+                LocalDateTime.of(2026, 8, 20, 11, 0),
+                List.of());
+        RawContent classified = playlistItem.withContentType(ContentType.SHORTS);
+
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(youtubeFetcher.fetchByAccount("youtube-account", since))
+                .thenReturn(List.of(playlistItem));
+        when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
+                SnsPlatform.YOUTUBE, List.of("short-1")))
+                .thenReturn(List.of());
+        when(youtubeFetcher.addStatistics(List.of(playlistItem)))
+                .thenReturn(List.of(classified));
+        when(classifier.isSelectorsContent(classified)).thenReturn(true);
+
+        NewContentService.NewContentSelection selection = service.newCandidates(target);
+
+        assertThat(selection.selectorsContents()).containsExactly(classified);
+        assertThat(selection.selectorsContents().getFirst().contentType())
+                .isEqualTo(ContentType.SHORTS);
     }
 
     @Test

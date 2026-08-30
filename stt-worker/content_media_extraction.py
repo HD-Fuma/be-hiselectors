@@ -4,11 +4,12 @@
 """
 from __future__ import annotations
 
+import math
 import os
 
 import media_stt
+from stt_contract import SCHEMA_VERSION, content_stt
 
-SCHEMA_VERSION = "1.0"
 
 
 def _segment_id(prefix: str, index: int) -> str:
@@ -19,17 +20,18 @@ def _time_ms(seconds: float) -> int:
     return max(0, round(float(seconds) * 1000))
 
 
+def _finite(value) -> float | None:
+    number = float(value)
+    return round(number, 6) if math.isfinite(number) else None
+
+
 def stt_segments(path: str) -> dict:
     if not media_stt._has_audio(path):
         return {"language": "", "segments": []}
 
-    if os.environ.get("CONTENT_STT_BACKEND") == "sagemaker":
-        from sagemaker_content import client
-        result = client.stt(path)
-        return {
-            "language": result.get("language", ""),
-            "segments": result.get("segments", []),
-        }
+    if os.environ.get("STT_BACKEND") == "sagemaker":
+        from sagemaker import client
+        return content_stt(client.stt(path))
 
     segments, info = media_stt._whisper().transcribe(
         path, language="ko", vad_filter=True)
@@ -45,8 +47,17 @@ def stt_segments(path: str) -> dict:
             "startMs": start_ms,
             "endMs": end_ms,
             "text": text,
+            "avgLogProb": _finite(segment.avg_logprob),
+            "noSpeechProbability": _finite(segment.no_speech_prob),
         })
-    return {"language": info.language or "", "segments": result}
+    return {
+        "language": info.language or "",
+        "audio": {
+            "durationMs": _time_ms(info.duration),
+            "durationAfterVadMs": _time_ms(info.duration_after_vad),
+        },
+        "segments": result,
+    }
 
 
 def _frames(path: str, every: float = media_stt.SAMPLE_EVERY):
@@ -149,8 +160,7 @@ def extract(path: str) -> dict:
     is_image = extension in media_stt.IMAGE_EXT
     return {
         "schemaVersion": SCHEMA_VERSION,
-        "stt": {"language": "", "segments": []} if is_image else stt_segments(path),
+        "stt": content_stt(None) if is_image else stt_segments(path),
         "ocr": {"segments": ocr_image_segments(path) if is_image
                 else ocr_video_segments(path)},
-        "visual": {"segments": []},
     }
