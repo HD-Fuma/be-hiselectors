@@ -163,36 +163,56 @@ class ApplicationAnalysisServiceTest {
     }
 
     @Test
-    void 유튜브_긴_영상은_Gemini_영상분석을_건너뛴다() {
+    void Shorts가_있으면_롱폼은_분석하지_않는다() {
         runTransactionsInline();
-        ApplicationMedia longForm = ApplicationMedia.builder()
-                .applicationId(1L)
-                .snsCode(SnsPlatform.YOUTUBE)
-                .snsContentId("long")
-                .snsMediaId("long")
-                .contentType(ContentType.LONG_FORM)
-                .sequenceNo(0)
-                .mediaSequenceNo(0)
-                .viewCount(1_000L)
-                .build();
         when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
-                .thenReturn(List.of(longForm));
+                .thenReturn(List.of(
+                        youtube("short", 100L, 0),
+                        longForm("long", 1_000L, 1)));
         when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
         when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
 
         service.analyzeAndReport(1L);
 
-        verify(evaluationService, never()).addYoutubeContent(any(), any());
-        verify(evaluationService).buildReport(1L);
+        verify(evaluationService).addYoutubeContent(1L, "short");
+        verify(evaluationService, never()).addYoutubeContent(1L, "long");
+    }
+
+    @Test
+    void Shorts가_없으면_롱폼_상위를_fallback_분석한다() {
+        runTransactionsInline();
+        when(mediaRepository.findAllByApplicationIdOrderBySequenceNoAscMediaSequenceNoAsc(1L))
+                .thenReturn(List.of(
+                        longForm("lf-low", 10L, 0),
+                        longForm("lf-top", 900L, 1),
+                        longForm("lf-mid", 500L, 2)));
+        when(evaluationService.buildReport(1L)).thenReturn(mock(ApplicationReport.class));
+        when(applicationRepository.findById(1L)).thenReturn(Optional.empty());
+
+        service.analyzeAndReport(1L);
+
+        // 롱폼-only 지원자: 조회수 상위 2건만 fallback 분석(신호 공백 방지).
+        verify(evaluationService).addYoutubeContent(1L, "lf-top");
+        verify(evaluationService).addYoutubeContent(1L, "lf-mid");
+        verify(evaluationService, never()).addYoutubeContent(1L, "lf-low");
+        verify(evaluationService, times(2)).addYoutubeContent(any(), any());
     }
 
     private ApplicationMedia youtube(String videoId, Long viewCount, int sequenceNo) {
+        return youtube(videoId, viewCount, sequenceNo, ContentType.SHORTS);
+    }
+
+    private ApplicationMedia longForm(String videoId, Long viewCount, int sequenceNo) {
+        return youtube(videoId, viewCount, sequenceNo, ContentType.LONG_FORM);
+    }
+
+    private ApplicationMedia youtube(String videoId, Long viewCount, int sequenceNo, ContentType type) {
         return ApplicationMedia.builder()
                 .applicationId(1L)
                 .snsCode(SnsPlatform.YOUTUBE)
                 .snsContentId(videoId)
                 .snsMediaId(videoId)
-                .contentType(ContentType.SHORTS)
+                .contentType(type)
                 .sequenceNo(sequenceNo)
                 .mediaSequenceNo(0)
                 .viewCount(viewCount)

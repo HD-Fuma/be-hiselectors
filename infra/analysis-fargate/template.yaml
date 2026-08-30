@@ -23,7 +23,8 @@ Parameters:
     AllowedValues: [ENABLED, DISABLED]
   ScheduleExpression:
     Type: String
-    Default: rate(1 hour)
+    # 개발 중 빠른 드레인용 10분 주기. 운영 안정화 시 rate(1 hour) 등으로 상향.
+    Default: rate(10 minutes)
   SttBucket:
     Type: String
     Default: hi-selectors-stt

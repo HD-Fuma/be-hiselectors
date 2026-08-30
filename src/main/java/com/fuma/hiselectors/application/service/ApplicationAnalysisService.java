@@ -35,6 +35,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ApplicationAnalysisService {
 
     private static final int MAX_YOUTUBE_SHORTS = 3;
+    // Shorts 가 없는 롱폼-only 크리에이터의 신호 공백 방지용 fallback 개수.
+    // 롱폼은 길어서 비쌈 → YoutubeSttClient 에서 앞부분만(endOffset) 잘라 분석해 비용을 묶는다.
+    private static final int MAX_YOUTUBE_LONGFORM_FALLBACK = 2;
     private static final String QUANT_START = "APP_QUANT_START";
     private static final String QUAL_START = "APP_QUAL_START";
     private static final String QUAL_DONE = "APP_QUAL_DONE";
@@ -118,18 +121,28 @@ public class ApplicationAnalysisService {
     }
 
     private Set<String> topYoutubeVideoIds(List<ApplicationMedia> media) {
+        // 비용이 큰 YouTube 영상 분석은 Shorts 중 조회수 상위만.
+        Set<String> shorts = topYoutubeByType(media, ContentType.SHORTS, MAX_YOUTUBE_SHORTS);
+        if (!shorts.isEmpty()) {
+            return shorts;
+        }
+        // Shorts 가 하나도 없는 롱폼-only 지원자만: YouTube 신호 공백 방지로 롱폼 상위 몇 건 fallback.
+        return topYoutubeByType(media, ContentType.LONG_FORM, MAX_YOUTUBE_LONGFORM_FALLBACK);
+    }
+
+    private Set<String> topYoutubeByType(List<ApplicationMedia> media, ContentType type, int limit) {
         Set<String> seen = new HashSet<>();
         Set<String> selected = new HashSet<>();
         media.stream()
                 .filter(m -> m.getSnsCode() == SnsPlatform.YOUTUBE)
-                .filter(m -> m.getContentType() == ContentType.SHORTS)
+                .filter(m -> m.getContentType() == type)
                 .filter(m -> m.getSnsContentId() != null && !m.getSnsContentId().isBlank())
                 .filter(m -> seen.add(m.getSnsContentId()))
                 .sorted(Comparator.comparing(
                                 ApplicationMedia::getViewCount,
                                 Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparingInt(ApplicationMedia::getSequenceNo))
-                .limit(MAX_YOUTUBE_SHORTS)
+                .limit(limit)
                 .map(ApplicationMedia::getSnsContentId)
                 .forEach(selected::add);
         return selected;
