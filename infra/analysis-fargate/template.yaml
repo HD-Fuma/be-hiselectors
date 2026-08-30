@@ -210,6 +210,8 @@ Resources:
               Value: gemini-3.5-flash-lite
             - Name: GEMINI_FALLBACK_MODELS
               Value: !Ref GeminiFallbackModels
+            - Name: GEMINI_MAX_OUTPUT_TOKENS
+              Value: "65536"
             - Name: INSTAGRAM_REDIRECT_URI
               Value: https://hiselectors.shop/instagram/callback
           Secrets:
