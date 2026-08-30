@@ -134,6 +134,14 @@ Resources:
                   - s3:PutObject
                   - s3:DeleteObject
                 Resource: !Sub "arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*"
+              # SageMaker 비동기 STT 결과 폴링용. ListBucket 이 없으면 아직 없는 결과 키에
+              # GetObject 시 S3 가 NoSuchKey(404) 대신 AccessDenied(403) 를 반환해 폴링이 실패한다.
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${SttBucket}"
+                Condition:
+                  StringLike:
+                    s3:prefix: "whisper/*"
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
