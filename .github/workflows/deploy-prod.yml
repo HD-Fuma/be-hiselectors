@@ -118,6 +118,12 @@ jobs:
         echo "selectors-sns-profile=verified"
 
         test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no'")" = "1"
+        application_media_duration_count="$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'duration_seconds'")"
+        if [ "$application_media_duration_count" = "0" ]; then
+          mysql_query "ALTER TABLE application_media ADD COLUMN duration_seconds BIGINT NULL AFTER comment_count"
+        fi
+        test "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'duration_seconds' AND data_type = 'bigint' AND is_nullable = 'YES'")" = "1"
+        echo "application-media-duration=verified"
         mysql_query "UPDATE application_media SET media_sequence_no = 0 WHERE media_sequence_no IS NULL"
         if [ "$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'application_media' AND column_name = 'media_sequence_no' AND is_nullable = 'YES'")" = "1" ]; then
           mysql_query "ALTER TABLE application_media MODIFY COLUMN media_sequence_no INT NOT NULL"

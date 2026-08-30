@@ -456,6 +456,8 @@ class YoutubeContentFetcherTest {
 
         assertThat(result.get(0).content().contentType()).isEqualTo(ContentType.SHORTS);
         assertThat(result.get(1).content().contentType()).isEqualTo(ContentType.LONG_FORM);
+        assertThat(result.get(0).content().durationSeconds()).isEqualTo(45L);
+        assertThat(result.get(1).content().durationSeconds()).isEqualTo(310L);
         server.verify();
     }
 

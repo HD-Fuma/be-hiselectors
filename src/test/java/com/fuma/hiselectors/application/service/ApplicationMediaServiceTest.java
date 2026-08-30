@@ -160,6 +160,7 @@ class ApplicationMediaServiceTest {
             assertThat(media.getTitle()).isEqualTo("title video-0");
             assertThat(media.getDescription()).isEqualTo("description video-0");
             assertThat(media.getContentType()).isEqualTo(ContentType.LONG_FORM);
+            assertThat(media.getDurationSeconds()).isEqualTo(310L);
             assertThat(media.getViewCount()).isEqualTo(100L);
         });
         verify(mediaRepository).deleteByApplicationId(APPLICATION_ID);
@@ -435,7 +436,7 @@ class ApplicationMediaServiceTest {
         List<String> texts = platform == SnsPlatform.YOUTUBE
                 ? List.of("title " + contentId, "description " + contentId)
                 : List.of("caption " + contentId);
-        return new RawContent(
+        RawContent content = new RawContent(
                 platform,
                 contentId,
                 "https://example.com/" + contentId,
@@ -443,6 +444,7 @@ class ApplicationMediaServiceTest {
                 texts,
                 createdAt,
                 media);
+        return platform == SnsPlatform.YOUTUBE ? content.withDurationSeconds(310L) : content;
     }
 
     private ApplicationMedia media(

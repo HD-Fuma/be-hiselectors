@@ -98,6 +98,10 @@ public class ApplicationMedia extends BaseTimeEntity {
     @Column(name = "comment_count")
     private Long commentCount;
 
+    /** YouTube videos.list 의 ISO-8601 길이를 초로 변환한 값. 다른 플랫폼·과거 행은 null. */
+    @Column(name = "duration_seconds")
+    private Long durationSeconds;
+
     @Column(name = "collected_at", nullable = false, updatable = false)
     private LocalDateTime collectedAt;
 
@@ -109,7 +113,7 @@ public class ApplicationMedia extends BaseTimeEntity {
                              String caption, String title, String description,
                              int sequenceNo, int mediaSequenceNo,
                              LocalDateTime publishedAt,
-                             Long viewCount, Long likeCount, Long commentCount,
+                             Long viewCount, Long likeCount, Long commentCount, Long durationSeconds,
                              LocalDateTime collectedAt) {
         this.applicationId = applicationId;
         this.snsCode = snsCode;
@@ -129,6 +133,7 @@ public class ApplicationMedia extends BaseTimeEntity {
         this.viewCount = viewCount;
         this.likeCount = likeCount;
         this.commentCount = commentCount;
+        this.durationSeconds = durationSeconds;
         this.collectedAt = collectedAt;
     }
 }
