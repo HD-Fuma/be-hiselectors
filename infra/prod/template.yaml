@@ -593,6 +593,8 @@ Resources:
               Value: 'false'
             - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
               Value: 'false'
+            - Name: GEMINI_MAX_OUTPUT_TOKENS
+              Value: '65536'
           Secrets:
             - Name: DB_NAME
               ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
@@ -723,6 +725,8 @@ Resources:
               Value: 'false'
             - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
               Value: 'false'
+            - Name: GEMINI_MAX_OUTPUT_TOKENS
+              Value: '65536'
           Secrets:
             - Name: DB_NAME
               ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
