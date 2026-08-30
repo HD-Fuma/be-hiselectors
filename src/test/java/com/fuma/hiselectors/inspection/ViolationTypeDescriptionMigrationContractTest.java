@@ -87,12 +87,14 @@ class ViolationTypeDescriptionMigrationContractTest {
                 "--action CONTINUE");
         assertThat(template).contains(
                 "Strategy: BLUE_GREEN",
-                "BakeTimeInMinutes: 5",
+                "BakeTimeInMinutes: 3",
                 "HealthCheckIntervalSeconds: 10",
                 "DeploymentCircuitBreaker:",
                 "Rollback: true",
                 "TargetType: PAUSE",
                 "LifecycleStages:\n                - POST_TEST_TRAFFIC_SHIFT");
-        assertThat(template).doesNotContain("BakeTimeInMinutes: 10");
+        assertThat(template).doesNotContain(
+                "BakeTimeInMinutes: 5",
+                "BakeTimeInMinutes: 10");
     }
 }

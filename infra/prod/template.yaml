@@ -830,7 +830,7 @@ Resources:
         Strategy: BLUE_GREEN
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-        BakeTimeInMinutes: 5
+        BakeTimeInMinutes: 3
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true

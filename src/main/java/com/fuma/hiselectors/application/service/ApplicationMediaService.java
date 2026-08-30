@@ -271,6 +271,7 @@ public class ApplicationMediaService {
                 .viewCount(content.viewCount())
                 .likeCount(content.likeCount())
                 .commentCount(content.commentCount())
+                .durationSeconds(content.durationSeconds())
                 .collectedAt(collectedAt)
                 .build();
     }
