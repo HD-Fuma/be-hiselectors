@@ -18,14 +18,22 @@ public class ViolationEvidenceHistoryService {
     private final Clock clock;
 
     public void upsert(ViolationItem item, ContentVersion version, Long inspectionPolicyId) {
+        upsert(item, version, inspectionPolicyId, null);
+    }
+
+    public void upsert(
+            ViolationItem item,
+            ContentVersion version,
+            Long inspectionPolicyId,
+            Long contentReportId) {
         ViolationEvidence evidence = item.getEvidence();
         LocalDateTime detectedAt = LocalDateTime.now(clock);
         historyRepository.findByViolationItemIdAndContentVersionIdAndInspectionPolicyId(
                         item.getId(), version.getId(), inspectionPolicyId)
                 .ifPresentOrElse(
-                        history -> history.overwrite(evidence, detectedAt),
+                        history -> history.overwrite(evidence, contentReportId, detectedAt),
                         () -> historyRepository.save(ViolationEvidenceHistory.create(
                                 item.getId(), version.getId(), inspectionPolicyId,
-                                evidence, detectedAt)));
+                                contentReportId, evidence, detectedAt)));
     }
 }

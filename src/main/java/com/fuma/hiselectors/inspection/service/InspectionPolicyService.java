@@ -4,11 +4,11 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.config.InspectionExtractionProperties;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.model.InspectionRuleConfig;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
-import com.fuma.hiselectors.stt.GeminiProperties;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -35,7 +35,7 @@ public class InspectionPolicyService {
     private final InspectionPolicyRepository policyRepository;
     private final ContentInspectionProperties inspectionProperties;
     private final InspectionExtractionProperties extractionProperties;
-    private final GeminiProperties geminiProperties;
+    private final ContentInspectionAnalysisProperties analysisProperties;
     private final InspectionPromptProvider promptProvider;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -88,20 +88,20 @@ public class InspectionPolicyService {
         String ruleHash = sha256(writeJson(ruleConfig));
 
         String aiPrompt = promptProvider.aiPrompt();
-        String aiModel = geminiProperties.modelOrDefault();
+        String aiModel = analysisProperties.modelOrDefault();
         String aiConfigHash = sha256(String.join("\n",
                 aiModel,
                 InspectionPromptProvider.AI_PROMPT_VERSION,
                 aiPrompt,
-                String.valueOf(geminiProperties.maxOutputTokensOrDefault())));
+                String.valueOf(analysisProperties.maxOutputTokensOrDefault())));
 
         String sttModel;
         String ocrModel;
         String extractionPromptVersion;
         String extractionPrompt;
         if (platform == SnsPlatform.YOUTUBE) {
-            sttModel = aiModel;
-            ocrModel = aiModel;
+            sttModel = extractionProperties.youtubeModelOrDefault();
+            ocrModel = extractionProperties.youtubeModelOrDefault();
             extractionPromptVersion =
                     InspectionPromptProvider.YOUTUBE_EXTRACTION_PROMPT_VERSION;
             extractionPrompt = promptProvider.youtubeExtractionPrompt();
@@ -117,9 +117,8 @@ public class InspectionPolicyService {
                 extractionPromptVersion == null ? "" : extractionPromptVersion,
                 extractionPrompt == null ? "" : extractionPrompt,
                 platform == SnsPlatform.YOUTUBE
-                        ? geminiProperties.mediaResolutionApiValue() : "",
-                platform == SnsPlatform.YOUTUBE
-                        ? String.valueOf(geminiProperties.maxOutputTokensOrDefault()) : ""));
+                        ? String.valueOf(
+                                extractionProperties.youtubeMaxOutputTokensOrDefault()) : ""));
         String configHash = sha256(String.join("\n",
                 platform.name(), ruleHash, aiConfigHash, extractionConfigHash));
         String version = platform.name().toLowerCase()

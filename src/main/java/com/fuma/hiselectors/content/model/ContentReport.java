@@ -7,15 +7,24 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "content_report")
+@Table(name = "content_report", uniqueConstraints = @UniqueConstraint(
+        name = "uq_content_report_version_policy",
+        columnNames = {"content_version_id", "inspection_policy_id"}))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ContentReport extends BaseTimeEntity {
+
+    public static final String CURRENT_SCHEMA_VERSION = "1.0";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -28,7 +37,7 @@ public class ContentReport extends BaseTimeEntity {
     @Column(name = "summary", columnDefinition = "text")
     private String summary;
 
-    @Column(name = "purpose", length = 100)
+    @Column(name = "purpose", columnDefinition = "text")
     private String purpose;
 
     @Column(name = "flow", columnDefinition = "text")
@@ -41,15 +50,45 @@ public class ContentReport extends BaseTimeEntity {
     @Column(name = "inspection_policy_id")
     private Long inspectionPolicyId;
 
+    @Column(name = "report_schema_version", length = 20)
+    private String reportSchemaVersion;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "analysis", columnDefinition = "json")
+    private ContentReportAnalysis analysis;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "execution_metadata", columnDefinition = "json")
+    private Map<String, Object> executionMetadata = new LinkedHashMap<>();
+
     public static ContentReport create(Long contentVersionId, ContentReportData data,
                                        Long inspectionPolicyId) {
+        return create(contentVersionId, ContentReportAnalysis.fromLegacy(data),
+                inspectionPolicyId, Map.of());
+    }
+
+    public static ContentReport create(
+            Long contentVersionId,
+            ContentReportAnalysis analysis,
+            Long inspectionPolicyId,
+            Map<String, Object> executionMetadata) {
         ContentReport report = new ContentReport();
         report.contentVersionId = contentVersionId;
-        report.summary = data.summary();
-        report.purpose = data.purpose();
-        report.flow = data.flow();
-        report.overallAssessment = data.overallAssessment();
         report.inspectionPolicyId = inspectionPolicyId;
+        report.replaceAnalysis(analysis, executionMetadata);
         return report;
+    }
+
+    public void replaceAnalysis(ContentReportAnalysis analysis,
+                                Map<String, Object> executionMetadata) {
+        this.reportSchemaVersion = CURRENT_SCHEMA_VERSION;
+        this.analysis = analysis == null ? ContentReportAnalysis.empty() : analysis;
+        this.executionMetadata = executionMetadata == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(executionMetadata);
+        ContentReportAnalysis.Overview overview = this.analysis.overview();
+        this.summary = overview.summary();
+        this.purpose = overview.purpose();
+        this.flow = overview.flow();
+        this.overallAssessment = overview.overallAssessment();
     }
 }

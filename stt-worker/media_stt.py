@@ -9,6 +9,8 @@ import logging
 import os
 from functools import lru_cache
 
+from stt_contract import transcript_text
+
 # 기본 large-v3. RAM 부족 머신은 OOM 시 아래 체인으로 자동 강등(STT_MODEL 로 시작점만 바꿈).
 STT_MODEL = os.environ.get("STT_MODEL", "large-v3")
 _SIZES = ["large-v3", "medium", "small", "tiny"]  # 큰→작은 순. OOM 폴백 사다리
@@ -78,7 +80,7 @@ def stt(path: str) -> str:
         return ""
     if os.environ.get("STT_BACKEND") == "sagemaker":
         from sagemaker import client  # stt-worker/sagemaker/client.py
-        return client.stt(path)
+        return transcript_text(client.stt(path))
     segments, _ = _whisper().transcribe(path, language="ko", vad_filter=True)
     return " ".join(seg.text.strip() for seg in segments).strip()
 

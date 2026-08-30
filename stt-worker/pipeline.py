@@ -7,6 +7,7 @@ import shutil
 
 import acquire
 import analyze
+import content_media_extraction
 import media_stt
 
 
@@ -24,6 +25,16 @@ def run(media_url: str | None = None, thumbnail_url: str | None = None) -> dict:
             "ocr": t["ocr"],
             "analysis": analyze.analyze(text),
         }
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def run_content(media_url: str | None = None, thumbnail_url: str | None = None) -> dict:
+    """콘텐츠 검수 전용 구조화 STT/OCR. 지원서 분석 결과는 생성하지 않는다."""
+    path = acquire.fetch(media_url=media_url, thumbnail_url=thumbnail_url)
+    work_dir = os.path.dirname(path)
+    try:
+        return content_media_extraction.extract(path)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 

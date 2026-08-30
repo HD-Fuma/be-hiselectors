@@ -160,11 +160,25 @@ stt:
     base-url: ${STT_WORKER_BASE_URL:http://127.0.0.1:8900}
 
 content-inspection:
+  analysis:
+    api-key: ${CONTENT_INSPECTION_GEMINI_API_KEY:${GEMINI_API_KEY:${gemini.api-key:}}}
+    api-keys: ${CONTENT_INSPECTION_GEMINI_API_KEYS:${GEMINI_API_KEYS:${gemini.api-keys:}}}
+    model: ${CONTENT_INSPECTION_ANALYSIS_MODEL:gemini-3.5-flash-lite}
+    fallback-models: ${CONTENT_INSPECTION_ANALYSIS_FALLBACK_MODELS:gemini-3.6-flash}
+    max-output-tokens: ${CONTENT_INSPECTION_ANALYSIS_MAX_OUTPUT_TOKENS:8192}
   extraction:
+    youtube:
+      api-key: ${CONTENT_INSPECTION_GEMINI_API_KEY:${GEMINI_API_KEY:${gemini.api-key:}}}
+      api-keys: ${CONTENT_INSPECTION_GEMINI_API_KEYS:${GEMINI_API_KEYS:${gemini.api-keys:}}}
+      model: ${CONTENT_INSPECTION_EXTRACTION_MODEL:gemini-3.6-flash}
+      fallback-models: ${CONTENT_INSPECTION_EXTRACTION_FALLBACK_MODELS:}
+      max-output-tokens: ${CONTENT_INSPECTION_EXTRACTION_MAX_OUTPUT_TOKENS:32768}
+      api-version: ${CONTENT_INSPECTION_INTERACTIONS_API_VERSION:v1beta}
     instagram:
-      # Instagram 추출 파이프라인은 아직 연결 전이며 정책 버전 기록에만 사용한다.
-      stt-model: ${INSTAGRAM_STT_MODEL:not-configured}
-      ocr-model: ${INSTAGRAM_OCR_MODEL:not-configured}
+      worker-base-url: ${CONTENT_INSPECTION_STT_WORKER_BASE_URL:${STT_WORKER_BASE_URL:http://127.0.0.1:8900}}
+      # 콘텐츠 전용 /content/reel 및 SageMaker 모델 식별자다.
+      stt-model: ${INSTAGRAM_STT_MODEL:whisper-large-v3-structured-20260829-112443}
+      ocr-model: ${INSTAGRAM_OCR_MODEL:rapidocr-ppocrv4-ko-mobile}
 
 inspection:
   policy-sync:

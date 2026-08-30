@@ -3,7 +3,7 @@ package com.fuma.hiselectors.inspection.service;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentReport;
-import com.fuma.hiselectors.content.model.ContentReportData;
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.content.model.ContentVersion;
 import com.fuma.hiselectors.content.model.ContentInspectionDecision;
 import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
@@ -55,6 +55,7 @@ public class ContentInspectionExecutionService {
     private final ViolationReconciliationService reconciliationService;
     private final TaskLeaseTransaction taskLeaseTransaction;
     private final TransactionTemplate transactionTemplate;
+    private final ContentMediaExtractionBodyMapper bodyMapper;
     private final Clock clock;
 
     public InspectionResult inspect(Long contentVersionId) {
@@ -165,6 +166,7 @@ public class ContentInspectionExecutionService {
                         targetVersionId,
                         media.getMediaType(),
                         media.getMediaUrl(),
+                        media.getThumbnailUrl(),
                         media.getSnsMediaId(),
                         media.getSequenceNo(),
                         media.getMediaType() == MediaType.TEXT
@@ -181,13 +183,27 @@ public class ContentInspectionExecutionService {
                 preparation.selectors(), preparation.media());
         List<DetectedViolation> rules = new ArrayList<>();
         ruleDetectors.forEach(detector -> rules.addAll(detector.detect(context)));
-        AiInspectionResponse aiResponse = preprocessing.integratedAiResult()
-                .orElseGet(() -> aiViolationDetector.inspect(context, preparation.policy()));
+        AiInspectionResponse aiResponse = aiViolationDetector.inspect(
+                context, preparation.policy());
         List<DetectedViolation> merged = resultMerger.mergeRuleFirst(
                 rules, aiResponse.violations());
         merged = evidenceLocationNormalizer.normalize(context, merged);
         return new InspectionAnalysis(
-                aiResponse.report(), merged, preprocessing.extractionUpdate());
+                resolveReport(preparation.media(), context),
+                aiResponse.executionMetadata(), merged,
+                preprocessing.extractionUpdates());
+
+    }
+
+    private ContentReportAnalysis resolveReport(
+            List<ContentMedia> media, InspectionContext context) {
+        for (ContentMedia item : media) {
+            ContentReportAnalysis report = bodyMapper.reportFrom(item.bodyOrEmpty());
+            if (!report.hasNoContent()) {
+                return report;
+            }
+        }
+        return aiViolationDetector.generateReport(context);
     }
 
     private void persist(
@@ -198,11 +214,19 @@ public class ContentInspectionExecutionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND));
         ContentVersion version = contentVersionRepository.findByIdForUpdate(contentVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_VERSION_NOT_FOUND));
-        analysis.extractionUpdate().ifPresent(update -> applyExtraction(contentVersionId, update));
-        contentReportRepository.save(ContentReport.create(
-                contentVersionId, analysis.report(), preparation.policy().getId()));
+        analysis.extractionUpdates()
+                .forEach(update -> applyExtraction(contentVersionId, update));
+        ContentReport report = contentReportRepository
+                .findByContentVersionIdAndInspectionPolicyId(
+                        contentVersionId, preparation.policy().getId())
+                .orElseGet(() -> ContentReport.create(
+                        contentVersionId, analysis.report(), preparation.policy().getId(),
+                        analysis.executionMetadata()));
+        report.replaceAnalysis(analysis.report(), analysis.executionMetadata());
+        contentReportRepository.save(report);
         boolean correctionReviewPending = reconciliationService.reconcile(
-                content, version, analysis.violations(), preparation.policy().getId());
+                content, version, analysis.violations(), preparation.policy().getId(),
+                report.getId());
         version.completeInspection(LocalDateTime.now(clock));
         if (analysis.violations().isEmpty() && !correctionReviewPending) {
             version.confirmInspection(ContentInspectionDecision.APPROVED);
@@ -223,6 +247,7 @@ public class ContentInspectionExecutionService {
         ContentMedia media = contentMediaRepository.findById(update.contentMediaId())
                 .filter(candidate -> contentVersionId.equals(candidate.getContentVersionId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        media.replaceUrls(update.mediaUrl(), update.thumbnailUrl());
         media.replaceBody(update.body());
         media.markExtracted(
                 update.inspectionPolicyId(), update.inputHash(), update.extractedAt());
@@ -253,8 +278,9 @@ public class ContentInspectionExecutionService {
     }
 
     private record InspectionAnalysis(
-            ContentReportData report,
+            ContentReportAnalysis report,
+            Map<String, Object> executionMetadata,
             List<DetectedViolation> violations,
-            java.util.Optional<MediaExtractionUpdate> extractionUpdate) {
+            List<MediaExtractionUpdate> extractionUpdates) {
     }
 }

@@ -136,7 +136,8 @@ public class StoredContentService {
         int savedEngagementCount = saveEngagement(lockedResult, collectedAt);
         boolean versionChanged = saveChangedVersion(lockedResult, collectedAt);
         boolean deletionStatusChanged = updateDeletionStatus(lockedResult);
-        if (versionChanged || deletionStatusChanged) {
+        boolean contentTypeChanged = updateContentType(lockedResult);
+        if (versionChanged || deletionStatusChanged || contentTypeChanged) {
             contentRepository.saveAll(List.of(lockedContent));
         }
         return new StoredContentSaveResult(savedEngagementCount, versionChanged ? 1 : 0);
@@ -201,9 +202,12 @@ public class StoredContentService {
                                     fetchedByContent);
                         } catch (RuntimeException exception) {
                             log.error(
-                                    "SNS 계정의 기존 콘텐츠 조회에 실패했습니다. platform={} selectorsId={}",
+                                    "SNS 계정의 기존 콘텐츠 조회에 실패했습니다. platform={} selectorsId={} cause={}",
                                     platform,
                                     entry.getKey(),
+                                    exception instanceof BusinessException businessException
+                                            ? businessException.getErrorCode()
+                                            : exception.getClass().getSimpleName(),
                                     exception);
                             attachFailedResults(entry.getValue(), fetchedByContent);
                             attachFailures(entry.getValue(), exception, failuresByContent);
@@ -334,6 +338,14 @@ public class StoredContentService {
             mediaRepository.saveAll(media);
         }
         return true;
+    }
+
+    private boolean updateContentType(StoredContentFetch result) {
+        if (result.fetched().status() != ContentFetcher.FetchStatus.FOUND
+                || result.fetched().content() == null) {
+            return false;
+        }
+        return result.content().updateContentType(result.fetched().content().contentType());
     }
 
     private boolean updateDeletionStatus(StoredContentFetch result) {

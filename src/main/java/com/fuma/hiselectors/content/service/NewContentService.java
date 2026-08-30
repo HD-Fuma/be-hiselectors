@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -152,11 +154,31 @@ public class NewContentService {
                 .filter(content -> !existingIds.contains(content.snsContentId()))
                 .toList();
 
+        // YouTube playlistItems에는 길이가 없어 LONG_FORM으로 온다.
+        // Shorts 판정과 성과는 videos.list를 한 번 더 보는 addStatistics에서 채운다.
+        List<RawContent> classified = enrichStatistics(fetcher, newContents);
+
         // 신규 콘텐츠 중 셀렉터스 콘텐츠만 반환
-        List<RawContent> selectorsContents = newContents.stream()
+        List<RawContent> selectorsContents = classified.stream()
                 .filter(classifier::isSelectorsContent)
                 .toList();
-        return new NewContentSelection(newContents.size(), selectorsContents);
+        return new NewContentSelection(classified.size(), selectorsContents);
+    }
+
+    private List<RawContent> enrichStatistics(
+            ContentFetcher fetcher, List<RawContent> contents) {
+        if (contents.isEmpty()) {
+            return contents;
+        }
+        Map<String, RawContent> enrichedById = fetcher.addStatistics(contents).stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(
+                        RawContent::snsContentId,
+                        Function.identity(),
+                        (first, ignored) -> first));
+        return contents.stream()
+                .map(content -> enrichedById.getOrDefault(content.snsContentId(), content))
+                .toList();
     }
 
     private void mergeStats(

@@ -67,13 +67,8 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
                     where innerCv.contentId = cv.contentId)
               and (
                     not exists (
-                        select 1 from ContentReport cr where cr.contentVersionId = cv.id)
-                 or not exists (
                         select 1 from ContentReport cr
                         where cr.contentVersionId = cv.id
-                          and cr.id = (
-                                select max(latestCr.id) from ContentReport latestCr
-                                where latestCr.contentVersionId = cv.id)
                           and cr.inspectionPolicyId = :inspectionPolicyId)
               )
             """)

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.content.model.Content;
 import com.fuma.hiselectors.content.model.ContentVersion;
+import com.fuma.hiselectors.content.model.ContentVersionCreationReason;
 import com.fuma.hiselectors.inspection.model.DetectedViolation;
 import com.fuma.hiselectors.inspection.model.EvidenceSource;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
@@ -121,6 +122,27 @@ class ViolationReconciliationServiceTest {
         verify(fixture.itemRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(ViolationStatus.PENDING);
         assertThat(captor.getValue().getContentId()).isEqualTo(10L);
+    }
+
+    @Test
+    void resolvesConfirmedViolationWhenReinspectIsNotACreatorEdit() {
+        Fixture fixture = fixture();
+        ViolationItem existing = item(fixture.v1, 100L, "광고 문구");
+        existing.confirm();
+        ContentVersion extractionVersion = ContentVersion.create(
+                10L, 3L, "extract",
+                ContentVersionCreationReason.EXTRACTION_CHANGE,
+                java.time.LocalDateTime.of(2026, 8, 30, 1, 0));
+        ReflectionTestUtils.setField(extractionVersion, "id", 4L);
+        when(fixture.itemRepository.findAllByContentIdForUpdate(10L))
+                .thenReturn(List.of(existing));
+        when(fixture.typeRepository.findAllById(any()))
+                .thenReturn(List.of(type(100L, ViolationTypeCode.AD_DISCLOSURE_INVALID)));
+
+        fixture.service.reconcile(fixture.content, extractionVersion, List.of(), POLICY_ID);
+
+        assertThat(existing.getStatus()).isEqualTo(ViolationStatus.RESOLVED);
+        assertThat(existing.getResolvedContentVersionId()).isEqualTo(4L);
     }
 
     @Test

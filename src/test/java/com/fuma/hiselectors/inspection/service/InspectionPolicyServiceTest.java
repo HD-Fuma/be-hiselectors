@@ -8,11 +8,10 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.inspection.config.ContentInspectionProperties;
+import com.fuma.hiselectors.inspection.config.ContentInspectionAnalysisProperties;
 import com.fuma.hiselectors.inspection.config.InspectionExtractionProperties;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.repository.InspectionPolicyRepository;
-import com.fuma.hiselectors.stt.GeminiProperties;
-import com.fuma.hiselectors.stt.MediaResolution;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -44,11 +43,13 @@ class InspectionPolicyServiceTest {
         InspectionPolicy youtube = findPolicy(saved, SnsPlatform.YOUTUBE);
         InspectionPolicy instagram = findPolicy(saved, SnsPlatform.INSTAGRAM);
         assertThat(youtube.getAiModelName()).isEqualTo("gemini-test");
-        assertThat(youtube.getSttModelName()).isEqualTo("gemini-test");
-        assertThat(youtube.getOcrModelName()).isEqualTo("gemini-test");
+        assertThat(youtube.getSttModelName()).isEqualTo("content-gemini-test");
+        assertThat(youtube.getOcrModelName()).isEqualTo("content-gemini-test");
         assertThat(instagram.getAiModelName()).isEqualTo("gemini-test");
         assertThat(youtube.getAiPrompt()).contains("검수 대상");
-        assertThat(youtube.getExtractionPrompt()).contains("유튜브 Shorts 영상");
+        assertThat(youtube.getExtractionPrompt())
+                .contains("stt.segments", "ocr.segments")
+                .doesNotContain("visual.segments");
         assertThat(instagram.getSttModelName()).isEqualTo("whisper-test");
         assertThat(instagram.getOcrModelName()).isEqualTo("ocr-test");
         assertThat(youtube.getConfigHash()).isNotEqualTo(instagram.getConfigHash());
@@ -100,9 +101,12 @@ class InspectionPolicyServiceTest {
                         List.of("광고"), List.of("example.com"), "ptrsRefCd"),
                 new InspectionExtractionProperties(
                         new InspectionExtractionProperties.Instagram(
-                                "whisper-test", "ocr-test")),
-                new GeminiProperties(
-                        "key", null, null, model, MediaResolution.LOW, 8192),
+                                "whisper-test", "ocr-test", null),
+                        new InspectionExtractionProperties.Youtube(
+                                "content-key", null, "content-gemini-test",
+                                null, 16384, "v1beta")),
+                new ContentInspectionAnalysisProperties(
+                        "key", null, null, model, 8192),
                 new InspectionPromptProvider(),
                 new ObjectMapper(),
                 Clock.fixed(Instant.parse("2026-08-21T03:00:00Z"), ZoneOffset.UTC));

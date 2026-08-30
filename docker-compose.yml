@@ -29,7 +29,16 @@ services:
       STT_BACKEND: sagemaker           # STT 는 SageMaker GPU 로 오프로드
       STT_S3_BUCKET: hi-selectors-stt
       STT_ENDPOINT: whisper-large-v3-async
+
       AWS_REGION: ap-northeast-2
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_SDK_LOAD_CONFIG: "1"
+    volumes:
+      # 로컬 Docker에서 boto3가 호스트 AWS CLI/SSO 프로필을 읽는다. 운영은 ECS Task Role 사용.
+      - type: bind
+        source: ${USERPROFILE}/.aws
+        target: /root/.aws
+        read_only: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/',timeout=3)"]

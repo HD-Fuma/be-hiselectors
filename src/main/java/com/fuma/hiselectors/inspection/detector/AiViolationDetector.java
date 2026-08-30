@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.inspection.detector;
 
+import com.fuma.hiselectors.content.model.ContentReportAnalysis;
 import com.fuma.hiselectors.inspection.ai.AiInspectionClient;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionContext;
@@ -17,7 +18,13 @@ public class AiViolationDetector {
         return client.inspect(context, policy);
     }
 
+    public ContentReportAnalysis generateReport(InspectionContext context) {
+        return client.generateReport(context);
+    }
+
     public AiInspectionResponse inspectText(String text) {
-        return client.inspectText(text);
+        return new AiInspectionResponse(
+                client.generateReportFromText(text),
+                client.inspectText(text).violations());
     }
 }

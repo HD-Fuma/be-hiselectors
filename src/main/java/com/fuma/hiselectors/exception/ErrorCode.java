@@ -61,6 +61,18 @@ public enum ErrorCode {
             HttpStatus.BAD_GATEWAY,
             "Instagram 콘텐츠 조회에 실패했습니다."
     ),
+    INSTAGRAM_TOKEN_OR_PERMISSION_DENIED(
+            HttpStatus.UNAUTHORIZED,
+            "Instagram 토큰 또는 권한이 유효하지 않습니다."
+    ),
+    INSTAGRAM_ACCOUNT_UNAVAILABLE(
+            HttpStatus.NOT_FOUND,
+            "Instagram 계정을 조회할 수 없습니다. 사용자명 변경·비공개·개인 계정일 수 있습니다."
+    ),
+    INSTAGRAM_API_RATE_LIMITED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "Instagram API 호출 한도를 초과했습니다."
+    ),
 
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),
@@ -156,6 +168,9 @@ public enum ErrorCode {
     STT_SNS_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "STT를 지원하지 않는 SNS 플랫폼입니다."),
     STT_WORKER_CALL_FAILED(HttpStatus.BAD_GATEWAY, "STT 워커 호출에 실패했습니다."),
     MEDIA_URL_EXPIRED(HttpStatus.GONE, "미디어 CDN URL이 만료되었습니다. Graph API로 재요청하세요."),
+    CONTENT_MEDIA_SOURCE_UNAVAILABLE(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "콘텐츠 원본 미디어를 확보할 수 없어 검수를 진행할 수 없습니다."),
     GEMINI_EVAL_PARSE_FAILED(HttpStatus.BAD_GATEWAY, "Gemini 평가 응답 해석에 실패했습니다."),
     NO_CONTENT_TO_EVALUATE(HttpStatus.NOT_FOUND, "평가할 지원자 콘텐츠가 없습니다."),
 

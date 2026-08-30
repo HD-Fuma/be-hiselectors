@@ -16,6 +16,7 @@ import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.dto.ContentViolationResponse;
+import com.fuma.hiselectors.inspection.dto.EvidenceLocationResponse;
 import com.fuma.hiselectors.inspection.model.ViolationEvidence;
 import com.fuma.hiselectors.inspection.model.ViolationEvidenceHistory;
 import com.fuma.hiselectors.inspection.model.ViolationItem;
@@ -104,7 +105,14 @@ public class ContentDetailQueryService {
                 latestReport.getSummary(),
                 latestReport.getPurpose(),
                 latestReport.getFlow(),
-                latestReport.getOverallAssessment());
+                latestReport.getOverallAssessment(),
+                latestReport.getInspectionPolicyId(),
+                latestReport.getReportSchemaVersion(),
+                latestReport.getAnalysis(),
+                latestReport.getExecutionMetadata());
+        Map<Long, ContentMedia> mediaById = media.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ContentMedia::getId, item -> item));
 
         return new ContentVersionDetailResponse(
                 version.getId(),
@@ -117,12 +125,14 @@ public class ContentDetailQueryService {
                 media.stream().map(ContentVersionMediaResponse::from).toList(),
                 report,
                 findViolations(contentId, version.getId(), historicalVersion,
-                        latestReport == null ? null : latestReport.getInspectionPolicyId()));
+                        latestReport == null ? null : latestReport.getInspectionPolicyId(),
+                        mediaById));
     }
 
     private List<ContentViolationResponse> findViolations(
             Long contentId, Long contentVersionId, boolean historicalVersion,
-            Long inspectionPolicyId) {
+            Long inspectionPolicyId,
+            Map<Long, ContentMedia> mediaById) {
         if (!historicalVersion && inspectionPolicyId == null) {
             return List.of();
         }
@@ -174,11 +184,16 @@ public class ContentDetailQueryService {
                     return new ContentViolationResponse(
                             item.getId(),
                             history.getId(),
+                            history.getContentReportId(),
                             history.getInspectionPolicyId(),
                             type == null ? null : type.getCode(),
                             type == null ? null : type.getDescription(),
                             item.getStatus(),
                             history.getEvidence(),
+                            history.getEvidence().locations().stream()
+                                    .map(location -> EvidenceLocationResponse.from(
+                                            location, mediaById.get(location.contentMediaId())))
+                                    .toList(),
                             history.getDetectedAt());
                 })
                 .toList();

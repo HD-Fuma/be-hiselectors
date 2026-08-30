@@ -1,5 +1,8 @@
 # 콘텐츠 버전·재검수 P0 운영 확인
 
+미디어 구조화 추출과 상세 리포트 전환 배포는
+[`content-inspection-media-report-migration.md`](content-inspection-media-report-migration.md)를 먼저 따른다.
+
 ## 배포 게이트
 
 운영 배포는 애플리케이션 교체 전에 다음 조건을 확인한다.

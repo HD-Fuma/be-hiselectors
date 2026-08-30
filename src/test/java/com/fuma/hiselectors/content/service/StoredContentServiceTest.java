@@ -419,6 +419,48 @@ class StoredContentServiceTest {
     }
 
     @Test
+    void updatesYoutubeContentTypeWhenDurationClassificationChanges() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content content = Content.builder()
+                .selectorsId(1L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .snsContentId("short-1")
+                .contentUrl("https://www.youtube.com/watch?v=short-1")
+                .contentType(ContentType.LONG_FORM)
+                .build();
+        ReflectionTestUtils.setField(content, "id", 10L);
+        createdContents.add(content);
+        RawContent fetched = new RawContent(
+                SnsPlatform.YOUTUBE,
+                "short-1",
+                "https://www.youtube.com/watch?v=short-1",
+                ContentType.SHORTS,
+                List.of("제목"),
+                LocalDateTime.of(2026, 8, 20, 11, 0),
+                List.of());
+
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(contentRepository.findAllByGenerationId(3L)).thenReturn(List.of(content));
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(youtubeFetcher.fetchByContentIds(List.of("short-1")))
+                .thenReturn(List.of(new ContentFetcher.FetchResult(
+                        "short-1", ContentFetcher.FetchStatus.FOUND, fetched, null)));
+        when(versionRepository.findCurrentByContentIdIn(List.of(10L)))
+                .thenReturn(List.of(version(10L, snapshotFactory.contentHash(fetched))));
+        executeTransaction();
+        when(contentRepository.saveAll(any())).thenAnswer(invocation ->
+                toList(invocation.getArgument(0)));
+
+        StoredContentService.StoredContentResult result = service.check();
+
+        assertThat(result.failedContentCount()).isZero();
+        assertThat(content.getContentType()).isEqualTo(ContentType.SHORTS);
+        verify(contentRepository).saveAll(List.of(content));
+        verify(versionRepository, never()).saveAll(any());
+    }
+
+    @Test
     void updatesDeletionOnlyForFoundAndNotFoundContent() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content notFound = content(SnsPlatform.INSTAGRAM, "not-found");
