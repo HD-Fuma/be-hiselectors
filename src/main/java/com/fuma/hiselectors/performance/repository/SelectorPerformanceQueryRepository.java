@@ -182,6 +182,76 @@ public class SelectorPerformanceQueryRepository {
                 .toList();
     }
 
+    /** 한 셀렉터스의 확정 매출을 상품별로 집계한다(매출 내림차순). */
+    public List<ProductSales> summarizeConfirmedSalesByProduct(
+            Long selectorId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        StringBuilder jpql = new StringBuilder("""
+                select p.productId, prod.productName, prod.brandName, prod.thumbnailUrl,
+                       prod.category, coalesce(sum(p.paidAmount), 0),
+                       count(distinct p.orderNo), coalesce(sum(p.quantity), 0)
+                from PurchaseHistory p
+                join Selectors s on s.id = p.selectorsId
+                join Product prod on prod.id = p.productId
+                where p.selectorsId = :selectorId
+                  and s.deleted = false
+                  and p.status = :status
+                  and p.confirmedAt is not null
+                  and (s.userId is null or p.userId <> s.userId)
+                """);
+        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(" group by p.productId, prod.productName, prod.brandName,"
+                + " prod.thumbnailUrl, prod.category order by sum(p.paidAmount) desc");
+        return singleSelectorQuery(jpql.toString(), selectorId, startInclusive, endExclusive)
+                .getResultList().stream()
+                .map(row -> new ProductSales(
+                        (Long) row[0], (String) row[1], (String) row[2], (String) row[3],
+                        (String) row[4], (BigDecimal) row[5],
+                        ((Number) row[6]).longValue(), ((Number) row[7]).longValue()))
+                .toList();
+    }
+
+    /**
+     * 한 셀렉터스의 확정 매출을 캠페인별로 집계한다(매출 내림차순).
+     *
+     * <p>ponytail: 한 상품이 여러 캠페인에 속하면 매출이 각 캠페인에 중복 계상된다.
+     * 개인 두각 확인용 차트라 허용하며, 정확 귀속이 필요하면 캠페인 기간 교집합으로 좁힌다.
+     */
+    public List<CampaignSales> summarizeConfirmedSalesByCampaign(
+            Long selectorId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        StringBuilder jpql = new StringBuilder("""
+                select c.id, c.title, coalesce(sum(p.paidAmount), 0),
+                       count(distinct p.orderNo), coalesce(sum(p.quantity), 0)
+                from PurchaseHistory p
+                join Selectors s on s.id = p.selectorsId
+                join CampaignProduct cp on cp.product.id = p.productId
+                join Campaign c on c.id = cp.campaign.id
+                where p.selectorsId = :selectorId
+                  and s.deleted = false
+                  and c.isDeleted = false
+                  and p.status = :status
+                  and p.confirmedAt is not null
+                  and (s.userId is null or p.userId <> s.userId)
+                """);
+        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(" group by c.id, c.title order by sum(p.paidAmount) desc");
+        return singleSelectorQuery(jpql.toString(), selectorId, startInclusive, endExclusive)
+                .getResultList().stream()
+                .map(row -> new CampaignSales(
+                        (Long) row[0], (String) row[1], (BigDecimal) row[2],
+                        ((Number) row[3]).longValue(), ((Number) row[4]).longValue()))
+                .toList();
+    }
+
+    private TypedQuery<Object[]> singleSelectorQuery(
+            String jpql, Long selectorId,
+            LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        TypedQuery<Object[]> query = entityManager.createQuery(jpql, Object[].class)
+                .setParameter("selectorId", selectorId)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED);
+        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
+        return query;
+    }
+
     private List<DatedSales> summarizeConfirmedSalesByDatePart(
             List<Long> selectorIds,
             LocalDateTime startInclusive,
@@ -317,6 +387,27 @@ public class SelectorPerformanceQueryRepository {
             String profileImageUrl,
             SnsPlatform snsCode,
             Long followerCount
+    ) {
+    }
+
+    public record ProductSales(
+            Long productId,
+            String productName,
+            String brandName,
+            String thumbnailUrl,
+            String category,
+            BigDecimal totalSales,
+            long confirmedOrderCount,
+            long soldQuantity
+    ) {
+    }
+
+    public record CampaignSales(
+            Long campaignId,
+            String title,
+            BigDecimal totalSales,
+            long confirmedOrderCount,
+            long soldQuantity
     ) {
     }
 }

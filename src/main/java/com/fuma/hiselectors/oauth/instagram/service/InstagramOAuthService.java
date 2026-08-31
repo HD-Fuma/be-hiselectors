@@ -8,14 +8,17 @@ import com.fuma.hiselectors.oauth.instagram.config.InstagramOAuthProperties;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramProfileResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramTokenResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
+@Slf4j
 public class InstagramOAuthService {
 
     private static final String INSTAGRAM_AUTH_URI = "https://www.instagram.com/oauth/authorize";
@@ -94,7 +97,8 @@ public class InstagramOAuthService {
                     .retrieve()
                     .body(InstagramTokenResponse.class);
         } catch (RuntimeException e) {
-            throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
+            logOAuthFailure("token exchange", e);
+            throw oauthFailure(e);
         }
 
         if (token == null || token.accessToken() == null) {
@@ -116,7 +120,8 @@ public class InstagramOAuthService {
                     .retrieve()
                     .body(InstagramProfileResponse.class);
         } catch (RuntimeException e) {
-            throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
+            logOAuthFailure("profile lookup", e);
+            throw oauthFailure(e);
         }
 
         if (profile == null || profile.id() == null
@@ -124,5 +129,30 @@ public class InstagramOAuthService {
             throw new BusinessException(ErrorCode.INSTAGRAM_ACCOUNT_NOT_FOUND);
         }
         return profile;
+    }
+
+    /**
+     * Meta가 4xx(만료·재사용된 code 등 클라이언트 원인)를 주면 400으로, 그 외(연결 실패·5xx·타임아웃)는
+     * 502로 매핑한다. 잘못된 code를 "게이트웨이 오류(502)"로 오인해 인프라를 뒤지는 헛다리를 막는다.
+     */
+    private BusinessException oauthFailure(RuntimeException exception) {
+        if (exception instanceof RestClientResponseException responseException
+                && responseException.getStatusCode().is4xxClientError()) {
+            return new BusinessException(ErrorCode.INSTAGRAM_AUTH_CODE_INVALID);
+        }
+        return new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
+    }
+
+    private void logOAuthFailure(String stage, RuntimeException exception) {
+        if (exception instanceof RestClientResponseException responseException) {
+            String response = responseException.getResponseBodyAsString()
+                    .replaceAll("(?i)(\"(?:access_token|client_secret)\"\\s*:\\s*\")[^\"]+", "$1[redacted]")
+                    .replaceAll("[\\r\\n]+", " ");
+            log.warn("Instagram OAuth {} failed: status={}, response={}",
+                    stage, responseException.getStatusCode().value(),
+                    response.substring(0, Math.min(response.length(), 1_000)));
+            return;
+        }
+        log.warn("Instagram OAuth {} failed: exception={}", stage, exception.getClass().getSimpleName());
     }
 }

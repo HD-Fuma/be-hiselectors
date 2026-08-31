@@ -57,7 +57,8 @@ public record TaskRunProperties(Executor executor, Progress progress, Stale stal
             Duration contentReportGeneration,
             Duration settlementCalculation,
             Duration kakaoMessageSend,
-            Duration proposalEmailSend) {
+            Duration proposalEmailSend,
+            Duration selectorProposalEmailSend) {
 
         public Timeouts {
             requirePositive("creatorSync", creatorSync);
@@ -67,6 +68,7 @@ public record TaskRunProperties(Executor executor, Progress progress, Stale stal
             requirePositive("settlementCalculation", settlementCalculation);
             requirePositive("kakaoMessageSend", kakaoMessageSend);
             requirePositive("proposalEmailSend", proposalEmailSend);
+            requirePositive("selectorProposalEmailSend", selectorProposalEmailSend);
         }
 
         private static void requirePositive(String name, Duration duration) {

@@ -42,9 +42,11 @@ public class YouTubeOAuthController {
 
     @Operation(summary = "유튜브 채널 인증 검증",
             description = "프론트가 구글 콜백에서 받은 code/state 를 넘기면, 백엔드가 소유를 확인하고 "
-                    + "채널 정보(채널ID/이름/구독자수)를 반환한다. 소유 증명은 OAuth 자체로 끝. (저장하지 않음)")
+                    + "구글 계정이 소유한 채널 목록(각각 채널ID/이름/구독자수/verificationToken)을 반환한다. "
+                    + "채널이 여러 개면 사용자가 하나를 골라 그 채널의 verificationToken 으로 지원서를 제출한다. "
+                    + "소유 증명은 OAuth 자체로 끝. (저장하지 않음)")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "인증 성공 (채널 정보 반환)"),
+            @ApiResponse(responseCode = "200", description = "인증 성공 (채널 목록 반환)"),
             @ApiResponse(responseCode = "400", description = "요청 값 검증 실패",
                     content = @io.swagger.v3.oas.annotations.media.Content),
             @ApiResponse(responseCode = "401", description = "로그인 필요 / state 불일치",

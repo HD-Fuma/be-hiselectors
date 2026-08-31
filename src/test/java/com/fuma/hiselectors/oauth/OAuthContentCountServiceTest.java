@@ -93,9 +93,11 @@ class OAuthContentCountServiceTest {
 
         var response = service.verifyChannelOwnership("code", "state", "hi-user");
 
-        assertThat(response.followerCount()).isEqualTo(12_345L);
-        assertThat(response.contentCount()).isEqualTo(120L);
-        assertThat(response.verificationToken()).isEqualTo("youtube-verification-token");
+        assertThat(response.channels()).hasSize(1);
+        var channel = response.channels().get(0);
+        assertThat(channel.followerCount()).isEqualTo(12_345L);
+        assertThat(channel.contentCount()).isEqualTo(120L);
+        assertThat(channel.verificationToken()).isEqualTo("youtube-verification-token");
         server.verify();
     }
 

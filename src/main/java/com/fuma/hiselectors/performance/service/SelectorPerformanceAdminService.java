@@ -5,6 +5,7 @@ import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.generation.repository.GenerationRepository;
+import com.fuma.hiselectors.performance.dto.SelectorBreakdownResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse;
@@ -21,6 +22,7 @@ import com.fuma.hiselectors.selectors.excellence.model.SelectorExcellenceSelecti
 import com.fuma.hiselectors.selectors.excellence.model.SelectorExcellenceSelectionType;
 import com.fuma.hiselectors.selectors.excellence.repository.SelectorExcellenceSelectionRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -52,6 +54,7 @@ public class SelectorPerformanceAdminService {
     private static final int DEFAULT_TREND_MONTHS = 6;
 
     private final SelectorPerformanceQueryRepository queryRepository;
+    private final SelectorsRepository selectorsRepository;
     private final SelectorExcellenceSelectionRepository excellenceSelectionRepository;
     private final GenerationRepository generationRepository;
     private final CommissionRateCalculator commissionRateCalculator;
@@ -175,6 +178,34 @@ public class SelectorPerformanceAdminService {
                 .toList();
         return SelectorPerformanceDashboardCalculator.summarize(
                 generationIds, previous.startDate(), previous.endDate(), snapshots);
+    }
+
+    public SelectorBreakdownResponse getBreakdown(
+            Long selectorId, LocalDate startDate, LocalDate endDate) {
+        Period period = Period.of(startDate, endDate);
+        Selectors selector = selectorsRepository.findById(selectorId)
+                .filter(found -> !found.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
+        List<SelectorBreakdownResponse.ProductPerformance> products =
+                queryRepository.summarizeConfirmedSalesByProduct(
+                                selectorId, period.startInclusive(), period.endExclusive())
+                        .stream()
+                        .map(row -> new SelectorBreakdownResponse.ProductPerformance(
+                                row.productId(), row.productName(), row.brandName(),
+                                row.thumbnailUrl(), row.category(), row.totalSales(),
+                                row.confirmedOrderCount(), row.soldQuantity()))
+                        .toList();
+        List<SelectorBreakdownResponse.CampaignPerformance> campaigns =
+                queryRepository.summarizeConfirmedSalesByCampaign(
+                                selectorId, period.startInclusive(), period.endExclusive())
+                        .stream()
+                        .map(row -> new SelectorBreakdownResponse.CampaignPerformance(
+                                row.campaignId(), row.title(), row.totalSales(),
+                                row.confirmedOrderCount(), row.soldQuantity()))
+                        .toList();
+        return new SelectorBreakdownResponse(
+                selector.getId(), selector.getSelectorsCode(), selector.getSelectorsNickname(),
+                selector.getCategory(), products, campaigns);
     }
 
     private SelectorSnapshot toSnapshot(

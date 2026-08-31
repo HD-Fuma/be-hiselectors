@@ -55,9 +55,15 @@ public class StoredContentService {
     }
 
     public StoredContentResult check(Consumer<StoredContentProgress> progress) {
+        return check(ContentBatchMode.STANDARD, progress);
+    }
+
+    public StoredContentResult check(
+            ContentBatchMode mode, Consumer<StoredContentProgress> progress) {
+        Objects.requireNonNull(mode, "콘텐츠 배치 모드는 필수입니다.");
         Objects.requireNonNull(progress, "진행 콜백은 필수입니다.");
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
-        List<StoredContentFetch> results = fetchStoredContents(totalContentCount ->
+        List<StoredContentFetch> results = fetchStoredContents(mode, totalContentCount ->
                 progress.accept(new StoredContentProgress(totalContentCount, 0, 0)));
         int savedEngagementCount = 0;
         int failedContentCount = 0;
@@ -156,23 +162,39 @@ public class StoredContentService {
 
     /** 현재 기수에 저장된 콘텐츠 정보와 성과 조회 */
     List<StoredContentFetch> fetchStoredContents() {
-        return fetchStoredContents(ignored -> {
+        return fetchStoredContents(ContentBatchMode.STANDARD, ignored -> {
         });
     }
 
-    private List<StoredContentFetch> fetchStoredContents(Consumer<Integer> totalProgress) {
+    List<StoredContentFetch> fetchStoredContents(ContentBatchMode mode) {
+        return fetchStoredContents(mode, ignored -> {
+        });
+    }
+
+    private List<StoredContentFetch> fetchStoredContents(
+            ContentBatchMode mode, Consumer<Integer> totalProgress) {
+        Objects.requireNonNull(mode, "콘텐츠 배치 모드는 필수입니다.");
         Generation generation = generationService.getCurrentActivity();
+
+        List<SelectorsSnsAccount> accounts = accountRepository
+                .findAllByGenerationId(generation.getId()).stream()
+                .filter(mode::includes)
+                .toList();
+        Map<AccountKey, String> accountIds = new HashMap<>();
+        for (SelectorsSnsAccount account : accounts) {
+            AccountKey key = new AccountKey(account.getSelectorsId(), account.getSnsCode());
+            accountIds.put(key, account.getAccountId());
+        }
 
         // 현재 기수에 저장된 콘텐츠 조회
         List<Content> contents = contentRepository.findAllByGenerationId(generation.getId());
-        totalProgress.accept(contents.size());
-        Map<AccountKey, String> accountIds = new HashMap<>();
-        for (SelectorsSnsAccount account : accountRepository
-                .findAllByGenerationId(generation.getId())) {
-            accountIds.put(
-                    new AccountKey(account.getSelectorsId(), account.getSnsCode()),
-                    account.getAccountId());
+        if (mode == ContentBatchMode.FAST) {
+            contents = contents.stream()
+                    .filter(content -> accountIds.containsKey(
+                            new AccountKey(content.getSelectorsId(), content.getSnsCode())))
+                    .toList();
         }
+        totalProgress.accept(contents.size());
         Map<Content, FetchResult> fetchedByContent = new HashMap<>();
         Map<Content, RuntimeException> failuresByContent = new HashMap<>();
 

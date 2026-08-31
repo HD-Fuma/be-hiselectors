@@ -51,6 +51,11 @@ public enum ErrorCode {
 
     // --- 인스타그램 OAuth ---
     INSTAGRAM_STATE_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않거나 만료된 인증 요청입니다."),
+    // Meta가 4xx(만료·재사용된 authorization code 등 클라이언트 원인)를 준 경우. 게이트웨이 오류(502)로
+    // 오인하지 않도록 400으로 반환한다. 사용자는 인증을 다시 시도하면 된다.
+    INSTAGRAM_AUTH_CODE_INVALID(
+            HttpStatus.BAD_REQUEST, "만료되었거나 이미 사용된 인증 코드입니다. 다시 시도해 주세요."),
+    // 진짜 연결 실패·5xx·타임아웃 등 Meta 측/네트워크 장애만 502.
     INSTAGRAM_OAUTH_FAILED(HttpStatus.BAD_GATEWAY, "인스타그램 인증 처리 중 오류가 발생했습니다."),
     INSTAGRAM_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "연결된 인스타그램 계정을 찾을 수 없습니다."),
     INSTAGRAM_COLLECTION_CONFIG_MISSING(
@@ -77,6 +82,7 @@ public enum ErrorCode {
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),
     SELECTOR_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 셀렉터스 계정이 존재합니다."),
+    SELECTOR_SNS_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스 SNS 계정을 찾을 수 없습니다."),
 
     // --- 구매 ---
     PURCHASE_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "구매자를 찾을 수 없습니다."),
@@ -206,6 +212,7 @@ public enum ErrorCode {
     // --- 크리에이터 제안 ---
     ADMIN_NOT_FOUND(HttpStatus.NOT_FOUND, "관리자를 찾을 수 없습니다."),
     CREATOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "크리에이터의 공개 이메일을 확인할 수 없습니다."),
+    SELECTOR_EMAIL_REQUIRED(HttpStatus.CONFLICT, "이메일을 확인할 수 있는 셀렉터스가 없습니다."),
     PROPOSAL_MAIL_SEND_FAILED(HttpStatus.BAD_GATEWAY, "제안 메일 발송에 실패했습니다.");
 
     private final HttpStatus status;

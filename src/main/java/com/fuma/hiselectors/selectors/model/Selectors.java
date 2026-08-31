@@ -44,7 +44,7 @@ public class Selectors extends BaseTimeEntity {
     @Column(name = "selectors_nickname", length = 20)
     private String selectorsNickname;
 
-    /** 지원자 콘텐츠 분석으로 산출된 대표 카테고리 코드(BEAUTY 등). 승인 시 지정. */
+    /** 대표 카테고리 코드(BEAUTY 등). 지원서 분석 또는 셀렉터스 SNS 보강으로 지정. */
     @Column(name = "category", length = 20)
     private String category;
 

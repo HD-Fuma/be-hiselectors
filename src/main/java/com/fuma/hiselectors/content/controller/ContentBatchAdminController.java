@@ -2,6 +2,7 @@ package com.fuma.hiselectors.content.controller;
 
 import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
+import com.fuma.hiselectors.content.service.ContentBatchMode;
 import com.fuma.hiselectors.content.task.ContentSyncTask;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
@@ -12,6 +13,7 @@ import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
 import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
 import com.fuma.hiselectors.taskrun.service.TaskStartResult;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.security.Principal;
 import java.util.Collections;
@@ -21,6 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.ObjectMapper;
 
@@ -39,17 +42,24 @@ public class ContentBatchAdminController {
     @PostMapping("/run")
     public ResponseEntity<TaskRunResponse> run(
             @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @RequestParam(defaultValue = "false") boolean fastMode,
             Principal principal) {
         Admin admin = adminRepository.findByLoginId(principal.getName())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_NOT_FOUND));
+        var businessPayload = objectMapper.createObjectNode();
+        TrackedTask task = contentSyncTask;
+        if (fastMode) {
+            businessPayload.put("fastMode", true);
+            task = contentSyncTask.fastModeTask();
+        }
         TaskStartResult result = taskRunExecutionService.submit(
                 new TaskStartCommand(
                         TaskType.CONTENT_SYNC,
                         TriggerType.ADMIN_TRIGGERED,
                         admin.getId(),
                         idempotencyKey,
-                        objectMapper.createObjectNode()),
-                contentSyncTask);
+                        businessPayload),
+                task);
         if (result instanceof TaskStartResult.ActiveConflict) {
             throw new BusinessException(ErrorCode.TASK_ALREADY_RUNNING);
         }

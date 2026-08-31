@@ -115,6 +115,7 @@ task-run:
       settlement-calculation: ${TASK_RUN_SETTLEMENT_STALE_TIMEOUT:30m}
       kakao-message-send: ${TASK_RUN_KAKAO_MESSAGE_STALE_TIMEOUT:10m}
       proposal-email-send: ${TASK_RUN_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
+      selector-proposal-email-send: ${TASK_RUN_SELECTOR_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
 
 jwt:
   secret: ${JWT_SECRET}
@@ -189,7 +190,7 @@ instagram:
   oauth:
     client-id: ${INSTAGRAM_CLIENT_ID:}
     client-secret: ${INSTAGRAM_CLIENT_SECRET:}
-    redirect-uri: ${INSTAGRAM_REDIRECT_URI}
+    redirect-uri: ${INSTAGRAM_REDIRECT_URI:https://hiselectors.shop}
     scope: instagram_business_basic
 
   collection:
@@ -237,6 +238,12 @@ selectors:
     enabled: ${SELECTORS_LIFECYCLE_ENABLED:false}
     cron: ${SELECTORS_LIFECYCLE_CRON:0 15 0 * * *}
     zone: ${SELECTORS_LIFECYCLE_ZONE:Asia/Seoul}
+  sns-enrichment:
+    # 지원서 없이 셀렉터스 프로필 이미지·카테고리만 채운다. 기본 꺼 두어 운영 API 비용을 막는다.
+    scheduler-enabled: ${SELECTORS_SNS_ENRICHMENT_SCHEDULER_ENABLED:false}
+    fixed-delay-ms: ${SELECTORS_SNS_ENRICHMENT_FIXED_DELAY_MS:60000}
+    initial-delay-ms: ${SELECTORS_SNS_ENRICHMENT_INITIAL_DELAY_MS:15000}
+    batch-size: ${SELECTORS_SNS_ENRICHMENT_BATCH_SIZE:5}
   excellence:
     enabled: ${SELECTORS_EXCELLENCE_ENABLED:true}
     cron: ${SELECTORS_EXCELLENCE_CRON:0 20 0 * * *}

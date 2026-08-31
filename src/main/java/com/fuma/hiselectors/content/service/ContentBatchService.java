@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,11 @@ public class ContentBatchService {
 
     /** 신규 콘텐츠를 수집하고 기존 콘텐츠 변경을 확인합니다. */
     public ContentBatchResult run(TaskProgressReporter progress) {
+        return run(progress, ContentBatchMode.STANDARD);
+    }
+
+    public ContentBatchResult run(
+            TaskProgressReporter progress, ContentBatchMode mode) {
         BatchLogContext logContext = batchEventLogger.start("content-sync");
         try {
             int newContentCount = 0;
@@ -47,7 +53,7 @@ public class ContentBatchService {
             progress.describe("신규 콘텐츠 수집 중: 0건 처리");
             progress.start("NEW_CONTENT_SYNC", null);
             try {
-                NewContentService.NewContentResult result = newContentService.collect(update ->
+                NewContentService.NewContentResult result = collect(mode, update ->
                         reportProgress(() -> {
                             collectFailure(
                                     update.failure(), representativeFailures, totalFailureCount);
@@ -84,7 +90,7 @@ public class ContentBatchService {
                     collectedContentCount[0]);
 
             try {
-                StoredContentService.StoredContentResult result = storedContentService.check(update ->
+                StoredContentService.StoredContentResult result = check(mode, update ->
                         reportProgress(() -> {
                             collectFailure(
                                     update.failure(), representativeFailures, totalFailureCount);
@@ -176,6 +182,22 @@ public class ContentBatchService {
         } catch (RuntimeException exception) {
             throw new ProgressUpdateException(exception);
         }
+    }
+
+    private NewContentService.NewContentResult collect(
+            ContentBatchMode mode,
+            Consumer<NewContentService.NewContentProgress> progress) {
+        return mode == ContentBatchMode.STANDARD
+                ? newContentService.collect(progress)
+                : newContentService.collect(mode, progress);
+    }
+
+    private StoredContentService.StoredContentResult check(
+            ContentBatchMode mode,
+            Consumer<StoredContentService.StoredContentProgress> progress) {
+        return mode == ContentBatchMode.STANDARD
+                ? storedContentService.check(progress)
+                : storedContentService.check(mode, progress);
     }
 
     private void collectFailure(

@@ -76,25 +76,10 @@ public class ContentAnalysisScheduler {
         int succeeded = 0;
         int failed = 0;
         for (Application application : targets) {
-            Long id = application.getId();
-            // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
-            // 0이면 다른 인스턴스가 이미 처리 중 → skip.
-            int claimed = applicationRepository.claimForAnalysis(
-                    id, ANALYZABLE_STATUSES, ContentAnalysisStatus.IN_PROGRESS,
-                    EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
-                    LocalDateTime.now(), leaseBefore);
-            if (claimed != 1) {
-                continue;
-            }
-            try {
-                analysisService.analyzeAndReport(id);
-                succeeded++;
-            } catch (RuntimeException e) {
-                failed++;
-                boolean infraDown = e instanceof BusinessException be
-                        && TRANSIENT_ERRORS.contains(be.getErrorCode());
-                analysisService.markFailed(id, e.getMessage(), !infraDown);
-                log.warn("지원자 콘텐츠 분석 실패: applicationId={}, retryCounted={}", id, !infraDown, e);
+            switch (process(application.getId())) {
+                case SUCCEEDED -> succeeded++;
+                case FAILED -> failed++;
+                case SKIPPED -> { }
             }
         }
         if (!targets.isEmpty()) {
@@ -102,4 +87,37 @@ public class ContentAnalysisScheduler {
                     targets.size(), succeeded, failed);
         }
     }
+
+    /**
+     * 지원자 1건을 스케줄러를 기다리지 않고 즉시 분석한다(지원서 제출 직후 호출).
+     * 스케줄러와 동일한 원자적 선점을 거치므로 중복 처리되지 않는다.
+     */
+    public void analyzeNow(Long applicationId) {
+        process(applicationId);
+    }
+
+    private Outcome process(Long id) {
+        LocalDateTime leaseBefore = LocalDateTime.now().minusMinutes(leaseMinutes);
+        // 원자적 선점: PENDING/FAILED(또는 lease 만료된 IN_PROGRESS) → IN_PROGRESS.
+        // 0이면 다른 인스턴스(스케줄러/즉시처리)가 이미 처리 중 → skip.
+        int claimed = applicationRepository.claimForAnalysis(
+                id, ANALYZABLE_STATUSES, ContentAnalysisStatus.IN_PROGRESS,
+                EnumSet.of(ContentAnalysisStatus.PENDING, ContentAnalysisStatus.FAILED),
+                LocalDateTime.now(), leaseBefore);
+        if (claimed != 1) {
+            return Outcome.SKIPPED;
+        }
+        try {
+            analysisService.analyzeAndReport(id);
+            return Outcome.SUCCEEDED;
+        } catch (RuntimeException e) {
+            boolean infraDown = e instanceof BusinessException be
+                    && TRANSIENT_ERRORS.contains(be.getErrorCode());
+            analysisService.markFailed(id, e.getMessage(), !infraDown);
+            log.warn("지원자 콘텐츠 분석 실패: applicationId={}, retryCounted={}", id, !infraDown, e);
+            return Outcome.FAILED;
+        }
+    }
+
+    private enum Outcome { SUCCEEDED, FAILED, SKIPPED }
 }

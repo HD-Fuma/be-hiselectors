@@ -28,7 +28,8 @@ class TaskRunTest {
                 TaskType.CONTENT_REPORT_GENERATION,
                 TaskType.SETTLEMENT_CALCULATION,
                 TaskType.KAKAO_MESSAGE_SEND,
-                TaskType.PROPOSAL_EMAIL_SEND);
+                TaskType.PROPOSAL_EMAIL_SEND,
+                TaskType.SELECTOR_PROPOSAL_EMAIL_SEND);
         assertThat(TriggerType.values()).containsExactly(
                 TriggerType.ADMIN_TRIGGERED,
                 TriggerType.SCHEDULED);
