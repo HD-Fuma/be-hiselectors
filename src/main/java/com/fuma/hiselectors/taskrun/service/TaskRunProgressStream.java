@@ -113,6 +113,10 @@ public class TaskRunProgressStream implements AutoCloseable {
         return (int) subscribers.stream().filter(Subscriber::isActive).count();
     }
 
+    public boolean hasSubscribers() {
+        return subscriberCount() > 0;
+    }
+
     @Override
     @PreDestroy
     public void close() {

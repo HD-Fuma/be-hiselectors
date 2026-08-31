@@ -41,11 +41,17 @@ public class TaskRunService {
     }
 
     public TaskStartResult start(TaskStartCommand command) {
+        return start(command, false);
+    }
+
+    public TaskStartResult start(TaskStartCommand command, boolean queueManaged) {
         Objects.requireNonNull(command, "command must not be null");
         String fingerprint = requestFingerprint.of(command.taskType(), command.businessPayload());
         String concurrencyKey = concurrencyKey(command.taskType());
         try {
-            return new TaskStartResult.Created(creator.create(command, fingerprint, concurrencyKey));
+            return new TaskStartResult.Created(queueManaged
+                    ? creator.create(command, fingerprint, concurrencyKey, true)
+                    : creator.create(command, fingerprint, concurrencyKey));
         } catch (DataIntegrityViolationException conflict) {
             return conflictResolver.resolve(command, fingerprint, concurrencyKey, conflict);
         }

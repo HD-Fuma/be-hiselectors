@@ -1,13 +1,22 @@
 # 지원자 분석 Fargate 작업
 
 미디어 수집이 끝나면 API가 FIFO SQS에 지원자 ID를 넣고, SQS가 Lambda를 호출해 Fargate
-작업 하나를 시작한다. 작업은 지원자 한 명만 분석하고 종료한다. 실행 중인 작업이 있으면
-다음 메시지는 큐에서 기다리므로 Gemini 요청이 겹치지 않는다.
+작업을 시작한다. 현재 메시지는 **분석 시작 신호**다. Lambda는 메시지 body를 작업에
+전달하지 않고, worker가 DB에서 대상을 다시 조회해 처리한다. 템플릿은 한 task당 최대
+10명을 순차 처리하도록 설정한다. 일반 TaskRun의 완료 확인형 큐와 구분해야 한다.
 
-`EventBridge Scheduler`는 메시지 발행 누락이나 작업 시작 실패를 복구하기 위해 1시간마다
-동일한 Lambda를 호출한다. 평상시 분석 시작은 15분 주기가 아니라 SQS 이벤트가 담당한다.
+Lambda가 `RunTask` 요청 성공을 반환하면 신호 메시지가 삭제된다. 이후 실제 분석 실패는
+SQS DLQ가 아니라 DB의 상태·재시도 횟수·lease와 다음 worker 실행을 통해 복구한다.
+이미 실행 중인 task가 있으면 Lambda가 실패 응답을 반환하므로, 단순 busy도 SQS receive
+횟수를 소비할 수 있다. DLQ 알림이 곧 개별 분석의 반복 실패를 의미하지는 않는다.
 
-분석 메시지가 재시도를 모두 소진해 DLQ로 이동하면 CloudWatch Alarm이 기존
+`EventBridge Scheduler`는 메시지 발행 누락이나 작업 시작 실패를 복구하기 위해 동일한
+Lambda를 호출한다. 템플릿 기본값은 **비활성**이며 주기 기본값은 10분이다. 실제 활성화
+여부/주기는 배포 parameter를 확인한다. 평상시 분석 시작은 SQS 이벤트가 담당한다.
+analysis 컨테이너는 전역 `SCHEDULING_ENABLED=false`이므로 일반 정산·미디어·알림 cron을
+함께 등록하지 않고 명시적인 one-shot 분석만 실행한다.
+
+시작 신호가 재시도를 모두 소진해 DLQ로 이동하면 CloudWatch Alarm이 기존
 `batch-alerts` SNS 주제(`AlertTopicName`)를 호출한다. 이 주제에 연결된 Amazon Q Slack
 채널로 장애 알림이 전달된다.
 
