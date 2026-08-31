@@ -17,6 +17,7 @@ import com.fuma.hiselectors.taskrun.model.TaskType;
 import jakarta.validation.Validator;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -49,14 +50,15 @@ public class TaskRunTaskResolver {
         return switch (run.getTaskType()) {
             case CREATOR_SYNC -> creatorSync(payload);
             case CONTENT_SYNC -> {
-                requireFields(payload);
-                // 원래 객체를 반환해 콘텐츠 동기화의 afterTerminal 리포트 연결도 보존한다.
-                yield contentSyncTask.getObject();
+                boolean fastMode = contentFastMode(payload);
+                ContentSyncTask task = contentSyncTask.getObject();
+                yield fastMode ? task.fastModeTask() : task;
             }
             case CONTENT_REPORT_GENERATION -> {
-                requireFields(payload, "sourceContentSyncRunId");
+                boolean fastMode = contentFastMode(payload, "sourceContentSyncRunId");
                 UUID.fromString(requiredString(payload, "sourceContentSyncRunId"));
-                yield contentReportGenerationTask.getObject();
+                ContentReportGenerationTask task = contentReportGenerationTask.getObject();
+                yield fastMode ? task.fastModeTask() : task;
             }
             case SETTLEMENT_CALCULATION -> settlement(payload);
             case KAKAO_MESSAGE_SEND -> {
@@ -81,12 +83,28 @@ public class TaskRunTaskResolver {
         };
     }
 
-    /** 완료 메시지 재전달은 실행 인자나 관리자 계정을 다시 복원하지 않는다. */
+    /** 완료 메시지 재전달도 저장된 콘텐츠 범위를 유지하며 관리자 계정은 재조회하지 않는다. */
     public void afterTerminal(TaskRun run) {
         if (run.getTaskType() == TaskType.CONTENT_SYNC) {
-            contentSyncTask.getObject().afterTerminal(
+            resolve(run).afterTerminal(
                     new TaskTerminalContext(run.getRunId(), run.getStatus()));
         }
+    }
+
+    private boolean contentFastMode(JsonNode payload, String... requiredFields) {
+        Set<String> fields = new HashSet<>(payload.propertyNames());
+        fields.remove("fastMode");
+        if (!fields.equals(Set.of(requiredFields))) {
+            throw new IllegalArgumentException("Task payload has missing or unsupported fields");
+        }
+        JsonNode fastMode = payload.get("fastMode");
+        if (fastMode == null) {
+            return false;
+        }
+        if (!fastMode.isBoolean()) {
+            throw new IllegalArgumentException("Task payload fastMode must be a boolean");
+        }
+        return fastMode.booleanValue();
     }
 
     private TrackedTask creatorSync(JsonNode payload) {

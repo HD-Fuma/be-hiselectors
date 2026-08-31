@@ -2,14 +2,17 @@ package com.fuma.hiselectors.taskrun.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
+import com.fuma.hiselectors.content.service.ContentBatchService;
 import com.fuma.hiselectors.content.task.ContentSyncTask;
 import com.fuma.hiselectors.creator.task.CreatorSyncTask;
 import com.fuma.hiselectors.creator.task.InstagramCreatorSyncTask;
@@ -42,6 +45,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataAccessResourceFailureException;
 import tools.jackson.databind.ObjectMapper;
@@ -76,9 +80,13 @@ class TaskRunTaskResolverTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new TaskRunTaskResolver(
+        resolver = resolverFor(contentSync);
+    }
+
+    private TaskRunTaskResolver resolverFor(ContentSyncTask contentTask) {
+        return new TaskRunTaskResolver(
                 objectMapper, validators.getValidator(), admins,
-                provider(creatorSync), provider(instagramSync), provider(contentSync),
+                provider(creatorSync), provider(instagramSync), provider(contentTask),
                 provider(contentReports), provider(estimates), provider(finalization),
                 provider(recalculation), provider(kakao), provider(proposals));
     }
@@ -94,6 +102,73 @@ class TaskRunTaskResolverTest {
                 "{\"sourceContentSyncRunId\":\"4a4c42f2-b8a1-4fc0-8981-519fd50de85c\"}")))
                 .isSameAs(contentReports);
         verifyNoInteractions(creatorSync, instagramSync, contentSync, contentReports);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void restoresExplicitContentModeUsingTheOriginalDomainTasks(boolean fastMode) {
+        TrackedTask fastSync = mock(TrackedTask.class);
+        TrackedTask fastReport = mock(TrackedTask.class);
+        when(contentSync.fastModeTask()).thenReturn(fastSync);
+        when(contentReports.fastModeTask()).thenReturn(fastReport);
+
+        assertThat(resolver.resolve(run(TaskType.CONTENT_SYNC,
+                "{\"fastMode\":" + fastMode + "}")))
+                .isSameAs(fastMode ? fastSync : contentSync);
+        assertThat(resolver.resolve(run(TaskType.CONTENT_REPORT_GENERATION,
+                "{\"sourceContentSyncRunId\":\"4a4c42f2-b8a1-4fc0-8981-519fd50de85c\","
+                        + "\"fastMode\":" + fastMode + "}")))
+                .isSameAs(fastMode ? fastReport : contentReports);
+
+        verifyNoInteractions(fastSync, fastReport, admins);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "\"true\"", "\"false\"", "1", "0", "{}", "[]"})
+    void malformedContentModeCannotResolveOrBroadenATerminalReplay(String fastMode) {
+        TaskRun sync = run(TaskType.CONTENT_SYNC, "{\"fastMode\":" + fastMode + "}");
+        TaskRun report = run(TaskType.CONTENT_REPORT_GENERATION,
+                "{\"sourceContentSyncRunId\":\"4a4c42f2-b8a1-4fc0-8981-519fd50de85c\","
+                        + "\"fastMode\":" + fastMode + "}");
+
+        assertThatThrownBy(() -> resolver.resolve(sync))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> resolver.afterTerminal(sync))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> resolver.resolve(report))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verifyNoInteractions(contentSync, contentReports, admins);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = TaskRunStatus.class, names = {"SUCCEEDED", "PARTIAL_FAILED", "FAILED"})
+    void fastCompletionAndRedeliveryPreserveChildScopeAndIdempotency(TaskRunStatus status) {
+        UUID runId = UUID.fromString("97f0a053-2bde-4932-b8e4-58f3f98236c1");
+        ContentBatchService batch = mock(ContentBatchService.class);
+        TaskRunExecutionService submissions = mock(TaskRunExecutionService.class);
+        TrackedTask fastReport = mock(TrackedTask.class);
+        when(contentReports.fastModeTask()).thenReturn(fastReport);
+        resolver = resolverFor(new ContentSyncTask(batch, submissions, contentReports, objectMapper));
+        TaskRun sync = run(TaskType.CONTENT_SYNC, "{\"fastMode\":true}");
+        when(sync.getRunId()).thenReturn(runId);
+        when(sync.getStatus()).thenReturn(status);
+
+        resolver.resolve(sync).afterTerminal(new TaskTerminalContext(runId, status));
+        resolver.afterTerminal(sync);
+
+        ArgumentCaptor<TaskStartCommand> commands = ArgumentCaptor.forClass(TaskStartCommand.class);
+        verify(submissions, times(2)).submit(commands.capture(), same(fastReport));
+        TaskStartCommand first = commands.getAllValues().getFirst();
+        TaskStartCommand replay = commands.getAllValues().getLast();
+        assertThat(first.taskType()).isEqualTo(TaskType.CONTENT_REPORT_GENERATION);
+        assertThat(first.businessPayload()).isEqualTo(objectMapper.createObjectNode()
+                .put("sourceContentSyncRunId", runId.toString()).put("fastMode", true));
+        assertThat(replay.businessPayload()).isEqualTo(first.businessPayload());
+        assertThat(replay.idempotencyKey()).isEqualTo(first.idempotencyKey());
+        assertThat(resolver.resolve(run(TaskType.CONTENT_REPORT_GENERATION,
+                objectMapper.writeValueAsString(replay.businessPayload())))).isSameAs(fastReport);
+        verifyNoInteractions(batch, admins, fastReport);
     }
 
     @Test
@@ -179,6 +254,10 @@ class TaskRunTaskResolverTest {
     void rejectsMissingUnknownOrMalformedScopeBeforeAnyDomainWork(TaskType type, String payload) {
         assertThatThrownBy(() -> resolver.resolve(run(type, payload)))
                 .isInstanceOf(IllegalArgumentException.class);
+        if (type == TaskType.CONTENT_SYNC) {
+            assertThatThrownBy(() -> resolver.afterTerminal(run(type, payload)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
 
         verifyNoInteractions(admins, creatorSync, instagramSync, contentSync, contentReports,
                 estimates, finalization, recalculation, kakao, proposals);
@@ -192,6 +271,7 @@ class TaskRunTaskResolverTest {
                 Arguments.of(TaskType.CONTENT_SYNC, "null"),
                 Arguments.of(TaskType.CONTENT_SYNC, "[]"),
                 Arguments.of(TaskType.CONTENT_SYNC, "{\"selectedIds\":[1]}"),
+                Arguments.of(TaskType.CONTENT_SYNC, "{\"fastMode\":true,\"selectedIds\":[1]}"),
                 Arguments.of(TaskType.CREATOR_SYNC, "{}"),
                 Arguments.of(TaskType.CREATOR_SYNC, "{\"source\":\"unknown\"}"),
                 Arguments.of(TaskType.CREATOR_SYNC, "{\"source\":\"youtube-category\"}"),
@@ -205,6 +285,10 @@ class TaskRunTaskResolverTest {
                         "{\"source\":\"youtube-category\",\"categoryId\":1.5}"),
                 Arguments.of(TaskType.CONTENT_REPORT_GENERATION,
                         "{\"sourceContentSyncRunId\":\"not-a-uuid\"}"),
+                Arguments.of(TaskType.CONTENT_REPORT_GENERATION, "{\"fastMode\":true}"),
+                Arguments.of(TaskType.CONTENT_REPORT_GENERATION,
+                        "{\"sourceContentSyncRunId\":\"4a4c42f2-b8a1-4fc0-8981-519fd50de85c\","
+                                + "\"fastMode\":true,\"selectedIds\":[1]}"),
                 Arguments.of(TaskType.SETTLEMENT_CALCULATION, "{}"),
                 Arguments.of(TaskType.SETTLEMENT_CALCULATION, "{\"mode\":\"UNKNOWN\"}"),
                 Arguments.of(TaskType.SETTLEMENT_CALCULATION,
@@ -276,9 +360,9 @@ class TaskRunTaskResolverTest {
 
     @ParameterizedTest
     @EnumSource(TaskType.class)
-    void terminalReplayOnlyRestoresContentFollowUpWithoutPayloadOrAdminLookup(TaskType type) {
+    void terminalReplayRestoresOnlyContentScopeWithoutAdminLookup(TaskType type) {
         UUID runId = UUID.fromString("97f0a053-2bde-4932-b8e4-58f3f98236c1");
-        TaskRun run = run(type, null);
+        TaskRun run = run(type, type == TaskType.CONTENT_SYNC ? "{}" : null);
         when(run.getRunId()).thenReturn(runId);
         when(run.getStatus()).thenReturn(TaskRunStatus.SUCCEEDED);
 
@@ -286,10 +370,11 @@ class TaskRunTaskResolverTest {
 
         if (type == TaskType.CONTENT_SYNC) {
             verify(contentSync).afterTerminal(new TaskTerminalContext(runId, TaskRunStatus.SUCCEEDED));
+            verify(run).getBusinessPayload();
         } else {
             verifyNoInteractions(contentSync);
+            verify(run, never()).getBusinessPayload();
         }
-        verify(run, never()).getBusinessPayload();
         verify(run, never()).getStartedByAdminId();
         verifyNoInteractions(admins, creatorSync, instagramSync, contentReports,
                 estimates, finalization, recalculation, kakao, proposals);

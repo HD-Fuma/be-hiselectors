@@ -176,6 +176,26 @@ class TaskQueueWorkerContractTest {
     }
 
     @Test
+    void deadLettersTerminalMessageWithoutBroadeningAnInvalidFollowUpScope() {
+        when(run.isTerminal()).thenReturn(true);
+        when(run.getStatus()).thenReturn(TaskRunStatus.SUCCEEDED);
+        IllegalArgumentException invalidScope =
+                new IllegalArgumentException("Task payload fastMode must be a boolean");
+        doThrow(invalidScope).when(resolver).afterTerminal(run);
+
+        worker.handle(message(RUN_ID.toString()));
+
+        InOrder order = inOrder(resolver, state, sqs);
+        order.verify(resolver).afterTerminal(run);
+        order.verify(state).reject(RUN_ID);
+        order.verify(sqs).sendMessage(dlqRequest(RUN_ID.toString()));
+        order.verify(sqs).deleteMessage(deleteRequest());
+        verify(state, never()).claim(any(), anyBoolean());
+        verify(state, never()).finish(any(), any(), anyBoolean());
+        verifyNoInteractions(execution, task);
+    }
+
+    @Test
     void busyLeaseOnlyDefersThisDelivery() {
         when(state.claim(RUN_ID, true)).thenReturn(new Claim(run, null, Disposition.BUSY));
 
