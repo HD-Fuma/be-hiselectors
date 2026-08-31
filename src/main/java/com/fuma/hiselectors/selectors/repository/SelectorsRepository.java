@@ -73,6 +73,31 @@ public interface SelectorsRepository extends JpaRepository<Selectors, Long> {
     @Query("select s from Selectors s where s.id = :selectorsId")
     Optional<Selectors> findByIdForUpdate(@Param("selectorsId") Long selectorsId);
 
+    /**
+     * 지원서 없이 프로필 이미지·카테고리를 채울 대상.
+     * force 가 false 이면 카테고리 또는 프로필 이미지가 비어 있는 셀렉터스만 고른다.
+     */
+    @Query("""
+            select s from Selectors s
+            where s.deleted = false
+              and exists (
+                    select 1 from SelectorsSnsAccount a
+                    where a.selectorsId = s.id
+                      and a.deleted = false
+                      and a.accountId is not null
+                      and a.accountId <> ''
+                      and (
+                            :force = true
+                            or s.category is null
+                            or s.category = ''
+                            or a.profileImageUrl is null
+                            or a.profileImageUrl = ''
+                      ))
+            order by s.id
+            """)
+    List<Selectors> findSnsEnrichmentTargets(
+            @Param("force") boolean force, Pageable pageable);
+
     /** 관리자 상세 조회용. 탈퇴·제명 처리된 셀렉터스는 없는 것으로 본다. */
     Optional<Selectors> findByIdAndDeletedFalse(Long id);
 
