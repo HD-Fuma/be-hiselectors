@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.matching.repository;
 
+import com.fuma.hiselectors.analytics.model.ViewPageType;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import jakarta.persistence.EntityManager;
@@ -64,6 +65,45 @@ public class MatchingQueryRepository {
                 .toList();
     }
 
+    /**
+     * 주어진 카테고리(들) 상품에 대한 셀렉터스별 상품 클릭 수. 전환율(주문/클릭) 계산용.
+     * PRODUCT 클릭의 reference_id 는 product_id 이므로 Product 로 조인해 카테고리를 건다.
+     */
+    public List<SelectorClicks> countCategoryProductClicks(
+            Collection<String> categories,
+            LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        if (categories.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder jpql = new StringBuilder("""
+                select c.selectorsId, count(c)
+                from ClickLog c
+                join Product prod on prod.id = c.referenceId
+                where c.linkType = :linkType
+                  and prod.category in :categories
+                """);
+        if (startInclusive != null) {
+            jpql.append(" and c.createdAt >= :startInclusive");
+        }
+        if (endExclusive != null) {
+            jpql.append(" and c.createdAt < :endExclusive");
+        }
+        jpql.append(" group by c.selectorsId");
+
+        TypedQuery<Object[]> query = entityManager.createQuery(jpql.toString(), Object[].class)
+                .setParameter("linkType", ViewPageType.PRODUCT)
+                .setParameter("categories", categories);
+        if (startInclusive != null) {
+            query.setParameter("startInclusive", startInclusive);
+        }
+        if (endExclusive != null) {
+            query.setParameter("endExclusive", endExclusive);
+        }
+        return query.getResultList().stream()
+                .map(row -> new SelectorClicks((Long) row[0], ((Number) row[1]).longValue()))
+                .toList();
+    }
+
     /** 대표 카테고리가 일치하는(아직 실적이 없어도) 셀렉터스. 신규 카테고리 커버용. */
     public List<Selectors> findRepresentativeCategorySelectors(Collection<String> categories) {
         if (categories.isEmpty()) {
@@ -86,6 +126,12 @@ public class MatchingQueryRepository {
             Long selectorId,
             BigDecimal totalSales,
             long confirmedOrderCount
+    ) {
+    }
+
+    public record SelectorClicks(
+            Long selectorId,
+            long clicks
     ) {
     }
 }
