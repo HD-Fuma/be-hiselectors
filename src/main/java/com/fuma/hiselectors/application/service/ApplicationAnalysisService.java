@@ -57,12 +57,16 @@ public class ApplicationAnalysisService {
             throw new BusinessException(ErrorCode.NO_CONTENT_TO_EVALUATE);
         }
 
-        // 헬스 게이트: 인스타 콘텐츠가 있는데 STT 워커가 죽어있으면 아예 시작하지 않는다.
-        // 처리 도중 워커 장애로 인스타만 빠진 '부분 리포트'가 DONE 으로 저장되는 걸 막고,
-        // transient 실패로 처리돼 재시도 예산도 소진하지 않는다(워커 복구 시 자동 재개).
+        // STT 워커가 죽어 있어도 리포트 생성은 막지 않는다. 인스타는 STT/OCR 없이도
+        // 캡션·메타데이터(제목/설명)만으로 리포트를 만들 수 있으므로, 워커가 없으면 인스타 STT를
+        // 건너뛰고(콘텐츠별 워커 왕복 타임아웃도 회피) 나머지 신호로 리포트를 만든다. 유튜브는 그대로 처리.
+        // ponytail: 워커 미가동 시 캡션 기반 '부분 리포트'가 DONE 으로 저장됨. STT 전사가 반드시 필요하면
+        //           워커 헬스 게이트를 다시 하드 실패로 되돌린다.
         boolean hasInstagram = media.stream().anyMatch(m -> m.getSnsCode() != SnsPlatform.YOUTUBE);
-        if (hasInstagram && !instagramSttClient.isHealthy()) {
-            throw new BusinessException(ErrorCode.STT_WORKER_CALL_FAILED);
+        boolean instagramSttAvailable = !hasInstagram || instagramSttClient.isHealthy();
+        if (hasInstagram && !instagramSttAvailable) {
+            log.warn("STT 워커 미가동 → 인스타 STT/OCR 생략, 캡션·메타데이터 기반 리포트 생성: applicationId={}",
+                    applicationId);
         }
 
         notifyAnalysisFlow(QUANT_START, applicationId, "정량 분석을 시작했습니다.");
@@ -82,6 +86,10 @@ public class ApplicationAnalysisService {
                     evaluationService.addYoutubeContent(
                             applicationId, m.getSnsContentId(), m.getDurationSeconds());
                 } else {
+                    // 워커가 죽어 있으면 인스타 STT/OCR 전사는 건너뛴다(리포트는 캡션 기반으로 생성).
+                    if (!instagramSttAvailable) {
+                        continue;
+                    }
                     // 인스타는 media_url(CDN) 필요. 없는 건 취득 불가라 skip.
                     if (m.getMediaUrl() == null || m.getMediaUrl().isBlank()) {
                         continue;
