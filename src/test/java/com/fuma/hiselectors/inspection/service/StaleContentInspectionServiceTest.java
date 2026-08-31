@@ -25,6 +25,7 @@ import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
@@ -83,6 +84,40 @@ class StaleContentInspectionServiceTest {
         assertThat(response.successCount()).isEqualTo(2);
         assertThat(response.failureCount()).isEqualTo(1);
         assertThat(response.failedVersionIds()).containsExactly(12L);
+    }
+
+    @Test
+    void scopesStaleVersionsByPlatformAccountId() {
+        when(generation.getId()).thenReturn(2L);
+        when(generations.getActive()).thenReturn(generation);
+        when(youtube.getId()).thenReturn(8L);
+        when(youtube.getPlatform()).thenReturn(SnsPlatform.YOUTUBE);
+        when(instagram.getId()).thenReturn(9L);
+        when(instagram.getPlatform()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(policies.requireAllActive()).thenReturn(List.of(youtube, instagram));
+        when(versions.findStaleLatestVersionIds(
+                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING),
+                eq("UCD2RQE52TloxzZxZ2fyq8HQ"), any(Pageable.class)))
+                .thenReturn(List.of(11L));
+        when(versions.findStaleLatestVersionIds(
+                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING),
+                eq("hi_selectors"), any(Pageable.class)))
+                .thenReturn(List.of(12L));
+        List<Long> inspected = new ArrayList<>();
+
+        service.reinspectStale(
+                10,
+                Map.of(
+                        SnsPlatform.YOUTUBE, "UCD2RQE52TloxzZxZ2fyq8HQ",
+                        SnsPlatform.INSTAGRAM, "hi_selectors"),
+                Set.of(),
+                inspected::add,
+                ignored -> {
+                });
+
+        assertThat(inspected).containsExactly(11L, 12L);
     }
 
     @Test

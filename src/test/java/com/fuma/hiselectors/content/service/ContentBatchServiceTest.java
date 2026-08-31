@@ -53,6 +53,20 @@ class ContentBatchServiceTest {
     private ContentBatchService service;
 
     @Test
+    void fastModeDelegatesBothContentStagesWithFastScope() {
+        when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
+        when(newContentService.collect(eq(ContentBatchMode.FAST), any()))
+                .thenReturn(new NewContentService.NewContentResult(0, 0));
+        when(storedContentService.check(eq(ContentBatchMode.FAST), any()))
+                .thenReturn(new StoredContentService.StoredContentResult(0, 0));
+
+        service.run(progress, ContentBatchMode.FAST);
+
+        verify(newContentService).collect(eq(ContentBatchMode.FAST), any());
+        verify(storedContentService).check(eq(ContentBatchMode.FAST), any());
+    }
+
+    @Test
     void logsOneCombinedPartialFailureEventForInstagramAndYoutube() {
         when(batchEventLogger.start("content-sync")).thenReturn(batchLogContext);
         when(newContentService.collect(any())).thenReturn(new NewContentService.NewContentResult(

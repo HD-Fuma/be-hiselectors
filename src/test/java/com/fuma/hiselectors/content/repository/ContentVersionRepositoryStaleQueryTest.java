@@ -15,8 +15,10 @@ import com.fuma.hiselectors.content.model.ContentReportData;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import com.fuma.hiselectors.selectors.model.SelectorsGeneration;
+import com.fuma.hiselectors.selectors.model.SelectorsSnsAccount;
 import com.fuma.hiselectors.selectors.repository.SelectorsGenerationRepository;
 import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
+import com.fuma.hiselectors.selectors.repository.SelectorsSnsAccountRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +49,9 @@ class ContentVersionRepositoryStaleQueryTest {
 
     @Autowired
     private SelectorsGenerationRepository selectorsGenerationRepository;
+
+    @Autowired
+    private SelectorsSnsAccountRepository selectorsSnsAccountRepository;
 
     private Long selectorsId;
 
@@ -111,6 +116,40 @@ class ContentVersionRepositoryStaleQueryTest {
                 ContentVersionStatus.INSPECTING, PageRequest.of(0, 2));
 
         assertThat(staleIds).hasSize(2);
+    }
+
+    @Test
+    void scopesStaleVersionsToTheRequestedPlatformAccount() {
+        selectorsSnsAccountRepository.save(SelectorsSnsAccount.builder()
+                .selectorsId(selectorsId)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("@HI_SELECTORS")
+                .build());
+        Long matching = latestWithoutReport();
+        Selectors other = selectorsRepository.save(Selectors.builder()
+                .userId(200L)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .build());
+        selectorsGenerationRepository.save(SelectorsGeneration.builder()
+                .selectorsId(other.getId())
+                .generationId(ACTIVE_GENERATION_ID)
+                .build());
+        selectorsSnsAccountRepository.save(SelectorsSnsAccount.builder()
+                .selectorsId(other.getId())
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("another_handle")
+                .build());
+        Long unrelated = latestWithoutReportForSelectors(other.getId());
+
+        List<Long> staleIds = contentVersionRepository.findStaleLatestVersionIds(
+                ACTIVE_GENERATION_ID,
+                SnsPlatform.INSTAGRAM,
+                ACTIVE_POLICY_ID,
+                ContentVersionStatus.INSPECTING,
+                "hi_selectors",
+                PageRequest.of(0, 50));
+
+        assertThat(staleIds).containsExactly(matching).doesNotContain(unrelated);
     }
 
     @Test

@@ -157,6 +157,50 @@ class StoredContentServiceTest {
     }
 
     @Test
+    void fastModeFetchesStoredContentsOnlyForConfiguredAccounts() {
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        Content youtube = content(10L, SnsPlatform.YOUTUBE, "youtube-fast");
+        Content instagram = content(20L, SnsPlatform.INSTAGRAM, "instagram-fast");
+        Content unrelated = content(30L, SnsPlatform.INSTAGRAM, "instagram-other");
+        SelectorsSnsAccount youtubeAccount = SelectorsSnsAccount.builder()
+                .selectorsId(10L)
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("UCD2RQE52TloxzZxZ2fyq8HQ")
+                .build();
+        SelectorsSnsAccount instagramAccount = SelectorsSnsAccount.builder()
+                .selectorsId(20L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("@HI_SELECTORS")
+                .build();
+        SelectorsSnsAccount unrelatedAccount = SelectorsSnsAccount.builder()
+                .selectorsId(30L)
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("another_handle")
+                .build();
+        ContentFetcher.FetchResult youtubeResult = new ContentFetcher.FetchResult(
+                "youtube-fast", ContentFetcher.FetchStatus.NOT_FOUND, null, null);
+        ContentFetcher.FetchResult instagramResult = new ContentFetcher.FetchResult(
+                "instagram-fast", ContentFetcher.FetchStatus.NOT_FOUND, null, null);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(accountRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(youtubeAccount, instagramAccount, unrelatedAccount));
+        when(contentRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(youtube, unrelated, instagram));
+        when(youtubeFetcher.supports()).thenReturn(SnsPlatform.YOUTUBE);
+        when(instagramFetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
+        when(youtubeFetcher.fetchByContentIds(List.of("youtube-fast")))
+                .thenReturn(List.of(youtubeResult));
+        when(instagramFetcher.fetchByAccountContentIds(
+                "@HI_SELECTORS", List.of("instagram-fast")))
+                .thenReturn(List.of(instagramResult));
+
+        assertThat(service.fetchStoredContents(ContentBatchMode.FAST))
+                .extracting(StoredContentService.StoredContentFetch::content)
+                .containsExactly(youtube, instagram);
+    }
+
+    @Test
     void fetchesInstagramContentsBySelectorsAccount() {
         Generation generation = org.mockito.Mockito.mock(Generation.class);
         Content first = content(SnsPlatform.INSTAGRAM, "first-media");
@@ -939,8 +983,13 @@ class StoredContentServiceTest {
     }
 
     private Content content(SnsPlatform platform, String snsContentId) {
+        return content(1L, platform, snsContentId);
+    }
+
+    private Content content(
+            Long selectorsId, SnsPlatform platform, String snsContentId) {
         Content content = Content.builder()
-                .selectorsId(1L)
+                .selectorsId(selectorsId)
                 .snsCode(platform)
                 .snsContentId(snsContentId)
                 .contentUrl("https://example.com/" + snsContentId)

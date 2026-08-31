@@ -66,6 +66,19 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
                     select max(innerCv.versionNo) from ContentVersion innerCv
                     where innerCv.contentId = cv.contentId)
               and (
+                    :targetAccountId is null
+                    or exists (
+                        select account.id from SelectorsSnsAccount account
+                        where account.selectorsId = c.selectorsId
+                          and account.snsCode = :platform
+                          and account.deleted = false
+                          and (
+                                lower(account.accountId) = lower(:targetAccountId)
+                                or lower(account.accountId) = concat('@', lower(:targetAccountId))
+                          )
+                    )
+              )
+              and (
                     not exists (
                         select 1 from ContentReport cr
                         where cr.contentVersionId = cv.id
@@ -77,5 +90,16 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
             @Param("platform") SnsPlatform platform,
             @Param("inspectionPolicyId") Long inspectionPolicyId,
             @Param("excludedStatus") ContentVersionStatus excludedStatus,
+            @Param("targetAccountId") String targetAccountId,
             Pageable pageable);
+
+    default List<Long> findStaleLatestVersionIds(
+            Long generationId,
+            SnsPlatform platform,
+            Long inspectionPolicyId,
+            ContentVersionStatus excludedStatus,
+            Pageable pageable) {
+        return findStaleLatestVersionIds(
+                generationId, platform, inspectionPolicyId, excludedStatus, null, pageable);
+    }
 }

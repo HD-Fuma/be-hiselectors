@@ -15,6 +15,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fuma.hiselectors.content.service.ContentBatchService;
 import com.fuma.hiselectors.content.service.ContentBatchService.ContentBatchResult;
+import com.fuma.hiselectors.content.service.ContentBatchMode;
 import com.fuma.hiselectors.inspection.task.ContentReportGenerationTask;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
@@ -27,6 +28,7 @@ import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
 import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
 import com.fuma.hiselectors.taskrun.service.TaskStartResult;
 import com.fuma.hiselectors.taskrun.service.TaskTerminalContext;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -80,6 +82,18 @@ class ContentSyncTaskTest {
         verifyNoInteractions(taskRunExecutionService, contentReportGenerationTask);
     }
 
+    @Test
+    void fastModeTaskRunsScopedBatch() throws Exception {
+        TaskProgressReporter progress = mock(TaskProgressReporter.class);
+        when(contentBatchService.run(progress, ContentBatchMode.FAST))
+                .thenReturn(new ContentBatchResult(1, 2, true, true));
+
+        task.fastModeTask().execute(
+                new TaskExecutionContext(mock(TaskLease.class), progress));
+
+        verify(contentBatchService).run(progress, ContentBatchMode.FAST);
+    }
+
     @ParameterizedTest
     @EnumSource(value = TaskRunStatus.class, names = {"SUCCEEDED", "PARTIAL_FAILED", "FAILED"})
     void submitsContentReportAfterEligibleTerminalStatuses(TaskRunStatus status) {
@@ -121,6 +135,22 @@ class ContentSyncTaskTest {
         assertThat(values.get(1).idempotencyKey()).isEqualTo(first.idempotencyKey());
         assertThat(values.get(2).idempotencyKey()).isEqualTo(key(secondParent));
         assertThat(values.get(2).idempotencyKey()).isNotEqualTo(first.idempotencyKey());
+    }
+
+    @Test
+    void fastModeSubmitsScopedReportTaskWithFingerprintPayload() {
+        UUID sourceRunId = UUID.fromString("94bc7ce2-9225-4232-bd2a-ac37b0fd62c9");
+        TrackedTask fastReportTask = mock(TrackedTask.class);
+        when(contentReportGenerationTask.fastModeTask()).thenReturn(fastReportTask);
+
+        task.fastModeTask().afterTerminal(terminal(sourceRunId));
+
+        ArgumentCaptor<TaskStartCommand> command =
+                ArgumentCaptor.forClass(TaskStartCommand.class);
+        verify(taskRunExecutionService).submit(command.capture(), same(fastReportTask));
+        assertThat(command.getValue().businessPayload().get("sourceContentSyncRunId").stringValue())
+                .isEqualTo(sourceRunId.toString());
+        assertThat(command.getValue().businessPayload().get("fastMode").booleanValue()).isTrue();
     }
 
     @Test

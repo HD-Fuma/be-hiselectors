@@ -9,13 +9,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
+import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.inspection.dto.ReinspectStaleResponse;
 import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService;
 import com.fuma.hiselectors.inspection.service.StaleContentInspectionService;
 import com.fuma.hiselectors.taskrun.service.TaskExecutionContext;
 import com.fuma.hiselectors.taskrun.service.TaskLease;
 import com.fuma.hiselectors.taskrun.service.TaskProgressReporter;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
@@ -53,5 +56,30 @@ class ContentReportGenerationTaskTest {
         verify(contentInspectionExecutionService).inspectTracked(11L, lease);
         verify(progress).start("STALE_CONTENT_INSPECTION", 3);
         verify(progress, never()).advance(anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    void fastModeScopesStaleInspectionToConfiguredAccounts() throws Exception {
+        StaleContentInspectionService staleContentInspectionService =
+                mock(StaleContentInspectionService.class);
+        ContentInspectionExecutionService contentInspectionExecutionService =
+                mock(ContentInspectionExecutionService.class);
+        ContentReportGenerationTask task = new ContentReportGenerationTask(
+                staleContentInspectionService,
+                contentInspectionExecutionService);
+        TaskLease lease = mock(TaskLease.class);
+        TaskProgressReporter progress = mock(TaskProgressReporter.class);
+        TrackedTask fastModeTask = task.fastModeTask();
+
+        fastModeTask.execute(new TaskExecutionContext(lease, progress));
+
+        verify(staleContentInspectionService).reinspectStale(
+                eq(null),
+                eq(Map.of(
+                        SnsPlatform.YOUTUBE, "UCD2RQE52TloxzZxZ2fyq8HQ",
+                        SnsPlatform.INSTAGRAM, "hi_selectors")),
+                eq(Set.of()),
+                any(),
+                any());
     }
 }
