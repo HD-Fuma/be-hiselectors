@@ -1,0 +1,528 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Standalone TaskRun queue and worker; references existing production infrastructure without updating its stack
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: hiselectors-task-queue
+    AllowedPattern: '^[a-z][a-z0-9-]{1,39}$'
+    Description: Unique names for this stack only; do not also deploy the prod template queue resources.
+  ClusterName:
+    Type: String
+    MinLength: 1
+    AllowedPattern: '^[a-zA-Z0-9_-]+$'
+    Description: Existing ECS cluster name, not its ARN.
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Existing public subnets with outbound internet access in the production VPC.
+  TaskSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Existing task security group already allowed to reach the runtime database.
+  TaskExecutionRoleArn:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS execution role already allowed to pull the image, write logs and read RuntimeSecretArn.
+  TaskExecutionRoleName:
+    Type: String
+    MinLength: 1
+    Description: Name of that same execution role; used only for the optional additional SMTP secret policy.
+  ApiTaskRoleName:
+    Type: String
+    MinLength: 1
+    Description: Existing API and scheduler shared task role; receives a new send-only inline policy.
+  GitHubDeployRoleName:
+    Type: String
+    MinLength: 1
+    Description: Existing deploy role; its original policies and OIDC trust remain unchanged.
+  RuntimeSecretArn:
+    Type: String
+    MinLength: 1
+    Description: Existing runtime JSON secret ARN. No secret value is a CloudFormation parameter.
+  RuntimeDatabaseHost:
+    Type: String
+    MinLength: 1
+    Description: Existing runtime database hostname. This stack does not create or modify a database.
+  RuntimeDatabasePort:
+    Type: Number
+    Default: 3306
+    MinValue: 1
+    MaxValue: 65535
+  LogGroupName:
+    Type: String
+    MinLength: 1
+    Description: Existing ECS log group with the BATCH_EVENT subscription; no log group is created or changed.
+  AlertTopicArn:
+    Type: String
+    MinLength: 1
+    Description: Existing SNS alarm topic linked to the production Slack channel.
+  ImageUri:
+    Type: String
+    MinLength: 1
+    Description: Verified ARM64 backend image pinned to a SHA or digest; applies only to the new worker.
+  BatchWorkerDesiredCount:
+    Type: Number
+    Default: 0
+    AllowedValues: [0, 1]
+    Description: Prepare at 0; start 1 only after schema, image, permissions and business dependencies are verified.
+  BatchWorkerMailSecretArn:
+    Type: String
+    Default: ''
+    Description: Optional existing SMTP secret with MAIL_USERNAME and MAIL_PASSWORD. Configure while desired count is 0.
+  BatchWorkerSttBaseUrl:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^https?://[^\s]+$'
+    Description: Optional verified reachable STT/OCR service supporting /content/reel.
+  SttWorkerImageUri:
+    Type: String
+    Default: ''
+    Description: Optional verified ARM64 STT image with /content/reel. Enables a localhost sidecar and 2 GiB task memory.
+  SttBucket:
+    Type: String
+    Default: hi-selectors-stt
+    Description: Existing bucket used for whisper/input uploads and whisper output/failure objects.
+  SttEndpoint:
+    Type: String
+    Default: whisper-large-v3-async
+    Description: Existing SageMaker asynchronous endpoint; this stack does not modify it.
+
+Rules:
+  OnlyOneSttSource:
+    Assertions:
+      - Assert: !Or
+          - !Equals [!Ref SttWorkerImageUri, '']
+          - !Equals [!Ref BatchWorkerSttBaseUrl, '']
+        AssertDescription: Specify either SttWorkerImageUri or BatchWorkerSttBaseUrl, not both.
+
+Conditions:
+  BatchWorkerServiceEnabled: !Equals [!Ref BatchWorkerDesiredCount, 1]
+  BatchWorkerMailConfigured: !Not [!Equals [!Ref BatchWorkerMailSecretArn, '']]
+  BatchWorkerSttConfigured: !Not [!Equals [!Ref BatchWorkerSttBaseUrl, '']]
+  SttSidecarEnabled: !Not [!Equals [!Ref SttWorkerImageUri, '']]
+
+Resources:
+  TaskDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      QueueName: !Sub '${ResourcePrefix}-task-runs-dlq'
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+      RedriveAllowPolicy:
+        redrivePermission: byQueue
+        sourceQueueArns:
+          - !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ResourcePrefix}-task-runs'
+
+  TaskQueue:
+    Type: AWS::SQS::Queue
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      QueueName: !Sub '${ResourcePrefix}-task-runs'
+      SqsManagedSseEnabled: true
+      VisibilityTimeout: 300
+      ReceiveMessageWaitTimeSeconds: 20
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TaskDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  TaskDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: TaskRun messages need investigation before controlled replay
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TaskDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+
+  TaskQueuePublisherPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      # A new name prevents replacement of either existing runtime inline policy.
+      PolicyName: !Sub '${ResourcePrefix}-publish-task-runs'
+      Roles: [!Ref ApiTaskRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt TaskQueue.Arn
+
+  BatchWorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeTaskRuns
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                  - sqs:GetQueueAttributes
+                  - sqs:SendMessage
+                Resource: !GetAtt TaskQueue.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt TaskDeadLetterQueue.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:hiselectors-analysis.fifo'
+        - !If
+          - SttSidecarEnabled
+          - PolicyName: InvokeContentStt
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: sagemaker:InvokeEndpointAsync
+                  Resource: !Sub 'arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SttEndpoint}'
+                - Effect: Allow
+                  Action: s3:PutObject
+                  Resource: !Sub 'arn:${AWS::Partition}:s3:::${SttBucket}/whisper/input/*'
+                - Effect: Allow
+                  Action: s3:GetObject
+                  Resource: !Sub 'arn:${AWS::Partition}:s3:::${SttBucket}/whisper/*'
+                - Effect: Allow
+                  Action: s3:ListBucket
+                  Resource: !Sub 'arn:${AWS::Partition}:s3:::${SttBucket}'
+                  Condition:
+                    StringLike:
+                      s3:prefix: 'whisper/*'
+          - !Ref AWS::NoValue
+
+  GitHubBatchWorkerDeployPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${ResourcePrefix}-deploy-worker'
+      Roles: [!Ref GitHubDeployRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecs:DescribeServices
+              - ecs:UpdateService
+            Resource: !GetAtt BatchWorkerService.ServiceArn
+          - Effect: Allow
+            Action: ecs:ListTasks
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                ecs:cluster: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+          - Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt BatchWorkerTaskRole.Arn
+            Condition:
+              StringEquals:
+                iam:PassedToService: ecs-tasks.amazonaws.com
+
+  TaskExecutionMailPolicy:
+    Type: AWS::IAM::Policy
+    Condition: BatchWorkerMailConfigured
+    Properties:
+      PolicyName: !Sub '${ResourcePrefix}-read-worker-mail'
+      Roles: [!Ref TaskExecutionRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref BatchWorkerMailSecretArn
+
+  BatchWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${ResourcePrefix}-worker'
+      Cpu: '512'
+      Memory: !If [SttSidecarEnabled, '2048', '1024']
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !GetAtt BatchWorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: batch-worker
+          Image: !Ref ImageUri
+          Essential: true
+          StopTimeout: 120
+          DependsOn: !If
+            - SttSidecarEnabled
+            - - ContainerName: stt-worker
+                Condition: HEALTHY
+            - !Ref AWS::NoValue
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: prod
+            - Name: SERVER_ADDRESS
+              Value: 127.0.0.1
+            - Name: MANAGEMENT_ENDPOINT_HEALTH_GROUP_READINESS_INCLUDE
+              Value: readinessState,db,taskQueue
+            - Name: SCHEDULING_ENABLED
+              Value: 'false'
+            - Name: DISCOVERY_DEFAULTS_ENABLED
+              Value: 'false'
+            - Name: INSPECTION_POLICY_SYNC_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED
+              Value: 'false'
+            - Name: APPLICATION_CONTENT_ANALYSIS_RUN_ONCE
+              Value: 'false'
+            - Name: TASK_QUEUE_ENABLED
+              Value: 'true'
+            - Name: TASK_QUEUE_WORKER_ENABLED
+              Value: 'true'
+            - Name: TASK_QUEUE_URL
+              Value: !Ref TaskQueue
+            - Name: TASK_QUEUE_DLQ_URL
+              Value: !Ref TaskDeadLetterQueue
+            - Name: TASK_QUEUE_CONCURRENCY
+              Value: '1'
+            - Name: TASK_QUEUE_VISIBILITY_SECONDS
+              Value: '300'
+            - Name: TASK_QUEUE_LEASE_SECONDS
+              Value: '120'
+            - Name: TASK_QUEUE_HEARTBEAT_SECONDS
+              Value: '30'
+            - Name: TASK_QUEUE_MAX_ATTEMPTS
+              Value: '3'
+            - Name: TASK_RUN_CORE_SIZE
+              Value: '2'
+            - Name: TASK_RUN_MAX_SIZE
+              Value: '2'
+            - Name: SHUTDOWN_PHASE_TIMEOUT
+              Value: 90s
+            - Name: DB_POOL_MAX
+              Value: '3'
+            - Name: DB_POOL_MIN_IDLE
+              Value: '1'
+            - Name: DB_HOST
+              Value: !Ref RuntimeDatabaseHost
+            - Name: DB_PORT
+              Value: !Ref RuntimeDatabasePort
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: TZ
+              Value: Asia/Seoul
+            - Name: SHOW_SQL
+              Value: 'false'
+            - Name: FORMAT_SQL
+              Value: 'false'
+            - Name: GEMINI_MAX_OUTPUT_TOKENS
+              Value: '65536'
+            - !If
+              - SttSidecarEnabled
+              - Name: STT_WORKER_BASE_URL
+                Value: http://127.0.0.1:8900
+              - !If
+                - BatchWorkerSttConfigured
+                - Name: STT_WORKER_BASE_URL
+                  Value: !Ref BatchWorkerSttBaseUrl
+                - !Ref AWS::NoValue
+          Secrets:
+            - Name: DB_NAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_NAME::'
+            - Name: DB_USERNAME
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_USERNAME::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '${RuntimeSecretArn}:DB_PASSWORD::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:JWT_SECRET::'
+            - Name: INSTAGRAM_REDIRECT_URI
+              ValueFrom: !Sub '${RuntimeSecretArn}:INSTAGRAM_REDIRECT_URI::'
+            - Name: GEMINI_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEY::'
+            - Name: GEMINI_API_KEYS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_API_KEYS::'
+            - Name: GEMINI_FALLBACK_MODELS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_FALLBACK_MODELS::'
+            - Name: GEMINI_MODEL
+              ValueFrom: !Sub '${RuntimeSecretArn}:GEMINI_MODEL::'
+            - Name: META_API_VERSION
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_API_VERSION::'
+            - Name: META_INSTAGRAM_BUSINESS_ACCOUNT_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_INSTAGRAM_BUSINESS_ACCOUNT_ID::'
+            - Name: META_LONG_LIVED_ACCESS_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:META_LONG_LIVED_ACCESS_TOKEN::'
+            - Name: APPLICATION_CONTENT_ANALYSIS_QUEUE_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:APPLICATION_CONTENT_ANALYSIS_QUEUE_URL::'
+            - Name: KAKAO_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_CLIENT_SECRET::'
+            - Name: KAKAO_REST_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_REST_API_KEY::'
+            - Name: KAKAO_TOKEN_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_TOKEN_ENCRYPTION_KEY::'
+            - Name: KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_DEFAULT_RECIPIENT_UUID::'
+            - Name: KAKAO_MESSAGE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_WEB_URL::'
+            - Name: KAKAO_MESSAGE_MOBILE_WEB_URL
+              ValueFrom: !Sub '${RuntimeSecretArn}:KAKAO_MESSAGE_MOBILE_WEB_URL::'
+            - Name: SETTLEMENT_ACCOUNT_ENCRYPTION_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ACCOUNT_ENCRYPTION_KEY::'
+            - Name: SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_NOTIFICATION_SENDER_ADMIN_LOGIN_ID::'
+            - Name: SETTLEMENT_ZONE
+              ValueFrom: !Sub '${RuntimeSecretArn}:SETTLEMENT_ZONE::'
+            - Name: YOUTUBE_API_KEY
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_API_KEY::'
+            - Name: YOUTUBE_DISCOVERY_DAILY_QUOTA
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_DAILY_QUOTA::'
+            - Name: YOUTUBE_DISCOVERY_MAX_KEYWORDS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_KEYWORDS::'
+            - Name: YOUTUBE_DISCOVERY_MAX_RESULTS
+              ValueFrom: !Sub '${RuntimeSecretArn}:YOUTUBE_DISCOVERY_MAX_RESULTS::'
+            - !If
+              - BatchWorkerMailConfigured
+              - Name: MAIL_USERNAME
+                ValueFrom: !Sub '${BatchWorkerMailSecretArn}:MAIL_USERNAME::'
+              - !Ref AWS::NoValue
+            - !If
+              - BatchWorkerMailConfigured
+              - Name: MAIL_PASSWORD
+                ValueFrom: !Sub '${BatchWorkerMailSecretArn}:MAIL_PASSWORD::'
+              - !Ref AWS::NoValue
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - wget -qO- http://127.0.0.1:8080/actuator/health/readiness >/dev/null || exit 1
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: batch-worker
+        - !If
+          - SttSidecarEnabled
+          - Name: stt-worker
+            Image: !Ref SttWorkerImageUri
+            Essential: true
+            Command: [uvicorn, 'serve:app', --host, 127.0.0.1, --port, '8900']
+            Environment:
+              - Name: STT_BACKEND
+                Value: sagemaker
+              - Name: STT_S3_BUCKET
+                Value: !Ref SttBucket
+              - Name: STT_ENDPOINT
+                Value: !Ref SttEndpoint
+              - Name: AWS_REGION
+                Value: !Ref AWS::Region
+            HealthCheck:
+              Command:
+                - CMD
+                - python
+                - -c
+                - import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/health',timeout=3)
+              Interval: 10
+              Timeout: 5
+              Retries: 10
+              StartPeriod: 20
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Ref LogGroupName
+                awslogs-region: !Ref AWS::Region
+                awslogs-stream-prefix: stt
+          - !Ref AWS::NoValue
+
+  BatchWorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${ResourcePrefix}-worker'
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref BatchWorkerTaskDefinition
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref BatchWorkerDesiredCount
+      AvailabilityZoneRebalancing: DISABLED
+      EnableECSManagedTags: true
+      PropagateTags: TASK_DEFINITION
+      HealthCheckGracePeriodSeconds: 180
+      DeploymentController:
+        Type: ECS
+      DeploymentConfiguration:
+        Strategy: ROLLING
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroupId]
+          Subnets: !Ref SubnetIds
+
+  BatchWorkerLiveTaskCountLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: BatchWorkerServiceEnabled
+    Properties:
+      AlarmDescription: Batch worker task count stayed below its desired count
+      Namespace: AWS/ECS
+      MetricName: LiveTaskCount
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+        - Name: ServiceName
+          Value: !GetAtt BatchWorkerService.Name
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref BatchWorkerDesiredCount
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopicArn]
+      OKActions: [!Ref AlertTopicArn]
+
+Outputs:
+  ClusterName:
+    Value: !Ref ClusterName
+  BatchWorkerServiceName:
+    Description: ECS_BATCH_WORKER_SERVICE GitHub variable.
+    Value: !GetAtt BatchWorkerService.Name
+  BatchWorkerContainerName:
+    Description: ECS_BATCH_WORKER_CONTAINER_NAME GitHub variable.
+    Value: batch-worker
+  BatchWorkerTaskDefinitionArn:
+    Value: !Ref BatchWorkerTaskDefinition
+  BatchWorkerTaskRoleArn:
+    Value: !GetAtt BatchWorkerTaskRole.Arn
+  TaskQueueUrl:
+    Description: TASK_QUEUE_URL for a separately approved API/scheduler cutover.
+    Value: !Ref TaskQueue
+  TaskQueueArn:
+    Value: !GetAtt TaskQueue.Arn
+  TaskDeadLetterQueueUrl:
+    Description: TASK_QUEUE_DLQ_URL for a separately approved API/scheduler cutover.
+    Value: !Ref TaskDeadLetterQueue
+  TaskDeadLetterQueueArn:
+    Value: !GetAtt TaskDeadLetterQueue.Arn
+  TaskDeadLetterAlarmName:
+    Value: !Ref TaskDeadLetterAlarm

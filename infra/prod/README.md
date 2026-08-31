@@ -1,5 +1,10 @@
 # 격리형 ECS Blue/Green 리허설 스택
 
+> 현재 운영 큐·worker 추가는 [독립 TaskRun 스택](../task-queue/README.md)을 사용한다.
+> 기존 `hiselectors-bg-test`에는 삭제된 테스트 DB 참조와 live image/revision drift가 있으므로
+> 아래 전체 스택 deploy 명령을 운영에 실행하지 않는다. 이 템플릿의 worker 정의는 재사용용이며
+> 독립 스택과 양쪽 큐·worker를 동시에 적용하지 않는다.
+
 `template.yaml`은 기존 운영 EC2, RDS, 보안 그룹, DNS, `gha-be-deploy` 역할을 수정하지 않는다. 기존 default VPC의 서로 다른 두 public subnet, 기존 ECR image/repository, 기존 GitHub OIDC provider, 원본 RDS snapshot을 참조하고 나머지는 새로 만든다. API와 scheduler는 `RuntimeDatabase*` 파라미터의 외부 RDS를 사용하고, stack이 만든 `TestDatabase`는 rollback용으로 보존한다.
 
 production listener는 HTTPS `443`, HTTP `80`은 HTTPS redirect, green test listener는 HTTP `8080`이다. 템플릿은 ACM 인증서를 참조할 뿐 생성하지 않으며, 실제 DNS와 최종 운영 DB는 수정하지 않는다.
@@ -200,6 +205,8 @@ API·scheduler task role에는 새 큐의 `SendMessage`만 추가한다. worker 
 ### 단계별 rollout: worker 준비 후 publisher는 마지막에
 
 배포/원복의 실행 계약과 legacy 작업 drain은 [상세 rollout 문서](BATCH_WORKER_ROLLOUT.md)를 함께 따른다.
+현재 운영에서 아래 3·5·6번의 인프라 조작은 [독립 스택 절차](../task-queue/README.md)로 대체한다.
+publisher 전환은 그 스택 output을 참조하는 별도 API/scheduler 변경이며 기존 prod 스택 update가 아니다.
 
 1. 오프라인 검증: 기존 PyYAML이 있는 Python 환경에서
    `python3 -m unittest discover -s infra/prod -p 'test_*.py' -v`를 실행한다.

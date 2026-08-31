@@ -3,6 +3,10 @@
 이 문서는 코드와 인프라 준비 절차이며, GitHub 병합만으로 큐 발행을 활성화하지 않는다.
 인프라 parameter와 준비 명령은 [README](README.md)를 따른다.
 
+> 현재 운영 추가 배포는 [독립 TaskRun 스택](../task-queue/README.md)을 선택한다.
+> 삭제된 테스트 DB 참조와 image drift가 있는 기존 `hiselectors-bg-test` 전체 스택 deploy는 금지한다.
+> `infra/prod`와 독립 스택의 큐·worker를 동시에 생성하지 않으며, publisher는 독립 스택의 queue output으로 별도 전환한다.
+
 ## 배포 계약
 
 - 기존 API blue/green, test-listener readiness 승인, 3분 bake, 실패 rollback을 유지한다.

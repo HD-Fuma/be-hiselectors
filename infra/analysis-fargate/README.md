@@ -69,7 +69,15 @@ RDS 3306 접근이 허용돼 있다. 운영 ECS API와 scheduler는 자신의 ta
 
 ## 배포 순서
 
-1. `Deploy analysis worker`를 실행해 SQS/Lambda/Fargate 스택을 배포한다.
+`Deploy production to ECS (blue-green)` 또는 기존 `Deploy production`의 dev 배포 성공 후,
+같은 SHA로 분석 worker를 자동 배포한다. 분석 전용 concurrency로 스택 변경을 직렬화한다.
+자동 배포와 수동 기본값 `schedule_state=KEEP`는 기존 ScheduleState와 ScheduleExpression을
+보존한다. [CloudFormation deploy](https://docs.aws.amazon.com/cli/latest/reference/cloudformation/deploy.html)의
+parameter 생략 동작을 사용하며, 최초 생성은 템플릿 기본값(DISABLED, 10분)을 사용한다.
+명시적인 `ENABLED`/`DISABLED` 선택만 상태를 변경하고 주기는 덮어쓰지 않는다.
+
+1. API 이미지가 준비된 SHA로 `Deploy analysis worker`를 실행해 SQS/Lambda/Fargate 스택을 배포한다.
+   최초 생성은 `KEEP`로 비활성 상태를 유지한다. 기존 스택의 `KEEP`는 현재 활성 여부를 그대로 둔다.
 2. 운영 ECS runtime secret의 `APPLICATION_CONTENT_ANALYSIS_QUEUE_URL`이 stack output과
    같은지 확인한다.
 3. 검증 후 `Deploy analysis worker`를 `schedule_state=ENABLED`로 실행한다.
