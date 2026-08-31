@@ -27,6 +27,7 @@ import org.springframework.util.StreamUtils;
 public class ProposalMailService {
 
     private static final String TEMPLATE_PATH = "mail/proposal-email.txt";
+    private static final String SELECTOR_TEMPLATE_PATH = "mail/selector-proposal-email.txt";
     private static final String FROM_NAME = "셀렉터스 크리에이터 팀";
     private static final String SUBJECT_DELIMITER = "\n---\n";
 
@@ -38,16 +39,28 @@ public class ProposalMailService {
 
     private String subjectTemplate;
     private String bodyTemplate;
+    private String selectorSubjectTemplate;
+    private String selectorBodyTemplate;
 
     @PostConstruct
     void loadTemplate() {
-        String raw = read(TEMPLATE_PATH).replace("\r\n", "\n");
+        String[] creator = splitTemplate(read(TEMPLATE_PATH));
+        this.subjectTemplate = creator[0];
+        this.bodyTemplate = creator[1];
+        String[] selector = splitTemplate(read(SELECTOR_TEMPLATE_PATH));
+        this.selectorSubjectTemplate = selector[0];
+        this.selectorBodyTemplate = selector[1];
+    }
+
+    private static String[] splitTemplate(String rawTemplate) {
+        String raw = rawTemplate.replace("\r\n", "\n");
         int split = raw.indexOf(SUBJECT_DELIMITER);
         if (split < 0) {
             throw new IllegalStateException("제안 메일 템플릿에 제목/본문 구분자(---)가 없습니다.");
         }
-        this.subjectTemplate = raw.substring(0, split).trim();
-        this.bodyTemplate = raw.substring(split + SUBJECT_DELIMITER.length());
+        return new String[] {
+                raw.substring(0, split).trim(),
+                raw.substring(split + SUBJECT_DELIMITER.length())};
     }
 
     /** 크리에이터에게 제안 메일을 보낸다. 실패하면 예외를 던져 이력 저장까지 롤백시킨다. */
@@ -63,16 +76,37 @@ public class ProposalMailService {
                 "${adminPosition}", nullToEmpty(properties.adminPosition()),
                 "${adminEmail}", nullToEmpty(properties.adminEmail()),
                 "${proposalLink}", nullToEmpty(properties.applyUrl()));
+        dispatch(creator.getEmail(), subjectTemplate, bodyTemplate, vars);
+    }
 
+    /**
+     * 셀렉터스에게 제안 메일을 보낸다. 제목·본문을 생략하면 셀렉터스용 기본 템플릿을 쓴다.
+     * 실패하면 예외를 던져 호출자가 수신자별 성공/실패를 집계한다.
+     */
+    public void sendToSelector(String toEmail, String recipientName, Admin admin,
+                               String subjectTemplate, String bodyTemplate) {
+        Map<String, String> vars = Map.of(
+                "${recipientName}", nullToEmpty(recipientName),
+                "${adminName}", nullToEmpty(admin.getName()),
+                "${adminPosition}", nullToEmpty(properties.adminPosition()),
+                "${adminEmail}", nullToEmpty(properties.adminEmail()),
+                "${proposalLink}", nullToEmpty(properties.applyUrl()));
+        dispatch(toEmail,
+                subjectTemplate == null ? selectorSubjectTemplate : subjectTemplate,
+                bodyTemplate == null ? selectorBodyTemplate : bodyTemplate,
+                vars);
+    }
+
+    private void dispatch(String toEmail, String subjectTemplate, String bodyTemplate,
+                          Map<String, String> vars) {
         String subject = substitute(subjectTemplate.trim(), vars);
         String body = substitute(bodyTemplate, vars);
-
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(
                     message, false, StandardCharsets.UTF_8.name());
             helper.setFrom(senderAddress, FROM_NAME);
-            helper.setTo(creator.getEmail());
+            helper.setTo(toEmail);
             helper.setSubject(subject);
             helper.setText(body, false);
             mailSender.send(message);
