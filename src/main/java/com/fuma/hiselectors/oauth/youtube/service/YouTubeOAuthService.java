@@ -8,6 +8,7 @@ import com.fuma.hiselectors.oauth.youtube.config.YouTubeOAuthProperties;
 import com.fuma.hiselectors.oauth.youtube.dto.GoogleTokenResponse;
 import com.fuma.hiselectors.oauth.youtube.dto.YouTubeChannelListResponse;
 import com.fuma.hiselectors.oauth.youtube.dto.YouTubeVerifyResponse;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -58,8 +59,14 @@ public class YouTubeOAuthService {
         }
 
         String accessToken = exchangeCodeForAccessToken(code);
-        YouTubeChannelListResponse.Item channel = fetchMyChannel(accessToken);
+        // 구글 계정이 소유한 채널을 모두 반환한다. 하나만 자동 선택하지 않고 사용자가 고르게 한다.
+        return YouTubeVerifyResponse.of(fetchMyChannels(accessToken).stream()
+                .map(channel -> toChannel(requesterHiId, channel))
+                .toList());
+    }
 
+    private YouTubeVerifyResponse.Channel toChannel(
+            String requesterHiId, YouTubeChannelListResponse.Item channel) {
         String title = channel.snippet() != null ? channel.snippet().title() : null;
         Long followerCount = extractSubscriberCount(channel);
         Long contentCount = channel.statistics() == null
@@ -70,7 +77,7 @@ public class YouTubeOAuthService {
                 channel.id(),
                 followerCount,
                 contentCount);
-        return YouTubeVerifyResponse.of(
+        return new YouTubeVerifyResponse.Channel(
                 channel.id(), title, followerCount, contentCount, verificationToken);
     }
 
@@ -108,7 +115,7 @@ public class YouTubeOAuthService {
         return token.accessToken();
     }
 
-    private YouTubeChannelListResponse.Item fetchMyChannel(String accessToken) {
+    private List<YouTubeChannelListResponse.Item> fetchMyChannels(String accessToken) {
         YouTubeChannelListResponse response;
         try {
             response = restClient.get()
@@ -124,12 +131,15 @@ public class YouTubeOAuthService {
             throw new BusinessException(ErrorCode.YOUTUBE_OAUTH_FAILED);
         }
 
-        if (response == null || response.items() == null || response.items().isEmpty()
-                || response.items().getFirst().id() == null
-                || response.items().getFirst().id().isBlank()) {
+        List<YouTubeChannelListResponse.Item> channels = response == null || response.items() == null
+                ? List.of()
+                : response.items().stream()
+                        .filter(item -> item.id() != null && !item.id().isBlank())
+                        .toList();
+        if (channels.isEmpty()) {
             throw new BusinessException(ErrorCode.YOUTUBE_CHANNEL_NOT_FOUND);
         }
-        return response.items().get(0);
+        return channels;
     }
 
     private Long extractSubscriberCount(YouTubeChannelListResponse.Item channel) {

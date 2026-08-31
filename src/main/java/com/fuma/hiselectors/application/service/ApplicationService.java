@@ -142,6 +142,8 @@ public class ApplicationService {
                 eventPublisher.publishEvent(new ApplicationSubmittedEvent(
                         user.getId(), saved.getId(), user.getName()));
             }
+            // 스케줄러(최대 수십 초 지연)를 기다리지 않고 커밋 직후 미디어 수집·분석을 즉시 트리거한다.
+            eventPublisher.publishEvent(new ApplicationCreatedEvent(saved.getId()));
             return ApplicationResponse.from(saved);
         } catch (DataIntegrityViolationException e) {
             // existsBy 체크와 save 사이 경쟁 상태: 유니크 제약 위반을 409로 변환
