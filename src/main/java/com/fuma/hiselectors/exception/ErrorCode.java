@@ -82,6 +82,7 @@ public enum ErrorCode {
     // --- 도메인 (예시) ---
     SELECTOR_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스를 찾을 수 없습니다."),
     SELECTOR_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 셀렉터스 계정이 존재합니다."),
+    SELECTOR_SNS_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "셀렉터스 SNS 계정을 찾을 수 없습니다."),
 
     // --- 구매 ---
     PURCHASE_USER_NOT_FOUND(HttpStatus.NOT_FOUND, "구매자를 찾을 수 없습니다."),

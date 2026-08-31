@@ -106,6 +106,20 @@ public class SelectorsSnsAccount extends BaseTimeEntity {
         }
     }
 
+    /**
+     * 지원서 없이 셀렉터스 공개 프로필만 채울 때 사용한다.
+     * 이미지가 비어 있거나 overwriteImage 이면 프로필 이미지를 넣고, 팔로워 수는 값이 있으면 갱신한다.
+     */
+    public void applyPublicProfile(String profileImageUrl, Long followerCount, boolean overwriteImage) {
+        if (validProfileImageUrl(profileImageUrl)
+                && (overwriteImage || !hasText(this.profileImageUrl))) {
+            this.profileImageUrl = profileImageUrl;
+        }
+        if (followerCount != null && followerCount >= 0) {
+            this.followerCount = followerCount;
+        }
+    }
+
     private boolean validProfileImageUrl(String value) {
         return hasText(value) && value.length() <= 500;
     }

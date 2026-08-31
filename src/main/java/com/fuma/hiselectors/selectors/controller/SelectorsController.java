@@ -78,7 +78,7 @@ public class SelectorsController {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "셀렉터스 없음", content = @Content)
     })
-    @GetMapping("/{selectorsId}")
+    @GetMapping("/{selectorsId:\\d+}")
     public ResponseEntity<SelectorsDetailResponse> findDetail(
             @Parameter(description = "셀렉터스 ID", example = "1")
             @PathVariable Long selectorsId) {

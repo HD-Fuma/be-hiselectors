@@ -315,6 +315,50 @@ class SelectorsSnsAccountRepositoryTest {
         assertThat(accountRepository.count()).isOne();
     }
 
+    @Test
+    @DisplayName("프로필 이미지 또는 카테고리가 비어 있는 셀렉터스만 보강 대상으로 고른다")
+    void findSnsEnrichmentTargetsMissingProfileOrCategory() {
+        Selectors missingBoth = persistSelectors(100L, "빈값", null);
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(missingBoth.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("@mama")
+                .build());
+        Selectors missingProfile = persistSelectors(101L, "카테고리있음", "FOOD");
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(missingProfile.getId())
+                .snsCode(SnsPlatform.INSTAGRAM)
+                .accountId("gmcoo.k")
+                .build());
+        Selectors filled = persistSelectors(102L, "둘다있음", "BEAUTY");
+        entityManager.persist(SelectorsSnsAccount.builder()
+                .selectorsId(filled.getId())
+                .snsCode(SnsPlatform.YOUTUBE)
+                .accountId("@filled")
+                .profileImageUrl("https://cdn.example.com/filled.jpg")
+                .build());
+        entityManager.flush();
+
+        assertThat(selectorsRepository.findSnsEnrichmentTargets(false, PageRequest.of(0, 20)))
+                .extracting(Selectors::getId)
+                .containsExactly(missingBoth.getId(), missingProfile.getId());
+        assertThat(selectorsRepository.findSnsEnrichmentTargets(true, PageRequest.of(0, 20)))
+                .extracting(Selectors::getId)
+                .containsExactly(missingBoth.getId(), missingProfile.getId(), filled.getId());
+    }
+
+    private Selectors persistSelectors(Long userId, String nickname, String category) {
+        Selectors selectors = entityManager.persist(Selectors.builder()
+                .userId(userId)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .selectorsNickname(nickname)
+                .build());
+        if (category != null) {
+            selectors.assignCategory(category);
+        }
+        return selectors;
+    }
+
     @TestConfiguration
     static class CacheConfig {
 
