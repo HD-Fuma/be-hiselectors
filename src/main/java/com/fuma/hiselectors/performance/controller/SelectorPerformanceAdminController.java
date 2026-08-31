@@ -1,5 +1,6 @@
 package com.fuma.hiselectors.performance.controller;
 
+import com.fuma.hiselectors.performance.dto.SelectorBreakdownResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceSummaryResponse;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -66,5 +68,19 @@ public class SelectorPerformanceAdminController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         return ResponseEntity.ok(selectorPerformanceAdminService
                 .getSummary(generationId, startDate, endDate));
+    }
+
+    @Operation(summary = "셀렉터스 개인 상세 성과 조회",
+            description = "특정 셀렉터스의 확정 매출을 상품별·캠페인별로 집계해 반환한다."
+                    + " 상세 화면의 개인 성과 차트에 사용한다.")
+    @GetMapping("/{selectorId}/breakdown")
+    public ResponseEntity<SelectorBreakdownResponse> getBreakdown(
+            @PathVariable Long selectorId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(selectorPerformanceAdminService
+                .getBreakdown(selectorId, startDate, endDate));
     }
 }

@@ -128,7 +128,8 @@ class StaleTaskRunSchedulerTest {
                 valid.contentReportGeneration(),
                 valid.settlementCalculation(),
                 valid.kakaoMessageSend(),
-                valid.proposalEmailSend()))
+                valid.proposalEmailSend(),
+                valid.selectorProposalEmailSend()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -359,6 +360,7 @@ class StaleTaskRunSchedulerTest {
                                 Duration.ofMinutes(120),
                                 Duration.ofMinutes(120),
                                 Duration.ofMinutes(30),
+                                Duration.ofMinutes(10),
                                 Duration.ofMinutes(10),
                                 Duration.ofMinutes(10))));
     }

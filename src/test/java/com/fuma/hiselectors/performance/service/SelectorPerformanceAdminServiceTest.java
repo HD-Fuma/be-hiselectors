@@ -21,6 +21,7 @@ import com.fuma.hiselectors.selectors.excellence.model.SelectorExcellenceRewardT
 import com.fuma.hiselectors.selectors.excellence.model.SelectorExcellenceSelectionType;
 import com.fuma.hiselectors.selectors.excellence.repository.SelectorExcellenceSelectionRepository;
 import com.fuma.hiselectors.selectors.model.Selectors;
+import com.fuma.hiselectors.selectors.repository.SelectorsRepository;
 import com.fuma.hiselectors.settlement.service.CommissionRateCalculator;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -37,6 +38,7 @@ class SelectorPerformanceAdminServiceTest {
 
     private final SelectorPerformanceQueryRepository repository =
             mock(SelectorPerformanceQueryRepository.class);
+    private final SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
     private final SelectorExcellenceSelectionRepository selectionRepository =
             mock(SelectorExcellenceSelectionRepository.class);
     private final GenerationRepository generationRepository = mock(GenerationRepository.class);
@@ -46,6 +48,7 @@ class SelectorPerformanceAdminServiceTest {
     void setUp() {
         service = new SelectorPerformanceAdminService(
                 repository,
+                selectorsRepository,
                 selectionRepository,
                 generationRepository,
                 new CommissionRateCalculator(),

@@ -115,6 +115,7 @@ task-run:
       settlement-calculation: ${TASK_RUN_SETTLEMENT_STALE_TIMEOUT:30m}
       kakao-message-send: ${TASK_RUN_KAKAO_MESSAGE_STALE_TIMEOUT:10m}
       proposal-email-send: ${TASK_RUN_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
+      selector-proposal-email-send: ${TASK_RUN_SELECTOR_PROPOSAL_EMAIL_STALE_TIMEOUT:10m}
 
 jwt:
   secret: ${JWT_SECRET}

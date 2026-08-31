@@ -25,6 +25,8 @@ public class TaskTypePolicy {
                 settings(true, timeouts.settlementCalculation()));
         policies.put(TaskType.KAKAO_MESSAGE_SEND, settings(false, timeouts.kakaoMessageSend()));
         policies.put(TaskType.PROPOSAL_EMAIL_SEND, settings(false, timeouts.proposalEmailSend()));
+        policies.put(TaskType.SELECTOR_PROPOSAL_EMAIL_SEND,
+                settings(false, timeouts.selectorProposalEmailSend()));
         registry = Map.copyOf(policies);
     }
 
