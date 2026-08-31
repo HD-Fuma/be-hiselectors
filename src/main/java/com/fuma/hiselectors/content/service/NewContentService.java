@@ -55,6 +55,12 @@ public class NewContentService {
     }
 
     public NewContentResult collect(Consumer<NewContentProgress> progress) {
+        return collect(ContentBatchMode.STANDARD, progress);
+    }
+
+    public NewContentResult collect(
+            ContentBatchMode mode, Consumer<NewContentProgress> progress) {
+        Objects.requireNonNull(mode, "콘텐츠 배치 모드는 필수입니다.");
         Objects.requireNonNull(progress, "진행 콜백은 필수입니다.");
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
         int savedCount = 0;
@@ -62,7 +68,7 @@ public class NewContentService {
         Map<SnsPlatform, PlatformCollectionStats> platformStats =
                 new EnumMap<>(SnsPlatform.class);
 
-        for (CollectionTarget target : collectionTargets()) {
+        for (CollectionTarget target : collectionTargets(mode)) {
             NewContentSelection selection = null;
             int savedContentDelta = 0;
             boolean accountFailed = false;
@@ -105,8 +111,14 @@ public class NewContentService {
 
     /** 현재 기수의 계정별 수집 시작 시각 결정 */
     List<CollectionTarget> collectionTargets() {
+        return collectionTargets(ContentBatchMode.STANDARD);
+    }
+
+    List<CollectionTarget> collectionTargets(ContentBatchMode mode) {
+        Objects.requireNonNull(mode, "콘텐츠 배치 모드는 필수입니다.");
         Generation generation = generationService.getCurrentActivity();
         return accountRepository.findAllByGenerationId(generation.getId()).stream()
+                .filter(mode::includes)
                 .map(account -> new CollectionTarget(
                         account, since(account, generation.getActivityStartDate())))
                 .toList();

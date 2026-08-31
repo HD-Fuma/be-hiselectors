@@ -125,6 +125,27 @@ class NewContentServiceTest {
     }
 
     @Test
+    void fastModeCreatesTargetsOnlyForConfiguredAccounts() {
+        LocalDateTime generationStart = LocalDateTime.of(2026, 8, 1, 0, 0);
+        Generation generation = org.mockito.Mockito.mock(Generation.class);
+        SelectorsSnsAccount youtube = platformAccount(
+                SnsPlatform.YOUTUBE, "UCD2RQE52TloxzZxZ2fyq8HQ", null);
+        SelectorsSnsAccount instagram = platformAccount(
+                SnsPlatform.INSTAGRAM, "@HI_SELECTORS", null);
+        SelectorsSnsAccount unrelated = platformAccount(
+                SnsPlatform.INSTAGRAM, "another_handle", null);
+        when(generationService.getCurrentActivity()).thenReturn(generation);
+        when(generation.getId()).thenReturn(3L);
+        when(generation.getActivityStartDate()).thenReturn(generationStart);
+        when(accountRepository.findAllByGenerationId(3L))
+                .thenReturn(List.of(youtube, unrelated, instagram));
+
+        assertThat(service.collectionTargets(ContentBatchMode.FAST))
+                .extracting(NewContentService.CollectionTarget::account)
+                .containsExactly(youtube, instagram);
+    }
+
+    @Test
     void selectsOnlyNewSelectorsContentCandidates() {
         LocalDateTime since = LocalDateTime.of(2026, 8, 20, 10, 0);
         SelectorsSnsAccount account = SelectorsSnsAccount.builder()

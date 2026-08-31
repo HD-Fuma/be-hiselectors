@@ -20,6 +20,7 @@ import com.fuma.hiselectors.taskrun.model.TriggerType;
 import com.fuma.hiselectors.taskrun.service.TaskRunExecutionService;
 import com.fuma.hiselectors.taskrun.service.TaskStartCommand;
 import com.fuma.hiselectors.taskrun.service.TaskStartResult;
+import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -79,6 +80,29 @@ class ContentBatchAdminControllerTest {
         assertThat(command.getValue().idempotencyKey()).isEqualTo(IDEMPOTENCY_KEY);
         assertThat(command.getValue().businessPayload().isObject()).isTrue();
         assertThat(command.getValue().businessPayload().isEmpty()).isTrue();
+    }
+
+    @Test
+    void startsFastModeWithScopedTaskAndFingerprintPayload() throws Exception {
+        Admin admin = mock(Admin.class);
+        TrackedTask fastModeTask = mock(TrackedTask.class);
+        when(admin.getId()).thenReturn(7L);
+        when(admin.getName()).thenReturn("관리자");
+        when(adminRepository.findByLoginId("admin-login")).thenReturn(Optional.of(admin));
+        when(contentSyncTask.fastModeTask()).thenReturn(fastModeTask);
+        when(taskRunExecutionService.submit(any(), any()))
+                .thenReturn(new TaskStartResult.Created(run(7L)));
+
+        mockMvc.perform(post("/api/admin/content-batch/run")
+                        .queryParam("fastMode", "true")
+                        .header("Idempotency-Key", IDEMPOTENCY_KEY)
+                        .principal(() -> "admin-login"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<TaskStartCommand> command = ArgumentCaptor.forClass(TaskStartCommand.class);
+        verify(taskRunExecutionService).submit(
+                command.capture(), org.mockito.Mockito.same(fastModeTask));
+        assertThat(command.getValue().businessPayload().get("fastMode").booleanValue()).isTrue();
     }
 
     @Test
