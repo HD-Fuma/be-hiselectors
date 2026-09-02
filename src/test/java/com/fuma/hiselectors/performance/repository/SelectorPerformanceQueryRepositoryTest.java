@@ -11,6 +11,7 @@ import com.fuma.hiselectors.generation.model.Generation;
 import com.fuma.hiselectors.generation.model.GenerationStatus;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSales;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.DatedSales;
+import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.DatedSelectorSales;
 import com.fuma.hiselectors.purchase.model.PurchaseHistory;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
@@ -82,6 +83,10 @@ class SelectorPerformanceQueryRepositoryTest {
                 List.of(selector.getId(), other.getId())))
                 .extracting(row -> row.generationName())
                 .containsExactly("4기", "3기");
+        assertThat(repository.findGenerationMemberships(
+                List.of(selector.getId(), other.getId()), List.of(latestGeneration.getId())))
+                .extracting(row -> row.generationName())
+                .containsExactly("4기");
 
         List<ConfirmedSales> result = repository.summarizeConfirmedSales(
                 List.of(selector.getId(), other.getId(), deleted.getId()),
@@ -138,6 +143,38 @@ class SelectorPerformanceQueryRepositoryTest {
         assertThat(months).extracting(DatedSales::date)
                 .containsExactlyInAnyOrder(
                         LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 1));
+    }
+
+    @Test
+    void groupsDashboardSalesBySelectorAndDay() {
+        Selectors first = entityManager.persist(selector(601L, "SEL-FIRST", "첫째"));
+        Selectors second = entityManager.persist(selector(602L, "SEL-SECOND", "둘째"));
+        entityManager.persist(confirmedPurchase(
+                first.getId(), 701L, 11L, "ORD-A", "100", "2026-08-01T10:00:00"));
+        entityManager.persist(confirmedPurchase(
+                first.getId(), 702L, 12L, "ORD-B", "50", "2026-08-01T11:00:00"));
+        entityManager.persist(confirmedPurchase(
+                second.getId(), 703L, 13L, "ORD-C", "300", "2026-08-02T10:00:00"));
+        entityManager.persist(confirmedPurchase(
+                first.getId(), 601L, 14L, "ORD-SELF", "999", "2026-08-02T11:00:00"));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<DatedSelectorSales> rows = repository.summarizeConfirmedSalesBySelectorAndDay(
+                List.of(first.getId(), second.getId()),
+                LocalDateTime.of(2026, 8, 1, 0, 0),
+                LocalDateTime.of(2026, 8, 3, 0, 0));
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows).filteredOn(row -> row.selectorId().equals(first.getId()))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.date()).isEqualTo(LocalDate.of(2026, 8, 1));
+                    assertThat(row.totalSales()).isEqualByComparingTo("150");
+                });
+        assertThat(rows).filteredOn(row -> row.selectorId().equals(second.getId()))
+                .singleElement()
+                .satisfies(row -> assertThat(row.totalSales()).isEqualByComparingTo("300"));
     }
 
     @Test

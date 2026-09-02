@@ -253,7 +253,7 @@ class SelectorPerformanceAdminServiceTest {
     }
 
     @Test
-    void summaryUsesActiveGenerationMembersAndPreviousActivityWindow() {
+    void summaryUsesActiveGenerationMembersAndSameLengthPreviousWindow() {
         Generation active = generationEntity(11L, "5기", GenerationStatus.ACTIVE,
                 LocalDateTime.of(2026, 7, 1, 0, 0));
         Selectors first = selector(1L, "SEL-1", "알파");
@@ -291,6 +291,38 @@ class SelectorPerformanceAdminServiceTest {
     }
 
     @Test
+    void comparesOneDaySummaryWithOnlyThePreviousDay() {
+        Generation active = generationEntity(11L, "5기", GenerationStatus.ACTIVE,
+                LocalDateTime.of(2026, 7, 1, 0, 0));
+        Selectors selector = selector(1L, "SEL-1", "알파");
+        when(generationRepository.findAllByStatusOrderByActivityStartDateAscIdAsc(
+                GenerationStatus.ACTIVE)).thenReturn(List.of(active));
+        when(repository.findVisibleMembers(List.of(11L))).thenReturn(List.of(selector));
+        when(repository.findGenerationMemberships(List.of(1L), List.of(11L)))
+                .thenReturn(List.of(generation(1L, 11L, "5기")));
+        LocalDate currentDate = LocalDate.of(2026, 8, 27);
+        when(repository.summarizeConfirmedSales(
+                List.of(1L),
+                currentDate.atStartOfDay(),
+                currentDate.plusDays(1).atStartOfDay()))
+                .thenReturn(List.of(sales(1L, "200000", 2L)));
+        when(repository.summarizeConfirmedSales(
+                List.of(1L),
+                currentDate.minusDays(1).atStartOfDay(),
+                currentDate.atStartOfDay()))
+                .thenReturn(List.of(sales(1L, "100000", 1L)));
+
+        var result = service.getSummary(null, currentDate, currentDate);
+
+        assertThat(result.universe().previousStartDate()).isEqualTo(currentDate.minusDays(1));
+        assertThat(result.universe().previousEndDate()).isEqualTo(currentDate.minusDays(1));
+        verify(repository).summarizeConfirmedSales(
+                List.of(1L),
+                currentDate.minusDays(1).atStartOfDay(),
+                currentDate.atStartOfDay());
+    }
+
+    @Test
     void omitsPreviousComparisonWhenStartDateIsMissing() {
         when(generationRepository.findById(11L)).thenReturn(Optional.of(
                 generationEntity(11L, "5기", GenerationStatus.ACTIVE,
@@ -301,6 +333,29 @@ class SelectorPerformanceAdminServiceTest {
 
         assertThat(result.universe().previousStartDate()).isNull();
         assertThat(result.top5()).isEmpty();
+    }
+
+    @Test
+    void defaultsSummaryToActiveGenerationActivityPeriodAndMemberships() {
+        Generation active = generationEntity(11L, "5기", GenerationStatus.ACTIVE,
+                LocalDateTime.of(2026, 7, 1, 0, 0));
+        Selectors selector = selector(1L, "SEL-1", "알파");
+        when(generationRepository.findAllByStatusOrderByActivityStartDateAscIdAsc(
+                GenerationStatus.ACTIVE)).thenReturn(List.of(active));
+        when(repository.findVisibleMembers(List.of(11L))).thenReturn(List.of(selector));
+        when(repository.findGenerationMemberships(List.of(1L), List.of(11L)))
+                .thenReturn(List.of(generation(1L, 11L, "5기")));
+
+        service.getSummary(null, null, null);
+
+        LocalDateTime startInclusive = LocalDate.of(2026, 7, 1).atStartOfDay();
+        LocalDateTime endExclusive = LocalDate.of(2026, 8, 27).atStartOfDay();
+        verify(repository).summarizeConfirmedSales(
+                List.of(1L), startInclusive, endExclusive);
+        verify(repository).countProductClicks(
+                List.of(1L), startInclusive, endExclusive);
+        verify(repository).countContents(
+                List.of(1L), startInclusive, endExclusive);
     }
 
     private Selectors selector(Long id, String code, String nickname) {

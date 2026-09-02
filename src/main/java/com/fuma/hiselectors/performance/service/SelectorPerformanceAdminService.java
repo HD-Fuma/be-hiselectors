@@ -138,11 +138,11 @@ public class SelectorPerformanceAdminService {
 
     public SelectorPerformanceSummaryResponse getSummary(
             Long generationId, LocalDate startDate, LocalDate endDate) {
-        Period period = Period.of(startDate, endDate);
         List<Generation> generations = resolveDashboardGenerations(generationId);
         List<Long> generationIds = generationIds(generations);
+        Period period = summaryPeriod(generations, startDate, endDate);
         List<Selectors> selectors = queryRepository.findVisibleMembers(generationIds);
-        Period previous = previousPeriod(generations, startDate);
+        Period previous = previousPeriod(generations, period.startDate(), period.endDate());
         if (selectors.isEmpty()) {
             return SelectorPerformanceDashboardCalculator.summarize(
                     generationIds,
@@ -152,7 +152,7 @@ public class SelectorPerformanceAdminService {
         }
         List<Long> selectorIds = selectors.stream().map(Selectors::getId).toList();
         List<GenerationMembership> memberships =
-                queryRepository.findGenerationMemberships(selectorIds);
+                queryRepository.findGenerationMemberships(selectorIds, generationIds);
         Map<Long, GenerationMembership> latestGenerations = latestGenerations(memberships);
         Map<Long, ConfirmedSales> currentSales = salesBySelector(
                 queryRepository.summarizeConfirmedSales(
@@ -252,8 +252,23 @@ public class SelectorPerformanceAdminService {
         return generations.stream().map(Generation::getId).toList();
     }
 
-    private Period previousPeriod(List<Generation> generations, LocalDate currentStartDate) {
-        if (currentStartDate == null || generations.isEmpty()) {
+    private Period summaryPeriod(
+            List<Generation> generations, LocalDate startDate, LocalDate endDate) {
+        if (startDate != null || endDate != null || generations.isEmpty()) {
+            return Period.of(startDate, endDate);
+        }
+        LocalDate activityStart = generations.stream()
+                .map(generation -> generation.getActivityStartDate().toLocalDate())
+                .min(LocalDate::compareTo)
+                .orElseThrow();
+        return Period.of(activityStart, LocalDate.now(clock));
+    }
+
+    private Period previousPeriod(
+            List<Generation> generations,
+            LocalDate currentStartDate,
+            LocalDate currentEndDate) {
+        if (currentStartDate == null || currentEndDate == null || generations.isEmpty()) {
             return Period.empty();
         }
         LocalDate activityStart = generations.stream()
@@ -263,11 +278,22 @@ public class SelectorPerformanceAdminService {
         if (activityStart == null) {
             return Period.empty();
         }
-        LocalDate previousEnd = currentStartDate.minusDays(1);
+        LocalDate previousEnd;
+        LocalDate previousStart;
+        try {
+            long periodDays = ChronoUnit.DAYS.between(currentStartDate, currentEndDate) + 1L;
+            previousEnd = currentStartDate.minusDays(1);
+            previousStart = currentStartDate.minusDays(periodDays);
+        } catch (DateTimeException exception) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "조회 기간이 올바르지 않습니다.");
+        }
         if (activityStart.isAfter(previousEnd)) {
             return Period.empty();
         }
-        return Period.of(activityStart, previousEnd);
+        if (activityStart.isAfter(previousStart)) {
+            previousStart = activityStart;
+        }
+        return Period.of(previousStart, previousEnd);
     }
 
     private Map<Long, GenerationMembership> latestGenerations(
