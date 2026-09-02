@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,7 @@ import com.fuma.hiselectors.category.model.Category;
 import com.fuma.hiselectors.category.model.DiscoveryKeyword;
 import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.category.repository.DiscoveryKeywordRepository;
+import com.fuma.hiselectors.creator.repository.CreatorDiscoverySourceRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import java.util.List;
@@ -35,6 +37,9 @@ class CategoryAdminServiceTest {
 
     @Mock
     private DiscoveryKeywordRepository keywordRepository;
+
+    @Mock
+    private CreatorDiscoverySourceRepository discoverySourceRepository;
 
     @InjectMocks
     private CategoryAdminService categoryAdminService;
@@ -180,5 +185,21 @@ class CategoryAdminServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(exception -> ((BusinessException) exception).getErrorCode())
                 .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("발굴 이력이 있는 키워드도 출처를 정리하고 삭제한다")
+    void removeUsedKeyword() {
+        Category category = mock(Category.class);
+        DiscoveryKeyword keyword = mock(DiscoveryKeyword.class);
+        when(categoryRepository.findById(1L)).thenReturn(Optional.of(category));
+        when(keywordRepository.findById(10L)).thenReturn(Optional.of(keyword));
+        when(keyword.getCategory()).thenReturn(category);
+        when(category.getId()).thenReturn(1L);
+
+        categoryAdminService.removeKeyword(1L, 10L);
+
+        verify(discoverySourceRepository).deleteAllByKeywordId(10L);
+        verify(category).removeKeyword(keyword);
     }
 }
