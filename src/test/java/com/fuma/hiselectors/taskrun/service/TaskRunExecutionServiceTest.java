@@ -348,6 +348,26 @@ class TaskRunExecutionServiceTest {
     }
 
     @Test
+    void queueModePersistsCommandWithoutUsingApiExecutor() {
+        CapturingExecutor executor = new CapturingExecutor();
+        TaskRunExecutionService execution = taskRunExecutionService(executor);
+        var publisher = mock(com.fuma.hiselectors.taskrun.queue.TaskQueuePublisher.class);
+        execution.setQueuePublisher(publisher);
+        UUID key = UUID.randomUUID();
+        TaskStartResult created = execution.submit(command(key), context -> {
+            throw new AssertionError("API must not perform queued work");
+        });
+        TaskStartResult replayed = execution.submit(command(key), context -> { });
+        TaskRun saved = find(runId(created));
+        assertThat(saved.isQueueManaged()).isTrue();
+        assertThat(saved.getBusinessPayload()).isEqualTo(command(key).businessPayload().toString());
+        assertThat(saved.getStatus()).isEqualTo(TaskRunStatus.QUEUED);
+        assertThat(executor.tasks).isEmpty();
+        assertThat(replayed).isInstanceOf(TaskStartResult.Replayed.class);
+        verify(publisher, times(1)).publish(saved.getRunId());
+    }
+
+    @Test
     void lostLeaseLeavesStaleRunUntouchedAndSkipsTerminalCallback() {
         AtomicBoolean callback = new AtomicBoolean();
         TrackedTask task = new TrackedTask() {

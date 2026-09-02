@@ -22,6 +22,8 @@ env:
   ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
   ECS_SCHEDULER_SERVICE: ${{ vars.ECS_SCHEDULER_SERVICE }}
   ECS_SCHEDULER_CONTAINER_NAME: ${{ vars.ECS_SCHEDULER_CONTAINER_NAME }}
+  ECS_BATCH_WORKER_SERVICE: ${{ vars.ECS_BATCH_WORKER_SERVICE }}
+  ECS_BATCH_WORKER_CONTAINER_NAME: ${{ vars.ECS_BATCH_WORKER_CONTAINER_NAME }}
   ECS_DEPLOY_TIMEOUT_SECONDS: ${{ vars.ECS_DEPLOY_TIMEOUT_SECONDS || '2700' }}
 
 defaults:
@@ -53,6 +55,16 @@ jobs:
             fi
           done
           [[ "$ECS_DEPLOY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]
+          if [[ -n "$ECS_BATCH_WORKER_SERVICE" || -n "$ECS_BATCH_WORKER_CONTAINER_NAME" ]]; then
+            [[ -n "$ECS_BATCH_WORKER_SERVICE" && -n "$ECS_BATCH_WORKER_CONTAINER_NAME" ]] || {
+              echo "Set both optional ECS_BATCH_WORKER_SERVICE and ECS_BATCH_WORKER_CONTAINER_NAME, or neither." >&2
+              exit 1
+            }
+            [[ "$ECS_BATCH_WORKER_SERVICE" != "$ECS_SERVICE" && "$ECS_BATCH_WORKER_SERVICE" != "$ECS_SCHEDULER_SERVICE" ]] || {
+              echo "The batch worker must be a separate ECS service." >&2
+              exit 1
+            }
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -81,7 +93,7 @@ jobs:
 
       - name: Build application JAR
         run: |
-          ./gradlew test --tests '*ContractTest' bootJar --no-daemon
+          ./gradlew test --tests '*ContractTest' --tests 'com.fuma.hiselectors.taskrun.*' bootJar --no-daemon
           ! unzip -l build/libs/hiselectors-0.0.1-SNAPSHOT.jar | grep -q application-local.yaml
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
@@ -104,8 +116,11 @@ jobs:
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Apply and verify database migration 016
-        if: steps.migration.outputs.should_run == 'true'
+      # 021 is intentionally checked on every release: a failed first rollout must
+      # not make the next source-only push skip the schema required by TaskRun.
+      - name: Apply and verify additive database migrations
+        env:
+          APPLY_MIGRATION_016: ${{ steps.migration.outputs.should_run }}
         run: |
           set -euo pipefail
           work_dir="$RUNNER_TEMP/ecs-migration"
@@ -153,15 +168,43 @@ jobs:
             913fb5b814f17af79d4c1622584a8d0ceddf5b0d76fe353d0c7d1186cdd6b229 \
             "$rds_ca_bundle" | sha256sum --check --status
           rds_ca_bundle_b64="$(base64 -w0 "$rds_ca_bundle")"
-          migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
-          verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94') OR (code = 'AFFILIATE_LINK_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94');"
+          migration_sql=""
+          description_check="1"
+          if [[ "$APPLY_MIGRATION_016" == "true" ]]; then
+            migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
+            description_check="(SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94') OR (code = 'AFFILIATE_LINK_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94')) = 2"
+          fi
+          migration_sql+=$'\n'"$(< src/main/resources/db/021_task_run_queue.sql)"
+          verify_sql="SELECT ($description_check)
+            AND (SELECT COUNT(*) FROM information_schema.columns
+              WHERE table_schema = DATABASE() AND table_name = 'task_run'
+                AND (
+                  (column_name = 'business_payload' AND data_type = 'text' AND is_nullable = 'YES')
+                  OR (column_name = 'queue_managed' AND data_type = 'tinyint' AND is_nullable = 'NO' AND column_default = '0')
+                  OR (column_name = 'queue_attempts' AND data_type = 'int' AND is_nullable = 'NO' AND column_default = '0')
+                  OR (column_name IN ('queue_available_at', 'queue_lease_until', 'last_enqueued_at')
+                    AND data_type = 'datetime' AND datetime_precision = 6 AND is_nullable = 'YES')
+                )) = 6
+            AND EXISTS (SELECT 1 FROM information_schema.statistics
+              WHERE table_schema = DATABASE() AND table_name = 'task_run'
+                AND index_name = 'idx_task_run_queue_pending'
+              GROUP BY index_name
+              HAVING COUNT(*) = 4 AND MIN(non_unique) = 1
+                AND GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'queue_managed,status,queue_available_at,last_enqueued_at')
+            AND EXISTS (SELECT 1 FROM information_schema.statistics
+              WHERE table_schema = DATABASE() AND table_name = 'task_run'
+                AND index_name = 'idx_task_run_queue_heartbeat'
+              GROUP BY index_name
+              HAVING COUNT(*) = 2 AND MIN(non_unique) = 1
+                AND GROUP_CONCAT(column_name ORDER BY seq_in_index) = 'queue_managed,heartbeat_at');"
           jq \
             --arg container "$ECS_CONTAINER_NAME" \
             --arg family "${ECS_SERVICE}-migration" \
             --arg rds_ca_bundle_b64 "$rds_ca_bundle_b64" \
             --arg migration_sql "$migration_sql" \
             --arg verify_sql "$verify_sql" \
-            --arg command 'umask 077; printf "%s" "$RDS_CA_BUNDLE_B64" | base64 -d > /tmp/rds-ca.pem; printf "%s\n" "$MIGRATION_SQL" | mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "2"; echo violation-type-descriptions=verified' '
+            --arg apply_migration_016 "$APPLY_MIGRATION_016" \
+            --arg command 'umask 077; printf "%s" "$RDS_CA_BUNDLE_B64" | base64 -d > /tmp/rds-ca.pem; printf "%s\n" "$MIGRATION_SQL" | mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME"; applied="$(mysql --default-character-set=utf8mb4 --protocol=TCP --connect-timeout=10 --ssl-mode=VERIFY_IDENTITY --ssl-ca=/tmp/rds-ca.pem -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USERNAME" "$DB_NAME" --batch --skip-column-names --execute="$VERIFY_SQL")"; test "$applied" = "1"; echo task-run-queue-schema=verified; if [ "$APPLY_MIGRATION_016" = "true" ]; then echo violation-type-descriptions=verified; fi' '
             (.containerDefinitions[] | select(.name == $container)) as $api
             | {
                 family: $family,
@@ -181,7 +224,8 @@ jobs:
                     + [
                         {name: "RDS_CA_BUNDLE_B64", value: $rds_ca_bundle_b64},
                         {name: "MIGRATION_SQL", value: $migration_sql},
-                        {name: "VERIFY_SQL", value: $verify_sql}
+                        {name: "VERIFY_SQL", value: $verify_sql},
+                        {name: "APPLY_MIGRATION_016", value: $apply_migration_016}
                       ]
                   ),
                   secrets: [$api.secrets[]
@@ -230,12 +274,20 @@ jobs:
             }' "$work_dir/migration-result.json"
             exit 1
           }
-          echo "Database migration 016 applied and verified."
+          echo "TaskRun queue schema 021 verified; migration 016 applied only when requested."
+
+      - name: Deploy optional batch worker before API
+        id: batch_worker
+        if: env.ECS_BATCH_WORKER_SERVICE != ''
+        env:
+          IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: bash .github/scripts/deploy-batch-worker.sh
 
       - name: Register task definition and start deployment
         id: deploy
         env:
           IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          BATCH_WORKER_READY: ${{ steps.batch_worker.outputs.ready || 'false' }}
         run: |
           set -euo pipefail
           work_dir="$RUNNER_TEMP/ecs-blue-green"
@@ -294,6 +346,14 @@ jobs:
             '[.containerDefinitions[] | select(.name == $container)] | length == 1' \
             "$work_dir/current-task-definition.json" > /dev/null || {
             echo "Expected exactly one task-definition container named $ECS_CONTAINER_NAME." >&2
+            exit 1
+          }
+          jq -e --arg container "$ECS_CONTAINER_NAME" --arg ready "$BATCH_WORKER_READY" '
+            $ready == "true" or ([.containerDefinitions[] | select(.name == $container)
+              | .environment[]? | select(.name == "TASK_QUEUE_ENABLED" and (.value | ascii_downcase) == "true")]
+              | length == 0)
+          ' "$work_dir/current-task-definition.json" > /dev/null || {
+            echo "API queue publishing is enabled but the new batch worker is not ready." >&2
             exit 1
           }
           jq --arg container "$ECS_CONTAINER_NAME" --arg image "$IMAGE_URI" '
@@ -504,6 +564,7 @@ jobs:
       - name: Keep scheduler image aligned
         env:
           IMAGE_URI: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          BATCH_WORKER_READY: ${{ steps.batch_worker.outputs.ready || 'false' }}
         run: |
           set -euo pipefail
           work_dir="$RUNNER_TEMP/ecs-blue-green"
@@ -538,6 +599,14 @@ jobs:
             ] | length == 1)
           ' "$work_dir/current-scheduler-task-definition.json" > /dev/null || {
             echo "Expected one scheduler container with SCHEDULING_ENABLED=true." >&2
+            exit 1
+          }
+          jq -e --arg container "$ECS_SCHEDULER_CONTAINER_NAME" --arg ready "$BATCH_WORKER_READY" '
+            $ready == "true" or ([.containerDefinitions[] | select(.name == $container)
+              | .environment[]? | select(.name == "TASK_QUEUE_ENABLED" and (.value | ascii_downcase) == "true")]
+              | length == 0)
+          ' "$work_dir/current-scheduler-task-definition.json" > /dev/null || {
+            echo "Scheduler queue publishing is enabled but the new batch worker is not ready." >&2
             exit 1
           }
           jq --arg container "$ECS_SCHEDULER_CONTAINER_NAME" --arg image "$IMAGE_URI" '

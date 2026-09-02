@@ -36,7 +36,10 @@ import org.hibernate.type.SqlTypes;
         },
         indexes = {
                 @Index(name = "idx_task_run_status_started_at", columnList = "status, started_at"),
-                @Index(name = "idx_task_run_finished_at", columnList = "finished_at")
+                @Index(name = "idx_task_run_finished_at", columnList = "finished_at"),
+                @Index(name = "idx_task_run_queue_pending",
+                        columnList = "queue_managed, status, queue_available_at, last_enqueued_at"),
+                @Index(name = "idx_task_run_queue_heartbeat", columnList = "queue_managed, heartbeat_at")
         })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -104,6 +107,25 @@ public class TaskRun {
     @Column(name = "request_fingerprint", nullable = false, updatable = false, length = 64)
     private String requestFingerprint;
 
+    /** Queue messages contain only runId; the validated command remains in the database. */
+    @Column(name = "business_payload", columnDefinition = "TEXT")
+    private String businessPayload;
+
+    @Column(name = "queue_managed", nullable = false)
+    private boolean queueManaged;
+
+    @Column(name = "queue_attempts", nullable = false)
+    private int queueAttempts;
+
+    @Column(name = "queue_available_at")
+    private Instant queueAvailableAt;
+
+    @Column(name = "queue_lease_until")
+    private Instant queueLeaseUntil;
+
+    @Column(name = "last_enqueued_at")
+    private Instant lastEnqueuedAt;
+
     /** 현재 작업자의 소유권 토큰. 교체되면 이전 작업자는 더 이상 상태를 기록할 수 없다. */
     @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(name = "lease_token", length = 36)
@@ -170,6 +192,61 @@ public class TaskRun {
         this.leaseToken = newLeaseToken;
         this.startedAt = now;
         this.heartbeatAt = now;
+    }
+
+    public void enableQueue(String payload, Instant now) {
+        requireStatus(TaskRunStatus.QUEUED);
+        Objects.requireNonNull(payload, "Queue command is required");
+        if (payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 60_000) {
+            throw new IllegalArgumentException("Queue command exceeds 60 KB");
+        }
+        this.businessPayload = payload;
+        this.queueManaged = true;
+        this.queueAvailableAt = Objects.requireNonNull(now);
+    }
+
+    public void recordEnqueued(Instant now) {
+        this.lastEnqueuedAt = Objects.requireNonNull(now);
+    }
+
+    /** Called under a row lock, after checking an expired lease and retry safety. */
+    public void startQueueAttempt(UUID token, Instant now, Instant leaseUntil) {
+        requireActive();
+        if (!queueManaged) {
+            throw new IllegalStateException("Not a queue-managed run");
+        }
+        this.status = TaskRunStatus.QUEUED;
+        this.currentStep = null;
+        this.progressMessage = null;
+        this.stepProgress = null;
+        this.totalCount = null;
+        this.processedCount = 0;
+        this.succeededCount = 0;
+        this.failedCount = 0;
+        this.skippedCount = 0;
+        this.finishedAt = null;
+        this.errorType = null;
+        this.errorMessage = null;
+        this.queueAttempts++;
+        this.queueLeaseUntil = Objects.requireNonNull(leaseUntil);
+        markRunning(token, now);
+    }
+
+    public void renewQueueLease(Instant now, Instant leaseUntil) {
+        requireRunning();
+        this.queueLeaseUntil = Objects.requireNonNull(leaseUntil);
+        touch(now);
+    }
+
+    public void retryQueue(Instant now, Instant availableAt, String errorType, String errorMessage) {
+        requireRunning();
+        recordFailure(errorType, errorMessage, now);
+        this.status = TaskRunStatus.QUEUED;
+        this.queueAvailableAt = Objects.requireNonNull(availableAt);
+        this.queueLeaseUntil = null;
+        this.leaseToken = null;
+        // Keep the business concurrency key until the final attempt has finished.
+        touch(now);
     }
 
     public void setTotal(long total, Instant now) {

@@ -4,6 +4,7 @@ import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.taskrun.config.TaskRunProperties;
 import com.fuma.hiselectors.taskrun.logging.TaskRunFailureLogger;
 import com.fuma.hiselectors.taskrun.model.TaskRunStatus;
+import com.fuma.hiselectors.taskrun.queue.TaskQueuePublisher;
 import java.time.Clock;
 import java.util.Objects;
 import java.util.UUID;
@@ -11,6 +12,7 @@ import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +29,12 @@ public class TaskRunExecutionService {
     private final TaskExecutor executor;
     private final TaskRunFailureLogger failureLogger;
     private final TaskRunProgressStream progressStream;
+    private TaskQueuePublisher queuePublisher;
+
+    @Autowired(required = false)
+    void setQueuePublisher(TaskQueuePublisher queuePublisher) {
+        this.queuePublisher = queuePublisher;
+    }
 
     public TaskRunExecutionService(
             TaskRunService taskRunService,
@@ -47,10 +55,15 @@ public class TaskRunExecutionService {
 
     public TaskStartResult submit(TaskStartCommand command, TrackedTask task) {
         Objects.requireNonNull(task, "task must not be null");
-        TaskStartResult result = taskRunService.start(command);
+        TaskStartResult result = queuePublisher == null
+                ? taskRunService.start(command) : taskRunService.start(command, true);
         if (result instanceof TaskStartResult.Created created) {
             UUID runId = created.run().getRunId();
             progressStream.publishChanged(runId);
+            if (queuePublisher != null) {
+                queuePublisher.publish(runId);
+                return result;
+            }
             try {
                 executor.execute(() -> execute(runId, task));
             } catch (RejectedExecutionException exception) {
@@ -61,6 +74,17 @@ public class TaskRunExecutionService {
             }
         }
         return result;
+    }
+
+    /** The queue worker owns claiming, retries and ACK; this method only performs domain work. */
+    public void executeQueued(TaskLease lease, TrackedTask task) throws Exception {
+        ThrottledTaskProgressReporter reporter = new ThrottledTaskProgressReporter(
+                lease, leaseTransaction, progressStream, properties.progress(), clock);
+        try {
+            task.execute(new TaskExecutionContext(lease, reporter));
+        } finally {
+            reporter.flush();
+        }
     }
 
     private void execute(UUID runId, TrackedTask task) {
@@ -115,7 +139,7 @@ public class TaskRunExecutionService {
         }
     }
 
-    private void logFailure(TaskRunTerminalSnapshot snapshot) {
+    public void logFailure(TaskRunTerminalSnapshot snapshot) {
         if (snapshot.status() == TaskRunStatus.SUCCEEDED) {
             return;
         }

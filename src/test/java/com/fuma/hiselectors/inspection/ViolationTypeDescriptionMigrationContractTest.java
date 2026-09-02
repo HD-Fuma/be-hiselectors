@@ -48,7 +48,8 @@ class ViolationTypeDescriptionMigrationContractTest {
                 "[[ \"$GITHUB_EVENT_NAME\" == \"workflow_dispatch\" ]]",
                 "! git diff --quiet \"$BEFORE_SHA\" \"$GITHUB_SHA\"",
                 "should_run=true",
-                "if: steps.migration.outputs.should_run == 'true'",
+                "APPLY_MIGRATION_016: ${{ steps.migration.outputs.should_run }}",
+                "if [[ \"$APPLY_MIGRATION_016\" == \"true\" ]]; then",
                 "migration_sql=\"$(< src/main/resources/db/016_violation_type_descriptions.sql)\"",
                 "mysql:8.4@sha256:",
                 "select(.name == \"DB_HOST\")] | length == 1",
@@ -81,7 +82,7 @@ class ViolationTypeDescriptionMigrationContractTest {
 
         assertThat(workflow).contains(
                 "cancel-in-progress: false",
-                "./gradlew test --tests '*ContractTest' bootJar --no-daemon",
+                "./gradlew test --tests '*ContractTest' --tests 'com.fuma.hiselectors.taskrun.*' bootJar --no-daemon",
                 "--action ROLLBACK",
                 "--stop-type ROLLBACK",
                 "--action CONTINUE");

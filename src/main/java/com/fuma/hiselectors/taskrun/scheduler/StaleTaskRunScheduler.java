@@ -66,7 +66,7 @@ public class StaleTaskRunScheduler {
 
     private TaskRunTerminalSnapshot markIfStillStale(UUID runId, Instant now) {
         TaskRun run = repository.findByRunIdForUpdate(runId).orElse(null);
-        if (run == null || !ACTIVE_STATUSES.contains(run.getStatus())) {
+        if (run == null || run.isQueueManaged() || !ACTIVE_STATUSES.contains(run.getStatus())) {
             return null;
         }
         TaskTypePolicy.Settings settings = policy.forType(run.getTaskType());

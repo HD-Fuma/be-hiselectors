@@ -20,13 +20,23 @@ public class TaskRunCreator {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public TaskRun create(TaskStartCommand command, String fingerprint, String concurrencyKey) {
-        return repository.saveAndFlush(TaskRun.queued(
+        return create(command, fingerprint, concurrencyKey, false);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public TaskRun create(TaskStartCommand command, String fingerprint, String concurrencyKey,
+            boolean queueManaged) {
+        TaskRun run = TaskRun.queued(
                 command.taskType(),
                 command.triggerType(),
                 command.startedByAdminId(),
                 command.idempotencyKey(),
                 fingerprint,
                 concurrencyKey,
-                clock.instant()));
+                clock.instant());
+        if (queueManaged) {
+            run.enableQueue(command.businessPayload().toString(), clock.instant());
+        }
+        return repository.saveAndFlush(run);
     }
 }

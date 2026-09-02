@@ -96,6 +96,20 @@ management:
       exposure:
         include: health, scheduledtasks
 
+task-queue:
+  enabled: ${TASK_QUEUE_ENABLED:false}
+  worker-enabled: ${TASK_QUEUE_WORKER_ENABLED:false}
+  url: ${TASK_QUEUE_URL:}
+  dlq-url: ${TASK_QUEUE_DLQ_URL:}
+  region: ${AWS_REGION:ap-northeast-2}
+  concurrency: ${TASK_QUEUE_CONCURRENCY:1}
+  visibility-seconds: ${TASK_QUEUE_VISIBILITY_SECONDS:300}
+  lease-seconds: ${TASK_QUEUE_LEASE_SECONDS:120}
+  heartbeat-seconds: ${TASK_QUEUE_HEARTBEAT_SECONDS:30}
+  max-attempts: ${TASK_QUEUE_MAX_ATTEMPTS:3}
+  retry-delay-seconds: ${TASK_QUEUE_RETRY_DELAY_SECONDS:30}
+  resend-after-seconds: ${TASK_QUEUE_RESEND_AFTER_SECONDS:600}
+
 task-run:
   executor:
     core-size: ${TASK_RUN_CORE_SIZE:2}
