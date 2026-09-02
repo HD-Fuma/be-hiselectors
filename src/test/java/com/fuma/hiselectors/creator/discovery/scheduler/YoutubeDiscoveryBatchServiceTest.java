@@ -190,6 +190,19 @@ class YoutubeDiscoveryBatchServiceTest {
     }
 
     @Test
+    @DisplayName("이번 달 필터를 키워드 파이프라인에 전달한다")
+    void passCurrentMonthFilter() {
+        DiscoveryKeyword keyword = keyword(1L, "이번 달");
+        when(keywordRepository.findRunnable()).thenReturn(List.of(keyword));
+        when(discoveryPipelineService.runByKeyword(1L, 25, true))
+                .thenReturn(result("이번 달", 1, 1, 0, 102));
+
+        service(10_000, 25, 50).runYoutubeOnly(false, true, ignored -> { });
+
+        verify(discoveryPipelineService).runByKeyword(1L, 25, true);
+    }
+
+    @Test
     @DisplayName("API 키가 없으면 설정 오류를 반환한다")
     void failWithoutApiKey() {
         YoutubeDiscoveryProperties withoutApiKey =

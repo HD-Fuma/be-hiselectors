@@ -119,6 +119,18 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
+    @DisplayName("이번 달 필터를 YouTube 검색에 전달한다")
+    void passesCurrentMonthFilter() {
+        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
+        when(youtubeClient.discoverByKeyword("겟레디윗미", 25, true))
+                .thenReturn(List.of());
+
+        discoveryPipelineService.runByKeyword(1L, 25, true);
+
+        verify(youtubeClient).discoverByKeyword("겟레디윗미", 25, true);
+    }
+
+    @Test
     @DisplayName("발굴 비중은 검색 결과가 아니라 채널 전체 조회수로 계산한다")
     void saveNewCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 1, 12, 0);

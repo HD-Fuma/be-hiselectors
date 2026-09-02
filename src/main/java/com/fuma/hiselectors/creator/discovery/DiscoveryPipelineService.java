@@ -75,12 +75,23 @@ public class DiscoveryPipelineService {
      * @param keywordId {@code discovery_keyword} 의 ID
      */
     public DiscoveryRunResult runByKeyword(Long keywordId, Integer maxResults) {
+        return runByKeywordInternal(keywordId, maxResults, false);
+    }
+
+    public DiscoveryRunResult runByKeyword(
+            Long keywordId, Integer maxResults, boolean currentMonthOnly) {
+        return runByKeywordInternal(keywordId, maxResults, currentMonthOnly);
+    }
+
+    private DiscoveryRunResult runByKeywordInternal(
+            Long keywordId, Integer maxResults, boolean currentMonthOnly) {
         String keywordText = keywordRepository.findById(keywordId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.KEYWORD_NOT_FOUND))
                 .getKeyword();
 
-        List<DiscoveredChannel> channels =
-                youtubeClient.discoverByKeyword(keywordText, maxResults);
+        List<DiscoveredChannel> channels = currentMonthOnly
+                ? youtubeClient.discoverByKeyword(keywordText, maxResults, true)
+                : youtubeClient.discoverByKeyword(keywordText, maxResults);
         int consumedQuota = youtubeClient.consumedQuota();
 
         return Objects.requireNonNull(transactionTemplate.execute(status ->
