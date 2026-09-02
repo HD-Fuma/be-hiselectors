@@ -8,13 +8,16 @@ import com.fuma.hiselectors.oauth.instagram.config.InstagramOAuthProperties;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramProfileResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramTokenResponse;
 import com.fuma.hiselectors.oauth.instagram.dto.InstagramVerifyResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
+@Slf4j
 @Service
 public class InstagramOAuthService {
 
@@ -93,7 +96,13 @@ public class InstagramOAuthService {
                     .body(form)
                     .retrieve()
                     .body(InstagramTokenResponse.class);
+        } catch (RestClientResponseException e) {
+            // 인스타 실제 오류 메시지(잘못된 앱ID·개발자 권한·redirect 불일치 등)를 그대로 남긴다.
+            log.warn("인스타 토큰 교환 실패: status={}, body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         } catch (RuntimeException e) {
+            log.warn("인스타 토큰 교환 실패(비HTTP 오류)", e);
             throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         }
 
@@ -115,7 +124,12 @@ public class InstagramOAuthService {
                             .toUri())
                     .retrieve()
                     .body(InstagramProfileResponse.class);
+        } catch (RestClientResponseException e) {
+            log.warn("인스타 프로필 조회 실패: status={}, body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         } catch (RuntimeException e) {
+            log.warn("인스타 프로필 조회 실패(비HTTP 오류)", e);
             throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         }
 
