@@ -27,6 +27,7 @@ public class SettlementRecalculationService {
     private final SettlementHistoryRepository settlementHistoryRepository;
     private final SettlementCalculationWorker settlementCalculationWorker;
     private final SettlementSchedulePolicy settlementSchedulePolicy;
+    private final SettlementPaymentService settlementPaymentService;
     private final Clock clock;
 
     public SettlementRecalculationResponse recalculate(
@@ -61,6 +62,8 @@ public class SettlementRecalculationService {
                 }
             }
         }
+
+        catchUpOverduePayments();
 
         YearMonth startMonth = activityMonths.isEmpty() ? null : activityMonths.getFirst();
         YearMonth endMonth = activityMonths.isEmpty() ? null : activityMonths.getLast();
@@ -128,6 +131,18 @@ public class SettlementRecalculationService {
 
     private boolean shouldFinalize(YearMonth activityMonth, LocalDate today) {
         return !today.isBefore(settlementSchedulePolicy.finalizationDate(activityMonth));
+    }
+
+    /**
+     * 재계산은 확정(지급 대기/이월)까지만 한다. 지급일이 지난 달은 별도 지급 배치가
+     * 돌아야 지급 완료가 되므로, 새로고침 시 밀린 지급을 이어서 처리한다.
+     */
+    private void catchUpOverduePayments() {
+        try {
+            settlementPaymentService.processCurrentPaymentMonth();
+        } catch (RuntimeException e) {
+            log.error("정산 재계산 후 지급 캐치업 실패", e);
+        }
     }
 
     private static final class RecalculationCounts {

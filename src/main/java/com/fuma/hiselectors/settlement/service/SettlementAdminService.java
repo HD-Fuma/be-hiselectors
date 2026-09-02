@@ -66,10 +66,12 @@ public class SettlementAdminService {
             YearMonth requestedMonth,
             Long selectorsId,
             SettlementStatus status,
+            boolean nonZeroSettlementAmount,
             Pageable pageable) {
         YearMonth activityMonth = resolveActivityMonth(requestedMonth);
         Page<SettlementHistory> histories = settlementHistoryRepository.search(
-                toYearMonthKey(activityMonth), selectorsId, status, pageable);
+                toYearMonthKey(activityMonth), selectorsId, status,
+                nonZeroSettlementAmount, pageable);
         Map<Long, Selectors> selectorsById = selectorsRepository
                 .findAllById(histories.stream().map(SettlementHistory::getSelectorsId).toList())
                 .stream()

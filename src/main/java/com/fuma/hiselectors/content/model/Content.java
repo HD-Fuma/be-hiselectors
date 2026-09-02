@@ -101,6 +101,15 @@ public class Content extends BaseTimeEntity {
         return true;
     }
 
+    public boolean updateSnsContentId(String snsContentId) {
+        if (snsContentId == null || snsContentId.isBlank()
+                || snsContentId.equals(this.snsContentId)) {
+            return false;
+        }
+        this.snsContentId = snsContentId;
+        return true;
+    }
+
     private static ContentType parseContentType(String contentType) {
         if ("POST".equalsIgnoreCase(contentType)) {
             return ContentType.FEED;

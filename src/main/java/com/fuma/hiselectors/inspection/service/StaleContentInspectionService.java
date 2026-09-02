@@ -14,18 +14,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class StaleContentInspectionService {
-
-    private static final int DEFAULT_LIMIT = 50;
-    private static final int MAX_LIMIT = 200;
 
     private final InspectionPolicyService inspectionPolicyService;
     private final GenerationService generationService;
@@ -62,7 +61,7 @@ public class StaleContentInspectionService {
         Objects.requireNonNull(progressCallback, "진행 callback은 필수입니다.");
         Set<Long> exclusions = Set.copyOf(excludedVersionIds);
         List<Long> versionIds = selectStaleLatestVersionIds(
-                normalizeLimit(limit), Map.copyOf(targetAccountIds), exclusions);
+                limit, Map.copyOf(targetAccountIds), exclusions);
         List<Long> failedVersionIds = new ArrayList<>();
         int successCount = 0;
         ReinspectStaleResponse snapshot = snapshot(versionIds.size(), successCount, failedVersionIds);
@@ -90,41 +89,39 @@ public class StaleContentInspectionService {
     public boolean hasStaleLatestVersions(Set<Long> excludedVersionIds) {
         Objects.requireNonNull(excludedVersionIds, "배제 버전 ID 목록은 필수입니다.");
         Set<Long> exclusions = Set.copyOf(excludedVersionIds);
-        return !selectStaleLatestVersionIds(1, exclusions).isEmpty();
-    }
-
-    private List<Long> selectStaleLatestVersionIds(int pageSize, Set<Long> exclusions) {
-        return selectStaleLatestVersionIds(pageSize, Map.of(), exclusions);
+        return !selectStaleLatestVersionIds(1, Map.of(), exclusions).isEmpty();
     }
 
     private List<Long> selectStaleLatestVersionIds(
-            int pageSize,
+            Integer limit,
             Map<SnsPlatform, String> targetAccountIds,
             Set<Long> exclusions) {
-        Long generationId = generationService.getActive().getId();
+        Long generationId = generationService.getCurrentActivity().getId();
         List<Long> versionIds = new ArrayList<>();
         for (InspectionPolicy policy : inspectionPolicyService.requireAllActive()) {
-            int remaining = pageSize - versionIds.size();
-            if (remaining <= 0) {
+            if (limit != null && versionIds.size() >= limit) {
                 break;
             }
             String targetAccountId = targetAccountIds.get(policy.getPlatform());
             if (!targetAccountIds.isEmpty() && targetAccountId == null) {
                 continue;
             }
-            var pageable = PageRequest.of(0, remaining + exclusions.size());
-            List<Long> candidates = targetAccountId == null
-                    ? contentVersionRepository.findStaleLatestVersionIds(
-                            generationId, policy.getPlatform(), policy.getId(),
-                            ContentVersionStatus.INSPECTING, pageable)
-                    : contentVersionRepository.findStaleLatestVersionIds(
-                            generationId, policy.getPlatform(), policy.getId(),
-                            ContentVersionStatus.INSPECTING, targetAccountId, pageable);
-            candidates
-                    .stream()
-                    .filter(versionId -> !exclusions.contains(versionId))
-                    .limit(remaining)
-                    .forEach(versionIds::add);
+            Pageable pageable = limit == null
+                    ? Pageable.unpaged()
+                    : PageRequest.of(0, Math.max(1, limit - versionIds.size()) + exclusions.size());
+            List<Long> candidates = contentVersionRepository.findStaleLatestVersionIds(
+                    generationId,
+                    policy.getPlatform(),
+                    policy.getId(),
+                    ContentVersionStatus.INSPECTING,
+                    targetAccountId,
+                    pageable);
+            Stream<Long> selected = candidates.stream()
+                    .filter(versionId -> !exclusions.contains(versionId));
+            if (limit != null) {
+                selected = selected.limit(limit - (long) versionIds.size());
+            }
+            selected.forEach(versionIds::add);
         }
         return versionIds;
     }
@@ -136,12 +133,5 @@ public class StaleContentInspectionService {
                 successCount,
                 failedVersionIds.size(),
                 List.copyOf(failedVersionIds));
-    }
-
-    private int normalizeLimit(Integer limit) {
-        if (limit == null || limit < 1) {
-            return DEFAULT_LIMIT;
-        }
-        return Math.min(limit, MAX_LIMIT);
     }
 }

@@ -56,12 +56,8 @@ public class ApplicationApprovalService {
         return ApplicationResponse.from(application);
     }
 
-    // 카카오 알림 수신에 동의한 지원자에게만 승인/반려 결과를 발송한다.
     private void notifyResult(Application application, ApplicationStatus status,
                               String adminLoginId) {
-        if (!application.isAlarmYn()) {
-            return;
-        }
         NotificationType type = switch (status) {
             case APPROVED -> NotificationType.SELECTION_APPROVED;
             case REJECTED -> NotificationType.SELECTION_REJECTED;

@@ -153,4 +153,13 @@ public class ContentVersion {
         }
         inspectionDecision = null;
     }
+
+    public boolean replaceContentHash(String contentHash) {
+        if (contentHash == null || contentHash.isBlank()
+                || contentHash.equals(this.contentHash)) {
+            return false;
+        }
+        this.contentHash = contentHash;
+        return true;
+    }
 }

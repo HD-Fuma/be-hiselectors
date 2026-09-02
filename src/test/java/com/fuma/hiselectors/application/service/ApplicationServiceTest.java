@@ -157,8 +157,9 @@ class ApplicationServiceTest {
 
     @Test
     void submitsApplicationWithActiveGenerationAndPendingStatus() {
+        User applicant = User.builder().hiId("hi-user").alimtalk("N").build();
         when(userRepository.findByHiId("hi-user"))
-                .thenReturn(Optional.of(User.builder().hiId("hi-user").build()));
+                .thenReturn(Optional.of(applicant));
         stubVerifiedAccount();
         stubActiveGeneration();
         when(applicationRepository.save(any(Application.class)))
@@ -177,6 +178,7 @@ class ApplicationServiceTest {
         assertThat(response.alarmYn()).isTrue();
         assertThat(response.policyAgreedAt()).isEqualTo(NOW);
         assertThat(response.status()).isEqualTo(ApplicationStatus.PENDING);
+        assertThat(applicant.getAlimtalk()).isEqualTo("Y");
         var saved = org.mockito.ArgumentCaptor.forClass(Application.class);
         verify(applicationRepository).save(saved.capture());
         assertThat(saved.getValue().getMediaCollectionStatus())

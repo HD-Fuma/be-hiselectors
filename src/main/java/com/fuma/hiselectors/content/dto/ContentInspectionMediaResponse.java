@@ -6,6 +6,7 @@ import com.fuma.hiselectors.content.model.MediaType;
 public record ContentInspectionMediaResponse(
         MediaType mediaType,
         String mediaUrl,
+        String thumbnailUrl,
         String snsMediaId,
         Integer sequenceNo
 ) {
@@ -14,6 +15,7 @@ public record ContentInspectionMediaResponse(
         return new ContentInspectionMediaResponse(
                 media.getMediaType(),
                 media.getMediaUrl(),
+                media.getThumbnailUrl(),
                 media.getSnsMediaId(),
                 media.getSequenceNo());
     }
