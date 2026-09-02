@@ -64,4 +64,8 @@ public class User extends BaseTimeEntity {
         this.phone = phone;
         this.alimtalk = alimtalk == null ? "N" : alimtalk;
     }
+
+    public void updateAlimtalkAgreement(boolean agreed) {
+        this.alimtalk = agreed ? "Y" : "N";
+    }
 }

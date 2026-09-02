@@ -137,6 +137,7 @@ public class ApplicationService {
                 .build();
 
         try {
+            user.updateAlimtalkAgreement(request.alarmAgreed());
             Application saved = applicationRepository.save(application);
             if (request.alarmAgreed()) {
                 eventPublisher.publishEvent(new ApplicationSubmittedEvent(

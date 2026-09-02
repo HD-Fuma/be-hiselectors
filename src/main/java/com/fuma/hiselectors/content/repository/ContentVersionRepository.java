@@ -84,6 +84,7 @@ public interface ContentVersionRepository extends JpaRepository<ContentVersion, 
                         where cr.contentVersionId = cv.id
                           and cr.inspectionPolicyId = :inspectionPolicyId)
               )
+            order by cv.id
             """)
     List<Long> findStaleLatestVersionIds(
             @Param("generationId") Long generationId,

@@ -221,6 +221,7 @@ class ContentInspectionAdminControllerTest {
                 List.of(new ContentInspectionMediaResponse(
                         MediaType.IMAGE,
                         "https://cdn.example.com/image.jpg",
+                        "https://cdn.example.com/image-thumbnail.jpg",
                         "image-1",
                         1)));
     }

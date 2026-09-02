@@ -29,6 +29,8 @@ import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.model.NotificationType;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.sender.NotificationSender;
+import com.fuma.hiselectors.user.model.User;
+import com.fuma.hiselectors.user.repository.UserRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,6 +39,7 @@ import org.junit.jupiter.api.Test;
 class NotificationServiceTest {
 
     private final AdminRepository adminRepository = mock(AdminRepository.class);
+    private final UserRepository userRepository = mock(UserRepository.class);
     private final UserKakaoRecipientRepository recipientRepository =
             mock(UserKakaoRecipientRepository.class);
     private final KakaoTemplateFactoryResolver templateFactoryResolver =
@@ -56,7 +59,7 @@ class NotificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new NotificationService(adminRepository, recipientRepository,
+        service = new NotificationService(adminRepository, userRepository, recipientRepository,
                 templateFactoryResolver, recorder, notificationSender, recipientStatusService,
                 notificationRepository, textTemplateFactory,
                 new KakaoMessageProperties(null, null, null, "default-uuid"));
@@ -69,6 +72,9 @@ class NotificationServiceTest {
         when(recipient.getStatus()).thenReturn(KakaoRecipientStatus.READY);
         when(recipient.getKakaoMessageUuid()).thenReturn("uuid");
         when(recipient.getId()).thenReturn(4L);
+        when(recipient.getUserId()).thenReturn(2L);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(
+                User.builder().alimtalk("Y").build()));
         when(templateFactoryResolver.create(KakaoTemplateType.TEXT, command))
                 .thenReturn(new CreatedKakaoTemplate(template, "본문"));
         when(recorder.createRequested("SELECTION_APPROVED", 3L, "uuid", "본문",
@@ -139,7 +145,7 @@ class NotificationServiceTest {
     void rejectsMissingRecipientWhenDefaultUuidIsNotConfigured() {
         when(recipientRepository.findByUserId(2L)).thenReturn(Optional.empty());
         NotificationService serviceWithoutDefault = new NotificationService(
-                adminRepository, recipientRepository, templateFactoryResolver, recorder,
+                adminRepository, userRepository, recipientRepository, templateFactoryResolver, recorder,
                 notificationSender, recipientStatusService, notificationRepository,
                 textTemplateFactory, new KakaoMessageProperties(null, null, null, ""));
 
@@ -149,6 +155,21 @@ class NotificationServiceTest {
                                 .isEqualTo(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
 
         verify(notificationSender, never()).sendToFriend(1L, "default-uuid", template);
+    }
+
+    @Test
+    void recordsFailureAndSkipsKakaoWhenUserDidNotAgree() {
+        when(userRepository.findById(2L)).thenReturn(Optional.of(
+                User.builder().alimtalk("N").build()));
+        when(recorder.createRequested("SELECTION_APPROVED", 3L, "uuid", "본문",
+                NotificationInitiatorType.ADMIN, 6L)).thenReturn(9L);
+
+        var response = service.sendToFriend("admin", command);
+
+        assertThat(response.notificationId()).isEqualTo(9L);
+        assertThat(response.status()).isEqualTo(NotificationStatus.FAILED);
+        verify(recorder).markFailed(9L);
+        verify(notificationSender, never()).sendToFriend(1L, "uuid", template);
     }
 
     @Test

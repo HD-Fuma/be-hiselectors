@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -37,25 +39,26 @@ import org.springframework.data.domain.Pageable;
 class StaleContentInspectionServiceTest {
 
     private InspectionPolicyService policies;
-    private GenerationService generations;
+    private GenerationService generationService;
     private ContentVersionRepository versions;
     private ContentInspectionExecutionService inspectionService;
     private InspectionPolicy youtube;
     private InspectionPolicy instagram;
-    private Generation generation;
     private StaleContentInspectionService service;
 
     @BeforeEach
     void setUp() {
         policies = mock(InspectionPolicyService.class);
-        generations = mock(GenerationService.class);
+        generationService = mock(GenerationService.class);
         versions = mock(ContentVersionRepository.class);
         inspectionService = mock(ContentInspectionExecutionService.class);
         youtube = mock(InspectionPolicy.class);
         instagram = mock(InspectionPolicy.class);
-        generation = mock(Generation.class);
+        Generation currentGeneration = mock(Generation.class);
+        when(currentGeneration.getId()).thenReturn(10L);
+        when(generationService.getCurrentActivity()).thenReturn(currentGeneration);
         service = new StaleContentInspectionService(
-                policies, generations, versions, inspectionService);
+                policies, generationService, versions, inspectionService);
     }
 
     @Test
@@ -68,11 +71,11 @@ class StaleContentInspectionServiceTest {
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
         InOrder repositoryOrder = inOrder(versions);
         repositoryOrder.verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         repositoryOrder.verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         assertThat(pageable.getAllValues())
                 .extracting(Pageable::getPageSize)
                 .containsExactly(10, 8);
@@ -87,21 +90,36 @@ class StaleContentInspectionServiceTest {
     }
 
     @Test
+    void inspectsEveryStaleVersionWhenLimitIsOmitted() {
+        givenThreeStaleLatestVersions();
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+
+        ReinspectStaleResponse response = service.reinspectStale(null);
+
+        verify(versions, times(2))
+                .findStaleLatestVersionIds(
+                        eq(10L), any(), any(), any(), isNull(), pageable.capture());
+        assertThat(pageable.getAllValues()).allMatch(Pageable::isUnpaged);
+        assertThat(response.targetCount()).isEqualTo(3);
+        verify(inspectionService).inspect(11L);
+        verify(inspectionService).inspect(12L);
+        verify(inspectionService).inspect(13L);
+    }
+
+    @Test
     void scopesStaleVersionsByPlatformAccountId() {
-        when(generation.getId()).thenReturn(2L);
-        when(generations.getActive()).thenReturn(generation);
         when(youtube.getId()).thenReturn(8L);
         when(youtube.getPlatform()).thenReturn(SnsPlatform.YOUTUBE);
         when(instagram.getId()).thenReturn(9L);
         when(instagram.getPlatform()).thenReturn(SnsPlatform.INSTAGRAM);
         when(policies.requireAllActive()).thenReturn(List.of(youtube, instagram));
         when(versions.findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
                 eq(ContentVersionStatus.INSPECTING),
                 eq("UCD2RQE52TloxzZxZ2fyq8HQ"), any(Pageable.class)))
                 .thenReturn(List.of(11L));
         when(versions.findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
                 eq(ContentVersionStatus.INSPECTING),
                 eq("hi_selectors"), any(Pageable.class)))
                 .thenReturn(List.of(12L));
@@ -188,8 +206,8 @@ class StaleContentInspectionServiceTest {
         givenThreeStaleLatestVersions();
         Set<Long> excludedVersionIds = new HashSet<>(Set.of(11L));
         when(versions.findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), any(Pageable.class)))
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), any(Pageable.class)))
                 .thenAnswer(invocation -> {
                     excludedVersionIds.clear();
                     return List.of(11L, 12L);
@@ -205,11 +223,11 @@ class StaleContentInspectionServiceTest {
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
         InOrder repositoryOrder = inOrder(versions);
         repositoryOrder.verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         repositoryOrder.verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         assertThat(pageable.getAllValues())
                 .extracting(Pageable::getPageSize)
                 .containsExactly(3, 2);
@@ -224,11 +242,11 @@ class StaleContentInspectionServiceTest {
         assertThat(hasStaleLatestVersions).isFalse();
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
         verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         assertThat(pageable.getAllValues())
                 .extracting(Pageable::getPageSize)
                 .containsExactly(4, 4);
@@ -243,12 +261,12 @@ class StaleContentInspectionServiceTest {
         assertThat(hasStaleLatestVersions).isTrue();
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
         verify(versions).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), pageable.capture());
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), pageable.capture());
         assertThat(pageable.getValue().getPageSize()).isEqualTo(2);
         verify(versions, never()).findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
-                eq(ContentVersionStatus.INSPECTING), any(Pageable.class));
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), any(Pageable.class));
     }
 
     @Test
@@ -338,24 +356,22 @@ class StaleContentInspectionServiceTest {
         assertThatThrownBy(() -> service.hasStaleLatestVersions(null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("배제 버전 ID 목록은 필수입니다.");
-        verifyNoInteractions(policies, generations, versions, inspectionService);
+        verifyNoInteractions(policies, versions, inspectionService);
     }
 
     private void givenThreeStaleLatestVersions() {
-        when(generation.getId()).thenReturn(2L);
-        when(generations.getActive()).thenReturn(generation);
         when(youtube.getId()).thenReturn(8L);
         when(youtube.getPlatform()).thenReturn(SnsPlatform.YOUTUBE);
         when(instagram.getId()).thenReturn(9L);
         when(instagram.getPlatform()).thenReturn(SnsPlatform.INSTAGRAM);
         when(policies.requireAllActive()).thenReturn(List.of(youtube, instagram));
         when(versions.findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.YOUTUBE), eq(8L),
-                eq(ContentVersionStatus.INSPECTING), any(Pageable.class)))
+                eq(10L), eq(SnsPlatform.YOUTUBE), eq(8L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), any(Pageable.class)))
                 .thenReturn(List.of(11L, 12L));
         when(versions.findStaleLatestVersionIds(
-                eq(2L), eq(SnsPlatform.INSTAGRAM), eq(9L),
-                eq(ContentVersionStatus.INSPECTING), any(Pageable.class)))
+                eq(10L), eq(SnsPlatform.INSTAGRAM), eq(9L),
+                eq(ContentVersionStatus.INSPECTING), isNull(), any(Pageable.class)))
                 .thenReturn(List.of(13L));
     }
 }

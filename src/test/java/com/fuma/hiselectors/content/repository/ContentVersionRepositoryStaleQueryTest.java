@@ -101,8 +101,8 @@ class ContentVersionRepositoryStaleQueryTest {
         assertThat(staleIds)
                 .contains(noReportLatest, mismatchedLatest, nullEngineLatest)
                 .doesNotContain(
-                        matchingLatest, confirmedLatest, inspectingLatest,
-                        outOfGeneration, deletedLatest);
+                        matchingLatest, confirmedLatest, inspectingLatest, deletedLatest,
+                        outOfGeneration);
     }
 
     @Test

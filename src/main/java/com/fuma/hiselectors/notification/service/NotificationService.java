@@ -18,6 +18,8 @@ import com.fuma.hiselectors.notification.model.NotificationInitiatorType;
 import com.fuma.hiselectors.notification.model.NotificationStatus;
 import com.fuma.hiselectors.notification.repository.NotificationRepository;
 import com.fuma.hiselectors.notification.sender.NotificationSender;
+import com.fuma.hiselectors.user.model.User;
+import com.fuma.hiselectors.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +34,7 @@ public class NotificationService {
     private static final KakaoTemplateType DEFAULT_TEMPLATE_TYPE = KakaoTemplateType.TEXT;
 
     private final AdminRepository adminRepository;
+    private final UserRepository userRepository;
     private final UserKakaoRecipientRepository recipientRepository;
     private final KakaoTemplateFactoryResolver templateFactoryResolver;
     private final NotificationRecorder recorder;
@@ -88,6 +91,11 @@ public class NotificationService {
         UserKakaoRecipient recipient = recipientRepository
                 .findByKakaoMessageUuid(notification.getReceiver())
                 .orElseThrow(() -> new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_FOUND));
+        if (!isAlimtalkAgreed(recipient.getUserId())) {
+            log.warn("카카오 메시지 재발송 차단: 수신 미동의 notificationId={} userId={}",
+                    notificationId, recipient.getUserId());
+            return new NotificationSendResponse(notificationId, NotificationStatus.FAILED);
+        }
         if (recipient.getStatus() != KakaoRecipientStatus.READY) {
             throw new BusinessException(ErrorCode.KAKAO_RECIPIENT_NOT_READY);
         }
@@ -118,6 +126,11 @@ public class NotificationService {
                                                NotificationMessageCommand command) {
         Admin admin = adminRepository.findByLoginId(adminLoginId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+        NotificationSendResponse consentFailure = recordConsentFailureIfNeeded(
+                command, NotificationInitiatorType.ADMIN, admin.getId(), receiverUuid);
+        if (consentFailure != null) {
+            return consentFailure;
+        }
         Long connectionId = requireConnection(admin);
         CreatedKakaoTemplate created = templateFactoryResolver.create(
                 DEFAULT_TEMPLATE_TYPE, command);
@@ -157,10 +170,15 @@ public class NotificationService {
                                                     NotificationMessageCommand command,
                                                     NotificationInitiatorType initiatedByType,
                                                     Long initiatedById) {
-        Long connectionId = requireConnection(admin);
         if (command.recipientUserId() == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "수신 사용자 ID가 필요합니다.");
         }
+        NotificationSendResponse consentFailure = recordConsentFailureIfNeeded(
+                command, initiatedByType, initiatedById, null);
+        if (consentFailure != null) {
+            return consentFailure;
+        }
+        Long connectionId = requireConnection(admin);
         ResolvedRecipient recipient = resolveRecipient(command.recipientUserId());
 
         CreatedKakaoTemplate created = templateFactoryResolver.create(
@@ -204,6 +222,44 @@ public class NotificationService {
         log.warn("Kakao recipient connection not found; using default recipient: userId={}",
                 recipientUserId);
         return new ResolvedRecipient(defaultRecipientUuid, null);
+    }
+
+    private NotificationSendResponse recordConsentFailureIfNeeded(
+            NotificationMessageCommand command,
+            NotificationInitiatorType initiatedByType,
+            Long initiatedById,
+            String receiverOverride) {
+        Long userId = command.recipientUserId();
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "수신 사용자 ID가 필요합니다.");
+        }
+        if (isAlimtalkAgreed(userId)) {
+            return null;
+        }
+
+        CreatedKakaoTemplate created = templateFactoryResolver.create(
+                DEFAULT_TEMPLATE_TYPE, command);
+        String receiver = receiverOverride;
+        if (receiver == null || receiver.isBlank()) {
+            receiver = recipientRepository.findByUserId(userId)
+                    .map(UserKakaoRecipient::getKakaoMessageUuid)
+                    .filter(value -> value != null && !value.isBlank())
+                    .orElse("USER:" + userId);
+        }
+        Long notificationId = recorder.createRequested(
+                command.notificationType().getPurposeCode(), command.referenceId(),
+                receiver, created.body(), initiatedByType, initiatedById);
+        recorder.markFailed(notificationId);
+        log.warn("카카오 메시지 발송 차단: 수신 미동의 notificationId={} userId={} type={} referenceId={}",
+                notificationId, userId, command.notificationType(), command.referenceId());
+        return new NotificationSendResponse(notificationId, NotificationStatus.FAILED);
+    }
+
+    private boolean isAlimtalkAgreed(Long userId) {
+        return userId != null && userRepository.findById(userId)
+                .map(User::getAlimtalk)
+                .map("Y"::equalsIgnoreCase)
+                .orElse(false);
     }
 
     private Long requireConnection(Admin admin) {

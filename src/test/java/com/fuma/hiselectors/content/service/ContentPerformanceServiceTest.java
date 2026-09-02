@@ -11,7 +11,9 @@ import com.fuma.hiselectors.content.dto.ContentPerformanceResponse;
 import com.fuma.hiselectors.content.dto.ContentPerformanceSummaryResponse;
 import com.fuma.hiselectors.content.dto.ContentFormatCountProjection;
 import com.fuma.hiselectors.content.model.ContentEngagement;
+import com.fuma.hiselectors.content.model.ContentMedia;
 import com.fuma.hiselectors.content.model.ContentType;
+import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.content.repository.ContentEngagementRepository;
 import com.fuma.hiselectors.content.repository.ContentMediaRepository;
 import com.fuma.hiselectors.content.repository.ContentRepository;
@@ -94,10 +96,16 @@ class ContentPerformanceServiceTest {
         PageRequest pageable = PageRequest.of(0, 20);
         when(contentRepository.findPerformanceRowsByGenerationId(10L, pageable))
                 .thenReturn(new PageImpl<>(List.of(row), pageable, 1));
+        ContentMedia media = mock(ContentMedia.class);
+        when(media.getContentVersionId()).thenReturn(101L);
+        when(media.getMediaType()).thenReturn(MediaType.VIDEO);
+        when(media.getMediaUrl()).thenReturn("https://cdn.example.com/reel.mp4");
+        when(media.getThumbnailUrl()).thenReturn("https://cdn.example.com/reel.jpg");
+        when(media.getSequenceNo()).thenReturn(0);
         when(mediaRepository
                 .findAllByContentVersionIdInOrderByContentVersionIdAscSequenceNoAsc(
                         List.of(101L)))
-                .thenReturn(List.of());
+                .thenReturn(List.of(media));
         when(engagementRepository.findAllByContentIdInOrderByContentIdAscCreatedAtAsc(
                 List.of(1L)))
                 .thenReturn(List.of(
@@ -115,6 +123,11 @@ class ContentPerformanceServiceTest {
             assertThat(item.viewCount()).isEqualTo(300L);
             assertThat(item.likeCount()).isEqualTo(30L);
             assertThat(item.commentCount()).isEqualTo(3L);
+            assertThat(item.media()).singleElement().satisfies(itemMedia -> {
+                assertThat(itemMedia.mediaType()).isEqualTo(MediaType.VIDEO);
+                assertThat(itemMedia.mediaUrl()).isEqualTo("https://cdn.example.com/reel.mp4");
+                assertThat(itemMedia.thumbnailUrl()).isEqualTo("https://cdn.example.com/reel.jpg");
+            });
             assertThat(item.trend()).extracting(ContentPerformanceResponse.TrendPoint::viewCount)
                     .containsExactly(100L, 300L);
         });

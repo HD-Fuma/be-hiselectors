@@ -85,6 +85,79 @@ public interface PurchaseHistoryRepository extends JpaRepository<PurchaseHistory
             @Param("endExclusive") LocalDateTime endExclusive,
             Pageable pageable);
 
+    @Query("""
+            select new com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse(
+                    p.id,
+                    s.id,
+                    s.selectorsCode,
+                    s.selectorsNickname,
+                    u.id,
+                    u.hiId,
+                    p.orderNo,
+                    product.productCode,
+                    p.quantity,
+                    p.paidAmount,
+                    p.purchasedAt,
+                    p.confirmedAt,
+                    p.status)
+            from PurchaseHistory p
+            join Selectors s on s.id = p.selectorsId
+            join User u on u.id = p.userId
+            join Product product on product.id = p.productId
+            where p.selectorsId is not null
+              and (:startInclusive is null or p.purchasedAt >= :startInclusive)
+              and (:endExclusive is null or p.purchasedAt < :endExclusive)
+              and (
+                    :cursorPurchasedAt is null
+                    or p.purchasedAt < :cursorPurchasedAt
+                    or (p.purchasedAt = :cursorPurchasedAt and p.id < :cursorPurchaseHistoryId)
+              )
+            order by p.purchasedAt desc, p.id desc
+            """)
+    List<SettlementPurchaseHistoryResponse> searchCursorForSettlementAdmin(
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive,
+            @Param("cursorPurchasedAt") LocalDateTime cursorPurchasedAt,
+            @Param("cursorPurchaseHistoryId") Long cursorPurchaseHistoryId,
+            Pageable pageable);
+
+    @Query("""
+            select new com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse(
+                    p.id,
+                    s.id,
+                    s.selectorsCode,
+                    s.selectorsNickname,
+                    u.id,
+                    u.hiId,
+                    p.orderNo,
+                    product.productCode,
+                    p.quantity,
+                    p.paidAmount,
+                    p.purchasedAt,
+                    p.confirmedAt,
+                    p.status)
+            from PurchaseHistory p
+            join Selectors s on s.id = p.selectorsId
+            join User u on u.id = p.userId
+            join Product product on product.id = p.productId
+            where p.selectorsId = :selectorsId
+              and (:startInclusive is null or p.purchasedAt >= :startInclusive)
+              and (:endExclusive is null or p.purchasedAt < :endExclusive)
+              and (
+                    :cursorPurchasedAt is null
+                    or p.purchasedAt < :cursorPurchasedAt
+                    or (p.purchasedAt = :cursorPurchasedAt and p.id < :cursorPurchaseHistoryId)
+              )
+            order by p.purchasedAt desc, p.id desc
+            """)
+    List<SettlementPurchaseHistoryResponse> searchCursorForSettlementAdminBySelectorsId(
+            @Param("selectorsId") Long selectorsId,
+            @Param("startInclusive") LocalDateTime startInclusive,
+            @Param("endExclusive") LocalDateTime endExclusive,
+            @Param("cursorPurchasedAt") LocalDateTime cursorPurchasedAt,
+            @Param("cursorPurchaseHistoryId") Long cursorPurchaseHistoryId,
+            Pageable pageable);
+
     Optional<PurchaseHistory> findByOrderNoAndProductId(String orderNo, Long productId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
