@@ -1,7 +1,9 @@
 package com.fuma.hiselectors.matching.service;
 
+import com.fuma.hiselectors.campaign.model.Campaign;
 import com.fuma.hiselectors.campaign.model.CampaignProduct;
 import com.fuma.hiselectors.campaign.repository.CampaignProductRepository;
+import com.fuma.hiselectors.campaign.repository.CampaignRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.matching.dto.SelectorMatchResponse;
@@ -29,6 +31,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,7 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class SelectorMatchingService {
 
-    private static final int DEFAULT_LIMIT = 20;
+    /** 캠페인별 추천 결과 캐시. {@link SelectorMatchingCacheWarmer} 가 활성 캠페인을 미리 채운다. */
+    public static final String CACHE_NAME = "selectorMatching";
+
     private static final int RECENT_DAYS = 90;
     private static final double RECENT_WEIGHT = 1.0;
     private static final double OLDER_WEIGHT = 0.4;
@@ -55,19 +61,26 @@ public class SelectorMatchingService {
     private final SelectorPerformanceQueryRepository performanceQueryRepository;
     private final ProductRepository productRepository;
     private final CampaignProductRepository campaignProductRepository;
+    private final CampaignRepository campaignRepository;
     private final Clock clock;
 
+    /** 로드가 느려 결과를 캐시한다. 매출·클릭 집계는 실시간성이 낮아 워머의 주기적 갱신으로 충분하다. */
+    @Cacheable(cacheNames = CACHE_NAME)
     public List<SelectorMatchResponse> recommend(
             String category, Long productId, Long campaignId,
-            LocalDate startDate, LocalDate endDate, int limit) {
+            LocalDate startDate, LocalDate endDate, Integer limit) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "시작일은 종료일보다 늦을 수 없습니다.");
+        }
+        if (campaignId != null && isEndedOrMissing(campaignId)) {
+            return List.of();
         }
         Set<String> categories = resolveCategories(category, productId, campaignId);
         if (categories.isEmpty()) {
             return List.of();
         }
-        int cap = limit <= 0 ? DEFAULT_LIMIT : limit;
+        // limit 미지정(null·0 이하)이면 대상 카테고리의 모든 셀렉터스를 추천한다.
+        int cap = limit == null || limit <= 0 ? Integer.MAX_VALUE : limit;
         String categoryLabel = String.join(", ", categories);
         LocalDateTime startInclusive = startDate == null ? null : startDate.atStartOfDay();
         LocalDateTime endExclusive = endDate == null ? null : endDate.plusDays(1).atStartOfDay();
@@ -206,6 +219,19 @@ public class SelectorMatchingService {
         return BigDecimal.valueOf(orders)
                 .multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(clicks), 1, RoundingMode.HALF_UP);
+    }
+
+    /** 캐시 전체 무효화. 워머가 최신 집계로 다시 채우기 전에 호출한다. */
+    @CacheEvict(cacheNames = CACHE_NAME, allEntries = true)
+    public void evictAll() {
+    }
+
+    /** 종료된(종료일 &lt; 오늘) 캠페인이거나 존재하지 않으면 추천을 내보내지 않는다. */
+    private boolean isEndedOrMissing(Long campaignId) {
+        return campaignRepository.findByIdAndIsDeletedFalse(campaignId)
+                .map(Campaign::getEndDate)
+                .map(endDate -> endDate.isBefore(LocalDate.now(clock)))
+                .orElse(true);
     }
 
     private Set<String> resolveCategories(String category, Long productId, Long campaignId) {
