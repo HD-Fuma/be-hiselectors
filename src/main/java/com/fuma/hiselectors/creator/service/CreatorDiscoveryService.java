@@ -22,7 +22,7 @@ import com.fuma.hiselectors.logging.BatchLogContext;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +44,16 @@ public class CreatorDiscoveryService {
     private static final List<String> RESET_PLATFORMS = List.of(
             SnsPlatform.YOUTUBE.name(), SnsPlatform.INSTAGRAM.name());
     private static final String LIVING_LIFE = "LIVING_LIFE";
+
+    /**
+     * 목록 화면과 같은 정렬. 데모에 남길 계정을 무작위로 고르면 시연할 때마다
+     * 얼굴이 바뀌므로, 화면 맨 위에 있던 계정이 그대로 남게 한다.
+     */
+    private static final Comparator<CreatorPool> DEMO_DISPLAY_ORDER =
+            Comparator.comparing(CreatorPool::getFollowerCount,
+                            Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(CreatorPool::getId,
+                            Comparator.nullsLast(Comparator.naturalOrder()));
 
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
@@ -128,7 +138,7 @@ public class CreatorDiscoveryService {
             creatorPoolRepository.softDeleteAllActiveByPlatforms(RESET_PLATFORMS);
             List<CreatorPool> creators = new ArrayList<>(creatorPoolRepository
                     .findDeletedDemoCandidatesWithProfileImage(RESET_PLATFORMS));
-            Collections.shuffle(creators);
+            creators.sort(DEMO_DISPLAY_ORDER);
 
             Map<String, Integer> categoryCounts = new HashMap<>();
             int restoredCount = 0;
@@ -162,7 +172,10 @@ public class CreatorDiscoveryService {
      * <p>{@code discovered_at} 은 최초 발굴 시각이라 여기서도 갱신하지 않는다.
      * 방금 발굴된 것처럼 보이는 강조는 되살린 ID 를 화면에 내려 처리한다.
      *
-     * @return 되살린 계정 수와 그 ID
+     * <p>이미 노출 중이던 계정은 강조 대상에서 뺀다. 원래 있던 계정까지 새로
+     * 발굴된 것처럼 빛나면 무엇이 이번에 나온 결과인지 구분되지 않는다.
+     *
+     * @return 노출 중인 계정 수와, 이번에 되살려 강조할 계정 ID
      */
     @Transactional
     public CreatorPoolCategoryDemoResponse prepareCategoryDemo(Long categoryId,
@@ -175,17 +188,20 @@ public class CreatorDiscoveryService {
             List<CreatorPool> creators = creatorPoolRepository
                     .findDemoCandidatesByCategory(category.getCode(), RESET_PLATFORMS);
 
-            List<Long> restoredCreatorIds = new ArrayList<>();
+            List<Long> discoveredCreatorIds = new ArrayList<>();
             for (CreatorPool creator : creators) {
+                if (!creator.isDeleted()) {
+                    continue;
+                }
                 creator.restore();
-                restoredCreatorIds.add(creator.getId());
+                discoveredCreatorIds.add(creator.getId());
             }
 
-            batchEventLogger.succeeded(logContext,
-                    Map.of("restoredCount", (long) restoredCreatorIds.size()),
+            batchEventLogger.succeeded(logContext, Map.of(
+                    "visibleCount", (long) creators.size(),
+                    "discoveredCount", (long) discoveredCreatorIds.size()),
                     Map.of("adminLoginId", adminLoginId, "categoryCode", category.getCode()));
-            return new CreatorPoolCategoryDemoResponse(
-                    restoredCreatorIds.size(), restoredCreatorIds);
+            return new CreatorPoolCategoryDemoResponse(creators.size(), discoveredCreatorIds);
         } catch (RuntimeException | Error error) {
             batchEventLogger.failed(logContext, error);
             throw error;

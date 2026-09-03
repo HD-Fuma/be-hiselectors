@@ -212,7 +212,7 @@ class CreatorDiscoveryServiceTest {
     }
 
     @Test
-    void FAST_모드_카테고리_데모_발굴은_해당_카테고리_전체를_노출한다() {
+    void FAST_모드_카테고리_데모_발굴은_이번에_되살린_계정만_강조한다() {
         BatchLogContext logContext = mock(BatchLogContext.class);
         when(batchEventLogger.start("creator-pool-demo-category")).thenReturn(logContext);
         Category category = mock(Category.class);
@@ -230,11 +230,12 @@ class CreatorDiscoveryServiceTest {
         CreatorPoolCategoryDemoResponse response =
                 creatorDiscoveryService.prepareCategoryDemo(4L, "admin");
 
-        assertThat(response.restoredCount()).isEqualTo(3);
-        assertThat(response.restoredCreatorIds()).hasSize(3);
+        assertThat(response.visibleCount()).isEqualTo(3);
+        assertThat(response.discoveredCreatorIds()).hasSize(2);
         assertThat(creators).allMatch(creator -> !creator.isDeleted());
         verify(creatorPoolRepository, never()).softDeleteAllActiveByPlatforms(anyList());
-        verify(batchEventLogger).succeeded(logContext, Map.of("restoredCount", 3L),
+        verify(batchEventLogger).succeeded(logContext,
+                Map.of("visibleCount", 3L, "discoveredCount", 2L),
                 Map.of("adminLoginId", "admin", "categoryCode", "LIVING_LIFE"));
     }
 
@@ -249,11 +250,39 @@ class CreatorDiscoveryServiceTest {
         verifyNoInteractions(batchEventLogger);
     }
 
+    @Test
+    void 데모_준비는_목록_맨_위_계정을_남긴다() {
+        BatchLogContext logContext = mock(BatchLogContext.class);
+        when(batchEventLogger.start("creator-pool-demo")).thenReturn(logContext);
+        CreatorPool top = deletedCreator("LIVING_LIFE", "living-top", 90_000L);
+        CreatorPool second = deletedCreator("LIVING_LIFE", "living-second", 50_000L);
+        CreatorPool third = deletedCreator("LIVING_LIFE", "living-third", 10_000L);
+        when(creatorPoolRepository.findDeletedDemoCandidatesWithProfileImage(
+                List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(List.of(third, top, second));
+
+        assertThat(creatorDiscoveryService.prepareDemo("admin").restoredCount()).isEqualTo(2);
+
+        assertThat(top.isDeleted()).isFalse();
+        assertThat(second.isDeleted()).isFalse();
+        assertThat(third.isDeleted()).isTrue();
+    }
+
     private CreatorPool deletedCreator(String category, String accountId) {
         CreatorPool creator = CreatorPool.builder()
                 .snsCode("YOUTUBE")
                 .accountId(accountId)
                 .category(category)
+                .build();
+        creator.softDelete();
+        return creator;
+    }
+
+    private CreatorPool deletedCreator(String category, String accountId, Long followerCount) {
+        CreatorPool creator = CreatorPool.builder()
+                .snsCode("YOUTUBE")
+                .accountId(accountId)
+                .category(category)
+                .followerCount(followerCount)
                 .build();
         creator.softDelete();
         return creator;

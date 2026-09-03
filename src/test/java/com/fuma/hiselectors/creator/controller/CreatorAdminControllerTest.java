@@ -127,8 +127,8 @@ class CreatorAdminControllerTest {
 
         mockMvc.perform(post("/api/admin/creators/demo/categories/4").principal(() -> "admin"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.restoredCount").value(30))
-                .andExpect(jsonPath("$.data.restoredCreatorIds[0]").value(11));
+                .andExpect(jsonPath("$.data.visibleCount").value(30))
+                .andExpect(jsonPath("$.data.discoveredCreatorIds[0]").value(11));
 
         verify(creatorDiscoveryService).prepareCategoryDemo(4L, "admin");
     }
