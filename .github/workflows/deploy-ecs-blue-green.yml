@@ -67,8 +67,7 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]] ||
               ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- \
-                src/main/resources/db/016_violation_type_descriptions.sql \
-                src/main/resources/db/022_performance_dashboard_indexes.sql; then
+                src/main/resources/db/016_violation_type_descriptions.sql; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
@@ -154,7 +153,7 @@ jobs:
             913fb5b814f17af79d4c1622584a8d0ceddf5b0d76fe353d0c7d1186cdd6b229 \
             "$rds_ca_bundle" | sha256sum --check --status
           rds_ca_bundle_b64="$(base64 -w0 "$rds_ca_bundle")"
-          migration_sql="$(cat src/main/resources/db/016_violation_type_descriptions.sql; printf '\n'; cat src/main/resources/db/022_performance_dashboard_indexes.sql)"
+          migration_sql="$(< src/main/resources/db/016_violation_type_descriptions.sql)"
           verify_sql="SELECT COUNT(*) FROM violation_type WHERE (code = 'AD_DISCLOSURE_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'EAB491EAB3A0C2B7EC8898EC8898EBA38C20EC9588EB82B420EBACB8EAB5AC20ED9995EC9DB820ED9584EC9A94') OR (code = 'AFFILIATE_LINK_INVALID' AND HEX(CONVERT(description USING utf8mb4)) = 'ECA09CED9CB420EBA781ED81AC20ED9995EC9DB820ED9584EC9A94');"
           jq \
             --arg container "$ECS_CONTAINER_NAME" \

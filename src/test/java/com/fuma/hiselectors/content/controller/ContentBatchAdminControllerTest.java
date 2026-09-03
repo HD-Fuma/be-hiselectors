@@ -13,7 +13,6 @@ import com.fuma.hiselectors.admin.model.Admin;
 import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.content.task.ContentSyncTask;
-import com.fuma.hiselectors.content.service.ContentBatchMode;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.taskrun.model.TaskRun;
 import com.fuma.hiselectors.taskrun.model.TaskType;
@@ -46,7 +45,6 @@ class ContentBatchAdminControllerTest {
     void setUp() {
         taskRunExecutionService = mock(TaskRunExecutionService.class);
         contentSyncTask = mock(ContentSyncTask.class);
-        when(contentSyncTask.manualTask(ContentBatchMode.STANDARD)).thenReturn(contentSyncTask);
         adminRepository = mock(AdminRepository.class);
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ContentBatchAdminController(

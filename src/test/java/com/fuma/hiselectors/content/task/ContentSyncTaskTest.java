@@ -3,7 +3,6 @@ package com.fuma.hiselectors.content.task;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -31,7 +30,6 @@ import com.fuma.hiselectors.taskrun.service.TaskStartResult;
 import com.fuma.hiselectors.taskrun.service.TaskTerminalContext;
 import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -143,19 +141,9 @@ class ContentSyncTaskTest {
     void fastModeSubmitsScopedReportTaskWithFingerprintPayload() {
         UUID sourceRunId = UUID.fromString("94bc7ce2-9225-4232-bd2a-ac37b0fd62c9");
         TrackedTask fastReportTask = mock(TrackedTask.class);
-        when(contentBatchService.run(any(), eq(ContentBatchMode.FAST)))
-                .thenReturn(new ContentBatchResult(1, 2, true, true, Set.of(22L, 11L)));
-        when(contentReportGenerationTask.versionIdsTask(Set.of(11L, 22L)))
-                .thenReturn(fastReportTask);
-        TrackedTask fastSyncTask = task.fastModeTask();
+        when(contentReportGenerationTask.fastModeTask()).thenReturn(fastReportTask);
 
-        try {
-            fastSyncTask.execute(new TaskExecutionContext(
-                    mock(TaskLease.class), mock(TaskProgressReporter.class)));
-        } catch (Exception exception) {
-            throw new AssertionError(exception);
-        }
-        fastSyncTask.afterTerminal(terminal(sourceRunId));
+        task.fastModeTask().afterTerminal(terminal(sourceRunId));
 
         ArgumentCaptor<TaskStartCommand> command =
                 ArgumentCaptor.forClass(TaskStartCommand.class);
@@ -163,23 +151,6 @@ class ContentSyncTaskTest {
         assertThat(command.getValue().businessPayload().get("sourceContentSyncRunId").stringValue())
                 .isEqualTo(sourceRunId.toString());
         assertThat(command.getValue().businessPayload().get("fastMode").booleanValue()).isTrue();
-        assertThat(command.getValue().businessPayload().get("inspectionScope").stringValue())
-                .isEqualTo("CHANGED_VERSIONS");
-        assertThat(command.getValue().businessPayload().get("contentVersionIds").toString())
-                .isEqualTo("[11,22]");
-    }
-
-    @Test
-    void manualSyncSkipsReportWhenNoVersionWasCreatedOrChanged() throws Exception {
-        when(contentBatchService.run(any()))
-                .thenReturn(new ContentBatchResult(0, 3, true, true, Set.of()));
-        TrackedTask manualTask = task.manualTask(ContentBatchMode.STANDARD);
-
-        manualTask.execute(new TaskExecutionContext(
-                mock(TaskLease.class), mock(TaskProgressReporter.class)));
-        manualTask.afterTerminal(terminal(UUID.randomUUID()));
-
-        verifyNoInteractions(taskRunExecutionService, contentReportGenerationTask);
     }
 
     @Test

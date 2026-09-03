@@ -6,11 +6,9 @@ import com.fuma.hiselectors.logging.BatchLogContext;
 import com.fuma.hiselectors.taskrun.service.TaskProgressReporter;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -156,14 +154,11 @@ public class ContentBatchService {
                                 totalFailureCount[0] - representativeFailures.size()));
             }
 
-            Set<Long> changedVersionIds = new HashSet<>(newContentResult.savedVersionIds());
-            changedVersionIds.addAll(storedContentResult.changedVersionIds());
             ContentBatchResult batchResult = new ContentBatchResult(
                     newContentCount,
                     engagementCount,
                     newContentSucceeded,
-                    storedContentSucceeded,
-                    Set.copyOf(changedVersionIds));
+                    storedContentSucceeded);
             Map<String, Long> counts = batchCounts(
                     newContentResult, storedContentResult, failedStageCount);
             if (failedStageCount > 0 || !newContentSucceeded || !storedContentSucceeded) {
@@ -255,21 +250,7 @@ public class ContentBatchService {
             int newContentCount,
             int engagementCount,
             boolean newContentSucceeded,
-            boolean storedContentSucceeded,
-            Set<Long> changedVersionIds) {
-
-        public ContentBatchResult(
-                int newContentCount,
-                int engagementCount,
-                boolean newContentSucceeded,
-                boolean storedContentSucceeded) {
-            this(
-                    newContentCount,
-                    engagementCount,
-                    newContentSucceeded,
-                    storedContentSucceeded,
-                    Set.of());
-        }
+            boolean storedContentSucceeded) {
     }
 
     private static final class ProgressUpdateException extends RuntimeException {

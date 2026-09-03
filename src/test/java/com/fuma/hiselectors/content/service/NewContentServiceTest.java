@@ -338,7 +338,7 @@ class NewContentServiceTest {
                 SnsPlatform.YOUTUBE, List.of("youtube-content"))).thenReturn(List.of());
         when(classifier.isSelectorsContent(instagramContent)).thenReturn(true);
         when(classifier.isSelectorsContent(youtubeContent)).thenReturn(true);
-        when(transactionTemplate.execute(any())).thenReturn(List.of(101L));
+        when(transactionTemplate.execute(any())).thenReturn(1);
 
         NewContentService.NewContentResult result = service.collect();
 
@@ -534,7 +534,7 @@ class NewContentServiceTest {
         when(classifier.isSelectorsContent(second)).thenReturn(true);
         when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
             transactionReturned.set(true);
-            return List.of(101L, 102L);
+            return 2;
         });
 
         NewContentService.NewContentResult result = service.collect(update -> {
@@ -572,7 +572,7 @@ class NewContentServiceTest {
         when(contentRepository.findAllBySnsCodeAndSnsContentIdIn(
                 SnsPlatform.INSTAGRAM, List.of("selected"))).thenReturn(List.of());
         when(classifier.isSelectorsContent(selected)).thenReturn(true);
-        when(transactionTemplate.execute(any())).thenReturn(List.of(101L));
+        when(transactionTemplate.execute(any())).thenReturn(1);
 
         assertThatThrownBy(() -> service.collect(update -> {
             progress.add(update);
@@ -595,7 +595,7 @@ class NewContentServiceTest {
                 .thenReturn(List.of(instagramAccount(null)));
         when(fetcher.supports()).thenReturn(SnsPlatform.INSTAGRAM);
         when(fetcher.fetchByAccount("instagram-account", generationStart)).thenReturn(List.of());
-        when(transactionTemplate.execute(any())).thenReturn(List.of());
+        when(transactionTemplate.execute(any())).thenReturn(0);
 
         NewContentService.NewContentResult result = service.collect(progress::add);
 
