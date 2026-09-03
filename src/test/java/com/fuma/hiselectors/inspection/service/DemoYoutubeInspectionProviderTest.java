@@ -41,8 +41,11 @@ class DemoYoutubeInspectionProviderTest {
         assertThat(provider.violations(62L)).singleElement().satisfies(violation -> {
             assertThat(violation.type().name()).isEqualTo("FALSE_EXAGGERATED_CLAIM");
             assertThat(violation.evidence().confidence()).isEqualTo(1.0);
-            assertThat(violation.evidence().locations()).hasSize(4)
-                    .allMatch(location -> location.contentMediaId().equals(62L));
+            assertThat(violation.evidence().locations()).singleElement().satisfies(location -> {
+                assertThat(location.contentMediaId()).isEqualTo(62L);
+                assertThat(location.segmentId()).isEqualTo("stt-002");
+                assertThat(location.targetKind().name()).isEqualTo("STT_SEGMENT");
+            });
         });
     }
 }

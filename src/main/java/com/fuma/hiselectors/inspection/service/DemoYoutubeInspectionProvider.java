@@ -83,13 +83,7 @@ public class DemoYoutubeInspectionProvider {
                 ViolationTypeCode.FALSE_EXAGGERATED_CLAIM,
                 new ViolationEvidence(reason, 1.0, List.of(
                         location(contentMediaId, EvidenceTargetKind.STT_SEGMENT,
-                                "stt-002", "당도 100%의"),
-                        location(contentMediaId, EvidenceTargetKind.STT_SEGMENT,
-                                "stt-003", "이것만 먹어도 살이 쪽쪽 빠져요"),
-                        location(contentMediaId, EvidenceTargetKind.OCR_SEGMENT,
-                                "ocr-004", "당도 100%의"),
-                        location(contentMediaId, EvidenceTargetKind.OCR_SEGMENT,
-                                "ocr-005", "이것만 먹어도 살이 쪽쪽 빠져요")), EvidenceSource.AI)));
+                                "stt-002", "당도 100%의")), EvidenceSource.AI)));
     }
 
     private ContentReportAnalysis report() {
