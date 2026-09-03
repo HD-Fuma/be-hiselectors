@@ -67,7 +67,7 @@ class PerformanceServiceTest {
         when(performanceQueryRepository.findDailyProductClicks(
                 9L, august.start(), august.end()))
                 .thenReturn(List.of(new DailyClick(1, 100L), new DailyClick(2, 200L)));
-        when(performanceQueryRepository.findDailyPerformancePurchases(
+        when(performanceQueryRepository.findDailyConfirmedPurchases(
                 9L, august.start(), august.end()))
                 .thenReturn(List.of(
                         new DailyPurchase(1, 3L, new BigDecimal("300000")),
@@ -77,7 +77,7 @@ class PerformanceServiceTest {
                 .thenReturn(List.of(
                         click(1L, 2_840L),
                         click(2L, 1_200L)));
-        when(performanceQueryRepository.findProductPerformancePurchases(
+        when(performanceQueryRepository.findProductConfirmedPurchases(
                 9L, august.start(), august.end()))
                 .thenReturn(List.of(
                         purchase(1L, 92L, "10826667"),
@@ -116,11 +116,11 @@ class PerformanceServiceTest {
         Period august = period(YearMonth.of(2026, 8));
         when(performanceQueryRepository.findDailyProductClicks(
                 9L, august.start(), august.end())).thenReturn(List.of());
-        when(performanceQueryRepository.findDailyPerformancePurchases(
+        when(performanceQueryRepository.findDailyConfirmedPurchases(
                 9L, august.start(), august.end())).thenReturn(List.of());
         when(performanceQueryRepository.findProductClicks(
                 9L, august.start(), august.end())).thenReturn(List.of());
-        when(performanceQueryRepository.findProductPerformancePurchases(
+        when(performanceQueryRepository.findProductConfirmedPurchases(
                 9L, august.start(), august.end())).thenReturn(List.of());
 
         assertThat(service.getSummary("selector-user", null).activityMonth())
@@ -136,7 +136,7 @@ class PerformanceServiceTest {
         Period period = period(month);
         when(performanceQueryRepository.countProductClicks(
                 9L, period.start(), period.end())).thenReturn(clickCount);
-        when(performanceQueryRepository.summarizePerformancePurchases(
+        when(performanceQueryRepository.summarizeConfirmedPurchases(
                 9L, period.start(), period.end()))
                 .thenReturn(new PurchaseSummary(new BigDecimal(amount), conversionCount));
     }

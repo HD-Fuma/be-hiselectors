@@ -29,11 +29,6 @@ public class ContentReportGenerationTask implements TrackedTask {
         return context -> execute(context, ContentBatchMode.FAST);
     }
 
-    public TrackedTask versionIdsTask(Set<Long> contentVersionIds) {
-        Set<Long> targets = Set.copyOf(contentVersionIds);
-        return context -> executeVersionIds(context, targets);
-    }
-
     private void execute(TaskExecutionContext context, ContentBatchMode mode) {
         Consumer<Long> inspector = versionId ->
                 contentInspectionExecutionService.inspectTracked(versionId, context.lease());
@@ -49,17 +44,5 @@ public class ContentReportGenerationTask implements TrackedTask {
             staleContentInspectionService.reinspectStale(
                     null, mode.targetAccountIds(), Set.of(), inspector, progress);
         }
-    }
-
-    private void executeVersionIds(TaskExecutionContext context, Set<Long> contentVersionIds) {
-        Consumer<Long> inspector = versionId ->
-                contentInspectionExecutionService.inspectTracked(versionId, context.lease());
-        Consumer<ReinspectStaleResponse> progress = snapshot -> {
-            if (snapshot.successCount() + snapshot.failureCount() == 0) {
-                context.progress().start(STEP, snapshot.targetCount());
-            }
-        };
-        staleContentInspectionService.reinspectVersionIds(
-                contentVersionIds, inspector, progress);
     }
 }

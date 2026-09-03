@@ -33,7 +33,7 @@ class PerformanceQueryRepositoryTest {
     private TestEntityManager entityManager;
 
     @Test
-    void aggregatesOnlyProductClicksAndPerformancePurchaseStatusesForSelectorAndMonth() {
+    void aggregatesOnlyProductClicksAndConfirmedPurchasesForSelectorAndMonth() {
         LocalDateTime purchasedAt = LocalDateTime.now().withNano(0);
         YearMonth month = YearMonth.from(purchasedAt);
         LocalDateTime start = month.atDay(1).atStartOfDay();
@@ -50,33 +50,23 @@ class PerformanceQueryRepositoryTest {
         entityManager.persist(confirmedPurchase(9L, product.getId(), "ORD-1", purchasedAt, "10000"));
         entityManager.persist(unconfirmedPurchase(9L, product.getId(), "ORD-2", purchasedAt, "20000"));
         entityManager.persist(confirmedPurchase(10L, product.getId(), "ORD-3", purchasedAt, "30000"));
-        PurchaseHistory canceled = unconfirmedPurchase(
-                9L, product.getId(), "ORD-4", purchasedAt, "40000");
-        canceled.transitionTo(PurchaseStatus.CANCEL_REQUESTED, null);
-        canceled.transitionTo(PurchaseStatus.CANCELED, null);
-        entityManager.persist(canceled);
-        PurchaseHistory returned = confirmedPurchase(
-                9L, product.getId(), "ORD-5", purchasedAt, "50000");
-        returned.transitionTo(PurchaseStatus.RETURN_REQUESTED, null);
-        returned.transitionTo(PurchaseStatus.RETURNED, null);
-        entityManager.persist(returned);
         entityManager.flush();
         entityManager.clear();
 
         assertThat(repository.countProductClicks(9L, start, end)).isEqualTo(2L);
-        assertThat(repository.summarizePerformancePurchases(9L, start, end))
+        assertThat(repository.summarizeConfirmedPurchases(9L, start, end))
                 .satisfies(summary -> {
-                    assertThat(summary.conversionCount()).isEqualTo(2L);
-                    assertThat(summary.conversionAmount()).isEqualByComparingTo("30000");
+                    assertThat(summary.conversionCount()).isEqualTo(1L);
+                    assertThat(summary.conversionAmount()).isEqualByComparingTo("10000");
                 });
         assertThat(repository.findDailyProductClicks(9L, start, end))
                 .singleElement()
                 .satisfies(day -> assertThat(day.clickCount()).isEqualTo(2L));
-        assertThat(repository.findDailyPerformancePurchases(9L, start, end))
+        assertThat(repository.findDailyConfirmedPurchases(9L, start, end))
                 .singleElement()
                 .satisfies(day -> {
-                    assertThat(day.conversionCount()).isEqualTo(2L);
-                    assertThat(day.conversionAmount()).isEqualByComparingTo("30000");
+                    assertThat(day.conversionCount()).isEqualTo(1L);
+                    assertThat(day.conversionAmount()).isEqualByComparingTo("10000");
                 });
         assertThat(repository.findProductClicks(9L, start, end))
                 .singleElement()
@@ -84,12 +74,12 @@ class PerformanceQueryRepositoryTest {
                     assertThat(row.productId()).isEqualTo(product.getId());
                     assertThat(row.clickCount()).isEqualTo(2L);
                 });
-        assertThat(repository.findProductPerformancePurchases(9L, start, end))
+        assertThat(repository.findProductConfirmedPurchases(9L, start, end))
                 .singleElement()
                 .satisfies(row -> {
                     assertThat(row.productId()).isEqualTo(product.getId());
-                    assertThat(row.conversionCount()).isEqualTo(2L);
-                    assertThat(row.conversionAmount()).isEqualByComparingTo("30000");
+                    assertThat(row.conversionCount()).isEqualTo(1L);
+                    assertThat(row.conversionAmount()).isEqualByComparingTo("10000");
                 });
     }
 

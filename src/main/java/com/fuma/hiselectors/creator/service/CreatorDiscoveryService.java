@@ -1,9 +1,13 @@
 package com.fuma.hiselectors.creator.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.category.model.Category;
+import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolCategoryDemoResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
@@ -17,6 +21,9 @@ import com.fuma.hiselectors.logging.BatchEventLogger;
 import com.fuma.hiselectors.logging.BatchLogContext;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -36,10 +43,12 @@ public class CreatorDiscoveryService {
     private static final String RESET_CONFIRMATION = "DELETE_CREATOR_POOL";
     private static final List<String> RESET_PLATFORMS = List.of(
             SnsPlatform.YOUTUBE.name(), SnsPlatform.INSTAGRAM.name());
+    private static final String LIVING_LIFE = "LIVING_LIFE";
 
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final CreatorDiscoverySourceRepository discoverySourceRepository;
+    private final CategoryRepository categoryRepository;
     private final BatchEventLogger batchEventLogger;
 
     /**
@@ -109,6 +118,78 @@ public class CreatorDiscoveryService {
                 "softDeletedCount", (long) softDeletedCount),
                 Map.of("adminLoginId", adminLoginId));
         return new CreatorPoolResetResponse(softDeletedCount);
+    }
+
+    /** 카테고리별 소수 계정만 무작위로 노출해 데모용 풀을 만든다. */
+    @Transactional
+    public CreatorPoolDemoResponse prepareDemo(String adminLoginId) {
+        BatchLogContext logContext = batchEventLogger.start("creator-pool-demo");
+        try {
+            creatorPoolRepository.softDeleteAllActiveByPlatforms(RESET_PLATFORMS);
+            List<CreatorPool> creators = new ArrayList<>(creatorPoolRepository
+                    .findDeletedDemoCandidatesWithProfileImage(RESET_PLATFORMS));
+            Collections.shuffle(creators);
+
+            Map<String, Integer> categoryCounts = new HashMap<>();
+            int restoredCount = 0;
+            for (CreatorPool creator : creators) {
+                String category = creator.getCategory();
+                int limit = LIVING_LIFE.equals(category) ? 2 : 10;
+                if (categoryCounts.getOrDefault(category, 0) >= limit) {
+                    continue;
+                }
+                creator.restore();
+                categoryCounts.merge(category, 1, Integer::sum);
+                restoredCount++;
+            }
+
+            batchEventLogger.succeeded(logContext, Map.of("restoredCount", (long) restoredCount),
+                    Map.of("adminLoginId", adminLoginId));
+            return new CreatorPoolDemoResponse(restoredCount);
+        } catch (RuntimeException | Error error) {
+            batchEventLogger.failed(logContext, error);
+            throw error;
+        }
+    }
+
+    /**
+     * FAST 모드 카테고리 데모 발굴. 실제 수집 대신 저장된 계정을 즉시 되살린다.
+     *
+     * <p>{@code prepareDemo} 와 달리 정원을 두지 않고 다른 카테고리도 건드리지 않는다.
+     * 데모에서 "이 분야만 발굴"을 눌렀을 때, 보고 있던 목록은 그대로 두고 그 분야
+     * 계정만 더해지게 하기 위해서다.
+     *
+     * <p>{@code discovered_at} 은 최초 발굴 시각이라 여기서도 갱신하지 않는다.
+     * 방금 발굴된 것처럼 보이는 강조는 되살린 ID 를 화면에 내려 처리한다.
+     *
+     * @return 되살린 계정 수와 그 ID
+     */
+    @Transactional
+    public CreatorPoolCategoryDemoResponse prepareCategoryDemo(Long categoryId,
+                                                              String adminLoginId) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+
+        BatchLogContext logContext = batchEventLogger.start("creator-pool-demo-category");
+        try {
+            List<CreatorPool> creators = creatorPoolRepository
+                    .findDemoCandidatesByCategory(category.getCode(), RESET_PLATFORMS);
+
+            List<Long> restoredCreatorIds = new ArrayList<>();
+            for (CreatorPool creator : creators) {
+                creator.restore();
+                restoredCreatorIds.add(creator.getId());
+            }
+
+            batchEventLogger.succeeded(logContext,
+                    Map.of("restoredCount", (long) restoredCreatorIds.size()),
+                    Map.of("adminLoginId", adminLoginId, "categoryCode", category.getCode()));
+            return new CreatorPoolCategoryDemoResponse(
+                    restoredCreatorIds.size(), restoredCreatorIds);
+        } catch (RuntimeException | Error error) {
+            batchEventLogger.failed(logContext, error);
+            throw error;
+        }
     }
 
     /**

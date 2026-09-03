@@ -87,7 +87,7 @@ public class PerformanceService {
         Period period = Period.of(activityMonth);
         long clickCount = performanceQueryRepository.countProductClicks(
                 selectorsId, period.startInclusive(), period.endExclusive());
-        PurchaseSummary purchases = performanceQueryRepository.summarizePerformancePurchases(
+        PurchaseSummary purchases = performanceQueryRepository.summarizeConfirmedPurchases(
                 selectorsId, period.startInclusive(), period.endExclusive());
         long conversionAmount = requireWholeWon(purchases.conversionAmount());
         return new PerformanceMetricsResponse(
@@ -105,7 +105,7 @@ public class PerformanceService {
                         selectorsId, period.startInclusive(), period.endExclusive())
                 .forEach(row -> clicksByDay.put(row.dayOfMonth(), row));
         Map<Integer, DailyPurchase> purchasesByDay = new HashMap<>();
-        performanceQueryRepository.findDailyPerformancePurchases(
+        performanceQueryRepository.findDailyConfirmedPurchases(
                         selectorsId, period.startInclusive(), period.endExclusive())
                 .forEach(row -> purchasesByDay.put(row.dayOfMonth(), row));
 
@@ -134,7 +134,7 @@ public class PerformanceService {
             products.computeIfAbsent(click.productId(), ignored -> ProductStats.from(click))
                     .clickCount = click.clickCount();
         }
-        for (ProductPurchase purchase : performanceQueryRepository.findProductPerformancePurchases(
+        for (ProductPurchase purchase : performanceQueryRepository.findProductConfirmedPurchases(
                 selectorsId, period.startInclusive(), period.endExclusive())) {
             ProductStats stats = products.computeIfAbsent(
                     purchase.productId(), ignored -> ProductStats.from(purchase));

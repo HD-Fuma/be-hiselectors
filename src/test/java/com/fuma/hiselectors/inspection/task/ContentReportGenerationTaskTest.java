@@ -82,35 +82,4 @@ class ContentReportGenerationTaskTest {
                 any(),
                 any());
     }
-
-    @Test
-    void versionIdsTaskInspectsOnlyExplicitlySelectedVersions() throws Exception {
-        StaleContentInspectionService staleContentInspectionService =
-                mock(StaleContentInspectionService.class);
-        ContentInspectionExecutionService contentInspectionExecutionService =
-                mock(ContentInspectionExecutionService.class);
-        ContentReportGenerationTask task = new ContentReportGenerationTask(
-                staleContentInspectionService,
-                contentInspectionExecutionService);
-        TaskLease lease = mock(TaskLease.class);
-        TaskProgressReporter progress = mock(TaskProgressReporter.class);
-        doAnswer(invocation -> {
-            Consumer<Long> inspector = invocation.getArgument(1);
-            Consumer<ReinspectStaleResponse> callback = invocation.getArgument(2);
-            callback.accept(new ReinspectStaleResponse(2, 0, 0, List.of()));
-            inspector.accept(11L);
-            inspector.accept(22L);
-            return new ReinspectStaleResponse(2, 2, 0, List.of());
-        }).when(staleContentInspectionService)
-                .reinspectVersionIds(eq(Set.of(11L, 22L)), any(), any());
-
-        task.versionIdsTask(Set.of(11L, 22L))
-                .execute(new TaskExecutionContext(lease, progress));
-
-        verify(staleContentInspectionService)
-                .reinspectVersionIds(eq(Set.of(11L, 22L)), any(), any());
-        verify(contentInspectionExecutionService).inspectTracked(11L, lease);
-        verify(contentInspectionExecutionService).inspectTracked(22L, lease);
-        verify(progress).start("STALE_CONTENT_INSPECTION", 2);
-    }
 }

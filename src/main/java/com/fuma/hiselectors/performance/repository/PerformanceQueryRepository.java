@@ -13,10 +13,6 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class PerformanceQueryRepository {
 
-    private static final List<PurchaseStatus> PERFORMANCE_PURCHASE_STATUSES = List.of(
-            PurchaseStatus.PURCHASED,
-            PurchaseStatus.PURCHASE_CONFIRMED);
-
     private final EntityManager entityManager;
 
     public long countProductClicks(
@@ -36,18 +32,18 @@ public class PerformanceQueryRepository {
                 .getSingleResult();
     }
 
-    public PurchaseSummary summarizePerformancePurchases(
+    public PurchaseSummary summarizeConfirmedPurchases(
             Long selectorsId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         Object[] row = entityManager.createQuery("""
                         select coalesce(sum(p.paidAmount), 0), count(p)
                         from PurchaseHistory p
                         where p.selectorsId = :selectorsId
-                          and p.status in :statuses
+                          and p.status = :status
                           and p.purchasedAt >= :startInclusive
                           and p.purchasedAt < :endExclusive
                         """, Object[].class)
                 .setParameter("selectorsId", selectorsId)
-                .setParameter("statuses", PERFORMANCE_PURCHASE_STATUSES)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED)
                 .setParameter("startInclusive", startInclusive)
                 .setParameter("endExclusive", endExclusive)
                 .getSingleResult();
@@ -76,20 +72,20 @@ public class PerformanceQueryRepository {
                 .toList();
     }
 
-    public List<DailyPurchase> findDailyPerformancePurchases(
+    public List<DailyPurchase> findDailyConfirmedPurchases(
             Long selectorsId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         return entityManager.createQuery("""
                         select day(p.purchasedAt), count(p), coalesce(sum(p.paidAmount), 0)
                         from PurchaseHistory p
                         where p.selectorsId = :selectorsId
-                          and p.status in :statuses
+                          and p.status = :status
                           and p.purchasedAt >= :startInclusive
                           and p.purchasedAt < :endExclusive
                         group by day(p.purchasedAt)
                         order by day(p.purchasedAt)
                         """, Object[].class)
                 .setParameter("selectorsId", selectorsId)
-                .setParameter("statuses", PERFORMANCE_PURCHASE_STATUSES)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED)
                 .setParameter("startInclusive", startInclusive)
                 .setParameter("endExclusive", endExclusive)
                 .getResultList().stream()
@@ -126,7 +122,7 @@ public class PerformanceQueryRepository {
                 .toList();
     }
 
-    public List<ProductPurchase> findProductPerformancePurchases(
+    public List<ProductPurchase> findProductConfirmedPurchases(
             Long selectorsId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
         return entityManager.createQuery("""
                         select product.id, product.productCode, product.productName,
@@ -135,14 +131,14 @@ public class PerformanceQueryRepository {
                         from PurchaseHistory p
                         join Product product on product.id = p.productId
                         where p.selectorsId = :selectorsId
-                          and p.status in :statuses
+                          and p.status = :status
                           and p.purchasedAt >= :startInclusive
                           and p.purchasedAt < :endExclusive
                         group by product.id, product.productCode, product.productName,
                                  product.brandName, product.thumbnailUrl, product.detailUrl
                         """, Object[].class)
                 .setParameter("selectorsId", selectorsId)
-                .setParameter("statuses", PERFORMANCE_PURCHASE_STATUSES)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED)
                 .setParameter("startInclusive", startInclusive)
                 .setParameter("endExclusive", endExclusive)
                 .getResultList().stream()

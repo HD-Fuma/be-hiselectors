@@ -20,7 +20,7 @@ public class ContentBatchScheduler {
     private final ObjectMapper objectMapper;
 
     @Scheduled(
-            cron = "${content.batch.cron:0 0 1 * * *}",
+            cron = "${content.batch.cron:-}",
             zone = "${content.batch.zone:Asia/Seoul}")
     public void runContentBatch() {
         taskRunExecutionService.submit(
