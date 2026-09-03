@@ -95,6 +95,22 @@ class MediaPreprocessingServiceTest {
     }
 
     @Test
+    void appliesFixedYoutubeExtractionWithoutCallingExternalClients() {
+        ContentMedia video = video(0, Map.of());
+
+        MediaPreprocessingService.PreprocessingResult result = service().preprocessFixed(
+                youtubeContent(), List.of(video), policy(2L, "demo-extraction"),
+                extraction("stt-demo"));
+
+        assertThat(result.extractionUpdates()).hasSize(1);
+        assertThat(video.getBody()).containsEntry("schemaVersion", "1.2");
+        verify(youtube, never()).extract(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        verify(youtubeFetcher, never()).durationMs(
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void legacyBodyRequiresExtractionChangeVersion() {
         assertThat(service().requiresNewVersion(
                 youtubeContent(),

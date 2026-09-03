@@ -378,6 +378,7 @@ class ContentInspectionExecutionServiceTest {
         when(ai.generateReport(any())).thenReturn(ContentReportAnalysis.empty());
         ViolationResultMerger merger = mock(ViolationResultMerger.class);
         EvidenceLocationNormalizer normalizer = mock(EvidenceLocationNormalizer.class);
+        DemoYoutubeInspectionProvider demoProvider = mock(DemoYoutubeInspectionProvider.class);
         ViolationReconciliationService reconciliation =
                 mock(ViolationReconciliationService.class);
         TaskLeaseTransaction leaseTransaction = mock(TaskLeaseTransaction.class);
@@ -400,7 +401,8 @@ class ContentInspectionExecutionServiceTest {
         ContentInspectionExecutionService service = new ContentInspectionExecutionService(
                 versions, contents, media, reports, selectors, policies, preprocessing,
                 List.of(), ai, merger, normalizer, reconciliation, leaseTransaction,
-                transactions, new ContentMediaExtractionBodyMapper(new ObjectMapper()), CLOCK);
+                transactions, new ContentMediaExtractionBodyMapper(new ObjectMapper()),
+                demoProvider, CLOCK);
         return new Fixture(
                 versions, contents, media, reports, policies, selectors, preprocessing,
                 ai, merger, normalizer, reconciliation, leaseTransaction, transactions, service);

@@ -9,6 +9,7 @@ import com.fuma.hiselectors.content.model.MediaType;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.extraction.ContentExtractionExecutionResult;
+import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
 import com.fuma.hiselectors.inspection.extraction.InstagramContentExtractionClient;
 import com.fuma.hiselectors.inspection.extraction.YoutubeContentExtractionClient;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
@@ -57,6 +58,22 @@ public class MediaPreprocessingService {
                 .map(item -> prepareExtraction(content, item, activePolicy))
                 .toList();
 
+        List<MediaExtractionUpdate> updates = new ArrayList<>(pendingExtractions.size());
+        pendingExtractions.forEach(pending -> updates.add(applyExtraction(pending)));
+        return new PreprocessingResult(updates);
+    }
+
+    /** 외부 추출 호출 없이 제공된 시연 결과를 현재 미디어에 적용한다. */
+    public PreprocessingResult preprocessFixed(
+            Content content,
+            List<ContentMedia> media,
+            InspectionPolicy activePolicy,
+            ContentMediaExtractionResult extraction) {
+        List<PendingExtraction> pendingExtractions = media.stream()
+                .filter(item -> item.getMediaType() != MediaType.TEXT)
+                .sorted(Comparator.comparing(ContentMedia::getSequenceNo))
+                .map(item -> prepareFixedExtraction(content, item, activePolicy, extraction))
+                .toList();
         List<MediaExtractionUpdate> updates = new ArrayList<>(pendingExtractions.size());
         pendingExtractions.forEach(pending -> updates.add(applyExtraction(pending)));
         return new PreprocessingResult(updates);
@@ -112,6 +129,24 @@ public class MediaPreprocessingService {
         Map<String, Object> body = bodyMapper.toBody(execution.extraction());
         return new PendingExtraction(
                 media, body, activePolicy.getId(), inputHash, LocalDateTime.now(clock));
+    }
+
+    private PendingExtraction prepareFixedExtraction(
+            Content content,
+            ContentMedia media,
+            InspectionPolicy activePolicy,
+            ContentMediaExtractionResult extraction) {
+        if (!media.bodyOrEmpty().isEmpty() || media.getExtractedWithPolicyId() != null) {
+            throw new IllegalStateException(
+                    "추출이 완료된 ContentMedia.body는 덮어쓸 수 없습니다.");
+        }
+        String inputHash = extractionInputHash(content, media);
+        if (inputHash == null) {
+            throw new BusinessException(ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE);
+        }
+        return new PendingExtraction(
+                media, bodyMapper.toBody(extraction), activePolicy.getId(), inputHash,
+                LocalDateTime.now(clock));
     }
 
     private MediaExtractionUpdate applyExtraction(PendingExtraction pending) {

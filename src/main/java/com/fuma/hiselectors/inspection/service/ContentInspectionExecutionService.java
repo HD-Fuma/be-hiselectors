@@ -56,6 +56,7 @@ public class ContentInspectionExecutionService {
     private final TaskLeaseTransaction taskLeaseTransaction;
     private final TransactionTemplate transactionTemplate;
     private final ContentMediaExtractionBodyMapper bodyMapper;
+    private final DemoYoutubeInspectionProvider demoYoutubeInspectionProvider;
     private final Clock clock;
 
     public InspectionResult inspect(Long contentVersionId) {
@@ -145,9 +146,15 @@ public class ContentInspectionExecutionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.SELECTOR_NOT_FOUND));
         List<ContentMedia> media = contentMediaRepository
                 .findByContentVersionIdOrderBySequenceNoAsc(contentVersionId);
+        boolean demoFixedResult = demoYoutubeInspectionProvider.supports(content);
         ContentVersion version = requested;
         boolean versionCreated = false;
-        if (preprocessingService.requiresNewVersion(content, media, policy)) {
+        boolean demoExtractionAlreadyExists = demoFixedResult && media.stream()
+                .filter(item -> item.getMediaType() != MediaType.TEXT)
+                .anyMatch(item -> !item.bodyOrEmpty().isEmpty()
+                        || item.getExtractedWithPolicyId() != null);
+        if (demoExtractionAlreadyExists
+                || preprocessingService.requiresNewVersion(content, media, policy)) {
             version = contentVersionRepository.save(ContentVersion.create(
                     content.getId(), content.nextVersionNo(), requested.getContentHash(),
                     ContentVersionCreationReason.EXTRACTION_CHANGE,
@@ -157,7 +164,8 @@ public class ContentInspectionExecutionService {
         }
         version.startInspection();
         return new InspectionPreparation(
-                contentVersionId, content, version, selectors, media, policy, versionCreated);
+                contentVersionId, content, version, selectors, media, policy,
+                versionCreated, demoFixedResult);
     }
 
     private List<ContentMedia> cloneMedia(List<ContentMedia> source, Long targetVersionId) {
@@ -176,6 +184,24 @@ public class ContentInspectionExecutionService {
     }
 
     private InspectionAnalysis analyze(InspectionPreparation preparation) {
+        if (preparation.demoFixedResult()) {
+            demoYoutubeInspectionProvider.awaitResult();
+            var extraction = demoYoutubeInspectionProvider.extraction();
+            PreprocessingResult preprocessing = preprocessingService.preprocessFixed(
+                    preparation.content(), preparation.media(), preparation.policy(),
+                    extraction);
+            Long contentMediaId = preparation.media().stream()
+                    .filter(media -> media.getMediaType() == MediaType.VIDEO)
+                    .map(ContentMedia::getId)
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(
+                            ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE));
+            return new InspectionAnalysis(
+                    extraction.report(),
+                    Map.of("provider", "DEMO_FIXED_RESULT"),
+                    demoYoutubeInspectionProvider.violations(contentMediaId),
+                    preprocessing.extractionUpdates());
+        }
         PreprocessingResult preprocessing = preprocessingService.preprocess(
                 preparation.content(), preparation.media(), preparation.policy());
         InspectionContext context = new InspectionContext(
@@ -274,7 +300,8 @@ public class ContentInspectionExecutionService {
             Selectors selectors,
             List<ContentMedia> media,
             InspectionPolicy policy,
-            boolean versionCreated) {
+            boolean versionCreated,
+            boolean demoFixedResult) {
     }
 
     private record InspectionAnalysis(
