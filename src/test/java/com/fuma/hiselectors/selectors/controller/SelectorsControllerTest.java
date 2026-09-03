@@ -49,7 +49,7 @@ class SelectorsControllerTest {
                 1L, 1L, now.minusDays(10), now.minusDays(9), true,
                 now, now, List.of(),
                 new SelectorsSnsAccountResponse(
-                        10L, "YOUTUBE", "jianglow", 40_900L, null, now),
+                        10L, "YOUTUBE", "jianglow", "지안글로우 채널", 40_900L, null, now),
                 3, 2, true,
                 List.of(new SelectorsDetailResponse.ContentResponse(
                         20L, "YOUTUBE", "https://youtube.com/shorts/20", "실제 제목", "SHORTS",
@@ -59,6 +59,7 @@ class SelectorsControllerTest {
         mockMvc.perform(get("/api/admin/selectors/7"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.snsAccount.accountId").value("jianglow"))
+                .andExpect(jsonPath("$.data.snsAccount.displayName").value("지안글로우 채널"))
                 .andExpect(jsonPath("$.data.snsAccounts").doesNotExist())
                 .andExpect(jsonPath("$.data.snsVerifiedAt").value("2026-08-10T12:00:00"))
                 .andExpect(jsonPath("$.data.privacyAgreedAt").value("2026-08-11T12:00:00"))
