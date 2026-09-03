@@ -188,7 +188,7 @@ class CreatorDiscoveryServiceTest {
                 java.util.stream.IntStream.range(0, 4)
                         .mapToObj(index -> deletedCreator("LIVING_LIFE", "living-" + index)))
                 .toList();
-        when(creatorPoolRepository.findAllByDeletedTrueAndSnsCodeIn(
+        when(creatorPoolRepository.findDeletedDemoCandidatesWithProfileImage(
                 List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(creators);
 
         CreatorPoolDemoResponse response = creatorDiscoveryService.prepareDemo("admin");

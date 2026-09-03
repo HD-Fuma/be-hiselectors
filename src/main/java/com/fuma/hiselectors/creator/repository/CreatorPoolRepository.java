@@ -37,7 +37,16 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
 
-    List<CreatorPool> findAllByDeletedTrueAndSnsCodeIn(List<String> snsCodes);
+    @Query("""
+            select creator from CreatorPool creator
+            join CreatorDiscoveryInfo info on info.creatorPool = creator
+            where creator.deleted = true
+              and creator.snsCode in :snsCodes
+              and info.profileImageUrl is not null
+              and trim(info.profileImageUrl) <> ''
+            """)
+    List<CreatorPool> findDeletedDemoCandidatesWithProfileImage(
+            @Param("snsCodes") List<String> snsCodes);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

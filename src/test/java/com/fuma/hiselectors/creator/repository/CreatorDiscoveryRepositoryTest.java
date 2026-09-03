@@ -306,6 +306,26 @@ class CreatorDiscoveryRepositoryTest {
     }
 
     @Test
+    @DisplayName("데모 후보는 프로필 사진이 있는 소프트 삭제 계정만 조회한다")
+    void findDeletedDemoCandidatesWithProfileImage() {
+        CreatorPool withImage = saveCreator("YOUTUBE", "UC_photo", "사진 있음");
+        CreatorPool withoutImage = saveCreator("YOUTUBE", "UC_no_photo", "사진 없음");
+        for (CreatorPool creator : List.of(withImage, withoutImage)) {
+            creator.softDelete();
+        }
+        infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(withImage).profileImageUrl("https://example.com/profile.jpg").build());
+        infoRepository.save(CreatorDiscoveryInfo.builder().creatorPool(withoutImage).build());
+        em.flush();
+        em.clear();
+
+        assertThat(creatorPoolRepository.findDeletedDemoCandidatesWithProfileImage(
+                List.of("YOUTUBE", "INSTAGRAM")))
+                .extracting(CreatorPool::getAccountId)
+                .containsExactly("UC_photo");
+    }
+
+    @Test
     @DisplayName("발굴 이력 유무를 키워드·카테고리 단위로 확인한다")
     void existsByKeywordAndCategory() {
         CreatorPool creator = saveCreator("YOUTUBE", "UC_fit01", "핏지피티 홈트");

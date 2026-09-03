@@ -123,7 +123,7 @@ public class CreatorDiscoveryService {
         try {
             creatorPoolRepository.softDeleteAllActiveByPlatforms(RESET_PLATFORMS);
             List<CreatorPool> creators = new ArrayList<>(creatorPoolRepository
-                    .findAllByDeletedTrueAndSnsCodeIn(RESET_PLATFORMS));
+                    .findDeletedDemoCandidatesWithProfileImage(RESET_PLATFORMS));
             Collections.shuffle(creators);
 
             Map<String, Integer> categoryCounts = new HashMap<>();
