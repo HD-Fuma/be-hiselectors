@@ -32,6 +32,8 @@ import com.fuma.hiselectors.content.repository.ContentVersionRepository;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
 import com.fuma.hiselectors.inspection.detector.AiViolationDetector;
+import com.fuma.hiselectors.inspection.detector.RuleViolationDetector;
+import com.fuma.hiselectors.inspection.extraction.model.ContentMediaExtractionResult;
 import com.fuma.hiselectors.inspection.model.AiInspectionResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import com.fuma.hiselectors.inspection.service.ContentInspectionExecutionService.InspectionResult;
@@ -86,6 +88,31 @@ class ContentInspectionExecutionServiceTest {
                 .execute(eq(lease), eq(1L), eq(0L), eq(0L), any());
         verify(fixture.reports).save(any(ContentReport.class));
         verify(fixture.transactions, times(1)).execute(any());
+    }
+
+    @Test
+    void demoYoutubeUsesFixedExtractionAndRunsRulesWithoutCallingAi() {
+        Fixture fixture = fixture();
+        prepareSuccessfulInspection(fixture);
+        ContentMedia video = ContentMedia.create(
+                1L, MediaType.VIDEO, null, null, "abc123", 0, Map.of());
+        ReflectionTestUtils.setField(video, "id", 137L);
+        when(fixture.media.findByContentVersionIdOrderBySequenceNoAsc(1L))
+                .thenReturn(List.of(video));
+        when(fixture.demoProvider.supports(any())).thenReturn(true);
+        when(fixture.demoProvider.extraction())
+                .thenReturn(ContentMediaExtractionResult.empty());
+        when(fixture.preprocessing.preprocessFixed(any(), any(), any(), any()))
+                .thenReturn(successfulPreprocessing());
+        when(fixture.demoProvider.violations(137L)).thenReturn(List.of());
+        when(fixture.merger.mergeRuleFirst(any(), any())).thenReturn(List.of());
+        when(fixture.normalizer.normalize(any(), any())).thenReturn(List.of());
+
+        fixture.service.inspect(1L);
+
+        verify(fixture.preprocessing).preprocessFixed(any(), any(), any(), any());
+        verify(fixture.ruleDetector).detect(any());
+        verifyNoInteractions(fixture.ai);
     }
 
     @Test
@@ -379,6 +406,7 @@ class ContentInspectionExecutionServiceTest {
         ViolationResultMerger merger = mock(ViolationResultMerger.class);
         EvidenceLocationNormalizer normalizer = mock(EvidenceLocationNormalizer.class);
         DemoYoutubeInspectionProvider demoProvider = mock(DemoYoutubeInspectionProvider.class);
+        RuleViolationDetector ruleDetector = mock(RuleViolationDetector.class);
         ViolationReconciliationService reconciliation =
                 mock(ViolationReconciliationService.class);
         TaskLeaseTransaction leaseTransaction = mock(TaskLeaseTransaction.class);
@@ -400,12 +428,13 @@ class ContentInspectionExecutionServiceTest {
 
         ContentInspectionExecutionService service = new ContentInspectionExecutionService(
                 versions, contents, media, reports, selectors, policies, preprocessing,
-                List.of(), ai, merger, normalizer, reconciliation, leaseTransaction,
+                List.of(ruleDetector), ai, merger, normalizer, reconciliation, leaseTransaction,
                 transactions, new ContentMediaExtractionBodyMapper(new ObjectMapper()),
                 demoProvider, CLOCK);
         return new Fixture(
                 versions, contents, media, reports, policies, selectors, preprocessing,
-                ai, merger, normalizer, reconciliation, leaseTransaction, transactions, service);
+                ai, merger, normalizer, demoProvider, ruleDetector,
+                reconciliation, leaseTransaction, transactions, service);
     }
 
     private Content content(Long lastVersionNo) {
@@ -453,6 +482,8 @@ class ContentInspectionExecutionServiceTest {
         private final AiViolationDetector ai;
         private final ViolationResultMerger merger;
         private final EvidenceLocationNormalizer normalizer;
+        private final DemoYoutubeInspectionProvider demoProvider;
+        private final RuleViolationDetector ruleDetector;
         private final ViolationReconciliationService reconciliation;
         private final TaskLeaseTransaction leaseTransaction;
         private final TransactionTemplate transactions;
@@ -470,6 +501,8 @@ class ContentInspectionExecutionServiceTest {
                 AiViolationDetector ai,
                 ViolationResultMerger merger,
                 EvidenceLocationNormalizer normalizer,
+                DemoYoutubeInspectionProvider demoProvider,
+                RuleViolationDetector ruleDetector,
                 ViolationReconciliationService reconciliation,
                 TaskLeaseTransaction leaseTransaction,
                 TransactionTemplate transactions,
@@ -484,6 +517,8 @@ class ContentInspectionExecutionServiceTest {
             this.ai = ai;
             this.merger = merger;
             this.normalizer = normalizer;
+            this.demoProvider = demoProvider;
+            this.ruleDetector = ruleDetector;
             this.reconciliation = reconciliation;
             this.leaseTransaction = leaseTransaction;
             this.transactions = transactions;
