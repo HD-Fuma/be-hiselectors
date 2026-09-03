@@ -13,6 +13,7 @@ import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse.Buc
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse.Point;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSales;
+import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSalesComparison;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.DatedSales;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.GenerationMembership;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.SelectorCount;
@@ -154,13 +155,29 @@ public class SelectorPerformanceAdminService {
         List<GenerationMembership> memberships =
                 queryRepository.findGenerationMemberships(selectorIds, generationIds);
         Map<Long, GenerationMembership> latestGenerations = latestGenerations(memberships);
-        Map<Long, ConfirmedSales> currentSales = salesBySelector(
-                queryRepository.summarizeConfirmedSales(
-                        selectorIds, period.startInclusive(), period.endExclusive()));
-        Map<Long, ConfirmedSales> previousSales = previous.isEmpty()
-                ? Map.of()
-                : salesBySelector(queryRepository.summarizeConfirmedSales(
-                        selectorIds, previous.startInclusive(), previous.endExclusive()));
+        Map<Long, ConfirmedSales> currentSales;
+        Map<Long, ConfirmedSales> previousSales;
+        if (previous.isEmpty()) {
+            currentSales = salesBySelector(queryRepository.summarizeConfirmedSales(
+                    selectorIds, period.startInclusive(), period.endExclusive()));
+            previousSales = Map.of();
+        } else {
+            List<ConfirmedSalesComparison> salesComparison =
+                    queryRepository.summarizeConfirmedSalesComparison(
+                            selectorIds,
+                            period.startInclusive(), period.endExclusive(),
+                            previous.startInclusive(), previous.endExclusive());
+            currentSales = salesComparison.stream().collect(Collectors.toMap(
+                    ConfirmedSalesComparison::selectorId,
+                    row -> new ConfirmedSales(
+                            row.selectorId(), row.currentTotalSales(),
+                            row.currentConfirmedOrderCount())));
+            previousSales = salesComparison.stream().collect(Collectors.toMap(
+                    ConfirmedSalesComparison::selectorId,
+                    row -> new ConfirmedSales(
+                            row.selectorId(), row.previousTotalSales(),
+                            row.previousConfirmedOrderCount())));
+        }
         Map<Long, SelectorSnsProfile> profiles = snsProfiles(selectorIds);
         Map<Long, Long> clicks = countsBySelector(queryRepository.countProductClicks(
                 selectorIds, period.startInclusive(), period.endExclusive()));

@@ -100,6 +100,61 @@ public class SelectorPerformanceQueryRepository {
                 .toList();
     }
 
+    /** 현재 기간과 직전 기간의 확정 매출을 한 번의 조회로 집계한다. */
+    public List<ConfirmedSalesComparison> summarizeConfirmedSalesComparison(
+            List<Long> selectorIds,
+            LocalDateTime currentStartInclusive,
+            LocalDateTime currentEndExclusive,
+            LocalDateTime previousStartInclusive,
+            LocalDateTime previousEndExclusive) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+
+        return entityManager.createQuery("""
+                        select p.selectorsId,
+                               coalesce(sum(case
+                                   when p.confirmedAt >= :currentStartInclusive
+                                    and p.confirmedAt < :currentEndExclusive
+                                   then p.paidAmount else 0 end), 0),
+                               count(distinct case
+                                   when p.confirmedAt >= :currentStartInclusive
+                                    and p.confirmedAt < :currentEndExclusive
+                                   then p.orderNo else null end),
+                               coalesce(sum(case
+                                   when p.confirmedAt >= :previousStartInclusive
+                                    and p.confirmedAt < :previousEndExclusive
+                                   then p.paidAmount else 0 end), 0),
+                               count(distinct case
+                                   when p.confirmedAt >= :previousStartInclusive
+                                    and p.confirmedAt < :previousEndExclusive
+                                   then p.orderNo else null end)
+                        from PurchaseHistory p
+                        join Selectors s on s.id = p.selectorsId
+                        where p.selectorsId in :selectorIds
+                          and s.deleted = false
+                          and p.status = :status
+                          and p.confirmedAt >= :previousStartInclusive
+                          and p.confirmedAt < :currentEndExclusive
+                          and (s.userId is null or p.userId <> s.userId)
+                        group by p.selectorsId
+                        """, Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED)
+                .setParameter("currentStartInclusive", currentStartInclusive)
+                .setParameter("currentEndExclusive", currentEndExclusive)
+                .setParameter("previousStartInclusive", previousStartInclusive)
+                .setParameter("previousEndExclusive", previousEndExclusive)
+                .getResultList().stream()
+                .map(row -> new ConfirmedSalesComparison(
+                        (Long) row[0],
+                        (BigDecimal) row[1],
+                        ((Number) row[2]).longValue(),
+                        (BigDecimal) row[3],
+                        ((Number) row[4]).longValue()))
+                .toList();
+    }
+
     public List<DatedSales> summarizeConfirmedSalesByDay(
             List<Long> selectorIds,
             LocalDateTime startInclusive,
@@ -424,6 +479,15 @@ public class SelectorPerformanceQueryRepository {
     ) {
         public static final ConfirmedSales ZERO =
                 new ConfirmedSales(null, BigDecimal.ZERO, 0L);
+    }
+
+    public record ConfirmedSalesComparison(
+            Long selectorId,
+            BigDecimal currentTotalSales,
+            long currentConfirmedOrderCount,
+            BigDecimal previousTotalSales,
+            long previousConfirmedOrderCount
+    ) {
     }
 
     public record DatedSales(

@@ -14,6 +14,7 @@ import com.fuma.hiselectors.generation.repository.GenerationRepository;
 import com.fuma.hiselectors.performance.dto.SelectorPerformanceTrendResponse.Bucket;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSales;
+import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.ConfirmedSalesComparison;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.DatedSales;
 import com.fuma.hiselectors.performance.repository.SelectorPerformanceQueryRepository.GenerationMembership;
 import com.fuma.hiselectors.selectors.excellence.model.SelectorExcellenceSelection;
@@ -266,16 +267,14 @@ class SelectorPerformanceAdminServiceTest {
                 .thenReturn(List.of(generation(1L, 11L, "5기")));
         LocalDate startDate = LocalDate.of(2026, 8, 1);
         LocalDate endDate = LocalDate.of(2026, 8, 31);
-        when(repository.summarizeConfirmedSales(
+        when(repository.summarizeConfirmedSalesComparison(
                 List.of(1L),
                 startDate.atStartOfDay(),
-                endDate.plusDays(1).atStartOfDay()))
-                .thenReturn(List.of(sales(1L, "200000", 2L)));
-        when(repository.summarizeConfirmedSales(
-                List.of(1L),
+                endDate.plusDays(1).atStartOfDay(),
                 LocalDate.of(2026, 7, 1).atStartOfDay(),
                 startDate.atStartOfDay()))
-                .thenReturn(List.of(sales(1L, "100000", 1L)));
+                .thenReturn(List.of(comparison(
+                        1L, "200000", 2L, "100000", 1L)));
 
         var result = service.getSummary(null, startDate, endDate);
 
@@ -301,23 +300,23 @@ class SelectorPerformanceAdminServiceTest {
         when(repository.findGenerationMemberships(List.of(1L), List.of(11L)))
                 .thenReturn(List.of(generation(1L, 11L, "5기")));
         LocalDate currentDate = LocalDate.of(2026, 8, 27);
-        when(repository.summarizeConfirmedSales(
+        when(repository.summarizeConfirmedSalesComparison(
                 List.of(1L),
                 currentDate.atStartOfDay(),
-                currentDate.plusDays(1).atStartOfDay()))
-                .thenReturn(List.of(sales(1L, "200000", 2L)));
-        when(repository.summarizeConfirmedSales(
-                List.of(1L),
+                currentDate.plusDays(1).atStartOfDay(),
                 currentDate.minusDays(1).atStartOfDay(),
                 currentDate.atStartOfDay()))
-                .thenReturn(List.of(sales(1L, "100000", 1L)));
+                .thenReturn(List.of(comparison(
+                        1L, "200000", 2L, "100000", 1L)));
 
         var result = service.getSummary(null, currentDate, currentDate);
 
         assertThat(result.universe().previousStartDate()).isEqualTo(currentDate.minusDays(1));
         assertThat(result.universe().previousEndDate()).isEqualTo(currentDate.minusDays(1));
-        verify(repository).summarizeConfirmedSales(
+        verify(repository).summarizeConfirmedSalesComparison(
                 List.of(1L),
+                currentDate.atStartOfDay(),
+                currentDate.plusDays(1).atStartOfDay(),
                 currentDate.minusDays(1).atStartOfDay(),
                 currentDate.atStartOfDay());
     }
@@ -382,6 +381,20 @@ class SelectorPerformanceAdminServiceTest {
 
     private ConfirmedSales sales(Long selectorId, String amount, long orderCount) {
         return new ConfirmedSales(selectorId, new BigDecimal(amount), orderCount);
+    }
+
+    private ConfirmedSalesComparison comparison(
+            Long selectorId,
+            String currentAmount,
+            long currentOrderCount,
+            String previousAmount,
+            long previousOrderCount) {
+        return new ConfirmedSalesComparison(
+                selectorId,
+                new BigDecimal(currentAmount),
+                currentOrderCount,
+                new BigDecimal(previousAmount),
+                previousOrderCount);
     }
 
     private SelectorExcellenceSelection selection(
