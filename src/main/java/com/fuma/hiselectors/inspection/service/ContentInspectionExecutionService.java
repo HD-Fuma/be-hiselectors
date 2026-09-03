@@ -196,10 +196,18 @@ public class ContentInspectionExecutionService {
                     .findFirst()
                     .orElseThrow(() -> new BusinessException(
                             ErrorCode.CONTENT_MEDIA_SOURCE_UNAVAILABLE));
+            InspectionContext context = new InspectionContext(
+                    preparation.content(), preparation.version(),
+                    preparation.selectors(), preparation.media());
+            List<DetectedViolation> rules = new ArrayList<>();
+            ruleDetectors.forEach(detector -> rules.addAll(detector.detect(context)));
+            List<DetectedViolation> merged = resultMerger.mergeRuleFirst(
+                    rules, demoYoutubeInspectionProvider.violations(contentMediaId));
+            merged = evidenceLocationNormalizer.normalize(context, merged);
             return new InspectionAnalysis(
                     extraction.report(),
-                    Map.of("provider", "DEMO_FIXED_RESULT"),
-                    demoYoutubeInspectionProvider.violations(contentMediaId),
+                    Map.of("provider", "DEMO_FIXED_AI_RESULT"),
+                    merged,
                     preprocessing.extractionUpdates());
         }
         PreprocessingResult preprocessing = preprocessingService.preprocess(
