@@ -1,9 +1,12 @@
 package com.fuma.hiselectors.creator.service;
 
 import com.fuma.hiselectors.application.model.SnsPlatform;
+import com.fuma.hiselectors.category.model.Category;
+import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolCategoryDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
@@ -45,6 +48,7 @@ public class CreatorDiscoveryService {
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final CreatorDiscoverySourceRepository discoverySourceRepository;
+    private final CategoryRepository categoryRepository;
     private final BatchEventLogger batchEventLogger;
 
     /**
@@ -142,6 +146,46 @@ public class CreatorDiscoveryService {
             batchEventLogger.succeeded(logContext, Map.of("restoredCount", (long) restoredCount),
                     Map.of("adminLoginId", adminLoginId));
             return new CreatorPoolDemoResponse(restoredCount);
+        } catch (RuntimeException | Error error) {
+            batchEventLogger.failed(logContext, error);
+            throw error;
+        }
+    }
+
+    /**
+     * FAST 모드 카테고리 데모 발굴. 실제 수집 대신 저장된 계정을 즉시 되살린다.
+     *
+     * <p>{@code prepareDemo} 와 달리 정원을 두지 않고 다른 카테고리도 건드리지 않는다.
+     * 데모에서 "이 분야만 발굴"을 눌렀을 때, 보고 있던 목록은 그대로 두고 그 분야
+     * 계정만 더해지게 하기 위해서다.
+     *
+     * <p>{@code discovered_at} 은 최초 발굴 시각이라 여기서도 갱신하지 않는다.
+     * 방금 발굴된 것처럼 보이는 강조는 되살린 ID 를 화면에 내려 처리한다.
+     *
+     * @return 되살린 계정 수와 그 ID
+     */
+    @Transactional
+    public CreatorPoolCategoryDemoResponse prepareCategoryDemo(Long categoryId,
+                                                              String adminLoginId) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
+
+        BatchLogContext logContext = batchEventLogger.start("creator-pool-demo-category");
+        try {
+            List<CreatorPool> creators = creatorPoolRepository
+                    .findDemoCandidatesByCategory(category.getCode(), RESET_PLATFORMS);
+
+            List<Long> restoredCreatorIds = new ArrayList<>();
+            for (CreatorPool creator : creators) {
+                creator.restore();
+                restoredCreatorIds.add(creator.getId());
+            }
+
+            batchEventLogger.succeeded(logContext,
+                    Map.of("restoredCount", (long) restoredCreatorIds.size()),
+                    Map.of("adminLoginId", adminLoginId, "categoryCode", category.getCode()));
+            return new CreatorPoolCategoryDemoResponse(
+                    restoredCreatorIds.size(), restoredCreatorIds);
         } catch (RuntimeException | Error error) {
             batchEventLogger.failed(logContext, error);
             throw error;

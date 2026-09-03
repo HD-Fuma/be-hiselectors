@@ -2,6 +2,7 @@ package com.fuma.hiselectors.creator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -9,8 +10,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fuma.hiselectors.category.model.Category;
+import com.fuma.hiselectors.category.repository.CategoryRepository;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolCategoryDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
@@ -44,6 +48,8 @@ class CreatorDiscoveryServiceTest {
     @Mock
     private CreatorDiscoverySourceRepository discoverySourceRepository;
     @Mock
+    private CategoryRepository categoryRepository;
+    @Mock
     private BatchEventLogger batchEventLogger;
 
     private CreatorDiscoveryService creatorDiscoveryService;
@@ -54,6 +60,7 @@ class CreatorDiscoveryServiceTest {
                 creatorPoolRepository,
                 discoveryInfoRepository,
                 discoverySourceRepository,
+                categoryRepository,
                 batchEventLogger);
     }
 
@@ -202,6 +209,44 @@ class CreatorDiscoveryServiceTest {
                 List.of("YOUTUBE", "INSTAGRAM"));
         verify(batchEventLogger).succeeded(logContext, Map.of("restoredCount", 12L),
                 Map.of("adminLoginId", "admin"));
+    }
+
+    @Test
+    void FAST_모드_카테고리_데모_발굴은_해당_카테고리_전체를_노출한다() {
+        BatchLogContext logContext = mock(BatchLogContext.class);
+        when(batchEventLogger.start("creator-pool-demo-category")).thenReturn(logContext);
+        Category category = mock(Category.class);
+        when(category.getCode()).thenReturn("LIVING_LIFE");
+        when(categoryRepository.findById(4L)).thenReturn(Optional.of(category));
+        CreatorPool alreadyVisible = CreatorPool.builder()
+                .snsCode("YOUTUBE").accountId("living-3").category("LIVING_LIFE").build();
+        List<CreatorPool> creators = List.of(
+                deletedCreator("LIVING_LIFE", "living-1"),
+                deletedCreator("LIVING_LIFE", "living-2"),
+                alreadyVisible);
+        when(creatorPoolRepository.findDemoCandidatesByCategory(
+                "LIVING_LIFE", List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(creators);
+
+        CreatorPoolCategoryDemoResponse response =
+                creatorDiscoveryService.prepareCategoryDemo(4L, "admin");
+
+        assertThat(response.restoredCount()).isEqualTo(3);
+        assertThat(response.restoredCreatorIds()).hasSize(3);
+        assertThat(creators).allMatch(creator -> !creator.isDeleted());
+        verify(creatorPoolRepository, never()).softDeleteAllActiveByPlatforms(anyList());
+        verify(batchEventLogger).succeeded(logContext, Map.of("restoredCount", 3L),
+                Map.of("adminLoginId", "admin", "categoryCode", "LIVING_LIFE"));
+    }
+
+    @Test
+    void FAST_모드_카테고리_데모_발굴은_없는_카테고리면_실패한다() {
+        when(categoryRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> creatorDiscoveryService.prepareCategoryDemo(99L, "admin"))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getErrorCode())
+                .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
+        verifyNoInteractions(batchEventLogger);
     }
 
     private CreatorPool deletedCreator(String category, String accountId) {
