@@ -252,7 +252,7 @@ selectors:
 
 content:
   batch:
-    cron: ${CONTENT_BATCH_CRON:-}
+    cron: ${CONTENT_BATCH_CRON:0 0 1 * * *}
     zone: ${CONTENT_BATCH_ZONE:Asia/Seoul}
 
 application:

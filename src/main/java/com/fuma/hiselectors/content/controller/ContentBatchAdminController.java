@@ -47,7 +47,7 @@ public class ContentBatchAdminController {
         Admin admin = adminRepository.findByLoginId(principal.getName())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_NOT_FOUND));
         var businessPayload = objectMapper.createObjectNode();
-        TrackedTask task = contentSyncTask;
+        TrackedTask task = contentSyncTask.manualTask(ContentBatchMode.STANDARD);
         if (fastMode) {
             businessPayload.put("fastMode", true);
             task = contentSyncTask.fastModeTask();

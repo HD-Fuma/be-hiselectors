@@ -42,7 +42,7 @@ class ContentBatchSchedulerTest {
         Scheduled scheduled = method.getAnnotation(Scheduled.class);
 
         assertThat(scheduled).isNotNull();
-        assertThat(scheduled.cron()).isEqualTo("${content.batch.cron:-}");
+        assertThat(scheduled.cron()).isEqualTo("${content.batch.cron:0 0 1 * * *}");
         assertThat(scheduled.zone()).isEqualTo("${content.batch.zone:Asia/Seoul}");
     }
 }

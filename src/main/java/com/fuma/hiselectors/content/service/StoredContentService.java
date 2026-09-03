@@ -22,9 +22,11 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -68,6 +70,7 @@ public class StoredContentService {
         int savedEngagementCount = 0;
         int failedContentCount = 0;
         int checkedContentCount = 0;
+        Set<Long> changedVersionIds = new HashSet<>();
         Map<SnsPlatform, PlatformStoredContentStats> platformStats =
                 new EnumMap<>(SnsPlatform.class);
 
@@ -97,10 +100,17 @@ public class StoredContentService {
                     StoredContentSaveResult saved = transactionTemplate.execute(
                             status -> save(result, collectedAt));
                     StoredContentSaveResult completed = saved == null
-                            ? new StoredContentSaveResult(0, 0)
+                            ? new StoredContentSaveResult(0, null)
                             : saved;
                     savedEngagementCount += completed.savedEngagementCount();
-                    mergeStats(platformStats, platform, completed.changedVersionCount(), 0);
+                    if (completed.changedVersionId() != null) {
+                        changedVersionIds.add(completed.changedVersionId());
+                    }
+                    mergeStats(
+                            platformStats,
+                            platform,
+                            completed.changedVersionId() == null ? 0 : 1,
+                            0);
                 } catch (RuntimeException exception) {
                     failedContentCount++;
                     mergeStats(platformStats, platform, 0, 1);
@@ -126,13 +136,14 @@ public class StoredContentService {
                 savedEngagementCount,
                 failedContentCount,
                 checkedContentCount,
-                Map.copyOf(platformStats));
+                Map.copyOf(platformStats),
+                Set.copyOf(changedVersionIds));
     }
 
     private StoredContentSaveResult save(
             StoredContentFetch result, LocalDateTime collectedAt) {
         if (result.fetched().status() == ContentFetcher.FetchStatus.FAILED) {
-            return new StoredContentSaveResult(0, 0);
+            return new StoredContentSaveResult(0, null);
         }
 
         Content lockedContent = contentRepository.findByIdForUpdate(result.content().getId())
@@ -140,13 +151,13 @@ public class StoredContentService {
         StoredContentFetch lockedResult = new StoredContentFetch(
                 lockedContent, result.fetched(), result.failure());
         int savedEngagementCount = saveEngagement(lockedResult, collectedAt);
-        boolean versionChanged = saveChangedVersion(lockedResult, collectedAt);
+        Long changedVersionId = saveChangedVersion(lockedResult, collectedAt);
         boolean deletionStatusChanged = updateDeletionStatus(lockedResult);
         boolean contentTypeChanged = updateContentType(lockedResult);
-        if (versionChanged || deletionStatusChanged || contentTypeChanged) {
+        if (changedVersionId != null || deletionStatusChanged || contentTypeChanged) {
             contentRepository.saveAll(List.of(lockedContent));
         }
-        return new StoredContentSaveResult(savedEngagementCount, versionChanged ? 1 : 0);
+        return new StoredContentSaveResult(savedEngagementCount, changedVersionId);
     }
 
     private void mergeStats(
@@ -327,10 +338,10 @@ public class StoredContentService {
         return 1;
     }
 
-    private boolean saveChangedVersion(
+    private Long saveChangedVersion(
             StoredContentFetch result, LocalDateTime collectedAt) {
         if (result.fetched().status() != ContentFetcher.FetchStatus.FOUND) {
-            return false;
+            return null;
         }
 
         Long contentId = result.content().getId();
@@ -344,7 +355,7 @@ public class StoredContentService {
                 result.fetched().content(),
                 "조회된 콘텐츠 정보가 없습니다. contentId=" + contentId);
         if (current.getContentHash().equals(snapshotFactory.contentHash(fetchedContent))) {
-            return false;
+            return null;
         }
 
         ContentVersion newVersion = snapshotFactory.createVersion(
@@ -359,7 +370,7 @@ public class StoredContentService {
         if (!media.isEmpty()) {
             mediaRepository.saveAll(media);
         }
-        return true;
+        return newVersion.getId();
     }
 
     private boolean updateContentType(StoredContentFetch result) {
@@ -393,7 +404,7 @@ public class StoredContentService {
     }
 
     private record StoredContentSaveResult(
-            int savedEngagementCount, int changedVersionCount) {
+            int savedEngagementCount, Long changedVersionId) {
     }
 
     private record AccountKey(Long selectorsId, SnsPlatform platform) {
@@ -413,17 +424,31 @@ public class StoredContentService {
             int savedEngagementCount,
             int failedContentCount,
             int checkedContentCount,
-            Map<SnsPlatform, PlatformStoredContentStats> platformStats) {
+            Map<SnsPlatform, PlatformStoredContentStats> platformStats,
+            Set<Long> changedVersionIds) {
 
         public StoredContentResult(int savedEngagementCount, int failedContentCount) {
-            this(savedEngagementCount, failedContentCount, 0, Map.of());
+            this(savedEngagementCount, failedContentCount, 0, Map.of(), Set.of());
         }
 
         public StoredContentResult(
                 int savedEngagementCount,
                 int failedContentCount,
                 Map<SnsPlatform, PlatformStoredContentStats> platformStats) {
-            this(savedEngagementCount, failedContentCount, 0, platformStats);
+            this(savedEngagementCount, failedContentCount, 0, platformStats, Set.of());
+        }
+
+        public StoredContentResult(
+                int savedEngagementCount,
+                int failedContentCount,
+                int checkedContentCount,
+                Map<SnsPlatform, PlatformStoredContentStats> platformStats) {
+            this(
+                    savedEngagementCount,
+                    failedContentCount,
+                    checkedContentCount,
+                    platformStats,
+                    Set.of());
         }
     }
 

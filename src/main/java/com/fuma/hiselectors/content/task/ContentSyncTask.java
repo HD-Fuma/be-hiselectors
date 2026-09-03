@@ -14,6 +14,8 @@ import com.fuma.hiselectors.taskrun.service.TaskTerminalContext;
 import com.fuma.hiselectors.taskrun.service.TrackedTask;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,20 +37,32 @@ public class ContentSyncTask implements TrackedTask {
     }
 
     public TrackedTask fastModeTask() {
+        return manualTask(ContentBatchMode.FAST);
+    }
+
+    public TrackedTask manualTask(ContentBatchMode mode) {
+        AtomicReference<Set<Long>> changedVersionIds = new AtomicReference<>(Set.of());
         return new TrackedTask() {
             @Override
             public void execute(TaskExecutionContext context) {
-                ContentSyncTask.this.execute(context, ContentBatchMode.FAST);
+                ContentBatchResult result = ContentSyncTask.this.executeBatch(context, mode);
+                changedVersionIds.set(result.changedVersionIds());
             }
 
             @Override
             public void afterTerminal(TaskTerminalContext context) {
-                ContentSyncTask.this.afterTerminal(context, ContentBatchMode.FAST);
+                ContentSyncTask.this.afterManualTerminal(
+                        context, mode, changedVersionIds.get());
             }
         };
     }
 
     private void execute(TaskExecutionContext context, ContentBatchMode mode) {
+        executeBatch(context, mode);
+    }
+
+    private ContentBatchResult executeBatch(
+            TaskExecutionContext context, ContentBatchMode mode) {
         ContentBatchResult result = mode == ContentBatchMode.STANDARD
                 ? contentBatchService.run(context.progress())
                 : contentBatchService.run(context.progress(), mode);
@@ -59,6 +73,7 @@ public class ContentSyncTask implements TrackedTask {
                 result.engagementCount(),
                 result.newContentSucceeded(),
                 result.storedContentSucceeded());
+        return result;
     }
 
     @Override
@@ -68,19 +83,50 @@ public class ContentSyncTask implements TrackedTask {
 
     private void afterTerminal(TaskTerminalContext context, ContentBatchMode mode) {
         switch (context.status()) {
-            case SUCCEEDED, PARTIAL_FAILED, FAILED -> submitReport(context.runId(), mode);
+            case SUCCEEDED, PARTIAL_FAILED, FAILED -> submitReport(
+                    context.runId(), contentReportGenerationTask, mode, Set.of(), "ALL_STALE");
             case QUEUED, RUNNING, STALE -> {
             }
         }
     }
 
-    private void submitReport(UUID sourceRunId, ContentBatchMode mode) {
+    private void afterManualTerminal(
+            TaskTerminalContext context,
+            ContentBatchMode mode,
+            Set<Long> changedVersionIds) {
+        if (context.status() != com.fuma.hiselectors.taskrun.model.TaskRunStatus.SUCCEEDED
+                && context.status()
+                != com.fuma.hiselectors.taskrun.model.TaskRunStatus.PARTIAL_FAILED) {
+            return;
+        }
+        if (changedVersionIds.isEmpty()) {
+            log.info("수동 콘텐츠 동기화에 신규·변경 버전이 없어 리포트 생성을 건너뜁니다. "
+                    + "sourceContentSyncRunId={}", context.runId());
+            return;
+        }
+        submitReport(
+                context.runId(),
+                contentReportGenerationTask.versionIdsTask(changedVersionIds),
+                mode,
+                changedVersionIds,
+                "CHANGED_VERSIONS");
+    }
+
+    private void submitReport(
+            UUID sourceRunId,
+            TrackedTask reportTask,
+            ContentBatchMode mode,
+            Set<Long> contentVersionIds,
+            String inspectionScope) {
         var payload = objectMapper.createObjectNode()
-                .put("sourceContentSyncRunId", sourceRunId.toString());
-        TrackedTask reportTask = contentReportGenerationTask;
+                .put("sourceContentSyncRunId", sourceRunId.toString())
+                .put("inspectionScope", inspectionScope);
         if (mode == ContentBatchMode.FAST) {
             payload.put("fastMode", true);
-            reportTask = contentReportGenerationTask.fastModeTask();
+        }
+        if (!contentVersionIds.isEmpty()) {
+            var ids = payload.putArray("contentVersionIds");
+            contentVersionIds.stream().sorted().forEach(ids::add);
         }
         TaskStartResult result = taskRunExecutionService.submit(
                 new TaskStartCommand(
