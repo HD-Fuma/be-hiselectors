@@ -4,6 +4,7 @@ import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
@@ -125,6 +126,14 @@ public class CreatorAdminController {
             Principal principal) {
         return ResponseEntity.ok(
                 creatorDiscoveryService.resetPool(confirmation, principal.getName()));
+    }
+
+    @Operation(summary = "데모용 크리에이터 풀 준비",
+            description = "저장된 계정을 무작위로 골라 일반 카테고리는 최대 10명, "
+                    + "리빙/라이프는 최대 2명만 목록에 노출한다.")
+    @PostMapping("/demo")
+    public ResponseEntity<CreatorPoolDemoResponse> prepareDemo(Principal principal) {
+        return ResponseEntity.ok(creatorDiscoveryService.prepareDemo(principal.getName()));
     }
 
     @Operation(summary = "발굴 크리에이터 기본 상세 조회",

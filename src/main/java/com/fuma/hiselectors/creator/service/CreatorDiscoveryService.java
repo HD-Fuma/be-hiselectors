@@ -4,6 +4,7 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
@@ -17,6 +18,9 @@ import com.fuma.hiselectors.logging.BatchEventLogger;
 import com.fuma.hiselectors.logging.BatchLogContext;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +40,7 @@ public class CreatorDiscoveryService {
     private static final String RESET_CONFIRMATION = "DELETE_CREATOR_POOL";
     private static final List<String> RESET_PLATFORMS = List.of(
             SnsPlatform.YOUTUBE.name(), SnsPlatform.INSTAGRAM.name());
+    private static final String LIVING_LIFE = "LIVING_LIFE";
 
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
@@ -109,6 +114,38 @@ public class CreatorDiscoveryService {
                 "softDeletedCount", (long) softDeletedCount),
                 Map.of("adminLoginId", adminLoginId));
         return new CreatorPoolResetResponse(softDeletedCount);
+    }
+
+    /** 카테고리별 소수 계정만 무작위로 노출해 데모용 풀을 만든다. */
+    @Transactional
+    public CreatorPoolDemoResponse prepareDemo(String adminLoginId) {
+        BatchLogContext logContext = batchEventLogger.start("creator-pool-demo");
+        try {
+            creatorPoolRepository.softDeleteAllActiveByPlatforms(RESET_PLATFORMS);
+            List<CreatorPool> creators = new ArrayList<>(creatorPoolRepository
+                    .findAllByDeletedTrueAndSnsCodeIn(RESET_PLATFORMS));
+            Collections.shuffle(creators);
+
+            Map<String, Integer> categoryCounts = new HashMap<>();
+            int restoredCount = 0;
+            for (CreatorPool creator : creators) {
+                String category = creator.getCategory();
+                int limit = LIVING_LIFE.equals(category) ? 2 : 10;
+                if (categoryCounts.getOrDefault(category, 0) >= limit) {
+                    continue;
+                }
+                creator.restore();
+                categoryCounts.merge(category, 1, Integer::sum);
+                restoredCount++;
+            }
+
+            batchEventLogger.succeeded(logContext, Map.of("restoredCount", (long) restoredCount),
+                    Map.of("adminLoginId", adminLoginId));
+            return new CreatorPoolDemoResponse(restoredCount);
+        } catch (RuntimeException | Error error) {
+            batchEventLogger.failed(logContext, error);
+            throw error;
+        }
     }
 
     /**

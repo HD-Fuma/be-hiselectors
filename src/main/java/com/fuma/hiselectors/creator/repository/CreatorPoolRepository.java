@@ -37,6 +37,8 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
 
+    List<CreatorPool> findAllByDeletedTrueAndSnsCodeIn(List<String> snsCodes);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update CreatorPool creator

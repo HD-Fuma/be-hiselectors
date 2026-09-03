@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.model.CreatorDiscoveryInfo;
 import com.fuma.hiselectors.creator.model.CreatorPool;
@@ -175,5 +176,41 @@ class CreatorDiscoveryServiceTest {
 
         verifyNoInteractions(creatorPoolRepository, discoveryInfoRepository,
                 discoverySourceRepository, batchEventLogger);
+    }
+
+    @Test
+    void 데모_풀은_일반_카테고리_10명과_리빙라이프_2명만_복원한다() {
+        BatchLogContext logContext = mock(BatchLogContext.class);
+        when(batchEventLogger.start("creator-pool-demo")).thenReturn(logContext);
+        List<CreatorPool> creators = java.util.stream.Stream.concat(
+                java.util.stream.IntStream.range(0, 12)
+                        .mapToObj(index -> deletedCreator("BEAUTY", "beauty-" + index)),
+                java.util.stream.IntStream.range(0, 4)
+                        .mapToObj(index -> deletedCreator("LIVING_LIFE", "living-" + index)))
+                .toList();
+        when(creatorPoolRepository.findAllByDeletedTrueAndSnsCodeIn(
+                List.of("YOUTUBE", "INSTAGRAM"))).thenReturn(creators);
+
+        CreatorPoolDemoResponse response = creatorDiscoveryService.prepareDemo("admin");
+
+        assertThat(response.restoredCount()).isEqualTo(12);
+        assertThat(creators.stream().filter(creator -> !creator.isDeleted())
+                .filter(creator -> "BEAUTY".equals(creator.getCategory()))).hasSize(10);
+        assertThat(creators.stream().filter(creator -> !creator.isDeleted())
+                .filter(creator -> "LIVING_LIFE".equals(creator.getCategory()))).hasSize(2);
+        verify(creatorPoolRepository).softDeleteAllActiveByPlatforms(
+                List.of("YOUTUBE", "INSTAGRAM"));
+        verify(batchEventLogger).succeeded(logContext, Map.of("restoredCount", 12L),
+                Map.of("adminLoginId", "admin"));
+    }
+
+    private CreatorPool deletedCreator(String category, String accountId) {
+        CreatorPool creator = CreatorPool.builder()
+                .snsCode("YOUTUBE")
+                .accountId(accountId)
+                .category(category)
+                .build();
+        creator.softDelete();
+        return creator;
     }
 }
