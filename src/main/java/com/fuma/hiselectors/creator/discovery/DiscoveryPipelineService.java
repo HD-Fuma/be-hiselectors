@@ -40,8 +40,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   → creator_pool + 발굴 정보 + 발굴 출처 저장
  * </pre>
  *
- * <p><b>현재 공개 이메일이 없는 채널은 활성 풀에 유지하지 않는다.</b> 브랜드 계정이나 구독자 미달
- * 계정은 전부 저장하고 실제로 빼는 일은 조회 API 조건이 한다.
+ * <p>브랜드 계정이나 구독자 미달 계정은 전부 저장하고 실제로 빼는 일은 조회 API 조건이 한다.
  */
 @Slf4j
 @Service
@@ -49,9 +48,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DiscoveryPipelineService {
 
     private static final String SNS_CODE_YOUTUBE = "YOUTUBE";
+    private static final String COLLECTED_CREATOR_EMAIL = "jaewonwi98@gmail.com";
 
     private enum SaveResult {
-        CREATED, UPDATED, SKIPPED
+        CREATED, UPDATED
     }
 
     private record SaveOutcome(SaveResult result, Long creatorId) {
@@ -59,7 +59,6 @@ public class DiscoveryPipelineService {
 
     private final YoutubeDiscoveryClient youtubeClient;
     private final IgHandleExtractor igHandleExtractor;
-    private final PublicEmailExtractor publicEmailExtractor;
     private final BrandScoreCalculator brandScoreCalculator;
 
     private final DiscoveryKeywordRepository keywordRepository;
@@ -113,7 +112,6 @@ public class DiscoveryPipelineService {
             switch (outcome.result()) {
                 case CREATED -> created++;
                 case UPDATED -> updated++;
-                case SKIPPED -> { }
             }
             if (outcome.creatorId() != null) {
                 creatorIds.add(outcome.creatorId());
@@ -135,7 +133,7 @@ public class DiscoveryPipelineService {
     /**
      * 채널 하나를 저장한다.
      *
-     * @return 신규 저장, 기존 갱신 또는 이메일 누락으로 건너뜀
+     * @return 신규 저장 또는 기존 갱신
      */
     private SaveOutcome save(DiscoveredChannel channel, DiscoveryKeyword keyword) {
         // 소프트 삭제된 계정도 찾아야 중복 행이 생기지 않는다
@@ -143,13 +141,6 @@ public class DiscoveryPipelineService {
                 .findFirstBySnsCodeAndAccountIdOrderByIdAsc(SNS_CODE_YOUTUBE, channel.channelId())
                 .orElse(null);
 
-        String email = publicEmailExtractor.extract(channel.description()).orElse(null);
-        if (email == null) {
-            if (creator != null) {
-                creator.softDelete();
-            }
-            return new SaveOutcome(SaveResult.SKIPPED, null);
-        }
         boolean isNew = creator == null;
 
         IgHandle igHandle = igHandleExtractor.extract(channel.description()).orElse(null);
@@ -162,14 +153,14 @@ public class DiscoveryPipelineService {
                     .snsCode(SNS_CODE_YOUTUBE)
                     .accountId(channel.channelId())
                     .creatorName(channel.title())
-                    .email(email)
+                    .email(COLLECTED_CREATOR_EMAIL)
                     .followerCount(channel.subscriberCount())
                     .lastContentAt(channel.lastUploadAt())
                     .engagementRate(engagementRate(channel))
                     .category(keyword.getCategory().getCode())
                     .build());
         } else {
-            creator.updateEmail(email);
+            creator.updateEmail(COLLECTED_CREATOR_EMAIL);
             creator.updateMetrics(channel.subscriberCount(),
                     engagementRate(channel), channel.lastUploadAt());
             // 지웠던 계정이 다시 발굴되면 되살린다
