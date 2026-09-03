@@ -4,6 +4,8 @@ import com.fuma.hiselectors.creator.discovery.YoutubeDiscoveryProperties;
 import com.fuma.hiselectors.creator.dto.CategoryRefreshResponse;
 import com.fuma.hiselectors.creator.dto.CategoryShare;
 import com.fuma.hiselectors.creator.dto.CreatorDetailResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolCategoryDemoResponse;
+import com.fuma.hiselectors.creator.dto.CreatorPoolDemoResponse;
 import com.fuma.hiselectors.creator.dto.CreatorPoolResetResponse;
 import com.fuma.hiselectors.creator.dto.CreatorSummary;
 import com.fuma.hiselectors.creator.dto.DailyReportCandidatesResponse;
@@ -125,6 +127,31 @@ public class CreatorAdminController {
             Principal principal) {
         return ResponseEntity.ok(
                 creatorDiscoveryService.resetPool(confirmation, principal.getName()));
+    }
+
+    @Operation(summary = "데모용 크리에이터 풀 준비",
+            description = "저장된 계정을 무작위로 골라 일반 카테고리는 최대 10명, "
+                    + "리빙/라이프는 최대 2명만 목록에 노출한다.")
+    @PostMapping("/demo")
+    public ResponseEntity<CreatorPoolDemoResponse> prepareDemo(Principal principal) {
+        return ResponseEntity.ok(creatorDiscoveryService.prepareDemo(principal.getName()));
+    }
+
+    @Operation(summary = "FAST 모드 카테고리 데모 발굴",
+            description = "실제 수집 대신 저장된 해당 카테고리 계정을 즉시 목록에 되살린다. "
+                    + "프로필 이미지가 있는 계정만 대상으로 하며, 다른 카테고리의 "
+                    + "노출 상태는 바꾸지 않는다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "데모 발굴 성공"),
+            @ApiResponse(responseCode = "404", description = "카테고리 없음", content = @Content)
+    })
+    @PostMapping("/demo/categories/{categoryId}")
+    public ResponseEntity<CreatorPoolCategoryDemoResponse> prepareCategoryDemo(
+            @Parameter(description = "발굴 카테고리 ID", example = "4", required = true)
+            @PathVariable Long categoryId,
+            Principal principal) {
+        return ResponseEntity.ok(
+                creatorDiscoveryService.prepareCategoryDemo(categoryId, principal.getName()));
     }
 
     @Operation(summary = "발굴 크리에이터 기본 상세 조회",

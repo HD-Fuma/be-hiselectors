@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,6 +16,7 @@ import com.fuma.hiselectors.admin.repository.AdminRepository;
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.settlement.dto.SettlementPaymentResponse;
+import com.fuma.hiselectors.settlement.model.SettlementStatus;
 import com.fuma.hiselectors.settlement.service.SettlementAdminService;
 import com.fuma.hiselectors.settlement.service.SettlementPaymentService;
 import com.fuma.hiselectors.settlement.task.SettlementRecalculationTask;
@@ -32,6 +34,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
@@ -44,6 +50,7 @@ class SettlementAdminControllerTest {
     private TaskRunExecutionService taskRunExecutionService;
     private SettlementRecalculationTaskFactory taskFactory;
     private AdminRepository adminRepository;
+    private SettlementAdminService settlementAdminService;
     private SettlementPaymentService settlementPaymentService;
     private MockMvc mockMvc;
 
@@ -52,12 +59,39 @@ class SettlementAdminControllerTest {
         taskRunExecutionService = mock(TaskRunExecutionService.class);
         taskFactory = mock(SettlementRecalculationTaskFactory.class);
         adminRepository = mock(AdminRepository.class);
+        settlementAdminService = mock(SettlementAdminService.class);
         settlementPaymentService = mock(SettlementPaymentService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new SettlementAdminController(
-                        mock(SettlementAdminService.class), settlementPaymentService,
+                        settlementAdminService, settlementPaymentService,
                         taskRunExecutionService, taskFactory, adminRepository, new ObjectMapper()))
+                .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .setControllerAdvice(new ApiResultAdvice(), new GlobalExceptionHandler())
                 .build();
+    }
+
+    @Test
+    void filtersSettlementListByNonZeroAmount() throws Exception {
+        when(settlementAdminService.search(
+                eq(YearMonth.of(2026, 7)),
+                eq(10L),
+                eq(SettlementStatus.PAYMENT_PENDING),
+                eq(true),
+                any(Pageable.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of(), PageRequest.of(0, 20), 0));
+
+        mockMvc.perform(get("/api/admin/settlements/estimates")
+                        .param("activityMonth", "2026-07")
+                        .param("selectorsId", "10")
+                        .param("status", "PAYMENT_PENDING")
+                        .param("nonZeroSettlementAmount", "true"))
+                .andExpect(status().isOk());
+
+        verify(settlementAdminService).search(
+                eq(YearMonth.of(2026, 7)),
+                eq(10L),
+                eq(SettlementStatus.PAYMENT_PENDING),
+                eq(true),
+                any(Pageable.class));
     }
 
     @Test

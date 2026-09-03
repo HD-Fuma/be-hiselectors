@@ -134,17 +134,13 @@ public class CategoryAdminService {
         return KeywordResponse.from(keyword);
     }
 
-    /** 이 키워드로 발굴된 이력이 있으면 삭제할 수 없다. 비활성화를 사용한다. */
+    /** 연결된 발굴 출처를 먼저 정리하고 키워드를 삭제한다. 크리에이터 자체는 유지한다. */
     @Transactional
     public void removeKeyword(Long categoryId, Long keywordId) {
         Category category = getCategory(categoryId);
         DiscoveryKeyword keyword = getKeyword(categoryId, keywordId);
 
-        if (discoverySourceRepository.existsByKeywordId(keywordId)) {
-            throw new BusinessException(ErrorCode.KEYWORD_IN_USE,
-                    "'" + keyword.getKeyword() + "' 키워드로 발굴된 이력이 있어 삭제할 수 없습니다. "
-                            + "발굴 대상에서 빼려면 비활성화하세요.");
-        }
+        discoverySourceRepository.deleteAllByKeywordId(keywordId);
         category.removeKeyword(keyword);
     }
 

@@ -190,7 +190,7 @@ instagram:
   oauth:
     client-id: ${INSTAGRAM_CLIENT_ID:}
     client-secret: ${INSTAGRAM_CLIENT_SECRET:}
-    redirect-uri: ${INSTAGRAM_REDIRECT_URI:https://hiselectors.shop}
+    redirect-uri: ${INSTAGRAM_REDIRECT_URI:https://hiselectors.shop/}
     scope: instagram_business_basic
 
   collection:
@@ -257,14 +257,14 @@ content:
 
 application:
   media-collection:
-    fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:60000}
-    initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:20000}
+    fixed-delay-ms: ${APPLICATION_MEDIA_COLLECTION_FIXED_DELAY_MS:600000}
+    initial-delay-ms: ${APPLICATION_MEDIA_COLLECTION_INITIAL_DELAY_MS:200000}
     batch-size: ${APPLICATION_MEDIA_COLLECTION_BATCH_SIZE:20}
   content-analysis:
     scheduler-enabled: ${APPLICATION_CONTENT_ANALYSIS_SCHEDULER_ENABLED:true}
     run-once: ${APPLICATION_CONTENT_ANALYSIS_RUN_ONCE:false}
     # run-once Fargate 태스크 1개가 이 수만큼 순차 처리하고 종료. 대량 백로그(테스트 볼륨 등) 드레인 시 상향.
-    batch-size: ${APPLICATION_CONTENT_ANALYSIS_BATCH_SIZE:1}
+    batch-size: ${APPLICATION_CONTENT_ANALYSIS_BATCH_SIZE:10}
 settlement:
   account-encryption-key: ${SETTLEMENT_ACCOUNT_ENCRYPTION_KEY:}
   zone: ${SETTLEMENT_ZONE:Asia/Seoul}

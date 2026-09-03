@@ -29,10 +29,10 @@ public class InstagramDiscoveryService {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int RECENT_MEDIA_LIMIT = 25;
     private static final int ACTIVITY_WINDOW_DAYS = 90;
+    private static final String COLLECTED_CREATOR_EMAIL = "jaewonwi98@gmail.com";
 
     private final MetaGraphApiClient metaGraphApiClient;
     private final InstagramEngagementCalculator engagementCalculator;
-    private final PublicEmailExtractor publicEmailExtractor;
     private final CreatorPoolRepository creatorPoolRepository;
     private final CreatorDiscoveryInfoRepository discoveryInfoRepository;
     private final TransactionTemplate transactionTemplate;
@@ -51,16 +51,7 @@ public class InstagramDiscoveryService {
         // 외부 네트워크 호출은 DB 저장 트랜잭션 밖에서 수행한다.
         BusinessDiscovery discovered = metaGraphApiClient.discover(
                 instagramHandle, RECENT_MEDIA_LIMIT);
-        String email = publicEmailExtractor.extract(discovered.biography())
-                .or(() -> publicEmailExtractor.extract(sourceCreator.getEmail()))
-                .orElse(null);
-        if (email == null || email.isBlank()) {
-            transactionTemplate.execute(status -> {
-                softDeleteExisting(discovered);
-                return null;
-            });
-            throw new BusinessException(ErrorCode.CREATOR_EMAIL_REQUIRED);
-        }
+        String email = COLLECTED_CREATOR_EMAIL;
         BigDecimal engagementRate = engagementCalculator.calculate(
                 discovered.followersCount(), discovered.media());
         LocalDateTime lastContentAt = lastContentAt(discovered);
@@ -145,21 +136,6 @@ public class InstagramDiscoveryService {
                 engagementRate,
                 lastContentAt
         );
-    }
-
-    private void softDeleteExisting(BusinessDiscovery discovered) {
-        CreatorPool creator = null;
-        if (discovered.id() != null && !discovered.id().isBlank()) {
-            creator = creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                    SnsPlatform.INSTAGRAM.name(), discovered.id()).orElse(null);
-        }
-        if (creator == null && discovered.username() != null && !discovered.username().isBlank()) {
-            creator = creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                    SnsPlatform.INSTAGRAM.name(), discovered.username()).orElse(null);
-        }
-        if (creator != null) {
-            creator.softDelete();
-        }
     }
 
     private InstagramDiscoveryResult updateAfterConcurrentInsert(

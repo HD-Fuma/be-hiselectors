@@ -63,10 +63,12 @@ public class SettlementAdminController {
             @DateTimeFormat(pattern = "yyyy-MM") YearMonth activityMonth,
             @RequestParam(required = false) Long selectorsId,
             @RequestParam(required = false) SettlementStatus status,
+            @RequestParam(defaultValue = "false") boolean nonZeroSettlementAmount,
             @PageableDefault(size = 20, sort = "selectorsId", direction = Sort.Direction.ASC)
             Pageable pageable) {
         return ResponseEntity.ok(
-                settlementAdminService.search(activityMonth, selectorsId, status, pageable));
+                settlementAdminService.search(
+                        activityMonth, selectorsId, status, nonZeroSettlementAmount, pageable));
     }
 
     @Operation(summary = "월별 셀렉터스 정산 요약 조회")
@@ -86,7 +88,8 @@ public class SettlementAdminController {
      */
     @Operation(
             summary = "관리자 정산 이력 재계산 (테스트용)",
-            description = "더미 데이터 정합성 보정용 API입니다. 운영 지급 배치를 대체하지 않으며, "
+            description = "더미 데이터 정합성 보정용 API입니다. 금액·확정 상태를 다시 계산한 뒤, "
+                    + "지급일이 지난 지급 대기 건은 현재 지급월 기준으로 캐치업합니다. "
                     + "activityMonth와 selectorsId를 생략하면 전체 기간·전체 셀렉터스 재계산 작업을 접수합니다.")
     @ApiResponses({
             @ApiResponse(responseCode = "202", description = "정산 재계산 작업 접수"),

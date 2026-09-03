@@ -37,6 +37,39 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
     Optional<CreatorPool> findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc(
             String snsCode, String accountId);
 
+    @Query("""
+            select creator from CreatorPool creator
+            join CreatorDiscoveryInfo info on info.creatorPool = creator
+            where creator.deleted = true
+              and creator.snsCode in :snsCodes
+              and info.profileImageUrl is not null
+              and trim(info.profileImageUrl) <> ''
+            """)
+    List<CreatorPool> findDeletedDemoCandidatesWithProfileImage(
+            @Param("snsCodes") List<String> snsCodes);
+
+    /**
+     * FAST 모드 카테고리 데모 발굴 대상.
+     *
+     * <p>프로필 이미지를 거르는 이유는 {@code findDeletedDemoCandidatesWithProfileImage}
+     * 와 같다. 기본 아이콘 계정이 섞이면 방금 발굴한 목록으로 보이지 않는다.
+     *
+     * <p>다만 이미 노출 중인 계정도 함께 가져온다. 데모에서 한 분야를 발굴하면
+     * 그 분야 전체가 방금 나온 결과로 보여야 하는데, 숨은 계정만 세면 화면에
+     * 보이는 수와 안내 문구의 수가 어긋난다.
+     */
+    @Query("""
+            select creator from CreatorPool creator
+            join CreatorDiscoveryInfo info on info.creatorPool = creator
+            where creator.category = :categoryCode
+              and creator.snsCode in :snsCodes
+              and info.profileImageUrl is not null
+              and trim(info.profileImageUrl) <> ''
+            """)
+    List<CreatorPool> findDemoCandidatesByCategory(
+            @Param("categoryCode") String categoryCode,
+            @Param("snsCodes") List<String> snsCodes);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update CreatorPool creator
@@ -98,7 +131,8 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             select new com.fuma.hiselectors.creator.dto.CreatorSummary(
                        c.id, c.snsCode, c.accountId, c.creatorName,
                        i.profileImageUrl, c.followerCount, c.engagementRate, c.lastContentAt, c.category,
-                       i.recent90DayContentCount, i.brandScore, i.igHandle, i.igConfidence)
+                       i.recent90DayContentCount, i.discoveredAt,
+                       i.brandScore, i.igHandle, i.igConfidence)
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false

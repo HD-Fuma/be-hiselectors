@@ -99,6 +99,8 @@ class CreatorPoolSearchTest {
         assertThat(result.getTotalElements()).isEqualTo(4);
         assertThat(result.getContent()).extracting(CreatorSummary::profileImageUrl)
                 .contains("https://cdn.example/UC_fit01.jpg");
+        assertThat(result.getContent()).allSatisfy(summary ->
+                assertThat(summary.firstDiscoveredAt()).isNotNull());
     }
 
     @Test
@@ -287,6 +289,7 @@ class CreatorPoolSearchTest {
                 .findFirst().orElseThrow();
         assertThat(manual.brandScore()).isNull();
         assertThat(manual.igHandle()).isNull();
+        assertThat(manual.firstDiscoveredAt()).isNull();
     }
 
     @Test

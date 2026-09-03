@@ -107,6 +107,63 @@ public class SelectorPerformanceQueryRepository {
         return summarizeConfirmedSalesByDatePart(selectorIds, startInclusive, endExclusive, true);
     }
 
+    /** 대시보드의 일별 매출·예상 정산액 계산을 위해 셀렉터스와 날짜별 매출만 집계한다. */
+    public List<DatedSelectorSales> summarizeConfirmedSalesBySelectorAndDay(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder jpql = new StringBuilder("""
+                select p.selectorsId,
+                       year(p.confirmedAt), month(p.confirmedAt), day(p.confirmedAt),
+                       coalesce(sum(p.paidAmount), 0)
+                from PurchaseHistory p
+                join Selectors s on s.id = p.selectorsId
+                where p.selectorsId in :selectorIds
+                  and s.deleted = false
+                  and p.status = :status
+                  and p.confirmedAt is not null
+                  and (s.userId is null or p.userId <> s.userId)
+                """);
+        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
+        jpql.append(" group by p.selectorsId, year(p.confirmedAt),"
+                + " month(p.confirmedAt), day(p.confirmedAt)");
+        return confirmedSalesQuery(jpql.toString(), selectorIds, startInclusive, endExclusive)
+                .getResultList().stream()
+                .map(row -> new DatedSelectorSales(
+                        (Long) row[0],
+                        LocalDate.of(
+                                ((Number) row[1]).intValue(),
+                                ((Number) row[2]).intValue(),
+                                ((Number) row[3]).intValue()),
+                        (BigDecimal) row[4]))
+                .toList();
+    }
+
+    /** 지정한 기수에 속한 셀렉터스의 기수 이력만 반환한다. */
+    public List<GenerationMembership> findGenerationMemberships(
+            List<Long> selectorIds, List<Long> generationIds) {
+        if (selectorIds.isEmpty() || generationIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery("""
+                        select sg.selectorsId, g.id, g.generationName
+                        from SelectorsGeneration sg
+                        join Generation g on g.id = sg.generationId
+                        where sg.selectorsId in :selectorIds
+                          and sg.generationId in :generationIds
+                        order by sg.selectorsId, g.activityStartDate desc, g.id desc
+                        """, Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .setParameter("generationIds", generationIds)
+                .getResultList().stream()
+                .map(row -> new GenerationMembership(
+                        (Long) row[0], (Long) row[1], (String) row[2]))
+                .toList();
+    }
+
     public List<DatedSales> summarizeConfirmedSalesByMonth(
             List<Long> selectorIds,
             LocalDateTime startInclusive,
@@ -373,6 +430,13 @@ public class SelectorPerformanceQueryRepository {
             LocalDate date,
             BigDecimal totalSales,
             long confirmedOrderCount
+    ) {
+    }
+
+    public record DatedSelectorSales(
+            Long selectorId,
+            LocalDate date,
+            BigDecimal totalSales
     ) {
     }
 

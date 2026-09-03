@@ -132,6 +132,7 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             where h.activityYearMonth = :activityYearMonth
               and (:selectorsId is null or h.selectorsId = :selectorsId)
               and (:status is null or h.status = :status)
+              and (:nonZeroSettlementAmount = false or h.settlementAmount <> 0)
               and exists (
                   select s.id
                   from Selectors s
@@ -142,6 +143,7 @@ public interface SettlementHistoryRepository extends JpaRepository<SettlementHis
             @Param("activityYearMonth") Integer activityYearMonth,
             @Param("selectorsId") Long selectorsId,
             @Param("status") SettlementStatus status,
+            @Param("nonZeroSettlementAmount") boolean nonZeroSettlementAmount,
             Pageable pageable);
 
     @Query("""

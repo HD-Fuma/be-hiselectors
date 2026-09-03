@@ -25,6 +25,11 @@ public interface YoutubeDiscoveryClient {
      */
     List<DiscoveredChannel> discoverByKeyword(String keyword, int maxResults);
 
+    default List<DiscoveredChannel> discoverByKeyword(
+            String keyword, int maxResults, boolean currentMonthOnly) {
+        return discoverByKeyword(keyword, maxResults);
+    }
+
     /** 이번 호출로 사용한 쿼터. 키워드 1개당 약 102 units. */
     int consumedQuota();
 

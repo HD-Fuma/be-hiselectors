@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fuma.hiselectors.common.ApiResultAdvice;
 import com.fuma.hiselectors.exception.GlobalExceptionHandler;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
+import com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryCursorResponse;
 import com.fuma.hiselectors.settlement.dto.SettlementPurchaseHistoryResponse;
 import com.fuma.hiselectors.settlement.service.SettlementPurchaseHistoryService;
 import java.math.BigDecimal;
@@ -59,5 +60,28 @@ class SettlementPurchaseHistoryControllerTest {
 
         verify(service).search(eq(3L), eq(YearMonth.of(2026, 7)), eq(false),
                 org.mockito.ArgumentMatchers.any(Pageable.class));
+    }
+
+    @Test
+    void searchesPurchasesWithCursorWithoutPageMetadata() throws Exception {
+        SettlementPurchaseHistoryResponse row = new SettlementPurchaseHistoryResponse(
+                10L, 3L, "SEL-003", "selector", 20L, "buyer", "ORDER-1", "P-1", 1,
+                BigDecimal.valueOf(10000), LocalDateTime.of(2026, 7, 15, 10, 0),
+                null, PurchaseStatus.PURCHASED);
+        when(service.searchCursor(3L, null, true, null, 20))
+                .thenReturn(new SettlementPurchaseHistoryCursorResponse(
+                        List.of(row), "next-cursor", true));
+
+        mockMvc.perform(get("/api/admin/settlements/purchase-histories/cursor")
+                        .param("selectorsId", "3")
+                        .param("allMonths", "true")
+                        .param("size", "20"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].purchaseHistoryId").value(10))
+                .andExpect(jsonPath("$.data.nextCursor").value("next-cursor"))
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.totalElements").doesNotExist());
+
+        verify(service).searchCursor(3L, null, true, null, 20);
     }
 }

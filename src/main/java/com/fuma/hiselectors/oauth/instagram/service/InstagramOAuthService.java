@@ -43,6 +43,7 @@ public class InstagramOAuthService {
                 .queryParam("client_id", properties.clientId())
                 .queryParam("redirect_uri", properties.redirectUri())
                 .queryParam("response_type", "code")
+                .queryParam("force_reauth", true)
                 .queryParam("scope", properties.scope())
                 .queryParam("state", state)
                 .build()
@@ -121,7 +122,7 @@ public class InstagramOAuthService {
                     .body(InstagramProfileResponse.class);
         } catch (RuntimeException e) {
             logOAuthFailure("profile lookup", e);
-            throw oauthFailure(e);
+            throw new BusinessException(ErrorCode.INSTAGRAM_OAUTH_FAILED);
         }
 
         if (profile == null || profile.id() == null

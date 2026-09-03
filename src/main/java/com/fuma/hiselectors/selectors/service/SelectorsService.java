@@ -100,10 +100,14 @@ public class SelectorsService {
 
         List<SelectorsGenerationResponse> generations =
                 selectorsGenerationRepository.findGenerationsOf(selectorsId);
-        SelectorsSnsAccountResponse account = selectorsSnsAccountRepository
+        SelectorsSnsAccount accountEntity = selectorsSnsAccountRepository
                 .findBySelectorsIdAndDeletedFalse(selectorsId)
-                .map(SelectorsSnsAccountResponse::from)
                 .orElse(null);
+        Map<String, String> youtubeTitles = accountEntity == null
+                ? Map.of() : youtubeChannelTitles(Map.of(selectorsId, accountEntity));
+        SelectorsSnsAccountResponse account = accountEntity == null
+                ? null : SelectorsSnsAccountResponse.from(
+                        accountEntity, snsDisplayName(accountEntity, youtubeTitles));
         List<PenaltyHistory> penalties = penaltyHistoryRepository
                 .findAllBySelectorsIds(List.of(selectorsId));
         Application application = selectors.getApplicationId() == null

@@ -55,6 +55,15 @@ class CreatorDiscoveryRepositoryTest {
                 .build());
     }
 
+    private CreatorPool saveCategorizedCreator(String accountId, String category) {
+        return creatorPoolRepository.save(CreatorPool.builder()
+                .snsCode("YOUTUBE")
+                .accountId(accountId)
+                .creatorName(accountId)
+                .category(category)
+                .build());
+    }
+
     private DiscoveryKeyword saveKeyword(String categoryCode, String categoryName, String keyword) {
         Category category = em.persist(Category.builder()
                 .code(categoryCode).name(categoryName).build());
@@ -303,6 +312,49 @@ class CreatorDiscoveryRepositoryTest {
         assertThat(creatorPoolRepository
                 .findFirstBySnsCodeAndAccountIdAndDeletedFalseOrderByIdAsc("YOUTUBE", "UC_fit01"))
                 .isPresent();
+    }
+
+    @Test
+    @DisplayName("데모 후보는 프로필 사진이 있는 소프트 삭제 계정만 조회한다")
+    void findDeletedDemoCandidatesWithProfileImage() {
+        CreatorPool withImage = saveCreator("YOUTUBE", "UC_photo", "사진 있음");
+        CreatorPool withoutImage = saveCreator("YOUTUBE", "UC_no_photo", "사진 없음");
+        for (CreatorPool creator : List.of(withImage, withoutImage)) {
+            creator.softDelete();
+        }
+        infoRepository.save(CreatorDiscoveryInfo.builder()
+                .creatorPool(withImage).profileImageUrl("https://example.com/profile.jpg").build());
+        infoRepository.save(CreatorDiscoveryInfo.builder().creatorPool(withoutImage).build());
+        em.flush();
+        em.clear();
+
+        assertThat(creatorPoolRepository.findDeletedDemoCandidatesWithProfileImage(
+                List.of("YOUTUBE", "INSTAGRAM")))
+                .extracting(CreatorPool::getAccountId)
+                .containsExactly("UC_photo");
+    }
+
+    @Test
+    @DisplayName("카테고리 데모 대상은 사진 있는 그 분야 계정을 노출 여부와 무관하게 조회한다")
+    void findDemoCandidatesByCategory() {
+        CreatorPool hidden = saveCategorizedCreator("UC_living_hidden", "LIVING_LIFE");
+        CreatorPool visible = saveCategorizedCreator("UC_living_visible", "LIVING_LIFE");
+        CreatorPool withoutImage = saveCategorizedCreator("UC_living_no_photo", "LIVING_LIFE");
+        CreatorPool otherCategory = saveCategorizedCreator("UC_beauty", "BEAUTY");
+        hidden.softDelete();
+        for (CreatorPool creator : List.of(hidden, visible, otherCategory)) {
+            infoRepository.save(CreatorDiscoveryInfo.builder()
+                    .creatorPool(creator)
+                    .profileImageUrl("https://example.com/profile.jpg").build());
+        }
+        infoRepository.save(CreatorDiscoveryInfo.builder().creatorPool(withoutImage).build());
+        em.flush();
+        em.clear();
+
+        assertThat(creatorPoolRepository.findDemoCandidatesByCategory(
+                "LIVING_LIFE", List.of("YOUTUBE", "INSTAGRAM")))
+                .extracting(CreatorPool::getAccountId)
+                .containsExactlyInAnyOrder("UC_living_hidden", "UC_living_visible");
     }
 
     @Test

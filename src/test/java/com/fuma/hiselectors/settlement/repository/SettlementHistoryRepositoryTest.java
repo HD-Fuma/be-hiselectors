@@ -42,7 +42,7 @@ class SettlementHistoryRepositoryTest {
         entityManager.clear();
 
         Page<SettlementHistory> result = repository.search(
-                202607, null, null, PageRequest.of(0, 20));
+                202607, null, null, false, PageRequest.of(0, 20));
         List<SettlementHistoryRepository.SettlementAggregate> summaries =
                 repository.summarizeByMonthAndStatus(202602, 202607, null, null);
 
@@ -58,6 +58,38 @@ class SettlementHistoryRepositoryTest {
             assertThat(summary.getConfirmedSalesAmount()).isEqualTo(10_000);
             assertThat(summary.getSettlementAmount()).isEqualTo(300);
         });
+    }
+
+    @Test
+    void filtersOutZeroSettlementAmountsBeforePagination() {
+        Selectors zeroAmount = entityManager.persist(Selectors.builder()
+                .userId(301L)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .selectorsCode("SEL-0301")
+                .selectorsNickname("정산금액없음")
+                .build());
+        Selectors paidAmount = entityManager.persist(Selectors.builder()
+                .userId(302L)
+                .selectorsRoleId(Selectors.ACTIVE_ROLE)
+                .selectorsCode("SEL-0302")
+                .selectorsNickname("정산금액있음")
+                .build());
+        entityManager.persist(history(
+                zeroAmount.getId(), YearMonth.of(2026, 7), 0L, 0L, 0L,
+                SettlementStatus.CALCULATING));
+        entityManager.persist(history(
+                paidAmount.getId(), YearMonth.of(2026, 7), 10_000L, 2L, 300L,
+                SettlementStatus.CALCULATING));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<SettlementHistory> result = repository.search(
+                202607, null, null, true, PageRequest.of(0, 20));
+
+        assertThat(result.getContent())
+                .extracting(SettlementHistory::getSelectorsId)
+                .containsExactly(paidAmount.getId());
+        assertThat(result.getTotalElements()).isEqualTo(1);
     }
 
     @Test

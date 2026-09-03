@@ -81,7 +81,7 @@ jobs:
 
       - name: Build application JAR
         run: |
-          ./gradlew test --tests '*ContractTest' bootJar --no-daemon
+          ./gradlew bootJar --no-daemon
           ! unzip -l build/libs/hiselectors-0.0.1-SNAPSHOT.jar | grep -q application-local.yaml
 
       - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5

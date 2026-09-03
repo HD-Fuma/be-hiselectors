@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -33,8 +35,11 @@ class SettlementRecalculationServiceTest {
         PurchaseHistoryRepository purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
         SettlementHistoryRepository settlementHistoryRepository = mock(SettlementHistoryRepository.class);
         SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementPaymentService paymentService = mock(SettlementPaymentService.class);
         SettlementRecalculationService service = service(
-                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository, worker);
+                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository,
+                worker, paymentService,
+                Instant.parse("2026-08-15T01:00:00Z"));
 
         when(purchaseHistoryRepository.findEarliestPurchasedAtByStatus(
                 PurchaseStatus.PURCHASE_CONFIRMED))
@@ -58,6 +63,55 @@ class SettlementRecalculationServiceTest {
                 10L, YearMonth.of(2026, 5), true, false);
         verify(worker).calculate(
                 20L, YearMonth.of(2026, 7), false, false);
+        verify(paymentService).processCurrentPaymentMonth();
+    }
+
+    @Test
+    void catchesUpOverduePaymentsAfterRecalculation() {
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        PurchaseHistoryRepository purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
+        SettlementHistoryRepository settlementHistoryRepository = mock(SettlementHistoryRepository.class);
+        SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementPaymentService paymentService = mock(SettlementPaymentService.class);
+        SettlementRecalculationService service = service(
+                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository,
+                worker, paymentService,
+                Instant.parse("2026-09-01T01:00:00Z"));
+
+        when(selectorsRepository.existsById(10L)).thenReturn(true);
+        when(worker.calculate(
+                10L, YearMonth.of(2026, 6), true, false))
+                .thenReturn(new SettlementCalculationResult(null, SettlementCalculationOutcome.SKIPPED));
+
+        var result = service.recalculate(YearMonth.of(2026, 6), 10L);
+
+        assertThat(result.skippedCount()).isEqualTo(1);
+        verify(paymentService).processCurrentPaymentMonth();
+    }
+
+    @Test
+    void keepsRecalculationResultWhenPaymentCatchUpFails() {
+        SelectorsRepository selectorsRepository = mock(SelectorsRepository.class);
+        PurchaseHistoryRepository purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
+        SettlementHistoryRepository settlementHistoryRepository = mock(SettlementHistoryRepository.class);
+        SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementPaymentService paymentService = mock(SettlementPaymentService.class);
+        SettlementRecalculationService service = service(
+                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository,
+                worker, paymentService,
+                Instant.parse("2026-09-01T01:00:00Z"));
+
+        when(selectorsRepository.existsById(10L)).thenReturn(true);
+        when(worker.calculate(
+                10L, YearMonth.of(2026, 6), true, false))
+                .thenReturn(new SettlementCalculationResult(null, SettlementCalculationOutcome.SKIPPED));
+        doThrow(new IllegalStateException("payment failed"))
+                .when(paymentService).processCurrentPaymentMonth();
+
+        var result = service.recalculate(YearMonth.of(2026, 6), 10L);
+
+        assertThat(result.skippedCount()).isEqualTo(1);
+        verify(paymentService).processCurrentPaymentMonth();
     }
 
     @Test
@@ -66,8 +120,11 @@ class SettlementRecalculationServiceTest {
         PurchaseHistoryRepository purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
         SettlementHistoryRepository settlementHistoryRepository = mock(SettlementHistoryRepository.class);
         SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementPaymentService paymentService = mock(SettlementPaymentService.class);
         SettlementRecalculationService service = service(
-                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository, worker);
+                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository,
+                worker, paymentService,
+                Instant.parse("2026-08-15T01:00:00Z"));
 
         when(selectorsRepository.existsById(10L)).thenReturn(true);
         when(worker.calculate(
@@ -83,6 +140,7 @@ class SettlementRecalculationServiceTest {
         assertThat(result.requestedActivityMonth()).isEqualTo(YearMonth.of(2026, 7));
         assertThat(result.updatedCount()).isEqualTo(1);
         assertThat(result.finalizedCount()).isZero();
+        verify(paymentService).processCurrentPaymentMonth();
     }
 
     @Test
@@ -91,8 +149,11 @@ class SettlementRecalculationServiceTest {
         PurchaseHistoryRepository purchaseHistoryRepository = mock(PurchaseHistoryRepository.class);
         SettlementHistoryRepository settlementHistoryRepository = mock(SettlementHistoryRepository.class);
         SettlementCalculationWorker worker = mock(SettlementCalculationWorker.class);
+        SettlementPaymentService paymentService = mock(SettlementPaymentService.class);
         SettlementRecalculationService service = service(
-                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository, worker);
+                selectorsRepository, purchaseHistoryRepository, settlementHistoryRepository,
+                worker, paymentService,
+                Instant.parse("2026-08-15T01:00:00Z"));
 
         assertThatThrownBy(() -> service.recalculate(YearMonth.of(2026, 8), null))
                 .isInstanceOf(BusinessException.class)
@@ -100,21 +161,24 @@ class SettlementRecalculationServiceTest {
                 .isEqualTo(ErrorCode.INVALID_INPUT);
         verifyNoInteractions(selectorsRepository, purchaseHistoryRepository,
                 settlementHistoryRepository, worker);
+        verify(paymentService, never()).processCurrentPaymentMonth();
     }
 
     private SettlementRecalculationService service(
             SelectorsRepository selectorsRepository,
             PurchaseHistoryRepository purchaseHistoryRepository,
             SettlementHistoryRepository settlementHistoryRepository,
-            SettlementCalculationWorker worker) {
-        Clock clock = Clock.fixed(
-                Instant.parse("2026-08-15T01:00:00Z"), TimeConfig.SEOUL_ZONE);
+            SettlementCalculationWorker worker,
+            SettlementPaymentService paymentService,
+            Instant instant) {
+        Clock clock = Clock.fixed(instant, TimeConfig.SEOUL_ZONE);
         return new SettlementRecalculationService(
                 selectorsRepository,
                 purchaseHistoryRepository,
                 settlementHistoryRepository,
                 worker,
                 new SettlementSchedulePolicy(),
+                paymentService,
                 clock);
     }
 }

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,6 +65,12 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
 
     @Override
     public List<DiscoveredChannel> discoverByKeyword(String keyword, int maxResults) {
+        return discoverByKeyword(keyword, maxResults, false);
+    }
+
+    @Override
+    public List<DiscoveredChannel> discoverByKeyword(
+            String keyword, int maxResults, boolean currentMonthOnly) {
         // 싱글턴 컴포넌트이므로 이전 실행의 사용량이 다음 응답에 누적되지 않게 초기화한다.
         consumedQuota = 0;
 
@@ -71,7 +78,7 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
             throw new BusinessException(ErrorCode.YOUTUBE_API_KEY_MISSING);
         }
 
-        List<String> videoIds = searchVideoIds(keyword, maxResults);
+        List<String> videoIds = searchVideoIds(keyword, maxResults, currentMonthOnly);
         if (videoIds.isEmpty()) {
             log.info("발굴 검색 결과 없음. keyword={}", keyword);
             return List.of();
@@ -90,17 +97,23 @@ public class YoutubeApiClient implements YoutubeDiscoveryClient {
      * 채널이 아니라 영상을 검색한다. 채널명에 키워드가 없어도 그 주제로 콘텐츠를
      * 만드는 채널을 찾기 위해서다.
      */
-    private List<String> searchVideoIds(String keyword, int maxResults) {
-        String uri = UriComponentsBuilder.fromUriString(SEARCH_URI)
+    private List<String> searchVideoIds(
+            String keyword, int maxResults, boolean currentMonthOnly) {
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromUriString(SEARCH_URI)
                 .queryParam("part", "id")
                 .queryParam("q", keyword)
                 .queryParam("type", "video")
                 .queryParam("order", "viewCount")
                 .queryParam("regionCode", "KR")
                 .queryParam("relevanceLanguage", "ko")
-                .queryParam("maxResults", Math.min(maxResults, BATCH_SIZE))
-                .queryParam("key", properties.apiKey())
-                .build().toUriString();
+                .queryParam("maxResults", Math.min(maxResults, BATCH_SIZE));
+        if (currentMonthOnly) {
+            uriBuilder.queryParam("publishedAfter", OffsetDateTime.now(SEOUL)
+                    .withDayOfMonth(1)
+                    .truncatedTo(ChronoUnit.DAYS)
+                    .toInstant());
+        }
+        String uri = uriBuilder.queryParam("key", properties.apiKey()).build().toUriString();
 
         YoutubeSearchResponse response = call(uri, YoutubeSearchResponse.class, SEARCH_COST);
         if (response == null || response.items() == null) {

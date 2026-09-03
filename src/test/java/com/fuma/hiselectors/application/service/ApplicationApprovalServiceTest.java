@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fuma.hiselectors.application.dto.ApplicationStatusUpdateRequest;
@@ -189,7 +188,7 @@ class ApplicationApprovalServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = ApplicationStatus.class, names = {"APPROVED", "REJECTED"})
-    void notificationOptOutDoesNotBlockDecision(ApplicationStatus status) {
+    void delegatesNotificationConsentCheckToCommonSender(ApplicationStatus status) {
         ReflectionTestUtils.setField(application, "alarmYn", false);
         Selectors selectors = Selectors.builder()
                 .userId(7L)
@@ -202,7 +201,14 @@ class ApplicationApprovalServiceTest {
                 31L, new ApplicationStatusUpdateRequest(status), "admin");
 
         assertThat(response.status()).isEqualTo(status);
-        verifyNoInteractions(notificationService);
+        ArgumentCaptor<NotificationMessageCommand> notificationCaptor =
+                ArgumentCaptor.forClass(NotificationMessageCommand.class);
+        verify(notificationService).sendToFriend(eq("admin"), notificationCaptor.capture());
+        assertThat(notificationCaptor.getValue().recipientUserId()).isEqualTo(7L);
+        assertThat(notificationCaptor.getValue().notificationType()).isEqualTo(
+                status == ApplicationStatus.APPROVED
+                        ? NotificationType.SELECTION_APPROVED
+                        : NotificationType.SELECTION_REJECTED);
     }
 
     @Test

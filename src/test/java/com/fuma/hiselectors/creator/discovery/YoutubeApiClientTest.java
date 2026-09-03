@@ -8,9 +8,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fuma.hiselectors.creator.discovery.dto.YoutubeChannelListResponse;
 import com.fuma.hiselectors.exception.BusinessException;
 import com.fuma.hiselectors.exception.ErrorCode;
+import java.time.Instant;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.YearMonth;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -19,6 +22,31 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
 class YoutubeApiClientTest {
+
+    @Test
+    @DisplayName("이번 달 필터는 서울 시간 기준 월초를 YouTube 검색에 전달한다")
+    void filtersSearchFromCurrentMonth() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        YoutubeApiClient client = new YoutubeApiClient(
+                new YoutubeDiscoveryProperties("test-api-key", null, null));
+        ReflectionTestUtils.setField(client, "restClient", builder.build());
+
+        server.expect(request -> {
+            String publishedAfter = org.springframework.web.util.UriComponentsBuilder
+                    .fromUri(request.getURI()).build().getQueryParams()
+                    .getFirst("publishedAfter");
+            var seoulStart = Instant.parse(publishedAfter)
+                    .atZone(ZoneId.of("Asia/Seoul"));
+            assertThat(YearMonth.from(seoulStart)).isEqualTo(YearMonth.now(
+                    ZoneId.of("Asia/Seoul")));
+            assertThat(seoulStart.getDayOfMonth()).isEqualTo(1);
+            assertThat(seoulStart.toLocalTime()).isEqualTo(LocalTime.MIDNIGHT);
+        }).andRespond(withSuccess("{\"items\":[]}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.discoverByKeyword("겟레디윗미", 25, true)).isEmpty();
+        server.verify();
+    }
 
     @Test
     @DisplayName("최근 활동일은 키워드 검색 영상이 아니라 채널의 최신 업로드로 계산한다")

@@ -38,8 +38,11 @@ public class AdminAiInspectionPreviewController {
                 aiViolationDetector.inspectText(request.text())));
     }
 
-    @Operation(summary = "구정책 최신 버전 재검수",
-            description = "플랫폼별 현재 활성 검수 정책과 다른 최신 ContentVersion만 검수합니다.")
+    @Operation(summary = "미검수 최신 버전 재검수",
+            description = "현재 활동 기수에 참여 중인 셀렉터스의 "
+                    + "삭제되지 않은 콘텐츠 최신 버전을 검수합니다. "
+                    + "이미 현재 활성 정책 리포트가 있거나 검수 중인 버전은 건너뜁니다. "
+                    + "limit를 생략하면 대상 전부를 검수합니다.")
     @PostMapping("/reinspect-stale")
     public ResponseEntity<ReinspectStaleResponse> reinspectStale(
             @RequestParam(required = false) Integer limit) {

@@ -32,6 +32,10 @@ public interface CreatorDiscoverySourceRepository
     /** 이 카테고리의 키워드 중 하나라도 발굴 이력이 있는지. 카테고리 삭제 판단에 쓴다. */
     boolean existsByKeywordCategoryId(Long categoryId);
 
+    @Modifying(flushAutomatically = true)
+    @Query("delete from CreatorDiscoverySource source where source.keyword.id = :keywordId")
+    int deleteAllByKeywordId(@Param("keywordId") Long keywordId);
+
     /** 활성 YouTube 계정이 어떤 카테고리·키워드에서 발견됐는지 포화도 집계용으로 조회한다. */
     @Query("""
             select c.code as categoryCode,

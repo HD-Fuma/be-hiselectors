@@ -9,4 +9,12 @@ public record InstagramOAuthProperties(
         String redirectUri,
         String scope
 ) {
+
+    @Override
+    public String redirectUri() {
+        if (redirectUri == null || redirectUri.isBlank() || redirectUri.endsWith("/")) {
+            return redirectUri;
+        }
+        return java.net.URI.create(redirectUri).getPath().isEmpty() ? redirectUri + "/" : redirectUri;
+    }
 }
