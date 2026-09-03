@@ -88,6 +88,22 @@ class CreatorSyncTaskTest {
     }
 
     @Test
+    void executePassesCurrentMonthFilterToYoutube() {
+        YoutubeDiscoveryBatchService youtube = mock(YoutubeDiscoveryBatchService.class);
+        InstagramDiscoveryBatchService instagram = mock(InstagramDiscoveryBatchService.class);
+        TaskProgressReporter progress = mock(TaskProgressReporter.class);
+        when(youtube.runYoutubeOnly(eq(false), eq(true), any()))
+                .thenReturn(youtubeResult(1, 1, 1, 0, 1));
+        when(instagram.run(eq(false), any()))
+                .thenReturn(instagramResult(1, 1, 1, 0, 1));
+
+        new CreatorSyncTask(youtube, instagram)
+                .execute(new TaskExecutionContext(mock(TaskLease.class), progress), true);
+
+        verify(youtube).runYoutubeOnly(eq(false), eq(true), any());
+    }
+
+    @Test
     void executeCategoryRunsBothPlatformsForThatCategory() {
         YoutubeDiscoveryBatchService youtube = mock(YoutubeDiscoveryBatchService.class);
         InstagramDiscoveryBatchService instagram = mock(InstagramDiscoveryBatchService.class);

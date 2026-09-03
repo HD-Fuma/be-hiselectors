@@ -113,6 +113,26 @@ class SelectorsServiceTest {
     }
 
     @Test
+    void returnsYoutubeChannelTitleInDetailSnsAccount() {
+        String channelId = "UC1111111111111111111111";
+        Selectors selectors = mock(Selectors.class);
+        when(selectors.getId()).thenReturn(1L);
+        when(selectorsRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(selectors));
+
+        SelectorsSnsAccount account = mock(SelectorsSnsAccount.class);
+        when(account.getSnsCode()).thenReturn(SnsPlatform.YOUTUBE);
+        when(account.getAccountId()).thenReturn(channelId);
+        when(selectorsSnsAccountRepository.findBySelectorsIdAndDeletedFalse(1L))
+                .thenReturn(Optional.of(account));
+        when(youtubeContentFetcher.fetchChannelTitles(List.of(channelId)))
+                .thenReturn(Map.of(channelId, "하린의 생활연구소"));
+
+        SelectorsDetailResponse result = selectorsService.findDetail(1L);
+
+        assertThat(result.snsAccount().displayName()).isEqualTo("하린의 생활연구소");
+    }
+
+    @Test
     void returnsPenaltyCountsAndBlacklistTarget() {
         Pageable pageable = PageRequest.of(0, 20);
         Selectors selectors = mock(Selectors.class);

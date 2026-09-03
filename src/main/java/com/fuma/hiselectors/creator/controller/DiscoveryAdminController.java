@@ -72,11 +72,19 @@ public class DiscoveryAdminController {
     public ResponseEntity<TaskRunResponse> runYoutubeBatch(
             @RequestHeader("Idempotency-Key") UUID idempotencyKey,
             @RequestParam(defaultValue = "false") boolean test,
+            @RequestParam(defaultValue = "false") boolean currentMonthOnly,
             Principal principal) {
+        TrackedTask task = test
+                ? (currentMonthOnly
+                        ? context -> creatorSyncTask.executeTest(context, true)
+                        : creatorSyncTask::executeTest)
+                : (currentMonthOnly
+                        ? context -> creatorSyncTask.execute(context, true)
+                        : creatorSyncTask);
         return test
                 ? submitTask(idempotencyKey, principal, "youtube-test",
-                        creatorSyncTask::executeTest)
-                : submitTask(idempotencyKey, principal, "youtube", creatorSyncTask);
+                        currentMonthOnly, task)
+                : submitTask(idempotencyKey, principal, "youtube", currentMonthOnly, task);
     }
 
     @Operation(summary = "선택 카테고리 크리에이터 발굴",
@@ -90,12 +98,16 @@ public class DiscoveryAdminController {
     public ResponseEntity<TaskRunResponse> runCategoryBatch(
             @PathVariable Long categoryId,
             @RequestHeader("Idempotency-Key") UUID idempotencyKey,
+            @RequestParam(defaultValue = "false") boolean currentMonthOnly,
             Principal principal) {
         if (!categoryRepository.existsById(categoryId)) {
             throw new BusinessException(ErrorCode.CATEGORY_NOT_FOUND);
         }
+        TrackedTask task = currentMonthOnly
+                ? context -> creatorSyncTask.executeCategory(context, categoryId, true)
+                : context -> creatorSyncTask.executeCategory(context, categoryId);
         return submitTask(idempotencyKey, principal, "youtube-category", categoryId,
-                context -> creatorSyncTask.executeCategory(context, categoryId));
+                currentMonthOnly, task);
     }
 
     @Operation(summary = "Instagram 크리에이터 일괄 발굴",
@@ -116,17 +128,26 @@ public class DiscoveryAdminController {
 
     private ResponseEntity<TaskRunResponse> submitTask(
             UUID idempotencyKey, Principal principal, String source, TrackedTask task) {
-        return submitTask(idempotencyKey, principal, source, null, task);
+        return submitTask(idempotencyKey, principal, source, null, false, task);
     }
 
     private ResponseEntity<TaskRunResponse> submitTask(
             UUID idempotencyKey, Principal principal, String source,
-            Long categoryId, TrackedTask task) {
+            boolean currentMonthOnly, TrackedTask task) {
+        return submitTask(idempotencyKey, principal, source, null, currentMonthOnly, task);
+    }
+
+    private ResponseEntity<TaskRunResponse> submitTask(
+            UUID idempotencyKey, Principal principal, String source,
+            Long categoryId, boolean currentMonthOnly, TrackedTask task) {
         Admin admin = adminRepository.findByLoginId(principal.getName())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_NOT_FOUND));
         var payload = objectMapper.createObjectNode().put("source", source);
         if (categoryId != null) {
             payload.put("categoryId", categoryId);
+        }
+        if (currentMonthOnly) {
+            payload.put("currentMonthOnly", true);
         }
         TaskStartResult result = taskRunExecutionService.submit(new TaskStartCommand(
                 TaskType.CREATOR_SYNC, TriggerType.ADMIN_TRIGGERED, admin.getId(), idempotencyKey,

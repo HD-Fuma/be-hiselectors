@@ -9,16 +9,19 @@ public record SelectorsSnsAccountResponse(
         @Schema(description = "SNS 계정 ID") Long id,
         @Schema(description = "SNS 플랫폼", example = "INSTAGRAM") String snsCode,
         @Schema(description = "계정 ID") String accountId,
+        @Schema(description = "SNS 표시명") String displayName,
         @Schema(description = "팔로워 수") Long followerCount,
         @Schema(description = "프로필 이미지") String profileImageUrl,
         @Schema(description = "마지막 수집 시각") LocalDateTime lastCollectedAt
 ) {
 
-    public static SelectorsSnsAccountResponse from(SelectorsSnsAccount account) {
+    public static SelectorsSnsAccountResponse from(
+            SelectorsSnsAccount account, String displayName) {
         return new SelectorsSnsAccountResponse(
                 account.getId(),
                 account.getSnsCode() == null ? null : account.getSnsCode().name(),
                 account.getAccountId(),
+                displayName,
                 account.getFollowerCount(),
                 account.getProfileImageUrl(),
                 account.getLastCollectedAt()

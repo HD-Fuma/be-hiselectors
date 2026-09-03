@@ -23,6 +23,7 @@ public record CreatorSummary(
         @Schema(description = "최근 활동일") LocalDateTime lastContentAt,
         @Schema(description = "대표 카테고리 코드", example = "BEAUTY") String category,
         @Schema(description = "최근 90일 공개 콘텐츠 수") Integer recent90DayContentCount,
+        @Schema(description = "발굴 정보 최초 수집일") LocalDateTime firstDiscoveredAt,
 
         @Schema(description = "브랜드 신호 점수. 2 이상이면 브랜드 계정으로 본다") Integer brandScore,
         @Schema(description = "채널 설명에서 추출한 인스타 핸들") String igHandle,

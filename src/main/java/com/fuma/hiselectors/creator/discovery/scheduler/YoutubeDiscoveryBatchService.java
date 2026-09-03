@@ -46,16 +46,29 @@ public class YoutubeDiscoveryBatchService {
 
     public YoutubeDiscoveryBatchResult runYoutubeOnly(
             boolean test, Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
-        return runYoutubeOnly(test, null, progressCallback);
+        return runYoutubeOnly(test, false, null, progressCallback);
+    }
+
+    public YoutubeDiscoveryBatchResult runYoutubeOnly(
+            boolean test, boolean currentMonthOnly,
+            Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
+        return runYoutubeOnly(test, currentMonthOnly, null, progressCallback);
     }
 
     public YoutubeDiscoveryBatchResult runYoutubeOnlyByCategory(
             Long categoryId, Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
-        return runYoutubeOnly(false, Objects.requireNonNull(categoryId), progressCallback);
+        return runYoutubeOnly(false, false, Objects.requireNonNull(categoryId), progressCallback);
+    }
+
+    public YoutubeDiscoveryBatchResult runYoutubeOnlyByCategory(
+            Long categoryId, boolean currentMonthOnly,
+            Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
+        return runYoutubeOnly(false, currentMonthOnly,
+                Objects.requireNonNull(categoryId), progressCallback);
     }
 
     private YoutubeDiscoveryBatchResult runYoutubeOnly(
-            boolean test, Long categoryId,
+            boolean test, boolean currentMonthOnly, Long categoryId,
             Consumer<YoutubeDiscoveryBatchResult> progressCallback) {
         Objects.requireNonNull(progressCallback, "progressCallback");
         if (!discoveryProperties.hasApiKey()) {
@@ -91,8 +104,11 @@ public class YoutubeDiscoveryBatchService {
         for (DiscoveryKeyword keyword : selectedKeywords.subList(0, runLimit)) {
             attempted++;
             try {
-                DiscoveryRunResult result = discoveryPipelineService.runByKeyword(
-                        keyword.getId(), discoveryProperties.maxResultsOrDefault());
+                DiscoveryRunResult result = currentMonthOnly
+                        ? discoveryPipelineService.runByKeyword(
+                                keyword.getId(), discoveryProperties.maxResultsOrDefault(), true)
+                        : discoveryPipelineService.runByKeyword(
+                                keyword.getId(), discoveryProperties.maxResultsOrDefault());
                 succeeded++;
                 consumedQuota += result.consumedQuota();
                 discovered += result.discovered();

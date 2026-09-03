@@ -98,7 +98,8 @@ public interface CreatorPoolRepository extends JpaRepository<CreatorPool, Long> 
             select new com.fuma.hiselectors.creator.dto.CreatorSummary(
                        c.id, c.snsCode, c.accountId, c.creatorName,
                        i.profileImageUrl, c.followerCount, c.engagementRate, c.lastContentAt, c.category,
-                       i.recent90DayContentCount, i.brandScore, i.igHandle, i.igConfidence)
+                       i.recent90DayContentCount, i.discoveredAt,
+                       i.brandScore, i.igHandle, i.igConfidence)
             from CreatorPool c
             left join CreatorDiscoveryInfo i on i.creatorPool = c
             where c.deleted = false

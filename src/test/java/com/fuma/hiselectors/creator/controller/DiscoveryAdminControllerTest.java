@@ -127,6 +127,28 @@ class DiscoveryAdminControllerTest {
     }
 
     @Test
+    void runsCurrentMonthYoutubeDiscoveryBatch() throws Exception {
+        UUID key = UUID.randomUUID();
+        when(taskRunExecutionService.submit(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new TaskStartResult.Created(run(TaskType.CREATOR_SYNC, key)));
+
+        mockMvc.perform(post("/api/admin/discovery/youtube/run")
+                        .param("currentMonthOnly", "true")
+                        .header("Idempotency-Key", key)
+                        .principal(() -> "admin"))
+                .andExpect(status().isAccepted());
+
+        ArgumentCaptor<TrackedTask> task = ArgumentCaptor.forClass(TrackedTask.class);
+        verify(taskRunExecutionService).submit(org.mockito.ArgumentMatchers.argThat(command ->
+                        command.businessPayload().get("currentMonthOnly").asBoolean()),
+                task.capture());
+        TaskExecutionContext context = mock(TaskExecutionContext.class);
+        task.getValue().execute(context);
+        verify(creatorSyncTask).execute(context, true);
+    }
+
+    @Test
     void runsSelectedCategoryDiscoveryBatch() throws Exception {
         UUID key = UUID.randomUUID();
         when(categoryRepository.existsById(12L)).thenReturn(true);

@@ -51,8 +51,6 @@ class DiscoveryPipelineServiceTest {
     @Mock
     private IgHandleExtractor igHandleExtractor;
     @Mock
-    private PublicEmailExtractor publicEmailExtractor;
-    @Mock
     private BrandScoreCalculator brandScoreCalculator;
     @Mock
     private DiscoveryKeywordRepository keywordRepository;
@@ -119,11 +117,23 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
+    @DisplayName("이번 달 필터를 YouTube 검색에 전달한다")
+    void passesCurrentMonthFilter() {
+        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
+        when(youtubeClient.discoverByKeyword("겟레디윗미", 25, true))
+                .thenReturn(List.of());
+
+        discoveryPipelineService.runByKeyword(1L, 25, true);
+
+        verify(youtubeClient).discoverByKeyword("겟레디윗미", 25, true);
+    }
+
+    @Test
     @DisplayName("발굴 비중은 검색 결과가 아니라 채널 전체 조회수로 계산한다")
     void saveNewCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 1, 12, 0);
         DiscoveredChannel channel = new DiscoveredChannel(
-                "UC_NEW", "새 크리에이터", "Instagram @new_creator / hello@example.com",
+                "UC_NEW", "새 크리에이터", "Instagram @new_creator",
                 "https://yt.example/new.jpg",
                 120_000L, 3_000_000L, uploadedAt,
                 12, 1_000L, 40L, 10L);
@@ -135,8 +145,6 @@ class DiscoveryPipelineServiceTest {
         when(youtubeClient.consumedQuota()).thenReturn(102);
         when(igHandleExtractor.extract(channel.description()))
                 .thenReturn(Optional.of(new IgHandle("new_creator", IgHandleSource.LABELED)));
-        when(publicEmailExtractor.extract(channel.description()))
-                .thenReturn(Optional.of("hello@example.com"));
         when(brandScoreCalculator.calculate(
                 channel.title(), channel.description(), "new_creator"))
                 .thenReturn(new BrandScore(0, List.of()));
@@ -162,7 +170,7 @@ class DiscoveryPipelineServiceTest {
         CreatorPool creator = creatorCaptor.getValue();
         assertThat(creator.getSnsCode()).isEqualTo("YOUTUBE");
         assertThat(creator.getAccountId()).isEqualTo("UC_NEW");
-        assertThat(creator.getEmail()).isEqualTo("hello@example.com");
+        assertThat(creator.getEmail()).isEqualTo("jaewonwi98@gmail.com");
         assertThat(creator.getFollowerCount()).isEqualTo(120_000L);
         assertThat(creator.getEngagementRate()).isEqualByComparingTo("5.00");
         assertThat(creator.getCategory()).isEqualTo("BEAUTY");
@@ -186,37 +194,6 @@ class DiscoveryPipelineServiceTest {
     }
 
     @Test
-    @DisplayName("공개 이메일 없는 신규 YouTube 채널은 저장하지 않는다")
-    void skipNewCreatorWithoutEmail() {
-        DiscoveredChannel channel = new DiscoveredChannel(
-                "UC_NO_EMAIL", "이메일 없는 크리에이터", "Instagram @no_email",
-                null,
-                10_000L, 100_000L, null,
-                3, 100L, 4L, 1L);
-
-        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
-        when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
-                .thenReturn(List.of(channel));
-        when(youtubeClient.consumedQuota()).thenReturn(102);
-        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                "YOUTUBE", "UC_NO_EMAIL"))
-                .thenReturn(Optional.empty());
-        when(publicEmailExtractor.extract(channel.description())).thenReturn(Optional.empty());
-
-        DiscoveryRunResult result = discoveryPipelineService.runByKeyword(1L, 25);
-
-        assertThat(result.discovered()).isEqualTo(1);
-        assertThat(result.created()).isZero();
-        assertThat(result.updated()).isZero();
-        assertThat(result.consumedQuota()).isEqualTo(102);
-        assertThat(result.creatorIds()).isEmpty();
-        assertThat(keyword.getLastRunAt()).isNotNull();
-        verify(creatorPoolRepository, never()).save(any(CreatorPool.class));
-        verifyNoInteractions(igHandleExtractor, brandScoreCalculator,
-                discoveryInfoRepository, discoverySourceRepository, creatorDiscoveryService);
-    }
-
-    @Test
     @DisplayName("기존 채널은 새로 만들지 않고 지표와 발굴 이력을 갱신한다")
     void updateExistingCreator() {
         LocalDateTime uploadedAt = LocalDateTime.of(2026, 8, 2, 12, 0);
@@ -233,8 +210,6 @@ class DiscoveryPipelineServiceTest {
         when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
         when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
                 .thenReturn(List.of(channel));
-        when(publicEmailExtractor.extract("contact@example.com"))
-                .thenReturn(Optional.of("contact@example.com"));
         when(igHandleExtractor.extract("contact@example.com")).thenReturn(Optional.empty());
         when(brandScoreCalculator.calculate(
                 "기존 크리에이터", "contact@example.com", null))
@@ -253,7 +228,7 @@ class DiscoveryPipelineServiceTest {
         assertThat(result.created()).isZero();
         assertThat(result.updated()).isEqualTo(1);
         assertThat(result.creatorIds()).containsExactly(102L);
-        verify(existingCreator).updateEmail("contact@example.com");
+        verify(existingCreator).updateEmail("jaewonwi98@gmail.com");
         verify(existingCreator).updateMetrics(
                 50_000L, new BigDecimal("5.00"), uploadedAt);
         verify(existingCreator).restore();
@@ -311,30 +286,4 @@ class DiscoveryPipelineServiceTest {
                 .isInstanceOf(UnsupportedOperationException.class);
     }
 
-    @Test
-    @DisplayName("공개 이메일 없는 기존 채널은 활성 풀에서 제외한다")
-    void skipExistingCreatorWithoutCurrentEmail() {
-        DiscoveredChannel channel = new DiscoveredChannel(
-                "UC_EXISTING", "기존 크리에이터", "Instagram @no_email",
-                null,
-                50_000L, 1_000_000L, null,
-                7, 200L, 8L, 2L);
-        CreatorPool existingCreator = org.mockito.Mockito.mock(CreatorPool.class);
-
-        when(keywordRepository.findById(1L)).thenReturn(Optional.of(keyword));
-        when(youtubeClient.discoverByKeyword("겟레디윗미", 25))
-                .thenReturn(List.of(channel));
-        when(creatorPoolRepository.findFirstBySnsCodeAndAccountIdOrderByIdAsc(
-                "YOUTUBE", "UC_EXISTING"))
-                .thenReturn(Optional.of(existingCreator));
-        when(publicEmailExtractor.extract(channel.description())).thenReturn(Optional.empty());
-
-        DiscoveryRunResult result = discoveryPipelineService.runByKeyword(1L, 25);
-
-        assertThat(result.created()).isZero();
-        assertThat(result.updated()).isZero();
-        verify(existingCreator).softDelete();
-        verifyNoInteractions(igHandleExtractor, brandScoreCalculator,
-                discoveryInfoRepository, discoverySourceRepository, creatorDiscoveryService);
-    }
 }
