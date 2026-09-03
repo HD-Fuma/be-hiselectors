@@ -65,6 +65,7 @@ public class NewContentService {
         LocalDateTime collectedAt = LocalDateTime.now(clock).withNano(0);
         int savedCount = 0;
         int failedAccountCount = 0;
+        Set<Long> savedVersionIds = new HashSet<>();
         Map<SnsPlatform, PlatformCollectionStats> platformStats =
                 new EnumMap<>(SnsPlatform.class);
 
@@ -75,9 +76,11 @@ public class NewContentService {
             try {
                 NewContentSelection selected = newCandidates(target);
                 selection = selected;
-                Integer saved = transactionTemplate.execute(status ->
+                List<Long> saved = transactionTemplate.execute(status ->
                         save(target.account(), selected.selectorsContents(), collectedAt));
-                int savedVersions = saved == null ? 0 : saved;
+                List<Long> completed = saved == null ? List.of() : saved;
+                int savedVersions = completed.size();
+                savedVersionIds.addAll(completed);
                 savedContentDelta = savedVersions;
                 savedCount += savedVersions;
                 mergeStats(platformStats, target.account().getSnsCode(),
@@ -106,7 +109,11 @@ public class NewContentService {
                 progress.accept(new NewContentProgress(1, 0));
             }
         }
-        return new NewContentResult(savedCount, failedAccountCount, Map.copyOf(platformStats));
+        return new NewContentResult(
+                savedCount,
+                failedAccountCount,
+                Map.copyOf(platformStats),
+                Set.copyOf(savedVersionIds));
     }
 
     /** 현재 기수의 계정별 수집 시작 시각 결정 */
@@ -215,7 +222,7 @@ public class NewContentService {
                 : lastCollectedAt;
     }
 
-    private int save(
+    private List<Long> save(
             SelectorsSnsAccount account,
             List<RawContent> rawContents,
             LocalDateTime collectedAt) {
@@ -252,9 +259,10 @@ public class NewContentService {
                         versions.get(index).getId(), rawContents.get(index)));
             }
             mediaRepository.saveAll(media);
+            return versions.stream().map(ContentVersion::getId).toList();
         }
 
-        return rawContents.size();
+        return List.of();
     }
 
     record CollectionTarget(SelectorsSnsAccount account, LocalDateTime since) {
@@ -281,10 +289,18 @@ public class NewContentService {
     public record NewContentResult(
             int savedContentCount,
             int failedAccountCount,
-            Map<SnsPlatform, PlatformCollectionStats> platformStats) {
+            Map<SnsPlatform, PlatformCollectionStats> platformStats,
+            Set<Long> savedVersionIds) {
 
         public NewContentResult(int savedContentCount, int failedAccountCount) {
-            this(savedContentCount, failedAccountCount, Map.of());
+            this(savedContentCount, failedAccountCount, Map.of(), Set.of());
+        }
+
+        public NewContentResult(
+                int savedContentCount,
+                int failedAccountCount,
+                Map<SnsPlatform, PlatformCollectionStats> platformStats) {
+            this(savedContentCount, failedAccountCount, platformStats, Set.of());
         }
     }
 

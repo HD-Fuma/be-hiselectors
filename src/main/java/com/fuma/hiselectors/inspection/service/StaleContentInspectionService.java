@@ -9,6 +9,8 @@ import com.fuma.hiselectors.generation.service.GenerationService;
 import com.fuma.hiselectors.inspection.dto.ReinspectStaleResponse;
 import com.fuma.hiselectors.inspection.model.InspectionPolicy;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,6 +64,21 @@ public class StaleContentInspectionService {
         Set<Long> exclusions = Set.copyOf(excludedVersionIds);
         List<Long> versionIds = selectStaleLatestVersionIds(
                 limit, Map.copyOf(targetAccountIds), exclusions);
+        return reinspectVersionIds(versionIds, inspector, progressCallback);
+    }
+
+    public ReinspectStaleResponse reinspectVersionIds(
+            Collection<Long> contentVersionIds,
+            Consumer<Long> inspector,
+            Consumer<ReinspectStaleResponse> progressCallback) {
+        Objects.requireNonNull(contentVersionIds, "콘텐츠 버전 ID 목록은 필수입니다.");
+        Objects.requireNonNull(inspector, "검수 실행 함수는 필수입니다.");
+        Objects.requireNonNull(progressCallback, "진행 callback은 필수입니다.");
+        List<Long> versionIds = contentVersionIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted(Comparator.naturalOrder())
+                .toList();
         List<Long> failedVersionIds = new ArrayList<>();
         int successCount = 0;
         ReinspectStaleResponse snapshot = snapshot(versionIds.size(), successCount, failedVersionIds);

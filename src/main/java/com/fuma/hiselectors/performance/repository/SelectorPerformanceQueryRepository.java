@@ -5,19 +5,26 @@ import com.fuma.hiselectors.application.model.SnsPlatform;
 import com.fuma.hiselectors.purchase.model.PurchaseStatus;
 import com.fuma.hiselectors.selectors.model.Selectors;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.TypedQuery;
+import jakarta.persistence.Query;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.dialect.MySQLDialect;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.springframework.stereotype.Repository;
 
 @Repository
 @RequiredArgsConstructor
 public class SelectorPerformanceQueryRepository {
 
+    static final String PURCHASE_CONFIRMED_INDEX = "idx_purchase_selector_status_confirmed";
+    static final String CLICK_CREATED_INDEX = "idx_click_selector_type_created";
+    static final String CONTENT_CREATED_INDEX = "idx_content_selector_deleted_created";
+
     private final EntityManager entityManager;
+    private Boolean mysql;
 
     public List<Selectors> findAllVisibleSelectors() {
         return entityManager.createQuery("""
@@ -69,6 +76,7 @@ public class SelectorPerformanceQueryRepository {
 
     /**
      * 확정 시각 기준 매출을 집계한다. 셀렉터스 본인이 구매한 주문은 성과에서 제외한다.
+     * MySQL에서는 정산용 purchased_at 인덱스가 아니라 confirmed_at 인덱스를 강제한다.
      */
     public List<ConfirmedSales> summarizeConfirmedSales(
             List<Long> selectorIds,
@@ -78,24 +86,24 @@ public class SelectorPerformanceQueryRepository {
             return List.of();
         }
 
-        StringBuilder jpql = new StringBuilder("""
-                select p.selectorsId, coalesce(sum(p.paidAmount), 0), count(distinct p.orderNo)
-                from PurchaseHistory p
-                join Selectors s on s.id = p.selectorsId
-                where p.selectorsId in :selectorIds
-                  and s.deleted = false
+        StringBuilder sql = new StringBuilder("""
+                select p.selectors_id, coalesce(sum(p.paid_amount), 0), count(distinct p.order_no)
+                from %s
+                join selectors s on s.selectors_id = p.selectors_id
+                where p.selectors_id in (:selectorIds)
+                  and s.is_deleted = false
                   and p.status = :status
-                  and p.confirmedAt is not null
-                  and (s.userId is null or p.userId <> s.userId)
-                """);
-        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
-        jpql.append(" group by p.selectorsId");
+                  and p.confirmed_at is not null
+                  and (s.user_id is null or p.user_id <> s.user_id)
+                """.formatted(indexedTable("purchase_history", "p", PURCHASE_CONFIRMED_INDEX)));
+        appendNativePeriod(sql, "p.confirmed_at", startInclusive, endExclusive);
+        sql.append(" group by p.selectors_id");
 
-        return confirmedSalesQuery(jpql.toString(), selectorIds, startInclusive, endExclusive)
-                .getResultList().stream()
+        return nativeConfirmedSalesQuery(sql.toString(), selectorIds, startInclusive, endExclusive)
+                .stream()
                 .map(row -> new ConfirmedSales(
-                        (Long) row[0],
-                        (BigDecimal) row[1],
+                        ((Number) row[0]).longValue(),
+                        asBigDecimal(row[1]),
                         ((Number) row[2]).longValue()))
                 .toList();
     }
@@ -105,6 +113,63 @@ public class SelectorPerformanceQueryRepository {
             LocalDateTime startInclusive,
             LocalDateTime endExclusive) {
         return summarizeConfirmedSalesByDatePart(selectorIds, startInclusive, endExclusive, true);
+    }
+
+    /** 대시보드의 일별 매출·예상 정산액 계산을 위해 셀렉터스와 날짜별 매출만 집계한다. */
+    public List<DatedSelectorSales> summarizeConfirmedSalesBySelectorAndDay(
+            List<Long> selectorIds,
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive) {
+        if (selectorIds.isEmpty()) {
+            return List.of();
+        }
+        StringBuilder sql = new StringBuilder("""
+                select p.selectors_id,
+                       year(p.confirmed_at), month(p.confirmed_at), day(p.confirmed_at),
+                       coalesce(sum(p.paid_amount), 0)
+                from %s
+                join selectors s on s.selectors_id = p.selectors_id
+                where p.selectors_id in (:selectorIds)
+                  and s.is_deleted = false
+                  and p.status = :status
+                  and p.confirmed_at is not null
+                  and (s.user_id is null or p.user_id <> s.user_id)
+                """.formatted(indexedTable("purchase_history", "p", PURCHASE_CONFIRMED_INDEX)));
+        appendNativePeriod(sql, "p.confirmed_at", startInclusive, endExclusive);
+        sql.append(" group by p.selectors_id, year(p.confirmed_at),"
+                + " month(p.confirmed_at), day(p.confirmed_at)");
+        return nativeConfirmedSalesQuery(sql.toString(), selectorIds, startInclusive, endExclusive)
+                .stream()
+                .map(row -> new DatedSelectorSales(
+                        ((Number) row[0]).longValue(),
+                        LocalDate.of(
+                                ((Number) row[1]).intValue(),
+                                ((Number) row[2]).intValue(),
+                                ((Number) row[3]).intValue()),
+                        asBigDecimal(row[4])))
+                .toList();
+    }
+
+    /** 지정한 기수에 속한 셀렉터스의 기수 이력만 반환한다. */
+    public List<GenerationMembership> findGenerationMemberships(
+            List<Long> selectorIds, List<Long> generationIds) {
+        if (selectorIds.isEmpty() || generationIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery("""
+                        select sg.selectorsId, g.id, g.generationName
+                        from SelectorsGeneration sg
+                        join Generation g on g.id = sg.generationId
+                        where sg.selectorsId in :selectorIds
+                          and sg.generationId in :generationIds
+                        order by sg.selectorsId, g.activityStartDate desc, g.id desc
+                        """, Object[].class)
+                .setParameter("selectorIds", selectorIds)
+                .setParameter("generationIds", generationIds)
+                .getResultList().stream()
+                .map(row -> new GenerationMembership(
+                        (Long) row[0], (Long) row[1], (String) row[2]))
+                .toList();
     }
 
     /** 대시보드의 일별 매출·예상 정산액 계산을 위해 셀렉터스와 날짜별 매출만 집계한다. */
@@ -178,20 +243,21 @@ public class SelectorPerformanceQueryRepository {
         if (selectorIds.isEmpty()) {
             return List.of();
         }
-        StringBuilder jpql = new StringBuilder("""
-                select c.selectorsId, count(c)
-                from ClickLog c
-                where c.selectorsId in :selectorIds
-                  and c.linkType = :linkType
-                """);
-        appendCreatedAtPeriod(jpql, startInclusive, endExclusive);
-        jpql.append(" group by c.selectorsId");
-        TypedQuery<Object[]> query = entityManager.createQuery(jpql.toString(), Object[].class)
+        StringBuilder sql = new StringBuilder("""
+                select c.selectors_id, count(*)
+                from %s
+                where c.selectors_id in (:selectorIds)
+                  and c.link_type = :linkType
+                """.formatted(indexedTable("click_log", "c", CLICK_CREATED_INDEX)));
+        appendNativePeriod(sql, "c.created_at", startInclusive, endExclusive);
+        sql.append(" group by c.selectors_id");
+        Query query = entityManager.createNativeQuery(sql.toString())
                 .setParameter("selectorIds", selectorIds)
-                .setParameter("linkType", ViewPageType.PRODUCT);
-        bindCreatedAtPeriod(query, startInclusive, endExclusive);
-        return query.getResultList().stream()
-                .map(row -> new SelectorCount((Long) row[0], ((Number) row[1]).longValue()))
+                .setParameter("linkType", ViewPageType.PRODUCT.name());
+        bindNativePeriod(query, startInclusive, endExclusive);
+        return nativeRows(query).stream()
+                .map(row -> new SelectorCount(
+                        ((Number) row[0]).longValue(), ((Number) row[1]).longValue()))
                 .toList();
     }
 
@@ -202,19 +268,20 @@ public class SelectorPerformanceQueryRepository {
         if (selectorIds.isEmpty()) {
             return List.of();
         }
-        StringBuilder jpql = new StringBuilder("""
-                select content.selectorsId, count(content)
-                from Content content
-                where content.selectorsId in :selectorIds
-                  and content.deleted = false
-                """);
-        appendCreatedAtPeriod(jpql, "content.createdAt", startInclusive, endExclusive);
-        jpql.append(" group by content.selectorsId");
-        TypedQuery<Object[]> query = entityManager.createQuery(jpql.toString(), Object[].class)
+        StringBuilder sql = new StringBuilder("""
+                select content.selectors_id, count(*)
+                from %s
+                where content.selectors_id in (:selectorIds)
+                  and content.is_deleted = false
+                """.formatted(indexedTable("content", "content", CONTENT_CREATED_INDEX)));
+        appendNativePeriod(sql, "content.created_at", startInclusive, endExclusive);
+        sql.append(" group by content.selectors_id");
+        Query query = entityManager.createNativeQuery(sql.toString())
                 .setParameter("selectorIds", selectorIds);
-        bindCreatedAtPeriod(query, startInclusive, endExclusive);
-        return query.getResultList().stream()
-                .map(row -> new SelectorCount((Long) row[0], ((Number) row[1]).longValue()))
+        bindNativePeriod(query, startInclusive, endExclusive);
+        return nativeRows(query).stream()
+                .map(row -> new SelectorCount(
+                        ((Number) row[0]).longValue(), ((Number) row[1]).longValue()))
                 .toList();
     }
 
@@ -242,27 +309,27 @@ public class SelectorPerformanceQueryRepository {
     /** 한 셀렉터스의 확정 매출을 상품별로 집계한다(매출 내림차순). */
     public List<ProductSales> summarizeConfirmedSalesByProduct(
             Long selectorId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
-        StringBuilder jpql = new StringBuilder("""
-                select p.productId, prod.productName, prod.brandName, prod.thumbnailUrl,
-                       prod.category, coalesce(sum(p.paidAmount), 0),
-                       count(distinct p.orderNo), coalesce(sum(p.quantity), 0)
-                from PurchaseHistory p
-                join Selectors s on s.id = p.selectorsId
-                join Product prod on prod.id = p.productId
-                where p.selectorsId = :selectorId
-                  and s.deleted = false
+        StringBuilder sql = new StringBuilder("""
+                select p.product_id, prod.product_name, prod.brand_name, prod.thumbnail_url,
+                       prod.category, coalesce(sum(p.paid_amount), 0),
+                       count(distinct p.order_no), coalesce(sum(p.quantity), 0)
+                from %s
+                join selectors s on s.selectors_id = p.selectors_id
+                join product prod on prod.product_id = p.product_id
+                where p.selectors_id = :selectorId
+                  and s.is_deleted = false
                   and p.status = :status
-                  and p.confirmedAt is not null
-                  and (s.userId is null or p.userId <> s.userId)
-                """);
-        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
-        jpql.append(" group by p.productId, prod.productName, prod.brandName,"
-                + " prod.thumbnailUrl, prod.category order by sum(p.paidAmount) desc");
-        return singleSelectorQuery(jpql.toString(), selectorId, startInclusive, endExclusive)
-                .getResultList().stream()
+                  and p.confirmed_at is not null
+                  and (s.user_id is null or p.user_id <> s.user_id)
+                """.formatted(indexedTable("purchase_history", "p", PURCHASE_CONFIRMED_INDEX)));
+        appendNativePeriod(sql, "p.confirmed_at", startInclusive, endExclusive);
+        sql.append(" group by p.product_id, prod.product_name, prod.brand_name,"
+                + " prod.thumbnail_url, prod.category order by sum(p.paid_amount) desc");
+        return nativeSingleSelectorQuery(sql.toString(), selectorId, startInclusive, endExclusive)
+                .stream()
                 .map(row -> new ProductSales(
-                        (Long) row[0], (String) row[1], (String) row[2], (String) row[3],
-                        (String) row[4], (BigDecimal) row[5],
+                        ((Number) row[0]).longValue(), (String) row[1], (String) row[2],
+                        (String) row[3], (String) row[4], asBigDecimal(row[5]),
                         ((Number) row[6]).longValue(), ((Number) row[7]).longValue()))
                 .toList();
     }
@@ -275,38 +342,28 @@ public class SelectorPerformanceQueryRepository {
      */
     public List<CampaignSales> summarizeConfirmedSalesByCampaign(
             Long selectorId, LocalDateTime startInclusive, LocalDateTime endExclusive) {
-        StringBuilder jpql = new StringBuilder("""
-                select c.id, c.title, coalesce(sum(p.paidAmount), 0),
-                       count(distinct p.orderNo), coalesce(sum(p.quantity), 0)
-                from PurchaseHistory p
-                join Selectors s on s.id = p.selectorsId
-                join CampaignProduct cp on cp.product.id = p.productId
-                join Campaign c on c.id = cp.campaign.id
-                where p.selectorsId = :selectorId
-                  and s.deleted = false
-                  and c.isDeleted = false
+        StringBuilder sql = new StringBuilder("""
+                select c.campaign_id, c.title, coalesce(sum(p.paid_amount), 0),
+                       count(distinct p.order_no), coalesce(sum(p.quantity), 0)
+                from %s
+                join selectors s on s.selectors_id = p.selectors_id
+                join campaign_product cp on cp.product_id = p.product_id
+                join campaign c on c.campaign_id = cp.campaign_id
+                where p.selectors_id = :selectorId
+                  and s.is_deleted = false
+                  and c.is_deleted = false
                   and p.status = :status
-                  and p.confirmedAt is not null
-                  and (s.userId is null or p.userId <> s.userId)
-                """);
-        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
-        jpql.append(" group by c.id, c.title order by sum(p.paidAmount) desc");
-        return singleSelectorQuery(jpql.toString(), selectorId, startInclusive, endExclusive)
-                .getResultList().stream()
+                  and p.confirmed_at is not null
+                  and (s.user_id is null or p.user_id <> s.user_id)
+                """.formatted(indexedTable("purchase_history", "p", PURCHASE_CONFIRMED_INDEX)));
+        appendNativePeriod(sql, "p.confirmed_at", startInclusive, endExclusive);
+        sql.append(" group by c.campaign_id, c.title order by sum(p.paid_amount) desc");
+        return nativeSingleSelectorQuery(sql.toString(), selectorId, startInclusive, endExclusive)
+                .stream()
                 .map(row -> new CampaignSales(
-                        (Long) row[0], (String) row[1], (BigDecimal) row[2],
+                        ((Number) row[0]).longValue(), (String) row[1], asBigDecimal(row[2]),
                         ((Number) row[3]).longValue(), ((Number) row[4]).longValue()))
                 .toList();
-    }
-
-    private TypedQuery<Object[]> singleSelectorQuery(
-            String jpql, Long selectorId,
-            LocalDateTime startInclusive, LocalDateTime endExclusive) {
-        TypedQuery<Object[]> query = entityManager.createQuery(jpql, Object[].class)
-                .setParameter("selectorId", selectorId)
-                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED);
-        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
-        return query;
     }
 
     private List<DatedSales> summarizeConfirmedSalesByDatePart(
@@ -318,24 +375,26 @@ public class SelectorPerformanceQueryRepository {
             return List.of();
         }
         String dateSelect = daily
-                ? "year(p.confirmedAt), month(p.confirmedAt), day(p.confirmedAt)"
-                : "year(p.confirmedAt), month(p.confirmedAt)";
-        StringBuilder jpql = new StringBuilder("""
-                select %s, coalesce(sum(p.paidAmount), 0), count(distinct p.orderNo)
-                from PurchaseHistory p
-                join Selectors s on s.id = p.selectorsId
-                where p.selectorsId in :selectorIds
-                  and s.deleted = false
+                ? "year(p.confirmed_at), month(p.confirmed_at), day(p.confirmed_at)"
+                : "year(p.confirmed_at), month(p.confirmed_at)";
+        StringBuilder sql = new StringBuilder("""
+                select %s, coalesce(sum(p.paid_amount), 0), count(distinct p.order_no)
+                from %s
+                join selectors s on s.selectors_id = p.selectors_id
+                where p.selectors_id in (:selectorIds)
+                  and s.is_deleted = false
                   and p.status = :status
-                  and p.confirmedAt is not null
-                  and (s.userId is null or p.userId <> s.userId)
-                """.formatted(dateSelect));
-        appendConfirmedAtPeriod(jpql, startInclusive, endExclusive);
-        jpql.append(daily
-                ? " group by year(p.confirmedAt), month(p.confirmedAt), day(p.confirmedAt)"
-                : " group by year(p.confirmedAt), month(p.confirmedAt)");
-        return confirmedSalesQuery(jpql.toString(), selectorIds, startInclusive, endExclusive)
-                .getResultList().stream()
+                  and p.confirmed_at is not null
+                  and (s.user_id is null or p.user_id <> s.user_id)
+                """.formatted(
+                dateSelect,
+                indexedTable("purchase_history", "p", PURCHASE_CONFIRMED_INDEX)));
+        appendNativePeriod(sql, "p.confirmed_at", startInclusive, endExclusive);
+        sql.append(daily
+                ? " group by year(p.confirmed_at), month(p.confirmed_at), day(p.confirmed_at)"
+                : " group by year(p.confirmed_at), month(p.confirmed_at)");
+        return nativeConfirmedSalesQuery(sql.toString(), selectorIds, startInclusive, endExclusive)
+                .stream()
                 .map(row -> toDatedSales(row, daily))
                 .toList();
     }
@@ -347,52 +406,52 @@ public class SelectorPerformanceQueryRepository {
         int salesIndex = daily ? 3 : 2;
         return new DatedSales(
                 LocalDate.of(year, month, day),
-                (BigDecimal) row[salesIndex],
+                asBigDecimal(row[salesIndex]),
                 ((Number) row[salesIndex + 1]).longValue());
     }
 
-    private TypedQuery<Object[]> confirmedSalesQuery(
-            String jpql,
+    private List<Object[]> nativeConfirmedSalesQuery(
+            String sql,
             List<Long> selectorIds,
             LocalDateTime startInclusive,
             LocalDateTime endExclusive) {
-        TypedQuery<Object[]> query = entityManager.createQuery(jpql, Object[].class)
+        Query query = entityManager.createNativeQuery(sql)
                 .setParameter("selectorIds", selectorIds)
-                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED);
-        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
-        return query;
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED.name());
+        bindNativePeriod(query, startInclusive, endExclusive);
+        return nativeRows(query);
     }
 
-    private void appendConfirmedAtPeriod(
-            StringBuilder jpql, LocalDateTime startInclusive, LocalDateTime endExclusive) {
-        if (startInclusive != null) {
-            jpql.append(" and p.confirmedAt >= :startInclusive");
-        }
-        if (endExclusive != null) {
-            jpql.append(" and p.confirmedAt < :endExclusive");
-        }
+    private List<Object[]> nativeSingleSelectorQuery(
+            String sql, Long selectorId,
+            LocalDateTime startInclusive, LocalDateTime endExclusive) {
+        Query query = entityManager.createNativeQuery(sql)
+                .setParameter("selectorId", selectorId)
+                .setParameter("status", PurchaseStatus.PURCHASE_CONFIRMED.name());
+        bindNativePeriod(query, startInclusive, endExclusive);
+        return nativeRows(query);
     }
 
-    private void appendCreatedAtPeriod(
-            StringBuilder jpql, LocalDateTime startInclusive, LocalDateTime endExclusive) {
-        appendCreatedAtPeriod(jpql, "c.createdAt", startInclusive, endExclusive);
+    @SuppressWarnings("unchecked")
+    private List<Object[]> nativeRows(Query query) {
+        return query.getResultList();
     }
 
-    private void appendCreatedAtPeriod(
-            StringBuilder jpql,
+    private void appendNativePeriod(
+            StringBuilder sql,
             String column,
             LocalDateTime startInclusive,
             LocalDateTime endExclusive) {
         if (startInclusive != null) {
-            jpql.append(" and ").append(column).append(" >= :startInclusive");
+            sql.append(" and ").append(column).append(" >= :startInclusive");
         }
         if (endExclusive != null) {
-            jpql.append(" and ").append(column).append(" < :endExclusive");
+            sql.append(" and ").append(column).append(" < :endExclusive");
         }
     }
 
-    private void bindConfirmedAtPeriod(
-            TypedQuery<Object[]> query,
+    private void bindNativePeriod(
+            Query query,
             LocalDateTime startInclusive,
             LocalDateTime endExclusive) {
         if (startInclusive != null) {
@@ -403,11 +462,31 @@ public class SelectorPerformanceQueryRepository {
         }
     }
 
-    private void bindCreatedAtPeriod(
-            TypedQuery<Object[]> query,
-            LocalDateTime startInclusive,
-            LocalDateTime endExclusive) {
-        bindConfirmedAtPeriod(query, startInclusive, endExclusive);
+    private String indexedTable(String table, String alias, String indexName) {
+        if (!mysql()) {
+            return table + " " + alias;
+        }
+        return table + " " + alias + " FORCE INDEX (" + indexName + ")";
+    }
+
+    private boolean mysql() {
+        if (mysql == null) {
+            mysql = entityManager.getEntityManagerFactory()
+                    .unwrap(SessionFactoryImplementor.class)
+                    .getJdbcServices()
+                    .getDialect() instanceof MySQLDialect;
+        }
+        return mysql;
+    }
+
+    private static BigDecimal asBigDecimal(Object value) {
+        if (value instanceof BigDecimal bigDecimal) {
+            return bigDecimal;
+        }
+        if (value instanceof Number number) {
+            return new BigDecimal(number.toString());
+        }
+        throw new IllegalStateException("numeric column was " + value);
     }
 
     public record GenerationMembership(
